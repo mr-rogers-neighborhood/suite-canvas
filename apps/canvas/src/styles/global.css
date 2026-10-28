@@ -618,13 +618,23 @@ body {
   color: var(--ink);
 }
 
-.react-flow__attribution {
-  background: transparent;
+/* React Flow's licence: the attribution stays visible on a deployment without a Pro
+   subscription, so this must never be hidden, faded or clipped.
+   React Flow's own stylesheet arrives inside the lazily loaded `App` chunk, which is
+   applied *after* this file, so a bare `.react-flow__attribution` rule loses the
+   background to theirs and the chip depended on their default wash. The extra class
+   raises specificity so the colours here win whatever the chunk order turns out to
+   be, and the surface is opaque enough to read the label on a dark canvas. */
+.react-flow .react-flow__attribution {
+  background: var(--surface-translucent);
   color: var(--ink-muted);
+  border-radius: 4px;
+  padding: 2px 6px;
 }
 
-.react-flow__attribution a {
+.react-flow .react-flow__attribution a {
   color: inherit;
+  text-decoration: none;
 }
 
 .react-flow__handle {

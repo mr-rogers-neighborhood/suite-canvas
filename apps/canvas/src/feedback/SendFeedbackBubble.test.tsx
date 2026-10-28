@@ -6,11 +6,12 @@ import { SendFeedbackBubble } from "./SendFeedbackBubble";
  * The bubble asks for the words and nothing else, and it stays hidden when the
  * deployment has no desk — a form that cannot send is worse than no form.
  */
-const available = () => Promise.resolve(true);
+const available = () => Promise.resolve({ configured: true, captcha: false });
+const hidden = () => Promise.resolve({ configured: false, captcha: false });
 
 describe("the feedback bubble", () => {
   it("stays hidden when the deployment does not take feedback", async () => {
-    render(<SendFeedbackBubble available={() => Promise.resolve(false)} />);
+    render(<SendFeedbackBubble available={hidden} />);
     await waitFor(() => expect(screen.queryByTestId("feedback-bubble")).toBeNull());
   });
 
@@ -68,6 +69,25 @@ describe("the feedback bubble", () => {
 
     expect(screen.getByTestId("feedback-send")).toBeDisabled();
     fireEvent.click(screen.getByTestId("feedback-send"));
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("asks for a challenge first when the deployment requires one", async () => {
+    const send = vi.fn(async () => ({ ok: true as const }));
+    render(
+      <SendFeedbackBubble
+        available={() => Promise.resolve({ configured: true, captcha: true })}
+        siteKey="0xsite"
+        send={send}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId("feedback-bubble"));
+    fireEvent.change(screen.getByTestId("feedback-text"), { target: { value: "hello" } });
+
+    // The widget is Cloudflare's, so it renders nothing under jsdom; what matters is
+    // that its box exists before typing and that Send waits for a token.
+    expect(screen.getByTestId("feedback-captcha")).toBeInTheDocument();
+    expect(screen.getByTestId("feedback-send")).toBeDisabled();
     expect(send).not.toHaveBeenCalled();
   });
 });

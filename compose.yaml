@@ -229,6 +229,12 @@ services:
       SUITE_MAIL_FROM: ${SUITE_MAIL_FROM:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SUITE_SMTP_URL: ${SUITE_SMTP_URL:-}
+      # Where the feedback bubble delivers. The route is public and anonymous on
+      # purpose, and it reads this variable rather than a hard-coded address, so an
+      # unset value makes the bubble hide itself instead of mailing nobody. It was
+      # missing from this list entirely: the variable could be set in `.env` and the
+      # container never saw it, so the bubble was hidden on every compose deployment.
+      SUITE_FEEDBACK_TO: ${SUITE_FEEDBACK_TO:-}
       # Who may use the operator surface: the admissions queue and the starter
       # templates. Read here and on the relay, so one list answers both.
       SUITE_ADMIN_EMAILS: ${SUITE_ADMIN_EMAILS:-}

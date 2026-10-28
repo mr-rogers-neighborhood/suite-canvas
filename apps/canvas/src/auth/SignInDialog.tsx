@@ -46,6 +46,20 @@ export interface SignInDialogProps {
   onSignedIn: () => void;
 }
 
+/**
+ * The form's three weights, in one place so the sign-in and sign-up halves cannot
+ * drift apart: a field, the one primary action, a full-width alternative, and a quiet
+ * text button. Sizes are 13px rather than 12px because this is the first screen a
+ * stranger sees, and the previous pass made every control feel like a footnote.
+ */
+const FIELD =
+  "h-9 w-full rounded-lg border border-[var(--hairline)] bg-transparent px-2.5 text-[13px] text-[var(--ink)] outline-none transition placeholder:text-[var(--ink-muted)]/70 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/25";
+const PRIMARY =
+  "h-9 rounded-lg bg-[var(--ink)] px-3 text-[13px] font-medium text-[var(--surface)] transition disabled:opacity-50 enabled:hover:opacity-90";
+const SECONDARY =
+  "h-9 rounded-lg border border-[var(--hairline)] px-3 text-[13px] text-[var(--ink)] transition hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/10";
+const QUIET = "text-[12px] font-medium text-[var(--ink-muted)] transition hover:text-[var(--ink)]";
+
 const TITLES: Record<SignInMethod, string> = {
   passkey: "Passkey",
   password: "Password",
@@ -230,11 +244,22 @@ export function SignInDialog({
         data-testid="sign-in-dialog"
         data-availability={availability}
         data-mode={mode}
-        className="relative w-[min(380px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl"
+        className="relative w-[min(400px,calc(100vw-2rem))] rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] p-5 shadow-2xl ring-1 ring-black/5 dark:ring-white/5"
       >
-        <h2 className="text-sm font-semibold">
-          {mode === "sign-up" ? "Create an account" : "Sign in"}
-        </h2>
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="text-[15px] font-semibold tracking-tight text-[var(--ink)]">
+            {mode === "sign-up" ? "Create an account" : "Sign in"}
+          </h2>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            data-testid="sign-in-dismiss"
+            onClick={onClose}
+            className="-mt-1 -mr-1 flex h-7 w-7 flex-none items-center justify-center rounded-lg text-[15px] leading-none text-[var(--ink-muted)] transition hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+          >
+            {"\u00d7"}
+          </button>
+        </div>
 
         {availability === "unknown" ? (
           <p
@@ -257,7 +282,7 @@ export function SignInDialog({
 
         {availability === "available" && mode === "sign-in" ? (
           <>
-            <p className="mt-1.5 text-[12px] leading-5 text-[var(--ink-muted)]">
+            <p className="mt-1 text-[12.5px] leading-5 text-[var(--ink-muted)]">
               Signing in keeps this workspace yours across devices.
             </p>
 
@@ -269,8 +294,8 @@ export function SignInDialog({
               beside it for a device that already holds one, and the password is the
               exception behind the disclosure at the bottom.
             */}
-            <form onSubmit={sendLink} className="mt-3 flex flex-col gap-1.5">
-              <label className="text-[11px] text-[var(--ink-muted)]" htmlFor="sign-in-email">
+            <form onSubmit={sendLink} className="mt-4 flex flex-col gap-2">
+              <label className="text-[12px] font-medium text-[var(--ink)]" htmlFor="sign-in-email">
                 Email address
               </label>
               <input
@@ -279,14 +304,15 @@ export function SignInDialog({
                 type="email"
                 autoComplete="email"
                 value={email}
+                placeholder="you@example.com"
                 onChange={(event) => setEmail(event.target.value)}
-                className="rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1 text-[12px]"
+                className={FIELD}
               />
               <button
                 type="submit"
                 data-testid="sign-in-email-submit"
                 disabled={busy !== null}
-                className="self-start rounded-lg bg-[var(--ink)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--surface)] disabled:opacity-50"
+                className={`${PRIMARY} w-full`}
               >
                 {busy === "magic-link" ? "Sending…" : "Email me a sign-in link"}
               </button>
@@ -298,14 +324,14 @@ export function SignInDialog({
                 data-testid="sign-in-passkey"
                 disabled={busy !== null}
                 onClick={() => void passkey()}
-                className="mt-2 w-full rounded-lg border border-[var(--hairline)] px-2.5 py-1.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/10"
+                className={`${SECONDARY} mt-1 text-center`}
               >
                 {busy === "passkey" ? `${TITLES.passkey}…` : "Use a passkey instead"}
               </button>
             ) : null}
 
             {passwordOpen ? (
-              <form onSubmit={signInWithPassword} className="mt-2 flex flex-col gap-1.5">
+              <form onSubmit={signInWithPassword} className="mt-2 flex flex-col gap-2">
                 <input
                   data-testid="sign-in-password-value"
                   type="password"
@@ -314,13 +340,13 @@ export function SignInDialog({
                   placeholder="Your password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  className="rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1 text-[12px]"
+                  className={FIELD}
                 />
                 <button
                   type="submit"
                   data-testid="sign-in-password-submit"
                   disabled={busy !== null}
-                  className="self-start rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] disabled:opacity-50"
+                  className={`${SECONDARY} w-full`}
                 >
                   {busy === "password" ? "Signing in…" : "Sign in with the password above"}
                 </button>
@@ -333,13 +359,13 @@ export function SignInDialog({
                   setPasswordOpen(true);
                   setProblem(null);
                 }}
-                className="mt-2 text-[11px] text-[var(--ink-muted)] underline decoration-dotted"
+                className={`mt-1 self-start ${QUIET}`}
               >
                 Use a password instead
               </button>
             )}
 
-            <p className="mt-3 border-t border-[var(--hairline)] pt-2 text-[11px] leading-5 text-[var(--ink-muted)]">
+            <p className="mt-4 border-t border-[var(--hairline)] pt-3 text-[12px] leading-5 text-[var(--ink-muted)]">
               Signing in keeps the workspaces this device already holds: same workspace, same link.
             </p>
 
@@ -352,7 +378,7 @@ export function SignInDialog({
                 setNotice(null);
                 setPasswordOpen(false);
               }}
-              className="mt-2 text-[11px] text-[var(--ink)] underline decoration-dotted"
+              className={`mt-1.5 ${QUIET} text-[var(--ink)]`}
             >
               No account yet? Create one
             </button>
@@ -362,26 +388,30 @@ export function SignInDialog({
         {availability === "available" && mode === "sign-up" ? (
           <form
             onSubmit={passwordOpen ? createAccount : createWithLink}
-            className="mt-2 flex flex-col gap-1.5"
+            className="mt-3 flex flex-col gap-2"
           >
-            <p className="text-[12px] leading-5 text-[var(--ink-muted)]">
+            <p className="text-[12.5px] leading-5 text-[var(--ink-muted)]">
               An account keeps this workspace across your devices. Sync is part of a plan, so the
               Plan tab is where that starts; everything here already works without one, on this
               device.
             </p>
             {feedback}
-            <label className="mt-1 text-[11px] text-[var(--ink-muted)]" htmlFor="sign-up-name">
+            <label
+              className="mt-1 text-[12px] font-medium text-[var(--ink)]"
+              htmlFor="sign-up-name"
+            >
               Name
             </label>
             <input
               id="sign-up-name"
               data-testid="sign-up-name"
               autoComplete="name"
+              placeholder="Ada Lovelace"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              className="rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1 text-[12px]"
+              className={FIELD}
             />
-            <label className="text-[11px] text-[var(--ink-muted)]" htmlFor="sign-up-email">
+            <label className="text-[12px] font-medium text-[var(--ink)]" htmlFor="sign-up-email">
               Email address
             </label>
             <input
@@ -389,9 +419,10 @@ export function SignInDialog({
               data-testid="sign-up-email"
               type="email"
               autoComplete="email"
+              placeholder="you@example.com"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1 text-[12px]"
+              className={FIELD}
             />
             {/*
               Creating an account needs no password either: the link proves the address, and
@@ -400,7 +431,10 @@ export function SignInDialog({
             */}
             {passwordOpen ? (
               <>
-                <label className="text-[11px] text-[var(--ink-muted)]" htmlFor="sign-up-password">
+                <label
+                  className="text-[12px] font-medium text-[var(--ink)]"
+                  htmlFor="sign-up-password"
+                >
                   Password
                 </label>
                 <input
@@ -410,7 +444,7 @@ export function SignInDialog({
                   autoComplete="new-password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  className="rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1 text-[12px]"
+                  className={FIELD}
                 />
                 {captchaSiteKey ? (
                   <TurnstileWidget siteKey={captchaSiteKey} onToken={setCaptcha} />
@@ -419,7 +453,7 @@ export function SignInDialog({
                   type="submit"
                   data-testid="sign-up-submit"
                   disabled={busy !== null}
-                  className="mt-1 rounded-lg bg-[var(--ink)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--surface)] disabled:opacity-50"
+                  className={`${PRIMARY} mt-1 w-full`}
                 >
                   {busy === "sign-up" ? "Creating…" : "Create account"}
                 </button>
@@ -429,7 +463,7 @@ export function SignInDialog({
                 type="submit"
                 data-testid="sign-up-link-submit"
                 disabled={busy !== null}
-                className="mt-1 rounded-lg bg-[var(--ink)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--surface)] disabled:opacity-50"
+                className={`${PRIMARY} mt-1 w-full`}
               >
                 {busy === "magic-link" ? "Sending…" : "Create the account with an email link"}
               </button>
@@ -441,7 +475,7 @@ export function SignInDialog({
                   setPasswordOpen(false);
                   setProblem(null);
                 }}
-                className="self-start text-[11px] text-[var(--ink-muted)] underline decoration-dotted"
+                className={`self-start ${QUIET}`}
               >
                 Use an email link instead
               </button>
@@ -452,7 +486,7 @@ export function SignInDialog({
                   setPasswordOpen(true);
                   setProblem(null);
                 }}
-                className="self-start text-[11px] text-[var(--ink-muted)] underline decoration-dotted"
+                className={`self-start ${QUIET}`}
               >
                 Use a password instead
               </button>
@@ -466,7 +500,7 @@ export function SignInDialog({
                 setNotice(null);
                 setPasswordOpen(false);
               }}
-              className="self-start text-[11px] text-[var(--ink-muted)] underline decoration-dotted"
+              className={`mt-1 self-start ${QUIET}`}
             >
               I already have an account
             </button>

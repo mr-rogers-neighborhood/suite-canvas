@@ -49,22 +49,44 @@ function response() {
   return { out, res: res as never };
 }
 
-function moduleWith(overrides: { to?: string; fail?: boolean; now?: () => number } = {}) {
+function moduleWith(
+  overrides: {
+    to?: string;
+    fail?: boolean;
+    now?: () => number;
+    turnstileSecret?: string;
+    captcha?: boolean;
+  } = {},
+) {
   const sent: { text: string; surface: string; signedIn: boolean }[] = [];
+  const asked: string[] = [];
   const module = createFeedbackModule({
-    env: { SUITE_FEEDBACK_TO: overrides.to ?? "desk@example.com", SUITE_VERSION: "v1.2.3" },
+    env: {
+      SUITE_FEEDBACK_TO: overrides.to ?? "desk@example.com",
+      SUITE_VERSION: "v1.2.3",
+      ...(overrides.turnstileSecret === undefined
+        ? {}
+        : { SUITE_TURNSTILE_SECRET: overrides.turnstileSecret }),
+    },
     logger: silence(),
     now: overrides.now ?? (() => 1_000_000),
     send: async (message) => {
       if (overrides.fail === true) throw new Error("transport down");
       sent.push(message);
     },
+    verifyCaptcha: async (token) => {
+      asked.push(token);
+      return overrides.captcha ?? true;
+    },
   });
-  return { module, sent };
+  return { module, sent, asked };
 }
 
-const post = (text: string, headers: Record<string, string> = {}) =>
-  request("POST", JSON.stringify({ text, surface: "board", signedIn: true }), headers);
+const post = (
+  text: string,
+  headers: Record<string, string> = {},
+  extra: Record<string, unknown> = {},
+) => request("POST", JSON.stringify({ text, surface: "board", signedIn: true, ...extra }), headers);
 
 describe("the feedback route", () => {
   it("answers only its own path", async () => {
@@ -79,12 +101,12 @@ describe("the feedback route", () => {
     const unset = moduleWith({ to: "" });
     const one = response();
     await unset.module.handle(request("GET", null), one.res);
-    expect(JSON.parse(one.out.body)).toEqual({ ok: true, configured: false });
+    expect(JSON.parse(one.out.body)).toEqual({ ok: true, configured: false, captcha: false });
 
     const set = moduleWith();
     const two = response();
     await set.module.handle(request("GET", null), two.res);
-    expect(JSON.parse(two.out.body)).toEqual({ ok: true, configured: true });
+    expect(JSON.parse(two.out.body)).toEqual({ ok: true, configured: true, captcha: false });
   });
 
   it("sends the words and the context, and never the document", async () => {
@@ -141,5 +163,54 @@ describe("the feedback route", () => {
     await module.handle(post("hello"), res);
     expect(out.status).toBe(503);
     expect(sent).toHaveLength(0);
+  });
+
+  it("says whether a challenge is required, so the bubble can render one first", async () => {
+    const plain = moduleWith();
+    const first = response();
+    await plain.module.handle(request("GET", null), first.res);
+    expect(JSON.parse(first.out.body)).toMatchObject({ ok: true, captcha: false });
+
+    const guarded = moduleWith({ turnstileSecret: "0xsecret" });
+    const second = response();
+    await guarded.module.handle(request("GET", null), second.res);
+    expect(JSON.parse(second.out.body)).toMatchObject({ ok: true, captcha: true });
+  });
+
+  it("refuses a message with no challenge token once the secret is set", async () => {
+    const { module, sent, asked } = moduleWith({ turnstileSecret: "0xsecret" });
+    const { out, res } = response();
+    await module.handle(post("hello"), res);
+    expect(out.status).toBe(400);
+    expect(JSON.parse(out.body)).toMatchObject({ error: "captcha-failed" });
+    expect(sent).toHaveLength(0);
+    // No token means no round trip: the refusal is local and cannot be bypassed
+    // by whichever verifier a deployment injected.
+    expect(asked).toHaveLength(0);
+  });
+
+  it("refuses a message whose challenge did not pass", async () => {
+    const { module, sent } = moduleWith({ turnstileSecret: "0xsecret", captcha: false });
+    const { out, res } = response();
+    await module.handle(post("hello", {}, { captchaToken: "token" }), res);
+    expect(out.status).toBe(400);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("sends once the challenge passes, and hands the token to the verifier", async () => {
+    const { module, sent, asked } = moduleWith({ turnstileSecret: "0xsecret" });
+    const { out, res } = response();
+    await module.handle(post("hello", {}, { captchaToken: "the-token" }), res);
+    expect(out.status).toBe(200);
+    expect(asked).toEqual(["the-token"]);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("needs no token at all when no secret is set, so a self-host is unchanged", async () => {
+    const { module, sent } = moduleWith();
+    const { out, res } = response();
+    await module.handle(post("hello"), res);
+    expect(out.status).toBe(200);
+    expect(sent).toHaveLength(1);
   });
 });

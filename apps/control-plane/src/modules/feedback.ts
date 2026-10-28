@@ -40,7 +40,54 @@ export interface FeedbackModuleOptions {
     buildId: string;
     signedIn: boolean;
   }) => Promise<void>;
+  /** Injected by a test so no challenge is checked over the network. */
+  verifyCaptcha?: (token: string, secret: string) => Promise<boolean>;
   now?: () => number;
+}
+
+/**
+ * The challenge, checked the way Cloudflare's own widget expects.
+ *
+ * The bubble is public on purpose, which makes this the only unauthenticated route in
+ * the process that sends mail: a limiter per address is not enough, because the addresses
+ * are as cheap as the messages. Turnstile is the half that costs an attacker something.
+ *
+ * A refusal is a refusal: a network failure, a timeout, a malformed answer and a failed
+ * challenge all come back `false`, so a broken Cloudflare is not a bypass. The two second
+ * cap keeps a hung socket from holding a request that a person is waiting on.
+ */
+export async function verifyTurnstile(
+  token: string,
+  secret: string,
+  call: typeof globalThis.fetch = globalThis.fetch,
+): Promise<boolean> {
+  if (token.trim().length === 0) return false;
+  const body = new URLSearchParams({ secret, response: token });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), 2000);
+  });
+  try {
+    const answer = await Promise.race([
+      call("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body,
+      })
+        .then((response) => (response.ok ? response.json() : null))
+        .then(
+          (parsed: unknown) =>
+            typeof parsed === "object" &&
+            parsed !== null &&
+            (parsed as { success?: unknown }).success === true,
+        )
+        .catch(() => false),
+      timeout,
+    ]);
+    return answer === true;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -87,6 +134,8 @@ export function createFeedbackModule(options: FeedbackModuleOptions): RouteModul
   const now = options.now ?? Date.now;
   const take = limiter(now);
   const to = (env[FEEDBACK_TO_VARIABLE] ?? "").trim();
+  const turnstileSecret = (env.SUITE_TURNSTILE_SECRET ?? "").trim();
+  const checkCaptcha = options.verifyCaptcha ?? verifyTurnstile;
   const buildId = (env.SUITE_VERSION ?? env.npm_package_version ?? "dev").trim();
 
   const send =
@@ -117,7 +166,14 @@ export function createFeedbackModule(options: FeedbackModuleOptions): RouteModul
       // A capability probe, so the client can hide a bubble that cannot send
       // rather than offer a form and fail after someone has typed into it.
       if (method === "GET") {
-        sendJson(response, 200, { ok: true, configured: to.length > 0 });
+        // `captcha` is what lets the bubble render the widget before somebody types
+        // rather than failing after they have. The site key itself is inlined into the
+        // bundle at build time; this only says whether to use it.
+        sendJson(response, 200, {
+          ok: true,
+          configured: to.length > 0,
+          captcha: turnstileSecret.length > 0,
+        });
         return true;
       }
       if (method !== "POST") {
@@ -158,7 +214,12 @@ export function createFeedbackModule(options: FeedbackModuleOptions): RouteModul
         });
         return true;
       }
-      const fields = body.value as { text?: unknown; surface?: unknown; signedIn?: unknown };
+      const fields = body.value as {
+        text?: unknown;
+        surface?: unknown;
+        signedIn?: unknown;
+        captchaToken?: unknown;
+      };
       const text = typeof fields.text === "string" ? fields.text.trim() : "";
       if (text.length === 0) {
         sendJson(response, 400, {
@@ -175,6 +236,20 @@ export function createFeedbackModule(options: FeedbackModuleOptions): RouteModul
           message: `text is longer than ${MAX_FEEDBACK_CHARS} characters`,
         });
         return true;
+      }
+
+      if (turnstileSecret.length > 0) {
+        const token = typeof fields.captchaToken === "string" ? fields.captchaToken.trim() : "";
+        // An absent token is refused here rather than inside the verifier, so the
+        // guarantee does not depend on which verifier a deployment wired in.
+        if (token.length === 0 || !(await checkCaptcha(token, turnstileSecret))) {
+          sendJson(response, 400, {
+            ok: false,
+            error: "captcha-failed",
+            message: "That check did not pass. Try again.",
+          });
+          return true;
+        }
       }
 
       try {

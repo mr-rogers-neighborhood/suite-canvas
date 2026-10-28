@@ -1,6 +1,7 @@
 import { STARTER_TEMPLATES, type WorkspaceTemplate } from "@suite/graph";
 import type { VaultFile } from "@suite/import-obsidian";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
 import { ToastLayer } from "../feedback/ToastLayer";
 import { toast } from "../feedback/toast";
 import {
@@ -871,6 +872,11 @@ export function WorkspaceLauncher() {
           />
         </Suspense>
       ) : null}
+      {/* The same bubble the board carries. This is the screen somebody reaches when
+          nothing works yet, and it is the only one a signed-out visitor sees, so
+          leaving it to the board hid feedback from exactly the people most likely to
+          send it. */}
+      <SendFeedbackBubble surface="launcher" signedIn={account !== null} />
       {/* The import's report has nowhere else to go on this screen: the launcher
           is the whole page, so it mounts the one toast stack itself. */}
       <ToastLayer />

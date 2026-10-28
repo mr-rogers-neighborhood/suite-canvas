@@ -2,17 +2,12 @@ import { useEffect, useState } from "react";
 import { AccountPanel } from "./AccountPanel";
 import { AdmissionPanel } from "./AdmissionPanel";
 import { bootstrapAccount, lastUsedMethod, refreshAccount, signOutAccount } from "./account";
+import { captchaSiteKey } from "./captchaKey";
 import { signInActions } from "./client";
 import { SignInDialog } from "./SignInDialog";
 import type { SignInMethod } from "./signIn";
 import { UpgradePrompt } from "./UpgradePrompt";
 import { awaitingAdmission, useAccountStore } from "./useAccountStore";
-
-/** The Turnstile site key, when the deployment turned the challenge on (ADR-0077). */
-function captchaSiteKey(): string | null {
-  const key = import.meta.env.VITE_SUITE_TURNSTILE_SITE_KEY;
-  return typeof key === "string" && key.trim().length > 0 ? key.trim() : null;
-}
 
 /**
  * Mounts the account surfaces once, beside the shell: the sign-in dialog, the

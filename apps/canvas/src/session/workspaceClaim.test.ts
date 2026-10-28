@@ -43,6 +43,24 @@ describe("claiming a workspace for the account", () => {
     expect(outcome).toBe("capped");
   });
 
+  // The hosted wall: a new account's licence grants no workspace, so this is the
+  // first answer anybody gets. Each of these once fell through to `unavailable`,
+  // which the shell reads as "no answer yet" — so the badge stayed blank and the
+  // only thing left to report was the socket's refusal, verbatim.
+  for (const [status, error] of [
+    [402, "plan-required"],
+    [403, "workspace-limit"],
+  ] as const) {
+    it(`treats ${error} as the plan being the obstacle, not as no answer`, async () => {
+      const outcome = await claimWorkspaceForAccount({
+        workspaceId: "ws-1",
+        fetch: answer(status, { ok: false, error, message: "…" }),
+        authorization: session,
+      });
+      expect(outcome).toBe("capped");
+    });
+  }
+
   it("reports a workspace another account holds", async () => {
     const outcome = await claimWorkspaceForAccount({
       workspaceId: "ws-1",

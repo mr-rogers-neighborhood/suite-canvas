@@ -22,6 +22,17 @@ export type ClaimOutcome =
 
 export const CLAIM_PATH = "/api/workspaces/claim";
 
+/**
+ * The control plane's refusal names that all mean "the plan does not cover this".
+ *
+ * `plan-required` is the hosted wall: the born-with licence grants no workspace, so
+ * this is what a fresh account gets on its first claim. `workspace-limit` is the
+ * ceiling being reached, and `seat-refused` is the member allowance. They are
+ * separate codes because the *server* acts on them differently; the reader does not
+ * need the difference, because every one of them is answered by the same button.
+ */
+const REFUSALS: ReadonlySet<string> = new Set(["plan-required", "workspace-limit", "seat-refused"]);
+
 export interface ClaimInput {
   workspaceId: string;
   /** Sent as the workspace's name, so the account list is readable before it syncs. */
@@ -56,9 +67,14 @@ export async function claimWorkspaceForAccount(input: ClaimInput): Promise<Claim
     const error =
       typeof body === "object" && body !== null ? (body as { error?: unknown }).error : undefined;
     if (error === "workspace-already-claimed") return "elsewhere";
-    // Both allowances — workspaces and seats — arrive as one refusal, because
-    // both mean the same thing to the person reading it: the plan is the obstacle.
-    if (error === "seat-refused") return "capped";
+    // Every allowance — workspaces, seats, and the hosted wall that grants a new
+    // account none — means the same thing to the person reading it: the plan is the
+    // obstacle. Missing one of these names is not a cosmetic bug: the outcome falls
+    // to `unavailable`, which the shell reads as "not answered yet", so the badge
+    // stays blank and the only thing left to report is the relay's raw refusal —
+    // which is how "Authentication failed" on the socket became the first thing a
+    // new account saw.
+    if (REFUSALS.has(String(error))) return "capped";
     return "unavailable";
   } catch {
     return "unavailable";

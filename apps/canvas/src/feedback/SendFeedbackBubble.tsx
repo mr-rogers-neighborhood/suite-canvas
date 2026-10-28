@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { feedbackAvailable, sendFeedback } from "./feedbackClient";
+import { captchaSiteKey } from "../auth/captchaKey";
+import { TurnstileWidget } from "../auth/TurnstileWidget";
+import { type FeedbackCapability, feedbackCapability, sendFeedback } from "./feedbackClient";
 import { toast } from "./toast";
 
 /**
@@ -17,31 +19,48 @@ export interface SendFeedbackBubbleProps {
   surface?: string;
   signedIn?: boolean;
   /** Replaced by a test; a build reads the deployment. */
-  available?: () => Promise<boolean>;
+  available?: () => Promise<FeedbackCapability>;
+  /** Replaced by a test; a build reads the deployment. */
+  siteKey?: string | null;
   send?: typeof sendFeedback;
 }
 
 export function SendFeedbackBubble({
   surface = "board",
   signedIn = false,
-  available = feedbackAvailable,
+  available = feedbackCapability,
+  siteKey = captchaSiteKey(),
   send = sendFeedback,
 }: SendFeedbackBubbleProps) {
   const [shown, setShown] = useState(false);
+  const [needsChallenge, setNeedsChallenge] = useState(false);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
+  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     let live = true;
-    void available().then((ok) => {
-      if (live) setShown(ok);
+    void available().then((capability) => {
+      if (!live) return;
+      setShown(capability.configured);
+      // A challenge the deployment asks for but this build cannot render must not
+      // become a form that always fails: the server is the authority on whether a
+      // token is required, and a build with no site key is a broken deployment, not
+      // a reason to hide the bubble. `deploy/preflight.sh` refuses that pair.
+      setNeedsChallenge(capability.captcha);
     });
     return () => {
       live = false;
     };
   }, [available]);
+
+  // Closing the form drops the token with it: a Turnstile token is single-use, and
+  // holding a spent one is how a second message fails for no visible reason.
+  useEffect(() => {
+    if (!open) setToken("");
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -54,18 +73,30 @@ export function SendFeedbackBubble({
 
   if (!shown) return null;
 
+  const challengeNeeded = needsChallenge && siteKey !== null;
+  const ready = text.trim().length > 0 && (!challengeNeeded || token.length > 0);
+
   const submit = async () => {
     const words = text.trim();
-    if (words.length === 0 || busy) return;
+    if (words.length === 0 || busy || !ready) return;
     setBusy(true);
-    const outcome = await send({ text: words, surface, signedIn });
+    const outcome = await send({
+      text: words,
+      surface,
+      signedIn,
+      ...(challengeNeeded ? { captchaToken: token } : {}),
+    });
     setBusy(false);
     if (outcome.ok) {
       setText("");
+      setToken("");
       setOpen(false);
       toast.success("Thanks — your message is on its way.");
       return;
     }
+    // A spent or expired token is not the sender's mistake: ask the widget for a
+    // fresh one and leave their words where they are.
+    if (outcome.reason === "captcha") setToken("");
     toast.failure(outcome.message);
   };
 
@@ -93,6 +124,11 @@ export function SendFeedbackBubble({
             }}
             className="mt-1.5 w-full resize-none rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1.5 text-[12px] leading-5 text-[var(--ink)] outline-none focus:ring-1 focus:ring-blue-400"
           />
+          {challengeNeeded ? (
+            <div className="mt-2" data-testid="feedback-captcha">
+              <TurnstileWidget siteKey={siteKey} onToken={(next) => setToken(next ?? "")} />
+            </div>
+          ) : null}
           <div className="mt-2 flex items-center justify-between">
             <span className="text-[10px] text-[var(--ink-muted)]">Sends your app version too</span>
             <div className="flex items-center gap-1.5">
@@ -107,7 +143,7 @@ export function SendFeedbackBubble({
               <button
                 type="button"
                 data-testid="feedback-send"
-                disabled={busy || text.trim().length === 0}
+                disabled={busy || !ready}
                 onClick={() => void submit()}
                 className="rounded-md bg-[var(--ink)] px-2.5 py-1 text-[11px] font-medium text-[var(--surface)] disabled:opacity-40"
               >

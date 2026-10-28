@@ -633,7 +633,7 @@ export function WorkspaceLauncher() {
               <div className="min-w-0 flex-1 text-[12px] leading-5">
                 <p className="font-medium">These are saved on this device only.</p>
                 <p className="text-[var(--ink-muted)]">
-                  Open one while signed in to add it to your account. Nothing moves until you do.
+                  Open one while signed in to add it to your account.
                 </p>
               </div>
               <button

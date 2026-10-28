@@ -551,3 +551,89 @@ code {
   gap: 12px;
   padding: 22px;
 }
+
+/*
+ * Settings: one row per key, with the level that answered beside it.
+ *
+ * The provenance chip is the point of the screen. "set here" and "from
+ * SUITE_STRIPE_SECRET_KEY" are different facts, and an operator who cannot tell them
+ * apart will save a row and wonder why the value did not change.
+ */
+.admin-settings-group {
+  margin-top: 16px;
+}
+
+.admin-settings-heading {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--admin-muted, #6b7280);
+}
+
+.admin-settings-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 10px 0;
+  border-top: 1px solid var(--admin-hairline, rgba(120, 120, 120, 0.2));
+}
+
+.admin-settings-row:first-of-type {
+  border-top: 0;
+}
+
+.admin-settings-label code {
+  display: block;
+  font-size: 12px;
+}
+
+.admin-settings-label p {
+  margin: 2px 0 0;
+  font-size: 11px;
+}
+
+.admin-settings-source {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  font-size: 10px;
+  background: rgba(120, 120, 120, 0.14);
+}
+
+.admin-settings-source[data-source="global"] {
+  background: rgba(16, 185, 129, 0.18);
+}
+
+.admin-settings-source[data-source="env"] {
+  background: rgba(245, 158, 11, 0.18);
+}
+
+.admin-settings-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.admin-settings-control .admin-input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.admin-settings-chips {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-warning {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(244, 63, 94, 0.5);
+  background: rgba(244, 63, 94, 0.12);
+  font-size: 12px;
+}

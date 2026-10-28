@@ -3,13 +3,22 @@ import { signOut } from "../auth/client";
 import { errorText, getStatus } from "./api";
 import { FixturesPanel } from "./panels/FixturesPanel";
 import { RoomsPanel } from "./panels/RoomsPanel";
+import { SettingsPanel } from "./panels/SettingsPanel";
 import { SharesPanel } from "./panels/SharesPanel";
 import { StatusPanel } from "./panels/StatusPanel";
 import { SupportPanel } from "./panels/SupportPanel";
 import { TemplatesPanel } from "./panels/TemplatesPanel";
 import { WorkspacesPanel } from "./panels/WorkspacesPanel";
 
-type View = "status" | "workspaces" | "rooms" | "shares" | "templates" | "fixtures" | "support";
+type View =
+  | "status"
+  | "workspaces"
+  | "rooms"
+  | "shares"
+  | "templates"
+  | "fixtures"
+  | "settings"
+  | "support";
 
 const VIEWS: { id: View; label: string }[] = [
   { id: "status", label: "Status" },
@@ -18,6 +27,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: "shares", label: "Shares" },
   { id: "templates", label: "Templates" },
   { id: "fixtures", label: "Fixtures" },
+  { id: "settings", label: "Settings" },
   { id: "support", label: "Support" },
 ];
 
@@ -139,6 +149,7 @@ export function App() {
         {view === "shares" ? <SharesPanel /> : null}
         {view === "templates" ? <TemplatesPanel /> : null}
         {view === "fixtures" ? <FixturesPanel /> : null}
+        {view === "settings" ? <SettingsPanel /> : null}
         {view === "support" ? <SupportPanel /> : null}
       </main>
     </div>

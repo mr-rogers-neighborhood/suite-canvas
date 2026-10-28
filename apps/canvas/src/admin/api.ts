@@ -352,3 +352,46 @@ export async function downloadExport(workspaceId: string): Promise<void> {
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
+
+/**
+ * Settings live in the control plane, not the relay: it owns the account database and
+ * therefore the table, and the relay reads its values through the environment fallback.
+ */
+const SETTINGS_BASE = `${authServiceBase()}/admin/settings`;
+
+export interface AdminSetting {
+  key: string;
+  group: "billing" | "mail" | "licence" | "backup" | "limits" | "flags";
+  kind: "string" | "number" | "boolean" | "enum" | "secret";
+  help: string;
+  overridable: boolean;
+  values?: readonly string[];
+  value: string | number | boolean | null;
+  source: "organization" | "global" | "env" | "default";
+  env: string;
+}
+
+export async function listSettings(organizationId?: string | null): Promise<{
+  organizationId: string | null;
+  settings: AdminSetting[];
+}> {
+  const scope = organizationId ? `?organization=${encode(organizationId)}` : "";
+  return requestUrl(`${SETTINGS_BASE}${scope}`);
+}
+
+export async function writeSetting(
+  key: string,
+  value: string | number | boolean,
+  organizationId?: string | null,
+): Promise<void> {
+  const query = organizationId ? `?organization=${encode(organizationId)}` : "";
+  await requestUrl(`${SETTINGS_BASE}/${encode(key)}${query}`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
+  });
+}
+
+export async function resetSetting(key: string, organizationId?: string | null): Promise<void> {
+  const query = organizationId ? `?organization=${encode(organizationId)}` : "";
+  await requestUrl(`${SETTINGS_BASE}/${encode(key)}${query}`, { method: "DELETE" });
+}

@@ -35,11 +35,20 @@ test("a deployment with accounts leaves a browser with no session local", {
   await expect(page.getByTestId("account-chip")).toHaveCount(0);
 
   const status = page.getByTestId("sync-status");
-  await expect(status).toHaveText("Local");
+  // The pill says what the copy does, not who the reader is: "Saved" is the rung for a
+  // workspace that exists on this device and nowhere else. `TitleBar.test.tsx` pins the
+  // same pair (`unauthorized` + `signed-out` reads `Saved`), which is where this
+  // expectation drifted from.
+  await expect(status).toHaveText("Saved");
   await status.click();
-  await expect(page.getByTestId("sync-room")).toContainText("Local only");
+  // The panel names where the work is rather than what it is not: "Saved on this
+  // device" is `storageLadder`'s rung for a copy that exists here and nowhere else.
+  await expect(page.getByTestId("sync-room")).toContainText("Saved on this device");
   await expect(page.getByTestId("sync-room")).not.toContainText(/refused/i);
-  // The storage surface is a row in the same panel, so one press answers both.
+  // The storage surface is the panel's own "what does this device hold" block, one
+  // press further in: the panel leads with who else is here and discloses the rest.
+  await expect(page.getByTestId("storage-status")).toHaveCount(0);
+  await page.getByTestId("sync-details").click();
   await expect(page.getByTestId("storage-status")).toBeVisible();
   await expect(dialog(page)).toHaveCount(0);
 

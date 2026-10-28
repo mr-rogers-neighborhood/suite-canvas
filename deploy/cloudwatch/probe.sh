@@ -18,6 +18,8 @@
 #   SUITE_APP_CONTAINER   relay container name (default: suite-app-1)
 #   SUITE_LOG_DEPLOYMENT  dimension value (default: the host name)
 #   SUITE_PROBE_HOST      the host name whose certificate is measured (default: app.suite.run)
+#   AWS_REGION            region to publish to (default: us-east-2)
+#   AWS_PROFILE           profile to publish with (default: the ambient credentials)
 set -uo pipefail
 
 container=${SUITE_APP_CONTAINER:-suite-app-1}
@@ -27,6 +29,12 @@ container=${SUITE_APP_CONTAINER:-suite-app-1}
 deployment=${SUITE_LOG_DEPLOYMENT:-suite-app}
 namespace=Suite
 publish=1
+# Spelled out rather than inherited. A publish with no region resolves to the CLI's default,
+# which on a bare host is not the region this deployment lives in: the datapoint lands
+# somewhere nobody queries and the alarm reports INSUFFICIENT_DATA forever.
+region=${AWS_REGION:-us-east-2}
+aws_args=(--region "$region")
+if [ -n "${AWS_PROFILE:-}" ]; then aws_args+=(--profile "$AWS_PROFILE"); fi
 
 for arg in "$@"; do
   case "$arg" in
@@ -59,7 +67,7 @@ status=$?
 
 value=0
 [ "$status" -eq 0 ] && value=1
-aws cloudwatch put-metric-data \
+aws cloudwatch put-metric-data "${aws_args[@]}" \
   --namespace "$namespace" --metric-name Health --value "$value" --unit None \
   --dimensions "Deployment=$deployment" >/dev/null 2>&1 ||
   printf 'probe: CloudWatch refused the Health metric (value %s)\n' "$value" >&2
@@ -77,7 +85,7 @@ expiry=$(openssl s_client -connect 127.0.0.1:443 -servername "$probe_host" -veri
 if [ -n "$expiry" ]; then
   seconds=$(($(date -d "$expiry" +%s) - $(date +%s)))
   days=$((seconds / 86400))
-  aws cloudwatch put-metric-data \
+  aws cloudwatch put-metric-data "${aws_args[@]}" \
     --namespace "$namespace" --metric-name CertificateDays --value "$days" --unit Count \
     --dimensions "Deployment=$deployment" >/dev/null 2>&1 ||
     printf 'probe: CloudWatch refused the CertificateDays metric (%s days)\n' "$days" >&2

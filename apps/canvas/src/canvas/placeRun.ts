@@ -304,6 +304,16 @@ export function inferConnectors(input: {
   sourceBox: FacingBox;
   targetBox: FacingBox;
   overrides?: { source?: string | null; target?: string | null };
+  /**
+   * Where the line actually leaves the source, when the reader (or a fan's first
+   * spoke) has already chosen a port. The arrival dot then faces *that*, so a
+   * spoke leaving a card's right port arrives on the new card's left one even
+   * when the new card sits below the middle of the source.
+   *
+   * Omitted means "no port chosen yet": the source's centre is the reference,
+   * which is what a thread's next card and a one-off link have always used.
+   */
+  sourceAnchor?: { x: number; y: number } | null;
 }): InferredConnectors {
   const pick = (dots: readonly Connector[], chosen: string | null | undefined): Connector | null =>
     chosen === null || chosen === undefined
@@ -326,7 +336,7 @@ export function inferConnectors(input: {
       null,
     target:
       pick(input.targetDots, input.overrides?.target) ??
-      connectorToward(input.targetDots, input.targetBox, sourceCentre) ??
+      connectorToward(input.targetDots, input.targetBox, input.sourceAnchor ?? sourceCentre) ??
       null,
   };
 }

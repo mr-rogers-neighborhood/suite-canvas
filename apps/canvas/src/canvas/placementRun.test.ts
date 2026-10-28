@@ -41,6 +41,30 @@ describe("starting a run", () => {
 });
 
 describe("advancing a run", () => {
+  it("starts with no fan port, because the first spoke is what picks one", () => {
+    store().start(["a", "b"]);
+
+    expect(store().run?.originConnector).toBeNull();
+  });
+
+  it("keeps the fan port the first spoke chose for every spoke after it", () => {
+    store().start(["a", "b", "c", "d"]);
+    store().advance(cardStep("a"));
+    // The first spoke leaves the origin's right dot, so the run pins it.
+    store().advance(cardStep("b"), null, "dot-right");
+    store().advance(cardStep("c"));
+
+    expect(store().run?.originConnector).toBe("dot-right");
+  });
+
+  it("pins nothing when a step does not name a port", () => {
+    store().start(["a", "b", "c"]);
+    store().advance(cardStep("a"));
+    store().advance(cardStep("b"));
+
+    expect(store().run?.originConnector).toBeNull();
+  });
+
   it("sets the origin on the first placement and the anchor on every one", () => {
     store().start(["a", "b", "c"]);
 

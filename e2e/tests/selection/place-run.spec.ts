@@ -157,11 +157,15 @@ test("a fan is held too, and every spoke links to the first card", async ({ page
   await placeHeld(page, { dx: -200, dy: -60 });
   await placeHeld(page, { dx: 0, dy: -60 });
   await placeHeld(page, { dx: 200, dy: -60 });
+  // A fourth spoke below the hub: the case that used to leave from the origin's
+  // *bottom* dot, because the port was re-inferred from each new card's direction.
+  await placeHeld(page, { dx: 240, dy: 220 });
 
   await fitBoard(page);
-  await expect(cards(page)).toHaveCount(3);
-  await expect(edges(page)).toHaveCount(2);
-  // A fan of three from one origin is two lines, and both start at the first.
+  await expect(cards(page)).toHaveCount(4);
+  await expect(edges(page)).toHaveCount(3);
+  // A fan from one origin leaves the same port every time, whatever direction the
+  // spoke goes: four spokes, one departure point.
   const starts = await page.evaluate(() =>
     [...document.querySelectorAll<SVGPathElement>(".react-flow__edge-path")].map((path) => {
       const matrix = path.getScreenCTM();

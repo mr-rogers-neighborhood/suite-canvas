@@ -61,6 +61,16 @@ export interface PlacementRun {
    * grid measures from it.
    */
   originId: string | null;
+  /**
+   * The port on the origin a fan leaves from, once the first spoke has picked one.
+   *
+   * A fan is "connect that card to this one, then again, then again", so the spoke
+   * that *starts* the fan chooses the port and every spoke after it leaves the
+   * same one. Inferring the port per spoke drew lines out of whichever side faced
+   * the card just placed, which reads as a web of different origins rather than a
+   * fan from one (ADR-0061).
+   */
+  originConnector: string | null;
   /** The most recent placement: what a `thread` or `branch` continues from. */
   anchorId: string | null;
   /** The section this run created to frame itself, once it exists. */
@@ -90,8 +100,11 @@ interface PlacementRunState {
   /**
    * Record the step just placed. The caller has already written the placements
    * and the link in one commit.
+   *
+   * `originConnector` is what the step's line left from, so the first spoke of a
+   * fan pins the port every later spoke uses. Absent keeps whatever the run holds.
    */
-  advance: (step: RunStep, sectionId?: string | null) => void;
+  advance: (step: RunStep, sectionId?: string | null, originConnector?: string | null) => void;
   /** Drop the head of the queue without placing it. */
   skip: () => void;
   /**
@@ -152,6 +165,7 @@ export const usePlacementRunStore = create<PlacementRunState>((set, get) => ({
       queue: trimmed,
       placed: [],
       originId: null,
+      originConnector: null,
       anchorId: null,
       sectionId: null,
       wrap: options.wrap === true,
@@ -165,7 +179,7 @@ export const usePlacementRunStore = create<PlacementRunState>((set, get) => ({
       suspended: current ? [...get().suspended, current] : get().suspended,
     });
   },
-  advance: (step, sectionId = null) => {
+  advance: (step, sectionId = null, originConnector) => {
     const run = get().run;
     if (!run) return;
     const placed = [...run.placed];
@@ -187,6 +201,7 @@ export const usePlacementRunStore = create<PlacementRunState>((set, get) => ({
             queue,
             placed,
             originId: first,
+            originConnector: originConnector ?? run.originConnector,
             anchorId: anchor,
             sectionId: sectionId ?? run.sectionId,
           },

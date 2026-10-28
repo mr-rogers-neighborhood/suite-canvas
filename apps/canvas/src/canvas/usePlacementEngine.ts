@@ -1,3 +1,4 @@
+import type { Connector } from "@suite/graph";
 import { useReactFlow } from "@xyflow/react";
 import { useCallback } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
@@ -26,6 +27,49 @@ import {
  * steers one, and the canvas owns the camera the first card lands in. It reads
  * the stores itself so a caller cannot forget to pass the document or the mode.
  */
+/**
+ * A dot's point in flow space: the box it belongs to, and the fraction of that box
+ * it sits at.
+ *
+ * A fan pins the port its first spoke left from and every later spoke leaves the
+ * same one, so the arrival dot has to be aimed at *that point* rather than at the
+ * origin's centre — otherwise a spoke placed below the middle of the hub arrives
+ * on its top edge while the line leaves its right one.
+ */
+/**
+ * The port a step's line leaves from.
+ *
+ * A dot the reader picked by hand wins, because that is a decision. Otherwise a
+ * fan uses the port its own first spoke chose — the one the run pinned — and a
+ * thread has no pinned port at all: its tail *is* where the next line starts, so
+ * inference is the only honest answer there.
+ */
+function chosenSource(
+  run: { originConnector: string | null },
+  from: "origin" | "anchor",
+  step: RunStep,
+): string | null {
+  const picked = step.overrides?.source ?? null;
+  if (picked !== null) return picked;
+  return from === "origin" ? run.originConnector : null;
+}
+
+/** The dot with this id, when the card still has it. */
+function sourceDotOf(
+  dots: readonly Connector[] | undefined,
+  id: string | null,
+): Connector | undefined {
+  return id === null ? undefined : dots?.find((dot) => dot.id === id);
+}
+
+function dotPoint(
+  box: { x: number; y: number; width: number; height: number },
+  dot: Connector | undefined,
+): { x: number; y: number } | null {
+  if (!dot) return null;
+  return { x: box.x + dot.x * box.width, y: box.y + dot.y * box.height };
+}
+
 export interface PlacementEngine {
   /**
    * Place the next step at the planner's position — the arrangement reading, and
@@ -171,9 +215,19 @@ export function usePlacementEngine(): PlacementEngine {
         sourceBox: anchorBox,
         targetBox: headBox,
         overrides: {
-          source: next.overrides?.source ?? null,
+          // A fan's port is decided by its first spoke and pinned on the run, so the
+          // preview shows the same departure for every spoke instead of a different
+          // side each time the pointer moves.
+          source: chosenSource(run, plan.planned.link.from, next),
           target: next.overrides?.target ?? null,
         },
+        sourceAnchor: dotPoint(
+          anchorBox,
+          sourceDotOf(
+            workspace.getCard(plan.linkFrom.cardId)?.connectors,
+            chosenSource(run, plan.planned.link.from, next),
+          ),
+        ),
       });
       return {
         anchorId: plan.linkFrom.cardId,
@@ -202,6 +256,8 @@ export function usePlacementEngine(): PlacementEngine {
       }
 
       let sectionId: string | null = run.sectionId;
+      // What the fan's next spoke leaves from, once this step has picked a port.
+      let pinnedConnector: string | null = null;
       // One batch: a step's placements, its one line and its section are one undo. A
       // run of `n` steps is `n` undo steps, which is what makes interrupting one safe
       // (ADR-0063 §5).
@@ -225,15 +281,19 @@ export function usePlacementEngine(): PlacementEngine {
             };
             // One inference, shared with the preview, so what the reader saw while
             // holding the card is what gets written (ADR-0061 third amendment).
+            const from = plan.planned.link.from;
+            const chosen = chosenSource(run, from, next);
+            const sourceDots = workspace.getCard(plan.linkFrom.cardId)?.connectors ?? [];
             const dots = inferConnectors({
-              sourceDots: workspace.getCard(plan.linkFrom.cardId)?.connectors ?? [],
+              sourceDots,
               targetDots: workspace.getCard(plan.head)?.connectors ?? [],
               sourceBox: anchorBox,
               targetBox: headBox,
               overrides: {
-                source: next.overrides?.source ?? null,
+                source: chosen,
                 target: next.overrides?.target ?? null,
               },
+              sourceAnchor: dotPoint(anchorBox, sourceDotOf(sourceDots, chosen)),
             });
             workspace.addEdge({
               boardId: activeBoardId,
@@ -242,6 +302,9 @@ export function usePlacementEngine(): PlacementEngine {
               ...(dots.source ? { sourceConnector: dots.source.id } : {}),
               ...(dots.target ? { targetConnector: dots.target.id } : {}),
             });
+            // The first spoke of a fan decides the port the rest leave from; a
+            // thread keeps moving its tail, so it pins nothing.
+            if (from === "origin") pinnedConnector = dots.source?.id ?? null;
           }
         }
         if (run.wrap) {
@@ -273,7 +336,7 @@ export function usePlacementEngine(): PlacementEngine {
           }
         }
       });
-      usePlacementRunStore.getState().advance(next, sectionId);
+      usePlacementRunStore.getState().advance(next, sectionId, pinnedConnector);
     },
     [activeBoardId, canEditLayout, planStep, workspace],
   );

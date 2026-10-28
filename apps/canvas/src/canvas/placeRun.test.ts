@@ -328,6 +328,50 @@ describe("inferConnectors: geometry proposes, the reader disposes", () => {
     expect(pair.source?.id).toBe("bottom");
   });
 
+  it("aims the arrival dot at the port the line leaves, not at the card's centre", () => {
+    // A fan pins the port its first spoke left from. The second spoke goes below the
+    // hub, but its line still leaves the *right* dot — so the arrival dot has to face
+    // that dot's point, or the line would leave one side and arrive on the other.
+    const pair = inferConnectors({
+      sourceDots: dots,
+      targetDots: dots,
+      sourceBox,
+      targetBox,
+      overrides: { source: "right" },
+      sourceAnchor: { x: 200, y: 50 },
+    });
+
+    expect(pair.source?.id).toBe("right");
+    // Facing a point level with the source's middle, the nearest dot of a box below
+    // is still its top one: the port answers "which side", the box answers "how far".
+    expect(pair.target?.id).toBe("top");
+  });
+
+  it("moves the arrival dot when the port moves, which is the whole point", () => {
+    // A card below and to the left, where the answer depends on where the line
+    // leaves. Measured from the source's centre the arrival side is the top; measured
+    // from the source's *right* port, that port is the far side of the target, so the
+    // arrival side becomes the right one. A fan pins one port, so every spoke obeys
+    // the same reference instead of drifting spoke by spoke.
+    const belowLeft = { x: -400, y: 400, width: 200, height: 100 };
+    const fromCentre = inferConnectors({
+      sourceDots: dots,
+      targetDots: dots,
+      sourceBox,
+      targetBox: belowLeft,
+    });
+    const fromRightPort = inferConnectors({
+      sourceDots: dots,
+      targetDots: dots,
+      sourceBox,
+      targetBox: belowLeft,
+      sourceAnchor: { x: 200, y: 50 },
+    });
+
+    expect(fromCentre.target?.id).toBe("top");
+    expect(fromRightPort.target?.id).toBe("right");
+  });
+
   it("answers nulls for cards with no dots, rather than inventing one", () => {
     const pair = inferConnectors({
       sourceDots: [],

@@ -18,7 +18,10 @@
 #   deploy/deploy.sh --allow-dirty      build a checkout with uncommitted changes
 #
 # Environment:
-#   SUITE_COMPOSE_FILE      compose file (default: compose.yaml at the repo root)
+#   SUITE_COMPOSE_FILE      compose file, or several joined by `:` (default: compose.yaml
+#                           at the repo root). A host that logs to CloudWatch passes
+#                           `compose.yaml:deploy/compose.aws.yaml`, and compose merges them
+#                           the way `docker compose -f a -f b` does.
 #   SUITE_BACKUP_ENV        env file read by deploy/backup.sh (default: /etc/suite/backup.env)
 #   SUITE_BACKUP_DIR        snapshot destination (default: /srv/backups)
 #
@@ -67,10 +70,19 @@ done
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 
-compose_file=${SUITE_COMPOSE_FILE:-compose.yaml}
-[ -f "$compose_file" ] || die "no $compose_file in $root"
+# No `-f` by default, so compose applies its own resolution and a host that sets
+# `COMPOSE_FILE` in `.env` (an overlay for CloudWatch logs, say) keeps it here too.
+compose_args=()
+if [ -n "${SUITE_COMPOSE_FILE:-}" ]; then
+  IFS=: read -r -a listed <<<"$SUITE_COMPOSE_FILE"
+  for file in "${listed[@]}"; do
+    [ -f "$file" ] || die "no $file in $root"
+    compose_args+=(-f "$file")
+  done
+  unset listed
+fi
 command -v docker >/dev/null 2>&1 || die "docker is not installed"
-compose() { docker compose -f "$compose_file" "$@"; }
+compose() { docker compose "${compose_args[@]}" "$@"; }
 
 app_container() { compose ps -q app 2>/dev/null | head -n1; }
 
@@ -122,7 +134,7 @@ restart_app() {
   local image=$1
   docker image inspect "$image" >/dev/null 2>&1 ||
     die "$image is not on this host; --list shows what is"
-  SUITE_IMAGE=$image docker compose -f "$compose_file" up -d --no-build app
+  SUITE_IMAGE=$image compose up -d --no-build app
 }
 
 if [ "$list" = 1 ]; then

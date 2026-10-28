@@ -365,6 +365,15 @@ and prints the rollback command.
 cd /srv/suite && git fetch --tags && git checkout v1.1.1 && deploy/deploy.sh
 ```
 
+A host that writes its logs to CloudWatch carries a second compose file, and every `docker compose`
+command on that host has to name it. Put it in `.env` once, and `docker compose` and `deploy/deploy.sh`
+both read it from there:
+
+```sh
+# .env
+COMPOSE_FILE=compose.yaml:deploy/compose.aws.yaml
+```
+
 `app` is the only image `deploy/deploy.sh` builds, because it is the only one that changes every
 release. When the control plane changed too, rebuild it and include it in the restart:
 

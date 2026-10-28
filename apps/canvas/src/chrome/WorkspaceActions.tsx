@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { credentialAuthorization } from "../auth/credential";
 import { DeleteWorkspaceDialog } from "../dialogs/DeleteWorkspaceDialog";
 import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
+import { SupportAccessDialog } from "../dialogs/SupportAccessDialog";
 import { useCardTitle } from "../hooks/useCardContainers";
 import { importVaultIntoWorkspace, vaultFilesFromPicker } from "../launcher/vaultImport";
 import { readVaultZip } from "../launcher/vaultZip";
@@ -65,6 +66,7 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
   const [shareScope, setShareScope] = useState<ShareScope>("workspace");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const picker = useRef<HTMLInputElement | null>(null);
@@ -318,6 +320,23 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
                 </button>
               </>
             ) : null}
+            {/* Account-level, but this menu is the only signed-in surface the app
+                has: the consent an operator needs in order to help lives here until
+                there is an account page to hold it. */}
+            {import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="workspace-support-access"
+                className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setSupportOpen(true);
+                }}
+              >
+                Support access…
+              </button>
+            ) : null}
             <hr className="my-1 border-[var(--hairline)]" />
             <button
               type="button"
@@ -387,6 +406,7 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
           {notice}
         </span>
       ) : null}
+      {supportOpen ? <SupportAccessDialog onClose={() => setSupportOpen(false)} /> : null}
       {canSaveTemplate && templateOpen ? (
         <SaveTemplateDialog
           workspace={workspace}

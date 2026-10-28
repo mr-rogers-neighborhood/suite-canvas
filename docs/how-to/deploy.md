@@ -504,6 +504,27 @@ An address that is not on the list gets `403 forbidden` and a sentence saying so
 is the honest answer rather than a lockout: the panel tells the reader their address
 needs adding.
 
+## Support access and impersonation
+
+The Accounts tab opens a support session: the operator becomes the account, sees what it
+sees, and stops when they are done. It is gated on consent the account itself gave, not on
+the operator's role.
+
+| Fact | Where it lives |
+| --- | --- |
+| Who may start one | `SUITE_ADMIN_EMAILS`, read per request |
+| Whether it exists at all | the `flags.impersonation` settings row, on by default |
+| Consent | the `operator_support_grants` table, written from the account's own session |
+| The second factor | required: the admin plugin refuses an impersonation for an account without 2FA |
+
+The account turns consent on from **Support access…** in the app's File menu, and can turn
+it off there without asking anyone. The operator sees the grant in the Accounts list and
+may only *end* it; a request that tries to grant it is refused with `consent-is-the-accounts`,
+because a permission the operator can give themselves is not consent.
+
+Turning the flag off is the deployment-wide switch: set `flags.impersonation` to off in
+Settings and every impersonation request answers 403, grant or no grant, without a restart.
+
 `SUITE_APP_URL` is where the admission notice sends someone. Unset admits without sending one.
 
 A held account is not broken: it can sign in, edit, import and export on its own device. What it cannot

@@ -395,3 +395,55 @@ export async function resetSetting(key: string, organizationId?: string | null):
   const query = organizationId ? `?organization=${encode(organizationId)}` : "";
   await requestUrl(`${SETTINGS_BASE}/${encode(key)}${query}`, { method: "DELETE" });
 }
+
+/**
+ * People and support access, on the control plane beside the settings.
+ *
+ * Impersonation is a cookie exchange, not a token: the account service sets the target's
+ * session cookie and keeps the operator's as `admin_session`, so the browser becomes the
+ * account and `stop` puts it back. Nothing about that exchange is held here.
+ */
+const ACCOUNTS_BASE = `${authServiceBase()}/admin/accounts`;
+const ACCOUNT_BASE = `${authServiceBase()}/api/account`;
+
+export interface SupportAccess {
+  granted: boolean;
+  grantedAt: number | null;
+  revokedAt: number | null;
+}
+
+export interface AdminAccount {
+  id: string;
+  email: string;
+  name: string | null;
+  role: string | null;
+  createdAt: string | null;
+  twoFactorEnabled: boolean;
+  supportAccess: SupportAccess;
+}
+
+export function listAccounts(query: string): Promise<{ ok: boolean; accounts: AdminAccount[] }> {
+  const term = query.trim();
+  return requestUrl(`${ACCOUNTS_BASE}${term.length === 0 ? "" : `?q=${encode(term)}`}`);
+}
+
+/** Ends support access. Only the account can start it. */
+export async function revokeSupportAccess(accountId: string): Promise<void> {
+  await requestUrl(`${ACCOUNTS_BASE}/${encode(accountId)}/support-access`, {
+    method: "PUT",
+    body: JSON.stringify({ granted: false }),
+  });
+}
+
+/** Starts an impersonation; the browser's own cookies are what change. */
+export async function impersonate(accountId: string): Promise<void> {
+  await requestUrl(`${ACCOUNT_BASE}/impersonate`, {
+    method: "POST",
+    body: JSON.stringify({ userId: accountId }),
+  });
+}
+
+/** Puts the operator's own session back. */
+export async function stopImpersonating(): Promise<void> {
+  await requestUrl(`${ACCOUNT_BASE}/stop-impersonating`, { method: "POST" });
+}

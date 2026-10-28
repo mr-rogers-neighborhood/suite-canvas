@@ -12,11 +12,13 @@ import {
   type WorkspaceDataErasure,
   type WorkspaceDataStore,
 } from "@suite/auth";
-import { envWithSettings } from "@suite/settings";
+import { envWithSettings, resolveSetting } from "@suite/settings";
+import { Pool } from "pg";
 import { createLogger, type Logger } from "../logging.js";
 import type { RouteModule } from "../routes.js";
 import { composeBilling } from "./auth-billing.js";
-import { publishSessionReader } from "./context.js";
+import { publishSessionReader, sessionReader } from "./context.js";
+import { createGrantStore, type GrantStore } from "./grants.js";
 import { readStoredSettings } from "./settings.js";
 
 /**
@@ -64,6 +66,11 @@ const AUTH_PREFIX = "/api/auth";
 
 /** The account-side routes that are ours rather than Better Auth's. */
 const ACCOUNT_PATHS: readonly string[] = [
+  // Support access and impersonation, which are ours: the plugin owns the mechanism and
+  // this module owns the consent gate, the flag and the audit line.
+  "/api/account/support-access",
+  "/api/account/impersonate",
+  "/api/account/stop-impersonating",
   "/api/workspaces/claim",
   "/api/invites/redeem",
   "/api/account",
@@ -86,6 +93,11 @@ export interface AuthModuleOptions {
    * transport; a test passes a fake entry so nothing opens a socket.
    */
   boot?: (env: AuthEnvironment) => Promise<AuthEntry>;
+  /**
+   * The support-grant store. The default opens a pool on the auth database; a test passes
+   * a memory store so the consent gate is exercised without a server.
+   */
+  grants?: GrantStore;
   logger?: Logger;
 }
 
@@ -174,6 +186,39 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
   const boot = options.boot ?? defaultBoot(logger, source);
   const enabled = authEnabled(env);
 
+  /**
+   * The support grants, and the flag that says whether impersonation exists at all.
+   *
+   * The flag is a settings row an operator can turn off, read from the environment the boot
+   * composed: with it off, the route refuses before it looks at a grant, so a deployment
+   * that never wants this can say so once.
+   */
+  let store: GrantStore | null = options.grants ?? null;
+  const grants = (): GrantStore => {
+    store ??= createGrantStore(
+      new Pool({
+        connectionString:
+          env.SUITE_AUTH_DATABASE_URL ?? source.SUITE_CONTROL_PLANE_DATABASE_URL ?? "",
+        max: 1,
+      }),
+    );
+    return store;
+  };
+  /**
+   * Whether impersonation exists on this deployment, from the settings row.
+   *
+   * The row is read per request so an operator turning it off takes effect without a
+   * restart, and a failed read is "on": the flag is a refusal switch, and the grant is
+   * still the consent either way. `flags.impersonation` defaults to on in the registry.
+   */
+  const impersonationFlag = async (): Promise<"on" | "off"> => {
+    const rows = await readStoredSettings(
+      env.SUITE_AUTH_DATABASE_URL ?? source.SUITE_CONTROL_PLANE_DATABASE_URL ?? "",
+    ).catch(() => []);
+    const resolved = resolveSetting({ key: "flags.impersonation", rows });
+    return resolved === null || resolved.value !== false ? "on" : "off";
+  };
+
   // One boot per process: the first request migrates and composes, every later one
   // reuses it. A failed boot clears the memo so the next request retries — a control
   // plane that started before Postgres came up should not stay broken.
@@ -181,7 +226,13 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
   let http: ReturnType<typeof createAuthHandler> | null = null;
 
   function service(): Promise<AuthEntry> {
-    booting ??= boot(env).catch((error: unknown) => {
+    booting ??= boot(env).then((entry) => {
+      // Published here rather than in the default boot: the operator routes have to ask
+      // this same instance who is calling, whichever boot a deployment passed in.
+      publishSessionReader(entry.sessions.sessionFor);
+      return entry;
+    });
+    booting = booting.catch((error: unknown) => {
       booting = null;
       throw error;
     });
@@ -239,6 +290,211 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
       redirect: "manual",
     });
     await writeResponse(response, await entry.handler(outbound));
+  }
+
+  /**
+   * The account's own view of its support grant.
+   *
+   * This is the whole consent surface: the account reads whether support access is on,
+   * turns it on, and turns it off again. It never names an operator, so the permission is
+   * "support may look while this is on", not a standing relationship with a person.
+   */
+  async function handleSupportAccess(
+    request: IncomingMessage,
+    response: ServerResponse,
+    path: string,
+  ): Promise<boolean> {
+    if (path !== "/api/account/support-access") return false;
+
+    const cookies = typeof request.headers.cookie === "string" ? request.headers.cookie : "";
+    const session = await sessionReader()?.({ cookie: cookies });
+    if (!session) {
+      sendJson(response, 401, {
+        ok: false,
+        error: "unauthorized",
+        message: "sign in to change your support access",
+      });
+      return true;
+    }
+
+    const method = request.method ?? "GET";
+    if (method !== "GET" && method !== "PUT" && method !== "DELETE") {
+      sendJson(response, 405, { error: "method-not-allowed", requestId: requestIdOf(request) });
+      return true;
+    }
+    if (method === "PUT") await grants().grant(session.userId);
+    if (method === "DELETE") await grants().revoke(session.userId);
+
+    const grant = await grants().get(session.userId);
+    if (method !== "GET") {
+      logger.info("support access changed", {
+        account: session.userId,
+        granted: method === "PUT",
+      });
+    }
+    sendJson(response, 200, {
+      ok: true,
+      granted: grant !== null && grant.revokedAt === null,
+      grantedAt: grant?.grantedAt ?? null,
+      revokedAt: grant?.revokedAt ?? null,
+    });
+    return true;
+  }
+
+  /**
+   * Impersonation, gated on consent this deployment actually holds.
+   *
+   * Three refusals, each a different fact: not signed in, not an operator, and no live
+   * support grant from the account. The plugin's own endpoints do the work — they set the
+   * target's session cookie and keep the operator's beside it — so the browser becomes the
+   * account with no second identity system, and `stop-impersonating` puts it back.
+   *
+   * The grant is the consent, the audit line is the record, and the account is told: the
+   * panel shows the banner and the grant row shows who allowed it and when.
+   */
+  async function handleImpersonation(
+    request: IncomingMessage,
+    response: ServerResponse,
+    entry: AuthEntry,
+    path: string,
+  ): Promise<boolean> {
+    const impersonate = path === "/api/account/impersonate";
+    const stop = path === "/api/account/stop-impersonating";
+    if (!impersonate && !stop) return false;
+    if (request.method !== "POST") {
+      sendJson(response, 405, { error: "method-not-allowed", requestId: requestIdOf(request) });
+      return true;
+    }
+
+    const cookies = typeof request.headers.cookie === "string" ? request.headers.cookie : "";
+    const session = await sessionReader()?.({ cookie: cookies });
+    if (!session) {
+      sendJson(response, 401, {
+        ok: false,
+        error: "unauthorized",
+        message: "sign in to use the operator surface",
+      });
+      return true;
+    }
+
+    if (stop) {
+      await relayCookies(
+        await pluginCall(entry, "/api/auth/admin/stop-impersonating", cookies),
+        response,
+      );
+      return true;
+    }
+
+    if (!session.operator) {
+      sendJson(response, 403, {
+        ok: false,
+        error: "forbidden",
+        message: "this account is not an operator on this deployment",
+      });
+      return true;
+    }
+    if ((await impersonationFlag()) !== "on") {
+      sendJson(response, 403, {
+        ok: false,
+        error: "impersonation-off",
+        message: "the flags.impersonation setting is off on this deployment",
+      });
+      return true;
+    }
+
+    const read = await bodyOf(request);
+    if (!read.ok) {
+      sendJson(response, 413, { error: "payload_too_large", requestId: requestIdOf(request) });
+      return true;
+    }
+    // `bodyOf` hands back the raw text; a body that is not JSON is a caller error here,
+    // not a refusal from the plugin.
+    let body: { userId?: unknown } | null = null;
+    try {
+      body = read.body === null ? null : (JSON.parse(read.body) as { userId?: unknown });
+    } catch {
+      body = null;
+    }
+    const userId = typeof body?.userId === "string" ? body.userId.trim() : "";
+    if (userId.length === 0) {
+      sendJson(response, 400, { ok: false, error: "invalid-body", message: "expected { userId }" });
+      return true;
+    }
+    if (userId === session.userId) {
+      sendJson(response, 400, {
+        ok: false,
+        error: "self-impersonation",
+        message: "you are already yourself",
+      });
+      return true;
+    }
+
+    const granted = await grants().active(userId);
+    if (!granted) {
+      sendJson(response, 403, {
+        ok: false,
+        error: "no-support-grant",
+        message:
+          "this account has not allowed support access; it has to turn that on from its own account settings",
+      });
+      return true;
+    }
+
+    const answered = await pluginCall(entry, "/api/auth/admin/impersonate-user", cookies, {
+      userId,
+    });
+    logger.warn("operator impersonation started", {
+      actor: session.userId,
+      target: userId,
+      result: answered.ok ? "started" : "refused",
+    });
+    await relayCookies(answered, response);
+    return true;
+  }
+
+  /**
+   * One call to the plugin's own endpoint, as the browser would make it.
+   *
+   * The admin plugin publishes `impersonate-user` and `stop-impersonating` under
+   * `/api/auth/admin/*`; calling them through the entry's handler means this module uses
+   * the same path a client would, and the plugin stays the owner of the mechanism.
+   */
+  async function pluginCall(
+    entry: AuthEntry,
+    path: string,
+    cookies: string,
+    body?: unknown,
+  ): Promise<Response> {
+    const origin = (env.SUITE_AUTH_URL ?? "http://localhost").replace(/\/$/, "");
+    return entry.handler(
+      new Request(`${origin}${path}`, {
+        method: "POST",
+        headers: {
+          origin,
+          ...(cookies.length === 0 ? {} : { cookie: cookies }),
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      }),
+    );
+  }
+
+  /**
+   * Hands the browser the cookies the plugin set.
+   *
+   * `Set-Cookie` cannot be copied through a plain header map: the response needs every one
+   * of them, in order, because impersonation deletes the operator's `session_token`, keeps
+   * it as `admin_session` and sets the target's own.
+   */
+  async function relayCookies(answered: Response, response: ServerResponse): Promise<void> {
+    const cookies = answered.headers.getSetCookie?.() ?? [];
+    const body = await answered.text();
+    for (const cookie of cookies) response.appendHeader?.("set-cookie", cookie);
+    if (typeof response.appendHeader !== "function") {
+      response.setHeader("set-cookie", cookies);
+    }
+    response.writeHead(answered.status, { "content-type": "application/json" });
+    response.end(body);
   }
 
   async function handleAccount(
@@ -315,6 +571,8 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
       }
 
       if (ownsAuth) await handleAuth(request, response, entry);
+      else if (await handleSupportAccess(request, response, path)) return true;
+      else if (await handleImpersonation(request, response, entry, path)) return true;
       else await handleAccount(request, response, entry);
       return true;
     },
@@ -480,11 +738,6 @@ function defaultBoot(logger: Logger, source: Readonly<Record<string, string | un
         : { entitlements: billing.entitlements, billingPlugin: billing.plugin }),
       ...(workspaceData === null ? {} : { workspaceData }),
     });
-    // The operator routes have to ask this same instance who is calling, and the
-    // loader hands a module no arguments. Publishing the reader is the one fact two
-    // modules share (`modules/context.ts`), and it is published here rather than read
-    // from the environment so a deployment cannot end up with two identity stacks.
-    publishSessionReader(entry.sessions.sessionFor);
     if (billing === null) return entry;
     return {
       ...entry,

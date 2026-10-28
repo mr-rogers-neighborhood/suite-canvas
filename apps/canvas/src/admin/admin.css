@@ -637,3 +637,9 @@ code {
   background: rgba(244, 63, 94, 0.12);
   font-size: 12px;
 }
+
+/* The impersonation banner pairs a sentence with the way out of it. */
+.admin-warning [class*="admin-button"] {
+  margin-left: 10px;
+  vertical-align: middle;
+}

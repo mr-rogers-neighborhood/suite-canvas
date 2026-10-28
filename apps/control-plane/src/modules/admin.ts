@@ -37,6 +37,9 @@ import { sessionReader } from "./context.js";
 export const OPERATOR_EMAILS_VARIABLE = "SUITE_ADMIN_EMAILS";
 export const ADMISSIONS_PATH = "/admin/admissions";
 
+/** The operator's people list, and the one thing it may change: a support grant it revokes. */
+export const ACCOUNTS_PATH = "/admin/accounts";
+
 /** The launcher's list, readable without a token. */
 export const TEMPLATES_PATH = "/api/templates";
 /** The same list, plus writing, behind the token. One template is `/admin/templates/:id`. */
@@ -45,12 +48,55 @@ export const ADMIN_TEMPLATES_PATH = "/admin/templates";
 /** Where an admitted person is told to go. Defaults to the app origin for this deployment. */
 export const APP_URL_VARIABLE = "SUITE_APP_URL";
 
+/** One row of the people list, as the query above returns it. */
+interface AccountRow {
+  id: string;
+  email: string;
+  name: string | null;
+  role: string | null;
+  createdAt: string | Date | null;
+  twoFactorEnabled: boolean | null;
+  granted_at: string | number | null;
+  revoked_at: string | number | null;
+}
+
 export interface AdminModuleOptions {
   env: ConfigEnv;
   logger: Logger;
   /** The pool is injectable so a test drives the SQL against a stub, not a server. */
   pool?: Pick<Pool, "query"> | undefined;
 }
+
+/**
+ * The people list: what the panel needs to offer impersonation and to end it.
+ *
+ * The grant columns ride along with the account, so one query answers "who is this and may
+ * support look in right now". `$1` is the search term; an empty one lists everyone.
+ */
+const ACCOUNTS_SQL = `
+  SELECT u.id, u.email, u.name, u.role, u."createdAt", u."twoFactorEnabled",
+         g.granted_at, g.revoked_at
+  FROM "user" u
+  LEFT JOIN operator_support_grants g ON g.user_id = u.id
+  WHERE $1 = '' OR u.email ILIKE '%' || $1 || '%' OR COALESCE(u.name, '') ILIKE '%' || $1 || '%'
+  ORDER BY u."createdAt" DESC
+  LIMIT 50
+`;
+
+/** Kept beside the query it serves: the panel may not assume the grants table exists. */
+const GRANTS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS operator_support_grants (
+    user_id TEXT PRIMARY KEY,
+    granted_at BIGINT NOT NULL,
+    revoked_at BIGINT
+  )
+`;
+
+const REVOKE_GRANT_SQL = `
+  UPDATE operator_support_grants
+  SET revoked_at = $2
+  WHERE user_id = $1 AND revoked_at IS NULL
+`;
 
 const PENDING_SQL = `
   SELECT email, name, "createdAt"
@@ -580,21 +626,112 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
    * with `null`; a path whose percent-encoding does not decode is a caller error, so the
    * refusal is written here and `undefined` comes back.
    */
-  const pathIdOf = (path: string, response: ServerResponse): string | null | undefined => {
+  const pathIdOf = (
+    path: string,
+    response: ServerResponse,
+    base: string = ADMIN_TEMPLATES_PATH,
+    noun = "template",
+  ): string | null | undefined => {
     let id: string;
     try {
-      id = decodeURIComponent(path.slice(ADMIN_TEMPLATES_PATH.length + 1));
+      id = decodeURIComponent(path.slice(base.length + 1));
     } catch {
       refuse(
         response,
         400,
         "invalid-request",
-        "the template id in the path is not valid URL encoding",
+        `the ${noun} id in the path is not valid URL encoding`,
       );
       return undefined;
     }
     if (id.length === 0 || id.includes("/")) return null;
     return id;
+  };
+
+  /**
+   * The people list. Reading it is what lets the operator pick a target; it carries no
+   * workspace content, and the grant columns say who has already allowed support in.
+   */
+  const listAccounts = async (request: IncomingMessage, response: ServerResponse) => {
+    const query = new URL(request.url ?? "/", "http://localhost").searchParams.get("q") ?? "";
+    try {
+      await database().query(GRANTS_TABLE_SQL);
+      const result = await database().query(ACCOUNTS_SQL, [query.trim()]);
+      sendJson(response, 200, {
+        ok: true,
+        accounts: (result.rows as AccountRow[]).map((row) => ({
+          id: row.id,
+          email: row.email,
+          name: row.name,
+          role: row.role,
+          createdAt: row.createdAt,
+          twoFactorEnabled: row.twoFactorEnabled === true,
+          supportAccess: {
+            granted: row.granted_at !== null && row.revoked_at === null,
+            grantedAt: row.granted_at === null ? null : Number(row.granted_at),
+            revokedAt: row.revoked_at === null ? null : Number(row.revoked_at),
+          },
+        })),
+      });
+    } catch (error) {
+      logger.error("the people list did not read", { error: messageOf(error) });
+      refuse(response, 500, "accounts-unavailable", "the people list could not be read");
+    }
+  };
+
+  /**
+   * Ending support access. The operator may only take it away: granting is the account's
+   * own act, and a panel that could grant it would make the consent a formality.
+   */
+  const revokeSupportAccess = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    id: string,
+  ) => {
+    const body = await readJsonBody(request, MAX_TEMPLATE_BODY_BYTES).catch(() => null);
+    const parsed = body?.isOk() === true ? (body.value as { granted?: unknown }) : null;
+    if (parsed?.granted === true) {
+      refuse(
+        response,
+        403,
+        "consent-is-the-accounts",
+        "support access is granted by the account itself, from its own settings",
+      );
+      return;
+    }
+    try {
+      await database().query(GRANTS_TABLE_SQL);
+      await database().query(REVOKE_GRANT_SQL, [id, Date.now()]);
+      logger.info("support access revoked by an operator", { account: id });
+      sendJson(response, 200, { ok: true, granted: false });
+    } catch (error) {
+      logger.error("the support grant did not revoke", { error: messageOf(error) });
+      refuse(response, 500, "grant-unavailable", "the support grant could not be revoked");
+    }
+  };
+
+  /**
+   * The account named by `/admin/accounts/<id>/support-access`.
+   *
+   * `null` is "not this route"; `undefined` is a malformed id, already refused.
+   */
+  const supportAccessId = (path: string, response: ServerResponse): string | null | undefined => {
+    const prefix = `${ACCOUNTS_PATH}/`;
+    if (!path.startsWith(prefix)) return null;
+    const [segment, ...rest] = path.slice(prefix.length).split("/");
+    if (segment === undefined || segment.length === 0) return null;
+    if (rest.join("/") !== "support-access") return null;
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      refuse(
+        response,
+        400,
+        "invalid-request",
+        "the account id in the path is not valid URL encoding",
+      );
+      return undefined;
+    }
   };
 
   return {
@@ -618,6 +755,24 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
           return true;
         }
         await listTemplates(request, response, true);
+        return true;
+      }
+
+      const isAccounts = path === ACCOUNTS_PATH || path.startsWith(`${ACCOUNTS_PATH}/`);
+      if (isAccounts) {
+        if (!(await operatorGate(request, response))) return true;
+        if (!storageGate(response)) return true;
+        const method = methodOf(request);
+        if (path === ACCOUNTS_PATH) {
+          if (method === "GET") await listAccounts(request, response);
+          else methodNotAllowed(response, "GET", method);
+          return true;
+        }
+        const id = supportAccessId(path, response);
+        if (id === undefined) return true;
+        if (id === null) return false;
+        if (method === "PUT") await revokeSupportAccess(request, response, id);
+        else methodNotAllowed(response, "PUT", method);
         return true;
       }
 

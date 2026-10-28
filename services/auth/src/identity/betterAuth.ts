@@ -72,6 +72,13 @@ export type AuthDatabase = NonNullable<Parameters<typeof betterAuth>[0]["databas
 type HookRefusal = Error & { status?: string; body?: unknown };
 
 export interface AuthServiceDeps {
+  /**
+   * Plugins only a test instance registers, such as `testUtils()`.
+   *
+   * A seam rather than a switch: production deps never set it, so a privileged helper
+   * cannot reach a deployed instance by accident.
+   */
+  extraPlugins?: readonly unknown[] | undefined;
   env: AuthEnvironment;
   /** Better Auth adapter: the memory adapter in tests, Postgres in production. */
   database: AuthDatabase;
@@ -126,8 +133,25 @@ export interface AuthServiceDeps {
 export interface AuthInstance {
   api: {
     getSession: (input: { headers: Headers }) => Promise<AuthSessionPayload | null>;
+    /**
+     * Impersonation, from the admin plugin (ADR-0068 §7).
+     *
+     * The plugin's own endpoints, called server-side with the operator's headers:
+     * `asResponse` gives the `Set-Cookie` the browser needs to become the target, which is
+     * the whole mechanism — there is no token to mint and no second identity stack. The
+     * consent gate is ours and lives in the route that calls this, because the plugin only
+     * knows the account is an admin.
+     */
+    impersonateUser: (input: {
+      body: { userId: string };
+      headers: Headers;
+      asResponse: true;
+    }) => Promise<Response>;
+    stopImpersonating: (input: { headers: Headers; asResponse: true }) => Promise<Response>;
   };
   handler: (request: Request) => Promise<Response>;
+  /** The plugin context, where `testUtils()` attaches its helpers. */
+  $context?: Promise<unknown>;
 }
 
 interface AuthSessionPayload {
@@ -469,6 +493,9 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
       // webhook on this instance, under `/api/auth/*`; absent, the deployment simply
       // has no way to pay. Nothing in this package imports `@suite/billing`.
       ...(billingPlugin === undefined ? [] : [billingPlugin]),
+      // A test instance's extra plugins, which is how `testUtils()` gets in. Production
+      // deps never set it, so a privileged helper cannot reach a deployed instance.
+      ...((deps.extraPlugins ?? []) as never[]),
     ],
   };
 }

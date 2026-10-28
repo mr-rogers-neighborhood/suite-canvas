@@ -234,6 +234,9 @@ describe("standalone guard rails", () => {
     // The claim goes to the account service, and only with a session; a
     // standalone build has neither.
     "session/workspaceClaim.ts": ["App.tsx"],
+    // Support access is an account row on the control plane: the dialog is mounted
+    // from a menu row the standalone build does not draw, so it never renders there.
+    "dialogs/SupportAccessDialog.tsx": ["chrome/WorkspaceActions.tsx"],
   };
 
   /**

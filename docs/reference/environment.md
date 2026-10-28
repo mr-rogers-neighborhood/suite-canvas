@@ -167,6 +167,7 @@ every account path answers `503 auth-not-configured`.
 | `SUITE_GOOGLE_CLIENT_ID` | none | with the secret, registers the Google provider |
 | `SUITE_GOOGLE_CLIENT_SECRET` | none | one half of the pair without the other refuses to boot |
 | `SUITE_TURNSTILE_SECRET` | none | set it to require invisible Turnstile in front of sign-up; unset means no challenge |
+| `SUITE_TURNSTILE_SITE_KEY` | none | the same widget's public site key, passed to the image build as a `VITE_` argument: Vite inlines it, so a runtime-only value never reaches the browser |
 | `SUITE_ADMISSION_REQUIRED` | `0` | `1` holds a new account until an operator admits it, gating `/organization/create`. Refused at startup unless `SUITE_ADMIN_EMAILS` names an operator, because the queue would have no door |
 | `SUITE_APP_URL` | none | where the admission notice sends someone; unset admits without sending one |
 | `SUITE_MAIL_TRANSPORT` | `console` | `console`, `resend` or `smtp`. Anything else refuses to boot |

@@ -55,6 +55,19 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   --filter @suite/control-plane...
 
 FROM deps AS build
+# The canvas is built here, so every value it inlines has to be a build argument: Vite
+# replaces `import.meta.env.VITE_*` at build time, and a variable the runtime has is too
+# late. `SUITE_TURNSTILE_SITE_KEY` is public by design (it is the widget's site key), and
+# leaving it out while `SUITE_TURNSTILE_SECRET` is set is a sign-up form that can never
+# satisfy the challenge.
+ARG SUITE_VERSION=0.0.0
+ARG SUITE_TURNSTILE_SITE_KEY=""
+ARG SUITE_AUTH_URL=""
+ARG SUITE_CRASH_DSN=""
+ENV VITE_SUITE_VERSION=${SUITE_VERSION} \
+    VITE_SUITE_TURNSTILE_SITE_KEY=${SUITE_TURNSTILE_SITE_KEY} \
+    VITE_SUITE_AUTH_URL=${SUITE_AUTH_URL} \
+    VITE_SUITE_CRASH_DSN=${SUITE_CRASH_DSN}
 COPY . .
 # Every package the canvas and the servers import is built here, because a
 # `dist` that is missing from the context (`.dockerignore`) is a resolution

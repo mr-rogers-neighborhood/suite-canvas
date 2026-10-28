@@ -275,6 +275,15 @@ services:
     build:
       context: .
       target: web
+      # The canvas is compiled into this image, so the values it inlines are arguments
+      # here rather than runtime environment. `SUITE_TURNSTILE_SITE_KEY` is the widget's
+      # public site key: without it a deployment that sets SUITE_TURNSTILE_SECRET has a
+      # sign-up form that cannot produce the token the server demands.
+      args:
+        SUITE_VERSION: ${SUITE_VERSION:-0.0.0}
+        SUITE_TURNSTILE_SITE_KEY: ${SUITE_TURNSTILE_SITE_KEY:-}
+        SUITE_AUTH_URL: ${SUITE_AUTH_URL:-}
+        SUITE_CRASH_DSN: ${SUITE_CRASH_DSN:-}
     restart: unless-stopped
     depends_on:
       app:

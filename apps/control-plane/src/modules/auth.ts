@@ -15,6 +15,7 @@ import {
 import { createLogger, type Logger } from "../logging.js";
 import type { RouteModule } from "../routes.js";
 import { composeBilling } from "./auth-billing.js";
+import { publishSessionReader } from "./context.js";
 
 /**
  * The account module: the one file in this process that knows `@suite/auth` exists.
@@ -453,6 +454,11 @@ function defaultBoot(logger: Logger, source: Readonly<Record<string, string | un
         : { entitlements: billing.entitlements, billingPlugin: billing.plugin }),
       ...(workspaceData === null ? {} : { workspaceData }),
     });
+    // The operator routes have to ask this same instance who is calling, and the
+    // loader hands a module no arguments. Publishing the reader is the one fact two
+    // modules share (`modules/context.ts`), and it is published here rather than read
+    // from the environment so a deployment cannot end up with two identity stacks.
+    publishSessionReader(entry.sessions.sessionFor);
     if (billing === null) return entry;
     return {
       ...entry,

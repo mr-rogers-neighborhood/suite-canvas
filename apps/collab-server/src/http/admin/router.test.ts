@@ -19,6 +19,7 @@ import {
   type ShareStore,
 } from "../../store/shares.js";
 import { createWorkspaceOrgStore, type WorkspaceOrgStore } from "../../store/workspaceOrgs.js";
+import type { SessionVerifier } from "../sessionToken.js";
 import {
   ADMIN_API_PATH,
   type AdminRequestDeps,
@@ -29,9 +30,52 @@ import {
   METRICS_PATH,
 } from "./index.js";
 
-const ADMIN_TOKEN = "admin-token-for-tests";
-const READ_TOKEN = "admin-read-token-for-tests";
+/**
+ * The two sessions this suite's server accepts.
+ *
+ * `OPERATOR_TOKEN` carries `operator: true`, which is what the control plane mints for
+ * an address in `SUITE_ADMIN_EMAILS`. `MEMBER_TOKEN` is a perfectly valid session for a
+ * signed-in account that is *not* on that list — an organization owner, say — and is the
+ * case the door has to refuse.
+ */
+const OPERATOR_TOKEN = "operator-session-for-tests";
+const MEMBER_TOKEN = "member-session-for-tests";
 const OWNER_KEY = "owner-key-for-tests";
+
+/** A verifier standing in for the control plane's JWKS check, with the same refusals. */
+const testSessions: SessionVerifier = {
+  verify: async (token) =>
+    token === OPERATOR_TOKEN
+      ? {
+          ok: true,
+          claims: {
+            userId: "user-operator",
+            organizationId: null,
+            role: null,
+            tier: "solo",
+            limits: {},
+            issuedAt: 0,
+            expiresAt: Number.MAX_SAFE_INTEGER,
+            operator: true,
+          },
+        }
+      : token === MEMBER_TOKEN
+        ? {
+            ok: true,
+            claims: {
+              userId: "user-owner",
+              organizationId: "org-1",
+              role: "owner",
+              tier: "solo",
+              limits: {},
+              issuedAt: 0,
+              expiresAt: Number.MAX_SAFE_INTEGER,
+              operator: false,
+            },
+          }
+        : { ok: false, reason: "signature" },
+  refresh: async () => {},
+};
 
 const ADMIN_PATHS = [
   ADMIN_API_PATH,
@@ -51,11 +95,11 @@ let orgs: WorkspaceOrgStore;
 let server: Server;
 let baseUrl: string;
 let rooms: AdminRoomRow[];
-let previousToken: string | undefined;
+let previousAuthUrl: string | undefined;
 
 beforeEach(async () => {
-  previousToken = process.env.SUITE_ADMIN_TOKEN;
-  process.env.SUITE_ADMIN_TOKEN = ADMIN_TOKEN;
+  previousAuthUrl = process.env.SUITE_AUTH_URL;
+  process.env.SUITE_AUTH_URL = "http://localhost:1236";
   directory = mkdtempSync(join(tmpdir(), "suite-admin-api-"));
   documents = createDocumentStore(join(directory, "documents.sqlite"));
   shares = createShareStore(join(directory, "shares.sqlite"));
@@ -68,8 +112,8 @@ afterEach(async () => {
   documents.close();
   shares.close();
   orgs.close();
-  if (previousToken === undefined) delete process.env.SUITE_ADMIN_TOKEN;
-  else process.env.SUITE_ADMIN_TOKEN = previousToken;
+  if (previousAuthUrl === undefined) delete process.env.SUITE_AUTH_URL;
+  else process.env.SUITE_AUTH_URL = previousAuthUrl;
   rmSync(directory, { recursive: true, force: true });
 });
 
@@ -84,6 +128,7 @@ function deps(overrides: Partial<AdminRequestDeps> = {}): AdminRequestDeps {
       workspaces: join(directory, "workspaces.sqlite"),
     },
     rooms: () => rooms,
+    sessions: testSessions,
     ...overrides,
   };
 }
@@ -103,7 +148,7 @@ async function startServer(overrides: Partial<AdminRequestDeps> = {}): Promise<v
   baseUrl = `http://127.0.0.1:${address.port}`;
 }
 
-function get(path: string, token: string | null = ADMIN_TOKEN): Promise<Response> {
+function get(path: string, token: string | null = OPERATOR_TOKEN): Promise<Response> {
   return fetch(
     `${baseUrl}${path}`,
     token === null
@@ -119,7 +164,7 @@ function mutation(
   method: "POST" | "DELETE",
   path: string,
   body?: unknown,
-  token: string | null = ADMIN_TOKEN,
+  token: string | null = OPERATOR_TOKEN,
 ): Promise<Response> {
   const headers: Record<string, string> = {};
   if (token !== null) headers.authorization = ["Bearer", token].join(" ");
@@ -171,34 +216,57 @@ function seedBodyImage(workspace: WorkspaceDocument, cardId: string, id: string)
 }
 
 describe("admin API", () => {
-  it("does not exist while SUITE_ADMIN_TOKEN is unset or empty", async () => {
+  it("does not exist while there is no control plane to verify a session against", async () => {
     await startServer();
 
-    process.env.SUITE_ADMIN_TOKEN = "";
+    process.env.SUITE_AUTH_URL = "";
     for (const path of ADMIN_PATHS) {
       expect((await get(path)).status).toBe(404);
     }
 
-    delete process.env.SUITE_ADMIN_TOKEN;
+    delete process.env.SUITE_AUTH_URL;
     for (const path of ADMIN_PATHS) {
       expect((await get(path)).status).toBe(404);
     }
   });
 
-  it("rejects a wrong bearer token and accepts the configured one", async () => {
+  it("refuses a bad session, a missing one, and a signed-in non-operator", async () => {
     await startServer();
 
     const missing = await get(`${ADMIN_API_PATH}/status`, null);
     expect(missing.status).toBe(401);
     const missingBody = (await missing.text()).toLowerCase();
-    expect(missingBody).not.toContain(ADMIN_TOKEN);
+    expect(missingBody).not.toContain(OPERATOR_TOKEN);
 
-    const wrong = await get(`${ADMIN_API_PATH}/status`, "not-the-admin-token");
+    const wrong = await get(`${ADMIN_API_PATH}/status`, "not-a-session");
     expect(wrong.status).toBe(401);
-    expect(await wrong.text()).not.toContain("not-the-admin-token");
+    expect(await wrong.text()).not.toContain("not-a-session");
+
+    // A valid session for an account the deployment did not name: signed in, and still
+    // not an operator. Owning a tenant is not operating the deployment.
+    const member = await get(`${ADMIN_API_PATH}/status`, MEMBER_TOKEN);
+    expect(member.status).toBe(401);
 
     const accepted = await get(`${ADMIN_API_PATH}/status`);
     expect(accepted.status).toBe(200);
+  });
+
+  it("scrapes /metrics from this machine only when the deployment opts in", async () => {
+    // A scrape timer has no browser and no cookie, so the loopback address is the
+    // credential — but only for a read of /metrics, and only when the switch is on.
+    await startServer();
+
+    expect((await get(METRICS_PATH, null)).status).toBe(401);
+
+    vi.stubEnv("SUITE_METRICS_LOCAL", "1");
+    const scraped = await get(METRICS_PATH, null);
+    expect(scraped.status).toBe(200);
+    // The same opt-in must not open anything else, and not a mutation anywhere.
+    expect((await get(`${ADMIN_API_PATH}/workspaces`, null)).status).toBe(401);
+    expect((await mutation("POST", `${ADMIN_API_PATH}/rooms/sweep`, undefined, null)).status).toBe(
+      401,
+    );
+    vi.unstubAllEnvs();
   });
 
   it("reports status with the documented keys and database sizes", async () => {
@@ -429,7 +497,7 @@ describe("admin API", () => {
     try {
       const listed = await fetch(
         `http://127.0.0.1:${fallbackAddress.port}${ADMIN_API_PATH}/rooms`,
-        { headers: { authorization: `Bearer ${ADMIN_TOKEN}` } },
+        { headers: { authorization: `Bearer ${OPERATOR_TOKEN}` } },
       );
       expect(listed.status).toBe(200);
       expect(await listed.json()).toMatchObject({ rooms: [], projectionRooms: [] });
@@ -474,7 +542,7 @@ describe("admin API", () => {
     expect((await get(`${ADMIN_API_PATH}/shares`)).status).toBe(400);
 
     const secrets = [
-      ADMIN_TOKEN,
+      OPERATOR_TOKEN,
       OWNER_KEY,
       workspaceShare.token,
       cardShare.token,
@@ -510,24 +578,24 @@ describe("admin mutations", () => {
     ["DELETE", `${ADMIN_API_PATH}/workspaces/ws-a`],
   ];
 
-  it("requires the admin token for every mutation", async () => {
+  it("requires an operator session for every mutation", async () => {
     await startServer();
 
     for (const [method, path] of MUTATIONS) {
       const missing = await mutation(method, path, undefined, null);
       expect(missing.status, path).toBe(401);
-      expect(await missing.text()).not.toContain(ADMIN_TOKEN);
+      expect(await missing.text()).not.toContain(OPERATOR_TOKEN);
 
-      const wrong = await mutation(method, path, { confirm: "ws-a" }, "not-the-admin-token");
+      const wrong = await mutation(method, path, { confirm: "ws-a" }, "not-a-session");
       expect(wrong.status, path).toBe(401);
     }
 
-    process.env.SUITE_ADMIN_TOKEN = "";
+    process.env.SUITE_AUTH_URL = "";
     for (const [method, path] of MUTATIONS) {
       expect((await mutation(method, path, { confirm: "ws-a" })).status, path).toBe(404);
     }
 
-    delete process.env.SUITE_ADMIN_TOKEN;
+    delete process.env.SUITE_AUTH_URL;
     for (const [method, path] of MUTATIONS) {
       expect((await mutation(method, path, { confirm: "ws-a" })).status, path).toBe(404);
     }
@@ -680,7 +748,7 @@ describe("admin mutations", () => {
     expect(auditLines).toHaveLength(1);
     const record = JSON.parse(auditLines[0] ?? "{}") as Record<string, unknown>;
     expect(record).toMatchObject({
-      actor: "admin",
+      actor: "account:user-operator",
       path: `${ADMIN_API_PATH}/rooms/sweep`,
       target: "projection-rooms",
       action: "sweep-rooms",
@@ -691,7 +759,7 @@ describe("admin mutations", () => {
       closed: 1,
       candidates: 1,
     });
-    expect(auditLines[0]).not.toContain(ADMIN_TOKEN);
+    expect(auditLines[0]).not.toContain(OPERATOR_TOKEN);
   });
 
   it("takes dryRun from the query string or the body", async () => {
@@ -806,23 +874,24 @@ describe("admin mutations", () => {
       confirm: "ws-a",
     });
     expect(response.status).toBe(200);
-    expect(await response.text()).not.toContain(ADMIN_TOKEN);
+    expect(await response.text()).not.toContain(OPERATOR_TOKEN);
 
     const auditLines = lines.filter((line) => line.includes("admin.mutation"));
     expect(auditLines).toHaveLength(1);
     const record = JSON.parse(auditLines[0] ?? "{}") as Record<string, unknown>;
     expect(record).toMatchObject({
-      actor: "admin",
+      actor: "account:user-operator",
       action: "delete-workspace",
       target: "ws-a",
       result: "deleted",
       path: `${ADMIN_API_PATH}/workspaces/ws-a`,
     });
-    for (const line of lines) expect(line).not.toContain(ADMIN_TOKEN);
+    for (const line of lines) expect(line).not.toContain(OPERATOR_TOKEN);
   });
 
-  it("refuses a read-scoped token a mutation, and records the attempt", async () => {
-    vi.stubEnv("SUITE_ADMIN_READ_TOKEN", READ_TOKEN);
+  it("refuses an organization owner's own session, and records the attempt", async () => {
+    // The claim that carries the door is `operator`, not a role: this token is a valid
+    // session for the owner of an organization, and it still may not delete workspaces.
     seedWorkspace("ws-a", 1);
     const lines: string[] = [];
     const logger = createLogger({ level: "debug", write: (line) => lines.push(line) });
@@ -832,26 +901,18 @@ describe("admin mutations", () => {
       "DELETE",
       `${ADMIN_API_PATH}/workspaces/ws-a`,
       { confirm: "ws-a" },
-      READ_TOKEN,
+      MEMBER_TOKEN,
     );
-    expect(refused.status).toBe(403);
-    // The read scope still reads: the operator can watch without the power to act.
-    expect((await get(`${ADMIN_API_PATH}/workspaces`, READ_TOKEN)).status).toBe(200);
-    expect((await get(METRICS_PATH, READ_TOKEN)).status).toBe(200);
-    expect((await get(`${ADMIN_API_PATH}/workspaces`, "not-a-token")).status).toBe(401);
+    expect(refused.status).toBe(401);
+    expect((await get(`${ADMIN_API_PATH}/workspaces`, MEMBER_TOKEN)).status).toBe(401);
+    expect((await get(METRICS_PATH, MEMBER_TOKEN)).status).toBe(401);
+    expect((await get(`${ADMIN_API_PATH}/workspaces`, "not-a-session")).status).toBe(401);
     expect(documents.load(loroDocumentKey("ws-a"))).not.toBeNull();
 
-    const auditLines = lines.filter((line) => line.includes("admin.mutation"));
-    expect(auditLines).toHaveLength(1);
-    const record = JSON.parse(auditLines[0] ?? "{}") as Record<string, unknown>;
-    expect(record).toMatchObject({
-      actor: "admin-read",
-      action: "delete-workspace",
-      target: "ws-a",
-      result: "refused-scope",
-    });
-    for (const line of lines) expect(line).not.toContain(READ_TOKEN);
-    vi.unstubAllEnvs();
+    // Nothing was served, so nothing was audited: an unauthenticated caller gets a
+    // refusal, not a row somebody has to prune.
+    expect(lines.filter((line) => line.includes("admin.mutation"))).toHaveLength(0);
+    for (const line of lines) expect(line).not.toContain(MEMBER_TOKEN);
   });
 
   it("reports the projection rooms the worker holds", async () => {
@@ -1045,17 +1106,17 @@ describe("admin mutations", () => {
     expect(withoutStore.attachments).toEqual({});
   });
 
-  it("hides fixtures and export while SUITE_ADMIN_TOKEN is unset", async () => {
+  it("hides fixtures and export while no control plane is configured", async () => {
     seedWorkspace("ws-a", 1);
     await startServer();
 
-    process.env.SUITE_ADMIN_TOKEN = "";
+    process.env.SUITE_AUTH_URL = "";
     expect(
       (await mutation("POST", `${ADMIN_API_PATH}/fixtures`, { boards: 1, cards: 1 })).status,
     ).toBe(404);
     expect((await get(`${ADMIN_API_PATH}/workspaces/ws-a/export`)).status).toBe(404);
 
-    delete process.env.SUITE_ADMIN_TOKEN;
+    delete process.env.SUITE_AUTH_URL;
     expect(
       (await mutation("POST", `${ADMIN_API_PATH}/fixtures`, { boards: 1, cards: 1 })).status,
     ).toBe(404);
@@ -1122,6 +1183,7 @@ describe("limit tuning", () => {
       limits: () => resolveLimits(process.env, readLimitOverrides(settings)),
       diskBytes: () => 4096,
       logger,
+      sessions: testSessions,
       ...extra,
     };
     if (withSettings) deps.settings = settings;
@@ -1139,7 +1201,7 @@ describe("limit tuning", () => {
     baseUrl = `http://127.0.0.1:${address.port}`;
   }
 
-  function putLimits(body: unknown, token: string | null = ADMIN_TOKEN): Promise<Response> {
+  function putLimits(body: unknown, token: string | null = OPERATOR_TOKEN): Promise<Response> {
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (token !== null) headers.authorization = ["Bearer", token].join(" ");
     return fetch(`${baseUrl}${ADMIN_API_PATH}/limits`, {
@@ -1228,7 +1290,7 @@ describe("limit tuning", () => {
     );
     expect(line).toBeDefined();
     expect(line?.result).toBe("updated");
-    expect(line?.actor).toBe("admin");
+    expect(line?.actor).toBe("account:user-operator");
   });
 
   it("accepts null to clear an override and the word unlimited", async () => {
@@ -1316,13 +1378,13 @@ describe("limit tuning", () => {
 });
 
 describe("metrics endpoint", () => {
-  it("404s when SUITE_ADMIN_TOKEN is unset, so the route does not advertise itself", async () => {
+  it("404s when no control plane is configured, so the route does not advertise itself", async () => {
     await startServer();
 
-    process.env.SUITE_ADMIN_TOKEN = "";
+    process.env.SUITE_AUTH_URL = "";
     expect((await get(METRICS_PATH)).status).toBe(404);
 
-    delete process.env.SUITE_ADMIN_TOKEN;
+    delete process.env.SUITE_AUTH_URL;
     expect((await get(METRICS_PATH)).status).toBe(404);
   });
 
@@ -1363,7 +1425,7 @@ describe("metrics endpoint", () => {
     expect(body).toContain("suite_share_creates_total 1");
     expect(body).toContain("suite_disk_above_soft 1");
     expect(body).toContain('suite_build_info{version="9.9.9"} 1');
-    expect(body).not.toContain(ADMIN_TOKEN);
+    expect(body).not.toContain(OPERATOR_TOKEN);
     expect(body).not.toContain("ws-a");
   });
 

@@ -1,14 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type AdminModuleOptions, createAdminModule } from "./admin.js";
+import { publishSessionReader, resetSessionReader } from "./context.js";
 
 /**
  * The template routes.
  *
  * Two properties carry the feature: the launcher can read the list before anybody
- * signs in, and nobody can write one without the token. The rest is CRUD against a
- * stubbed pool — the statements themselves are the migration's business, and these
- * tests only assert which one ran and with what.
+ * signs in, and nobody can write one unless the deployment named them an operator.
+ * The rest is CRUD against a stubbed pool — the statements themselves are the
+ * migration's business, and these tests only assert which one ran and with what.
  */
 function silence() {
   return { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as never;
@@ -82,8 +83,9 @@ function failing(error: unknown) {
   };
 }
 
-const token = "operator-token-long-enough";
-const authorized = { authorization: `Bearer ${token}` };
+const OPERATOR = "operator@suite.run";
+/** The cookie stands in for the session Better Auth would resolve. */
+const authorized = { cookie: "session=operator" };
 const template = {
   id: "weekly-review",
   name: "Weekly review",
@@ -92,11 +94,23 @@ const template = {
   data: { boards: [], cards: [] },
 };
 
+/** A session reader that treats the operator cookie as the operator, and nobody else. */
+function operatorSession() {
+  publishSessionReader(async (headers) =>
+    headers.cookie === authorized.cookie
+      ? { userId: "user-1", organizationId: null, role: null, admittedAt: 1, operator: true }
+      : null,
+  );
+}
+
+beforeEach(() => operatorSession());
+afterEach(() => resetSessionReader());
+
 function moduleWith(options: Partial<AdminModuleOptions> & { rows?: unknown[] } = {}) {
   const sql = query(options.rows ?? []);
   const module = createAdminModule({
     env: {
-      SUITE_ADMIN_TOKEN: token,
+      SUITE_ADMIN_EMAILS: OPERATOR,
       SUITE_CONTROL_PLANE_DATABASE_URL: "postgres://localhost/suite",
       ...options.env,
     } as AdminModuleOptions["env"],
@@ -107,7 +121,7 @@ function moduleWith(options: Partial<AdminModuleOptions> & { rows?: unknown[] } 
 }
 
 describe("the public template list", () => {
-  it("answers without a token and says a minute of caching is fine", async () => {
+  it("answers before anybody signs in, and says a minute of caching is fine", async () => {
     const { module } = moduleWith({ rows: [template] });
     const { out, res } = response();
     await module.handle(request("GET", "/api/templates"), res);
@@ -167,7 +181,7 @@ describe("the operator template list", () => {
     const { out, res } = response();
     await module.handle(request("GET", "/admin/templates"), res);
     expect(out.status).toBe(401);
-    expect(out.headers["www-authenticate"]).toBe("Bearer");
+    expect(out.headers["www-authenticate"]).toBe("Session");
     expect(sql.calls).toHaveLength(0);
   });
 
@@ -191,8 +205,8 @@ describe("the operator template list", () => {
     expect(JSON.parse(out.body)).toEqual({ ok: true, templates: [template] });
   });
 
-  it("is not a door at all when no token is configured", async () => {
-    const { module } = moduleWith({ env: { SUITE_ADMIN_TOKEN: "" } as never });
+  it("is not a door at all when the deployment names no operator", async () => {
+    const { module } = moduleWith({ env: { SUITE_ADMIN_EMAILS: "" } as never });
     const { out, res } = response();
     await module.handle(request("GET", "/admin/templates", null, authorized), res);
     expect(out.status).toBe(503);
@@ -407,7 +421,7 @@ describe("writing a template", () => {
     const sql = failing(Object.assign(new Error("relation does not exist"), { code: "42P01" }));
     const module = createAdminModule({
       env: {
-        SUITE_ADMIN_TOKEN: token,
+        SUITE_ADMIN_EMAILS: OPERATOR,
         SUITE_CONTROL_PLANE_DATABASE_URL: "postgres://localhost/suite",
       } as never,
       logger: silence(),

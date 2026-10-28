@@ -7,7 +7,7 @@
 #   * the document database is above the configured disk soft watermark,
 #   * resident memory is above the threshold.
 #
-# It exits 2 when it cannot check at all (no token, no /metrics), because an
+# It exits 2 when it cannot check at all (no /metrics answer), because an
 # alerting path that silently passes is worse than one that wakes you up.
 #
 # Usage:
@@ -15,12 +15,17 @@
 #
 # Environment:
 #   SUITE_ALERT_URL          base URL of the API port (default http://127.0.0.1:1235)
-#   SUITE_ADMIN_TOKEN        admin token; /metrics is gated by the same token
+#   SUITE_ADMIN_TOKEN        optional session token, for a scrape that is not local
 #   SUITE_ALERT_RSS_LIMIT_MB resident-memory threshold in MiB (default 1024)
 #   SUITE_ALERT_TIMEOUT      curl timeout in seconds (default 5)
 #
+# `/metrics` is gated by an operator session. A cron timer has no browser and cannot
+# hold one, so the relay allows an unauthenticated read from a loopback address when
+# `SUITE_METRICS_LOCAL=1`. That is the intended cron setup; `SUITE_ADMIN_TOKEN` exists
+# only for a probe that runs on another machine and can present a session token.
+#
 # Cron example (every five minutes, mail on failure):
-#   */5 * * * * SUITE_ADMIN_TOKEN=... /srv/suite/deploy/alert.sh >/dev/null
+#   */5 * * * * /srv/suite/deploy/alert.sh >/dev/null
 set -euo pipefail
 
 usage() {
@@ -109,20 +114,23 @@ if [ "$HEALTH_CODE" != "200" ]; then
 fi
 
 # --- 2. metrics are reachable ----------------------------------------------
-if [ -z "$TOKEN" ]; then
-  cannot_check "/metrics is token gated and SUITE_ADMIN_TOKEN is unset; pass --token or set the variable"
+# No token is fine for the documented setup: a probe running on the box reads
+# /metrics from a loopback address, which `SUITE_METRICS_LOCAL=1` allows.
+AUTH_ARGS=()
+if [ -n "$TOKEN" ]; then
+  AUTH_ARGS=(-H "Authorization: Bearer $TOKEN")
 fi
 
 RESPONSE="$(
   curl -sS --max-time "$TIMEOUT" -w $'\n%{http_code}' \
-    -H "Authorization: Bearer $TOKEN" "$BASE_URL/metrics" 2>/dev/null || true
+    "${AUTH_ARGS[@]}" "$BASE_URL/metrics" 2>/dev/null || true
 )"
 METRICS_CODE="${RESPONSE##*$'\n'}"
 METRICS_BODY="${RESPONSE%$'\n'*}"
 case "$METRICS_CODE" in
   200) ;;
-  401) cannot_check "/metrics answered 401; SUITE_ADMIN_TOKEN does not match the server" ;;
-  404) cannot_check "/metrics answered 404; the server has no SUITE_ADMIN_TOKEN, so the scrape is off" ;;
+  401) cannot_check "/metrics answered 401; set SUITE_METRICS_LOCAL=1 on the relay for a local scrape, or pass --token" ;;
+  404) cannot_check "/metrics answered 404; the relay has no SUITE_AUTH_URL, so the scrape is off" ;;
   *) alert "/metrics answered ${METRICS_CODE:-000} (expected 200) at $BASE_URL/metrics" ;;
 esac
 

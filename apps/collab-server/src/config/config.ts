@@ -52,9 +52,6 @@ export interface ServerConfig {
   };
   /** Configured credentials; `null` means the feature is off or generated. */
   tokens: {
-    admin: string | null;
-    /** Read-only operator token: `/metrics` and the inventories, never a mutation. */
-    adminRead: string | null;
     projection: string | null;
     source: string | null;
   };
@@ -663,12 +660,15 @@ export function validateConfig(
   fail(requireDurable.problem);
   if (requireDurable.value) problems.push(...durableStoreProblems(env, readPaths));
 
-  const admin = token(env, "SUITE_ADMIN_TOKEN");
-  const adminRead = token(env, "SUITE_ADMIN_READ_TOKEN");
+  // The operator door is a session, not a secret: `admin.ts` verifies the control
+  // plane's JWT and reads the `operator` claim from it, so the relay holds no operator
+  // credential at all any more. What is left here is the pair of internal tokens the
+  // projection worker and the control plane's purge use, which are process-to-process
+  // and would be the wrong shape as a session.
   const projection = token(env, "SUITE_PROJECTION_TOKEN");
   const source = token(env, "SUITE_SOURCE_TOKEN");
   const legacyInternal = token(env, "SUITE_INTERNAL_TOKEN");
-  for (const read of [admin, adminRead, projection, source, legacyInternal]) fail(read.problem);
+  for (const read of [projection, source, legacyInternal]) fail(read.problem);
 
   const hosted = switchValue(env, "SUITE_HOSTED");
   fail(hosted.problem);
@@ -731,8 +731,6 @@ export function validateConfig(
         attachments: readPaths.attachments,
       },
       tokens: {
-        admin: admin.value,
-        adminRead: adminRead.value,
         projection: projection.value ?? legacyInternal.value,
         source: source.value,
       },

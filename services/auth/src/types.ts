@@ -127,6 +127,17 @@ export interface AccountSession {
    * because a caller that resolves a principal from claims has no user row to read.
    */
   mfaRequired?: boolean;
+  /**
+   * True when this account is one the deployment named as a platform operator
+   * (`SUITE_ADMIN_EMAILS`).
+   *
+   * A deployment fact, not an organization one: `role` is the account's role inside
+   * the organization the session is acting in, so an organization owner must never be
+   * mistaken for an operator of the deployment. The same question is answered from the
+   * same list when the session JWT is minted, so the control plane and the relay agree
+   * (ADR-0074).
+   */
+  operator: boolean;
 }
 
 /** Everything the control plane reads from the environment, once per invocation. */
@@ -139,6 +150,15 @@ export interface AuthEnvironment {
   SUITE_AUTH_URL: string | undefined;
   /** Postgres control plane. Document bytes never go here (ADR-0065 §9). */
   SUITE_AUTH_DATABASE_URL: string | undefined;
+  /**
+   * Comma-separated addresses this deployment treats as platform operators.
+   *
+   * As a *configuration* list rather than a row: an operator is a fact about the
+   * deployment, and the claim that carries it is minted from here on every sign-in.
+   * Empty means no operators, which is the right default for a self-host — the admin
+   * routes then answer nobody.
+   */
+  SUITE_ADMIN_EMAILS?: string | undefined;
   SUITE_GOOGLE_CLIENT_ID: string | undefined;
   SUITE_GOOGLE_CLIENT_SECRET: string | undefined;
   /** WebAuthn relying-party identity for passkeys. */

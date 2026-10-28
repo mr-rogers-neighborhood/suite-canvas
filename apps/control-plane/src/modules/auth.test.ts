@@ -102,7 +102,7 @@ function fakeEntry(seen: SeenRequest[]): AuthEntry {
     sessions: {
       sessionFor: async (headers) =>
         headers.cookie === "session=owner"
-          ? { userId: OWNER, organizationId: ORG, role: "owner", admittedAt: null }
+          ? { userId: OWNER, organizationId: ORG, role: "owner", admittedAt: null, operator: false }
           : null,
     },
     repositories: {

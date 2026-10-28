@@ -24,8 +24,8 @@ function DatabaseRow({
   );
 }
 
-export function StatusPanel({ token }: { token: string }) {
-  const status = useLoad(() => getStatus(token));
+export function StatusPanel() {
+  const status = useLoad(() => getStatus());
   const data = status.data;
 
   return (

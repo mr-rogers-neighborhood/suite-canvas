@@ -32,10 +32,42 @@ export interface RelayClaims {
   role: OrganizationRole | null;
   tier: string;
   limits: Readonly<Record<string, number>>;
+  /**
+   * True for an account the deployment named as a platform operator.
+   *
+   * A *platform* claim, not an organization one: `role` is the account's role inside
+   * the organization the session is acting in, so an organization owner must never be
+   * mistaken for an operator of the deployment. The relay's `/api/admin` routes read
+   * this and nothing else, which is why it is minted from the deployment's own list
+   * of addresses rather than from anything a client can send.
+   */
+  operator: boolean;
+}
+
+/** The addresses a deployment treats as operators, normalised for comparison. */
+export function operatorEmails(raw: string | undefined): readonly string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry.length > 0);
+}
+
+/** Whether this address is one the deployment named as an operator. */
+export function isOperatorEmail(
+  email: string | null | undefined,
+  operators: readonly string[],
+): boolean {
+  if (operators.length === 0) return false;
+  const normalised = (email ?? "").trim().toLowerCase();
+  return normalised.length > 0 && operators.includes(normalised);
 }
 
 export interface RelayClaimInput {
   userId: string;
+  /** The account's address, which is what the operator list is matched against. */
+  email: string | null;
+  /** `SUITE_ADMIN_EMAILS`, parsed. Empty means this deployment has no operators. */
+  operators: readonly string[];
   /** `session.activeOrganizationId`: the tenant this session is acting in. */
   activeOrganizationId: string | null;
   /** Reads the role from the `member` row, so a removed member mints no claim. */
@@ -65,5 +97,6 @@ export async function relayClaims(input: RelayClaimInput): Promise<RelayClaims> 
     role,
     tier: entitlement.tier,
     limits: entitlement.limits,
+    operator: isOperatorEmail(input.email, input.operators),
   };
 }

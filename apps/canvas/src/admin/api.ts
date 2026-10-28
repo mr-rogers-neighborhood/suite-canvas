@@ -1,13 +1,16 @@
 /**
  * Admin API client. Deliberately tiny: plain `fetch`, no router, no store.
- * The token lives in `sessionStorage` only — not localStorage, never a URL —
- * so closing the tab ends the session.
+ *
+ * There is no credential to keep here any more. The panel signs in as an ordinary
+ * account and sends the same short-lived session JWT every other relay call sends, so
+ * "who is this" has one answer in both processes and a tab holds no secret of its own
+ * (`auth/credential.ts`). Being on the operator list is what the *server* checks.
  */
 
+import { credentialAuthorization } from "../auth/credential";
 import { authServiceBase } from "../auth/endpoints";
 import { collabHttpBase } from "../session/endpoints";
 
-const TOKEN_KEY = "suite.admin.token";
 const BASE = `${collabHttpBase()}/api/admin`;
 
 /**
@@ -27,32 +30,6 @@ export class AdminApiError extends Error {
   }
 }
 
-/** The token this tab remembers, or null. */
-export function storedAdminToken(): string | null {
-  try {
-    const value = window.sessionStorage.getItem(TOKEN_KEY);
-    return value !== null && value.trim().length > 0 ? value : null;
-  } catch {
-    return null;
-  }
-}
-
-export function rememberAdminToken(token: string): void {
-  try {
-    window.sessionStorage.setItem(TOKEN_KEY, token);
-  } catch {
-    // A disabled sessionStorage only costs the operator a re-entry.
-  }
-}
-
-export function forgetAdminToken(): void {
-  try {
-    window.sessionStorage.removeItem(TOKEN_KEY);
-  } catch {
-    // Nothing to clear.
-  }
-}
-
 export function errorText(cause: unknown): string {
   if (cause instanceof AdminApiError) return cause.message;
   if (cause instanceof Error && cause.message.trim().length > 0) return cause.message;
@@ -69,17 +46,23 @@ async function messageFor(response: Response): Promise<string> {
   return `${response.status} ${response.statusText}`.trim();
 }
 
-async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  return requestUrl<T>(`${BASE}${path}`, token, init);
-}
-
-async function requestUrl<T>(url: string, token: string, init: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = { authorization: `Bearer ${token}` };
+/**
+ * One request, with the session's own token.
+ *
+ * A 401 means "not signed in, or the token expired" and a 403 means "signed in, not an
+ * operator": two different next steps, so they stay two different errors.
+ */
+async function requestUrl<T>(url: string, init: RequestInit = {}): Promise<T> {
+  const authorization = await credentialAuthorization();
+  if (Object.keys(authorization).length === 0) {
+    throw new AdminApiError(401, "Sign in to use the operator surface.");
+  }
+  const headers: Record<string, string> = { ...authorization };
   if (init.body !== undefined) headers["content-type"] = "application/json";
 
   let response: Response;
   try {
-    response = await fetch(url, { ...init, headers });
+    response = await fetch(url, { ...init, headers, credentials: "include" });
   } catch {
     throw new AdminApiError(0, "Could not reach the server.");
   }
@@ -87,11 +70,21 @@ async function requestUrl<T>(url: string, token: string, init: RequestInit = {})
   if (!response.ok) {
     const message = await messageFor(response);
     if (response.status === 401) {
-      throw new AdminApiError(401, message || "The admin token was rejected.");
+      throw new AdminApiError(401, message || "Sign in to use the operator surface.");
+    }
+    if (response.status === 403) {
+      throw new AdminApiError(
+        403,
+        message || "This account is not an operator on this deployment.",
+      );
     }
     throw new AdminApiError(response.status, message);
   }
   return (await response.json()) as T;
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return requestUrl<T>(`${BASE}${path}`, init);
 }
 
 function encode(value: string): string {
@@ -268,84 +261,80 @@ export async function getRelayHealth(): Promise<{
   return { ok, status: response.status, at };
 }
 
-export function getStatus(token: string): Promise<AdminStatus> {
-  return request<AdminStatus>("/status", token);
+export function getStatus(): Promise<AdminStatus> {
+  return request<AdminStatus>("/status");
 }
 
-export function listWorkspaces(token: string): Promise<WorkspaceList> {
-  return request<WorkspaceList>("/workspaces?limit=200", token);
+export function listWorkspaces(): Promise<WorkspaceList> {
+  return request<WorkspaceList>("/workspaces?limit=200");
 }
 
-export function getWorkspace(token: string, id: string): Promise<WorkspaceDetail> {
-  return request<WorkspaceDetail>(`/workspaces/${encode(id)}`, token);
+export function getWorkspace(id: string): Promise<WorkspaceDetail> {
+  return request<WorkspaceDetail>(`/workspaces/${encode(id)}`);
 }
 
-export function listRooms(token: string): Promise<RoomList> {
-  return request<RoomList>("/rooms", token);
+export function listRooms(): Promise<RoomList> {
+  return request<RoomList>("/rooms");
 }
 
 export function listShares(
-  token: string,
   workspaceId: string,
 ): Promise<{ workspaceId: string; shares: AdminShare[] }> {
-  return request(`/shares?workspaceId=${encode(workspaceId)}`, token);
+  return request(`/shares?workspaceId=${encode(workspaceId)}`);
 }
 
-export function revokeShare(token: string, shareId: string): Promise<MutationResult> {
-  return request(`/shares/${encode(shareId)}/revoke`, token, { method: "POST" });
+export function revokeShare(shareId: string): Promise<MutationResult> {
+  return request(`/shares/${encode(shareId)}/revoke`, { method: "POST" });
 }
 
-export function revokeAllShares(token: string, workspaceId: string): Promise<MutationResult> {
-  return request(`/shares?workspaceId=${encode(workspaceId)}`, token, { method: "DELETE" });
+export function revokeAllShares(workspaceId: string): Promise<MutationResult> {
+  return request(`/shares?workspaceId=${encode(workspaceId)}`, { method: "DELETE" });
 }
 
-export function deleteWorkspace(token: string, workspaceId: string): Promise<MutationResult> {
-  return request(`/workspaces/${encode(workspaceId)}`, token, {
+export function deleteWorkspace(workspaceId: string): Promise<MutationResult> {
+  return request(`/workspaces/${encode(workspaceId)}`, {
     method: "DELETE",
     body: JSON.stringify({ confirm: workspaceId }),
   });
 }
 
-export function disconnectRoom(token: string, roomId: string): Promise<MutationResult> {
-  return request(`/rooms/${encode(roomId)}/disconnect`, token, { method: "POST" });
+export function disconnectRoom(roomId: string): Promise<MutationResult> {
+  return request(`/rooms/${encode(roomId)}/disconnect`, { method: "POST" });
 }
 
-export function createFixtures(token: string, input: FixtureRequest): Promise<FixtureResult> {
-  return request("/fixtures", token, { method: "POST", body: JSON.stringify(input) });
+export function createFixtures(input: FixtureRequest): Promise<FixtureResult> {
+  return request("/fixtures", { method: "POST", body: JSON.stringify(input) });
 }
 
-export function listTemplates(token: string): Promise<TemplateList> {
-  return requestUrl<TemplateList>(TEMPLATES_BASE, token);
+export function listTemplates(): Promise<TemplateList> {
+  return requestUrl<TemplateList>(TEMPLATES_BASE);
 }
 
-export function createTemplate(token: string, input: NewTemplate): Promise<TemplateResult> {
-  return requestUrl<TemplateResult>(TEMPLATES_BASE, token, {
+export function createTemplate(input: NewTemplate): Promise<TemplateResult> {
+  return requestUrl<TemplateResult>(TEMPLATES_BASE, {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
-export function updateTemplate(
-  token: string,
-  id: string,
-  input: TemplateDraft,
-): Promise<TemplateResult> {
-  return requestUrl<TemplateResult>(`${TEMPLATES_BASE}/${encode(id)}`, token, {
+export function updateTemplate(id: string, input: TemplateDraft): Promise<TemplateResult> {
+  return requestUrl<TemplateResult>(`${TEMPLATES_BASE}/${encode(id)}`, {
     method: "PUT",
     body: JSON.stringify(input),
   });
 }
 
-export function deleteTemplate(token: string, id: string): Promise<{ ok: boolean; deleted: true }> {
-  return requestUrl(`${TEMPLATES_BASE}/${encode(id)}`, token, { method: "DELETE" });
+export function deleteTemplate(id: string): Promise<{ ok: boolean; deleted: true }> {
+  return requestUrl(`${TEMPLATES_BASE}/${encode(id)}`, { method: "DELETE" });
 }
 
 /** Fetches the export with the bearer header, then saves it through a blob URL. */
-export async function downloadExport(token: string, workspaceId: string): Promise<void> {
+export async function downloadExport(workspaceId: string): Promise<void> {
   let response: Response;
   try {
     response = await fetch(`${BASE}/workspaces/${encode(workspaceId)}/export`, {
-      headers: { authorization: `Bearer ${token}` },
+      headers: await credentialAuthorization(),
+      credentials: "include",
     });
   } catch {
     throw new AdminApiError(0, "Could not reach the collab server.");

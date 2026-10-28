@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { mailSenders, mailTransportFromEnv } from "@suite/auth";
 import { readJsonBody, sendJson } from "@suite/billing";
@@ -6,25 +5,36 @@ import { Pool } from "pg";
 import { type ConfigEnv, DATABASE_URL_VARIABLE } from "../config.js";
 import { createLogger, type Logger, REQUEST_ID_HEADER } from "../logging.js";
 import type { RouteModule } from "../routes.js";
+import { sessionReader } from "./context.js";
 
 /**
- * The operator surface: one admission queue, one starter-template list, one token.
+ * The operator surface: one admission queue and one starter-template list.
  *
  * Admission is a person reading a list and deciding, so the list and the decision
  * need a door that is not a psql session. Starter templates need the same door to be
  * written, and a public one to be read: the launcher draws the gallery before anybody
- * has signed in, so a token there would only be a token baked into a client. Those
- * are the whole subject matter of this module. A route that could also read every
- * workspace would turn one leaked bearer token into every tenant's documents, and the
+ * has signed in, so a credential there would only be a credential baked into a client.
+ * Those are the whole subject matter of this module. A route that could also read every
+ * workspace would turn one leaked session into every tenant's documents, and the
  * account service is the process with an account database, not a console. A template
  * is public content by construction — that is what makes it the one thing here that
- * may be served without the token.
+ * may be served without a sign-in.
  *
- * `SUITE_ADMISSION_REQUIRED` without this token is a deployment that can hold people
- * it can never let in, so the boot refuses that pairing (see `adminMisconfigured`).
+ * ## The door is an account, not a token
+ *
+ * These routes answer the *session* the auth module resolves, and only for an account
+ * this deployment named in `SUITE_ADMIN_EMAILS`. A shared bearer token was the old
+ * door, and it had the two flaws any env token has: it could not be revoked without a
+ * restart, and it said nothing about *who* acted beyond the word "admin" in an audit
+ * line. The session carries the address, so the log and the panel agree on the person.
+ *
+ * `SUITE_ADMISSION_REQUIRED` with no operator nominated is a deployment that can hold
+ * people it can never let in, so the boot refuses that pairing (see
+ * `adminMisconfigured`).
  */
 
-export const ADMIN_TOKEN_VARIABLE = "SUITE_ADMIN_TOKEN";
+/** The addresses this deployment treats as operators; empty means nobody. */
+export const OPERATOR_EMAILS_VARIABLE = "SUITE_ADMIN_EMAILS";
 export const ADMISSIONS_PATH = "/admin/admissions";
 
 /** The launcher's list, readable without a token. */
@@ -124,23 +134,20 @@ const MISSING_TEMPLATES_TABLE =
   "the templates table does not exist in this database yet: apply services/auth/sql/0010_templates.sql (the migration runner does it at boot unless SUITE_AUTH_MIGRATE is off)";
 
 /**
- * Compares the presented token without leaking its length through timing.
+ * A request's headers as a plain record, which is what the session reader takes.
  *
- * A short-circuiting `===` on a secret is the classic mistake; the lengths are
- * compared first only so `timingSafeEqual` is not handed buffers it would throw on.
+ * The reader is Better Auth's own `getSession`, so it wants the `cookie` (or an
+ * `authorization` bearer) it would have got from the HTTP layer. Node gives repeated
+ * headers as an array; joining them with ", " is the wire form, and a cookie header
+ * never repeats in practice.
  */
-function tokenMatches(presented: string, expected: string): boolean {
-  const a = Buffer.from(presented, "utf8");
-  const b = Buffer.from(expected, "utf8");
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
-function bearerOf(request: IncomingMessage): string | null {
-  const header = request.headers.authorization;
-  if (typeof header !== "string") return null;
-  const match = /^Bearer (.+)$/iu.exec(header.trim());
-  return match?.[1] ?? null;
+function headersOf(request: IncomingMessage): Record<string, string | undefined> {
+  const headers: Record<string, string | undefined> = {};
+  for (const [name, value] of Object.entries(request.headers)) {
+    if (typeof value === "string") headers[name] = value;
+    else if (Array.isArray(value)) headers[name] = value.join(", ");
+  }
+  return headers;
 }
 
 /** The request's method, uppercased, with the HTTP default for a request that names none. */
@@ -257,11 +264,19 @@ function sendTemplateList(response: ServerResponse, templates: unknown, cacheabl
 export function adminMisconfigured(env: ConfigEnv): string | null {
   const required = (env.SUITE_ADMISSION_REQUIRED ?? "").trim().toLowerCase();
   const queueOn = required === "1" || required === "true";
-  const token = (env[ADMIN_TOKEN_VARIABLE] ?? "").trim();
-  if (queueOn && token.length < 16) {
-    return `SUITE_ADMISSION_REQUIRED is on but ${ADMIN_TOKEN_VARIABLE} is missing or shorter than 16 characters, so nobody could be admitted`;
+  const operators = operatorEmailsOf(env);
+  if (queueOn && operators.length === 0) {
+    return `SUITE_ADMISSION_REQUIRED is on but ${OPERATOR_EMAILS_VARIABLE} names no operator, so nobody could be admitted`;
   }
   return null;
+}
+
+/** `SUITE_ADMIN_EMAILS`, parsed once per boot: the only list this module trusts. */
+function operatorEmailsOf(env: ConfigEnv): readonly string[] {
+  return (env[OPERATOR_EMAILS_VARIABLE] ?? "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry.length > 0);
 }
 
 export function createAdminModule(options: AdminModuleOptions): RouteModule {
@@ -305,17 +320,46 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
     }
   };
 
-  /** True when the caller presented the operator token; the refusal is written otherwise. */
-  const operatorGate = (request: IncomingMessage, response: ServerResponse): boolean => {
-    const token = (env[ADMIN_TOKEN_VARIABLE] ?? "").trim();
-    if (token.length === 0) {
-      refuse(response, 503, "admin-not-configured", `${ADMIN_TOKEN_VARIABLE} is not set`);
+  /**
+   * True when the caller is a signed-in account this deployment named as an operator.
+   *
+   * Three refusals, each a different fact. No operator list is a deployment that has
+   * not said who may act, so the routes are not configured (503) rather than forbidden.
+   * No session is a person who is not signed in (401). A session that is not on the
+   * list is a signed-in account asking for a door it does not hold (403) — and it is
+   * logged with the address, because "somebody tried" is the line an operator wants.
+   */
+  const operatorGate = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<boolean> => {
+    const operators = operatorEmailsOf(env);
+    if (operators.length === 0) {
+      refuse(
+        response,
+        503,
+        "admin-not-configured",
+        `${OPERATOR_EMAILS_VARIABLE} names no operator`,
+      );
       return false;
     }
-    const presented = bearerOf(request);
-    if (presented === null || !tokenMatches(presented, token)) {
-      response.setHeader("www-authenticate", "Bearer");
-      refuse(response, 401, "unauthorized", "a bearer token is required");
+    const read = sessionReader();
+    if (read === null) {
+      refuse(response, 503, "auth-not-configured", "the account module is not running here");
+      return false;
+    }
+    const session = await read(headersOf(request));
+    if (session === null) {
+      response.setHeader("www-authenticate", "Session");
+      refuse(response, 401, "unauthorized", "sign in to use the operator surface");
+      return false;
+    }
+    if (!session.operator) {
+      logger.warn("an operator route was refused", {
+        path: new URL(request.url ?? "/", "http://localhost").pathname,
+        result: "refused-not-operator",
+      });
+      refuse(response, 403, "forbidden", "this account is not an operator on this deployment");
       return false;
     }
     return true;
@@ -358,7 +402,7 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> => {
-    if (!operatorGate(request, response)) return;
+    if (!(await operatorGate(request, response))) return;
     if (!storageGate(response)) return;
 
     const method = methodOf(request);
@@ -581,7 +625,7 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
       const isItem = path.startsWith(`${ADMIN_TEMPLATES_PATH}/`);
       if (!isCollection && !isItem) return false;
 
-      if (!operatorGate(request, response)) return true;
+      if (!(await operatorGate(request, response))) return true;
       if (!storageGate(response)) return true;
 
       const method = methodOf(request);

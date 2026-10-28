@@ -19,6 +19,7 @@ import { SHARE_ROOM_PREFIX } from "../../store/shares.js";
 import type { WorkspaceOrgStore } from "../../store/workspaceOrgs.js";
 import { HttpError } from "../errors.js";
 import { methodNotAllowed } from "../respond.js";
+import type { SessionVerifier } from "../sessionToken.js";
 import { claimedOf, storedWorkspaces } from "./workspaces.js";
 
 /**
@@ -106,6 +107,12 @@ export interface AdminRequestDeps {
    * by the patched `SimpleServer.disconnectRoomWhere(roomId, () => true)`.
    */
   disconnectRoom?: (roomId: string) => number;
+  /**
+   * Verifies the operator's session JWT. Required by the router, which will not serve
+   * one of these routes without it: an operator is an account the control plane signed
+   * for, and this is the only thing that can say so.
+   */
+  sessions: SessionVerifier;
   /** Structured log destination; the audit line never carries a credential. */
   logger?: Logger;
   /** Effective limits; resolved fresh per call so an override applies at once. */
@@ -121,7 +128,7 @@ export interface AdminRequestDeps {
   /**
    * The credential that made this request, as a label. The router sets it on a
    * per-request copy of these deps; nothing else may, so an audit line cannot
-   * name an actor that did not present a token.
+   * name an actor that did not present a session.
    */
   actor?: string;
   /**

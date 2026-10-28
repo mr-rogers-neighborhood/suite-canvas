@@ -34,7 +34,7 @@ import type { OrganizationInvitation } from "../mail/mail.js";
 import { checkSeatAllowance, seatProblemMessage } from "../organizations/seats.js";
 import type { AccountSession, AuthEnvironment } from "../types.js";
 import { mfaEnrollment, mfaExemptPath, mfaGate } from "./mfa.js";
-import { RELAY_TOKEN_TTL, relayClaims } from "./relayToken.js";
+import { isOperatorEmail, operatorEmails, RELAY_TOKEN_TTL, relayClaims } from "./relayToken.js";
 
 /**
  * Better Auth, configured for the doors ADR-0077 opens: a password on an open sign-up
@@ -443,6 +443,8 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
           definePayload: async ({ user, session }) =>
             relayClaims({
               userId: user.id,
+              email: user.email ?? null,
+              operators: operatorEmails(env.SUITE_ADMIN_EMAILS),
               activeOrganizationId: session.activeOrganizationId ?? null,
               roleIn: (organizationId, userId) => deps.memberships.roleFor(organizationId, userId),
               entitlements: entitlements ?? noEntitlements,
@@ -496,6 +498,8 @@ function headersOf(input: Record<string, string | undefined> | null | undefined)
 export function sessionReader(
   instance: AuthInstance,
   memberships: MembershipReader,
+  /** `SUITE_ADMIN_EMAILS`, as written. Parsed per session so a restart is not needed. */
+  operatorsRaw: string | undefined,
 ): { sessionFor: (headers: Record<string, string | undefined>) => Promise<AccountSession | null> } {
   return {
     sessionFor: async (headers) => {
@@ -520,6 +524,9 @@ export function sessionReader(
         });
         return enrollment.required && !enrollment.enrolled;
       })();
+      // One answer to "is this an operator", asked of the deployment's own list and of
+      // the address on the user row — never of a role, which belongs to an organization.
+      const operator = isOperatorEmail(payload.user.email, operatorEmails(operatorsRaw));
       const organizationId = payload.session.activeOrganizationId ?? null;
       if (organizationId === null) {
         return {
@@ -528,10 +535,18 @@ export function sessionReader(
           role: null,
           admittedAt,
           mfaRequired,
+          operator,
         };
       }
       const role = await memberships.roleFor(organizationId, payload.user.id);
-      return { userId: payload.user.id, organizationId, role, admittedAt, mfaRequired };
+      return {
+        userId: payload.user.id,
+        organizationId,
+        role,
+        admittedAt,
+        mfaRequired,
+        operator,
+      };
     },
   };
 }

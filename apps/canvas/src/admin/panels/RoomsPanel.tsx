@@ -7,14 +7,14 @@ function roomLabel(roomId: string): string {
   return roomId.startsWith("share-") ? `share-…${roomId.slice(-4)}` : roomId;
 }
 
-export function RoomsPanel({ token }: { token: string }) {
-  const rooms = useLoad(() => listRooms(token));
+export function RoomsPanel() {
+  const rooms = useLoad(() => listRooms());
   const [actionError, setActionError] = useState<string | null>(null);
 
   const disconnect = async (roomId: string) => {
     setActionError(null);
     try {
-      await disconnectRoom(token, roomId);
+      await disconnectRoom(roomId);
       rooms.reload();
     } catch (cause) {
       setActionError(errorText(cause));

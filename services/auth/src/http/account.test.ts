@@ -35,7 +35,7 @@ function harness(options: { accounts?: boolean } = {}) {
   store.addAttachment(WORKSPACE);
 
   const sessions = new Map<string, AccountSession>([
-    [OWNER, { userId: OWNER, organizationId: ORG, role: "owner", admittedAt: 1 }],
+    [OWNER, { userId: OWNER, organizationId: ORG, role: "owner", admittedAt: 1, operator: false }],
   ]);
 
   const deps: AuthHandlerDeps = {

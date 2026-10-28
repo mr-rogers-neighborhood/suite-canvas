@@ -36,9 +36,9 @@ function storesOf(status: AdminStatus): ServerStats["stores"] {
   }));
 }
 
-export function SupportPanel({ token }: { token: string }) {
+export function SupportPanel() {
   const health = useLoad(() => getRelayHealth());
-  const status = useLoad(() => getStatus(token));
+  const status = useLoad(() => getStatus());
   const [copied, setCopied] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 

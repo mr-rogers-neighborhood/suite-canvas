@@ -238,7 +238,7 @@ function harness(
     now: () => NOW,
   }) as unknown as TestAuth;
 
-  const reader = sessionReader(auth, memberships);
+  const reader = sessionReader(auth, memberships, undefined);
 
   const signIn = async (email: string) => {
     await auth.api.signInMagicLink({ body: { email }, headers: new Headers({ origin: BASE_URL }) });
@@ -309,7 +309,9 @@ describe("the Better Auth surface", () => {
   it("signs a person in with a magic link and no organization yet", async () => {
     const { auth, signIn, store } = harness();
     const { cookie, userId } = await signIn("owner@example.com");
-    const session = await sessionReader(auth, storeMemberships(store)).sessionFor({ cookie });
+    const session = await sessionReader(auth, storeMemberships(store), undefined).sessionFor({
+      cookie,
+    });
     // Signed in, unadmitted: the session says so rather than hiding it, so a route
     // can answer "you are on the list" instead of "forbidden".
     expect(session).toEqual({
@@ -317,13 +319,14 @@ describe("the Better Auth surface", () => {
       organizationId: null,
       role: null,
       admittedAt: null,
+      operator: false,
       mfaRequired: false,
     });
   });
 
   it("returns no session for a cookie it did not issue", async () => {
     const { auth, store } = harness();
-    const reader = sessionReader(auth, storeMemberships(store));
+    const reader = sessionReader(auth, storeMemberships(store), undefined);
     expect(await reader.sessionFor({ cookie: "better-auth.session_token=forged" })).toBeNull();
     expect(await reader.sessionFor({})).toBeNull();
   });
@@ -433,7 +436,9 @@ describe("organization policy through the plugin's hooks", () => {
     });
 
     expect(organization?.slug).toBe("agency");
-    const session = await sessionReader(auth, storeMemberships(store)).sessionFor({ cookie });
+    const session = await sessionReader(auth, storeMemberships(store), undefined).sessionFor({
+      cookie,
+    });
     expect(session?.organizationId).toBe(organization?.id);
     expect(session?.role).toBe("owner");
   });
@@ -543,7 +548,7 @@ describe("a second factor for the admin role", () => {
   it("reports the requirement on the session, so the client can offer enrolment", async () => {
     const { auth, signIn, store } = harness();
     const { cookie, userId } = await signIn("operator@example.com");
-    const reader = sessionReader(auth, storeMemberships(store));
+    const reader = sessionReader(auth, storeMemberships(store), undefined);
 
     expect((await reader.sessionFor({ cookie }))?.mfaRequired).toBe(false);
     promote(store, userId, {});
@@ -879,7 +884,9 @@ describe("sessions and devices", () => {
     );
     expect(revoked.status).toBe(200);
     // The cookie still exists in the browser; it no longer names a session.
-    expect(await sessionReader(auth, storeMemberships(store)).sessionFor({ cookie })).toBeNull();
+    expect(
+      await sessionReader(auth, storeMemberships(store), undefined).sessionFor({ cookie }),
+    ).toBeNull();
   });
 });
 
@@ -952,7 +959,7 @@ describe("admission", () => {
   it("reports the admission state on the session so a route can explain itself", async () => {
     const { auth, signIn, admit, store } = harness({ admission: true });
     const { cookie, userId } = await signIn("explain@example.com");
-    const reader = sessionReader(auth, storeMemberships(store));
+    const reader = sessionReader(auth, storeMemberships(store), undefined);
 
     expect((await reader.sessionFor({ cookie }))?.admittedAt).toBeNull();
 

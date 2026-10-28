@@ -43,9 +43,10 @@ stores in one file. Two stores must never share a file, whatever the mode.
 | `SUITE_HOSTED` | `0` | `1` enforces hosted licences and installs the hosted quota defaults; `SUITE_LICENCE_PUBLIC_KEY` becomes required and `SUITE_LICENCE` is refused |
 | `SUITE_LICENCE` | none | signed licence token for a self-hosted instance, verified at boot; see [Self-host licence](#self-host-licence) |
 | `SUITE_LICENCE_PUBLIC_KEY` | none | Ed25519 public key that verifies `SUITE_LICENCE` and the relay's licence tokens, as PEM or the base64url raw key |
-| `SUITE_RELAY_PURGE_TOKEN` | none | bearer the control plane presents to the relay's own workspace delete, so an account erase removes documents, shares and attachments. Distinct from `SUITE_ADMIN_TOKEN`: it opens one route |
+| `SUITE_RELAY_PURGE_TOKEN` | none | bearer the control plane presents to the relay's own workspace delete, so an account erase removes documents, shares and attachments. It opens that one route and nothing else |
 | `SUITE_RELAY_URL` | none | where the control plane reaches that relay. Empty leaves the three stores in place and reports them as not-configured |
-| `SUITE_ADMIN_TOKEN` | none | operator token for `/api/admin/*`, `/metrics` and `/admin`, at least 16 characters; unset answers `404`, which is the safe default |
+| `SUITE_ADMIN_EMAILS` | none | comma-separated addresses that may use the operator surface: `/api/admin/*`, `/metrics` and `/admin`. Matched case-insensitively against the signed-in account, so revoking an operator is a restart rather than a rotation. Unset means nobody, which is the safe default |
+| `SUITE_METRICS_LOCAL` | `0` | `1` lets a request from a loopback address read `/metrics` with no credential, which is what a cron scrape on the box needs. It opens nothing else |
 | `SUITE_PROJECTION_TOKEN` | random per start | the projection worker's credential; writes only `share-` rooms |
 | `SUITE_SOURCE_TOKEN` | random per start | the source worker's credential; writes only a workspace with an active editor share |
 | `SUITE_INTERNAL_TOKEN` | none | legacy alias for `SUITE_PROJECTION_TOKEN`, still accepted |
@@ -146,7 +147,7 @@ every account path answers `503 auth-not-configured`.
 | `SUITE_GOOGLE_CLIENT_ID` | none | with the secret, registers the Google provider |
 | `SUITE_GOOGLE_CLIENT_SECRET` | none | one half of the pair without the other refuses to boot |
 | `SUITE_TURNSTILE_SECRET` | none | set it to require invisible Turnstile in front of sign-up; unset means no challenge |
-| `SUITE_ADMISSION_REQUIRED` | `0` | `1` holds a new account until an operator admits it, gating `/organization/create`. Refused at startup unless `SUITE_ADMIN_TOKEN` is at least 16 characters, because the queue would have no door |
+| `SUITE_ADMISSION_REQUIRED` | `0` | `1` holds a new account until an operator admits it, gating `/organization/create`. Refused at startup unless `SUITE_ADMIN_EMAILS` names an operator, because the queue would have no door |
 | `SUITE_APP_URL` | none | where the admission notice sends someone; unset admits without sending one |
 | `SUITE_MAIL_TRANSPORT` | `console` | `console`, `resend` or `smtp`. Anything else refuses to boot |
 | `SUITE_MAIL_FROM` | none | sending address, e.g. `Suite <hello@example.com>`; required by `resend` and `smtp` |

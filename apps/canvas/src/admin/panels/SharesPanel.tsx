@@ -18,14 +18,14 @@ import {
   useLoad,
 } from "../ui";
 
-function ShareList({ token, workspaceId }: { token: string; workspaceId: string }) {
-  const shares = useLoad(() => listShares(token, workspaceId));
+function ShareList({ workspaceId }: { workspaceId: string }) {
+  const shares = useLoad(() => listShares(workspaceId));
   const [error, setError] = useState<string | null>(null);
 
   const revoke = async (share: AdminShare) => {
     setError(null);
     try {
-      await revokeShare(token, share.id);
+      await revokeShare(share.id);
       shares.reload();
     } catch (cause) {
       setError(errorText(cause));
@@ -36,7 +36,7 @@ function ShareList({ token, workspaceId }: { token: string; workspaceId: string 
   const revokeAll = async () => {
     setError(null);
     try {
-      await revokeAllShares(token, workspaceId);
+      await revokeAllShares(workspaceId);
       shares.reload();
     } catch (cause) {
       setError(errorText(cause));
@@ -120,8 +120,8 @@ function ShareList({ token, workspaceId }: { token: string; workspaceId: string 
   );
 }
 
-export function SharesPanel({ token }: { token: string }) {
-  const workspaces = useLoad(() => listWorkspaces(token));
+export function SharesPanel() {
+  const workspaces = useLoad(() => listWorkspaces());
   const [input, setInput] = useState("");
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
@@ -161,7 +161,7 @@ export function SharesPanel({ token }: { token: string }) {
       {workspaceId === null ? (
         <Muted>Pick a workspace to list its links, or open one from the Workspaces tab.</Muted>
       ) : (
-        <ShareList key={workspaceId} token={token} workspaceId={workspaceId} />
+        <ShareList key={workspaceId} workspaceId={workspaceId} />
       )}
     </section>
   );

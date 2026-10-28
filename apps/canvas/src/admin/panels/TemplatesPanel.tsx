@@ -210,7 +210,7 @@ function InlineField({
   );
 }
 
-function NewTemplateForm({ token, onCreated }: { token: string; onCreated: () => void }) {
+function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
   const [text, setText] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -225,7 +225,7 @@ function NewTemplateForm({ token, onCreated }: { token: string; onCreated: () =>
     setProblem(null);
     setBusy(true);
     try {
-      await createTemplate(token, parsed.template);
+      await createTemplate(parsed.template);
       setText("");
       onCreated();
     } catch (cause) {
@@ -269,8 +269,8 @@ function NewTemplateForm({ token, onCreated }: { token: string; onCreated: () =>
   );
 }
 
-function TemplateTable({ token }: { token: string }) {
-  const list = useLoad(() => listTemplates(token));
+function TemplateTable() {
+  const list = useLoad(() => listTemplates());
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -286,7 +286,7 @@ function TemplateTable({ token }: { token: string }) {
 
   const save = (template: AdminTemplate, next: { name: string; description: string }) =>
     act(() =>
-      updateTemplate(token, template.id, {
+      updateTemplate(template.id, {
         name: next.name,
         description: next.description,
         data: template.data,
@@ -313,7 +313,6 @@ function TemplateTable({ token }: { token: string }) {
       />
       {creating ? (
         <NewTemplateForm
-          token={token}
           onCreated={() => {
             setCreating(false);
             list.reload();
@@ -380,7 +379,7 @@ function TemplateTable({ token }: { token: string }) {
                       <ConfirmButton
                         label="Delete"
                         confirmLabel="Confirm delete"
-                        onConfirm={() => act(() => deleteTemplate(token, template.id))}
+                        onConfirm={() => act(() => deleteTemplate(template.id))}
                       />
                     </td>
                   </tr>
@@ -394,19 +393,13 @@ function TemplateTable({ token }: { token: string }) {
   );
 }
 
-export function TemplatesPanel({ token }: { token: string | null }) {
-  if (token === null || token.trim().length === 0) {
-    return (
-      <section className="admin-panel">
-        <PanelHeader
-          title="Templates"
-          description="Starter templates the launcher offers before sign-in."
-        />
-        <Muted>
-          The admin token is required to read or change templates. Unlock the panel again.
-        </Muted>
-      </section>
-    );
-  }
-  return <TemplateTable token={token} />;
+/**
+ * The starter-template list, for an operator.
+ *
+ * There is no "unlock it again" state any more: the panel is only reachable once the
+ * gate has proved this session is an operator, so a refusal here is a real answer from
+ * the server and `TemplateTable` shows it as one.
+ */
+export function TemplatesPanel() {
+  return <TemplateTable />;
 }

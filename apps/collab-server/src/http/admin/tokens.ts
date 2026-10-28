@@ -1,90 +1,76 @@
-import { timingSafeEqual } from "node:crypto";
+import type { SessionVerifier } from "../sessionToken.js";
 
 /**
- * Scoped operator credentials (ADR-0076's operator surface).
+ * Who may use the operator surface (ADR-0076, amended).
  *
- * One unscoped token was a single key to every route: a scraper that needed
- * `GET /metrics` held the same secret as the call that deletes a workspace. Two
- * scopes fix the blast radius without inventing an account system for the
- * operator:
+ * The door used to be one or two bearer tokens in the environment. A token has two
+ * flaws that matter more as the surface grows: it cannot be revoked without a restart,
+ * and an audit line can only say "admin" rather than which person acted. The relay
+ * already verifies the control plane's session JWT on every join (ADR-0074), so the
+ * same verification now answers this question too — the token the browser already
+ * holds, checked against the same key set, and refused unless the account is one the
+ * deployment named as an operator.
+ *
+ * Two scopes remain, because they describe the blast radius rather than the identity:
  *
  * - `read` sees `/metrics`, the status, the room and share inventories and the
  *   workspace list.
  * - `mutate` does everything `read` does and may change state.
  *
- * Tokens stay configuration, not rows: the relay has no operator table, and a
- * token an operator can rotate by editing the environment is one they can
- * revoke without a migration. `SUITE_ADMIN_TOKEN` keeps both scopes, so an
- * existing deployment is unchanged; `SUITE_ADMIN_READ_TOKEN` is the new,
- * narrower one.
+ * An operator holds both. The split stays because a scrape-only client should stay a
+ * scrape-only client, and because it is what lets a future role be narrower than
+ * "operator" without rewriting a single handler.
  */
-
-export const ADMIN_TOKEN_ENV = "SUITE_ADMIN_TOKEN";
-export const ADMIN_READ_TOKEN_ENV = "SUITE_ADMIN_READ_TOKEN";
 
 export type AdminScope = "read" | "mutate";
 
 /**
- * Who acted. A name, never a secret: nothing here is ever logged or returned
- * beyond this label, which is what an audit line can safely say.
+ * Who acted. The account id, never a secret: nothing here is ever logged or returned
+ * beyond this label, and it is what makes an audit line name a person.
  */
 export interface AdminCredential {
   actor: string;
   scopes: readonly AdminScope[];
 }
 
-interface ConfiguredCredential extends AdminCredential {
-  token: string;
-}
-
-function constantTimeEqual(left: string, right: string): boolean {
-  const a = Buffer.from(left, "utf8");
-  const b = Buffer.from(right, "utf8");
-  return a.length === b.length && a.length > 0 && timingSafeEqual(a, b);
-}
-
-/** Every configured operator token, in the order a request is matched against them. */
-export function adminCredentials(env: NodeJS.ProcessEnv = process.env): ConfiguredCredential[] {
-  const credentials: ConfiguredCredential[] = [];
-  const full = env[ADMIN_TOKEN_ENV]?.trim() ?? "";
-  if (full.length > 0) {
-    credentials.push({ actor: "admin", scopes: ["read", "mutate"], token: full });
-  }
-  const readOnly = env[ADMIN_READ_TOKEN_ENV]?.trim() ?? "";
-  // The same secret in both variables must not silently widen the read token.
-  if (readOnly.length > 0 && readOnly !== full) {
-    credentials.push({ actor: "admin-read", scopes: ["read"], token: readOnly });
-  }
-  return credentials;
-}
-
-/** True when the admin API is switched on at all. */
+/**
+ * Whether this deployment has an operator surface at all.
+ *
+ * `SUITE_AUTH_URL` is the whole answer: without a control plane there is no key set to
+ * verify a session against, so there is nobody who could be an operator, and the routes
+ * answer 404 rather than 401. Refusing is the honest read of "this server has no
+ * identity to check".
+ */
 export function adminConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  return adminCredentials(env).length > 0;
+  return (env.SUITE_AUTH_URL ?? "").trim().length > 0;
 }
 
 /**
- * The credential a presented bearer token names, or null. Every configured
- * token is compared in constant time and no early exit shortens the loop, so a
- * miss costs the same as a match.
+ * The credential a presented session token names, or null.
+ *
+ * A valid signature is not enough: the token also has to carry `operator: true`, which
+ * the control plane mints from `SUITE_ADMIN_EMAILS`. An organization owner's token is a
+ * perfectly good session and is still refused here, because owning a tenant is not
+ * operating the deployment.
  */
-export function resolveAdminCredential(
+export async function resolveAdminCredential(
   presented: string | null,
-  env: NodeJS.ProcessEnv = process.env,
-): AdminCredential | null {
+  verifier: SessionVerifier,
+): Promise<AdminCredential | null> {
   if (presented === null || presented.length === 0) return null;
-  let matched: AdminCredential | null = null;
-  for (const credential of adminCredentials(env)) {
-    // `constantTimeEqual` is called for every token even after a match, so the
-    // number of comparisons does not reveal which one matched.
-    if (constantTimeEqual(presented, credential.token) && matched === null) {
-      matched = { actor: credential.actor, scopes: credential.scopes };
-    }
-  }
-  return matched;
+  const result = await verifier.verify(presented);
+  if (!result.ok) return null;
+  if (!result.claims.operator) return null;
+  return { actor: `account:${result.claims.userId}`, scopes: ["read", "mutate"] };
 }
 
-/** The scope a method needs. Every non-read method mutates. */
+/**
+ * The scope a method needs and the scopes it must not exceed.
+ *
+ * Every non-read method mutates; a read-only credential is refused one. The relay
+ * never mints a read-only operator today, so this is the shape a narrower role would
+ * arrive in rather than a branch anybody can reach.
+ */
 export function scopeOfMethod(method: string): AdminScope {
   return method === "GET" || method === "HEAD" ? "read" : "mutate";
 }

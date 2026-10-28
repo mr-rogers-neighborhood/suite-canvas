@@ -74,7 +74,7 @@ beforeEach(() => {
 
 describe("templates panel", () => {
   it("lists every template with the counts its data holds", async () => {
-    render(<TemplatesPanel token="secret" />);
+    render(<TemplatesPanel />);
 
     await screen.findByText("Blank starter");
     const cells = cellsOf("Blank starter");
@@ -87,7 +87,7 @@ describe("templates panel", () => {
   });
 
   it("renders a template whose data is not a template at all", async () => {
-    render(<TemplatesPanel token="secret" />);
+    render(<TemplatesPanel />);
 
     await screen.findByText("Broken starter");
     expect(within(rowOf("Broken starter")).getAllByText("—")).toHaveLength(3);
@@ -96,7 +96,7 @@ describe("templates panel", () => {
 
   it("renames inline and sends the stored data back with the new name", async () => {
     vi.mocked(updateTemplate).mockResolvedValue({ ok: true, template: BLANK });
-    render(<TemplatesPanel token="secret" />);
+    render(<TemplatesPanel />);
 
     await screen.findByText("Blank starter");
     fireEvent.click(within(rowOf("Blank starter")).getByRole("button", { name: "Rename" }));
@@ -105,7 +105,7 @@ describe("templates panel", () => {
     fireEvent.blur(input);
 
     await waitFor(() =>
-      expect(updateTemplate).toHaveBeenCalledWith("secret", "blank", {
+      expect(updateTemplate).toHaveBeenCalledWith("blank", {
         name: "Weekly review",
         description: "Two boards, four cards",
         data: BLANK.data,
@@ -115,7 +115,7 @@ describe("templates panel", () => {
 
   it("edits the description and keeps the rest of the template intact", async () => {
     vi.mocked(updateTemplate).mockResolvedValue({ ok: true, template: BLANK });
-    render(<TemplatesPanel token="secret" />);
+    render(<TemplatesPanel />);
 
     await screen.findByText("Two boards, four cards");
     fireEvent.click(within(rowOf("Blank starter")).getByRole("button", { name: "Edit" }));
@@ -124,7 +124,7 @@ describe("templates panel", () => {
     fireEvent.blur(input);
 
     await waitFor(() =>
-      expect(updateTemplate).toHaveBeenCalledWith("secret", "blank", {
+      expect(updateTemplate).toHaveBeenCalledWith("blank", {
         name: "Blank starter",
         description: "A weekly review board",
         data: BLANK.data,
@@ -134,7 +134,7 @@ describe("templates panel", () => {
 
   it("deletes only after the inline confirmation, then reloads the list", async () => {
     vi.mocked(deleteTemplate).mockResolvedValue({ ok: true, deleted: true });
-    render(<TemplatesPanel token="secret" />);
+    render(<TemplatesPanel />);
 
     await screen.findByText("Blank starter");
     expect(deleteTemplate).not.toHaveBeenCalled();
@@ -142,7 +142,7 @@ describe("templates panel", () => {
     expect(deleteTemplate).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
 
-    await waitFor(() => expect(deleteTemplate).toHaveBeenCalledWith("secret", "blank"));
+    await waitFor(() => expect(deleteTemplate).toHaveBeenCalledWith("blank"));
     await waitFor(() => expect(listTemplates).toHaveBeenCalledTimes(2));
   });
 
@@ -162,7 +162,7 @@ describe("templates panel", () => {
     const click = vi
       .spyOn(HTMLAnchorElement.prototype, "click")
       .mockImplementation(() => undefined);
-    render(<TemplatesPanel token="secret" />);
+    render(<TemplatesPanel />);
 
     await screen.findByText("Blank starter");
     fireEvent.click(within(rowOf("Blank starter")).getByRole("button", { name: "Download" }));
@@ -177,7 +177,7 @@ describe("templates panel", () => {
 
   it("imports a pasted template object exactly as a download writes it", async () => {
     vi.mocked(createTemplate).mockResolvedValue({ ok: true, template: BLANK });
-    render(<TemplatesPanel token="secret" />);
+    render(<TemplatesPanel />);
 
     await screen.findByText("Blank starter");
     fireEvent.click(screen.getByRole("button", { name: "New template…" }));
@@ -195,7 +195,7 @@ describe("templates panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create template" }));
 
     await waitFor(() =>
-      expect(createTemplate).toHaveBeenCalledWith("secret", {
+      expect(createTemplate).toHaveBeenCalledWith({
         id: "imported",
         name: "Imported",
         description: "",
@@ -203,12 +203,5 @@ describe("templates panel", () => {
         data: { boards: [] },
       }),
     );
-  });
-
-  it("asks for the token instead of drawing an empty table", () => {
-    render(<TemplatesPanel token={null} />);
-
-    expect(screen.getByText(/admin token is required/i)).toBeInTheDocument();
-    expect(listTemplates).not.toHaveBeenCalled();
   });
 });

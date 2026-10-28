@@ -16,6 +16,7 @@ const session = {
   organizationId: ORG,
   role: "admin" as const,
   admittedAt: 1,
+  operator: false,
 };
 
 describe("resolvePrincipal", () => {
@@ -102,7 +103,13 @@ describe("resolvePrincipal", () => {
     const principal = resolvePrincipal({
       workspaceId: WORKSPACE,
       organizationId: ORG,
-      session: { userId: "user-1", organizationId: null, role: "owner", admittedAt: 1 },
+      session: {
+        userId: "user-1",
+        organizationId: null,
+        role: "owner",
+        admittedAt: 1,
+        operator: false,
+      },
       ownerKeyHash: "c".repeat(64),
     });
     expect(principal?.kind).toBe("owner");

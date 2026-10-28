@@ -1,11 +1,6 @@
-import { type FormEvent, useState } from "react";
-import {
-  errorText,
-  forgetAdminToken,
-  getStatus,
-  rememberAdminToken,
-  storedAdminToken,
-} from "./api";
+import { useEffect, useState } from "react";
+import { signOut } from "../auth/client";
+import { errorText, getStatus } from "./api";
 import { FixturesPanel } from "./panels/FixturesPanel";
 import { RoomsPanel } from "./panels/RoomsPanel";
 import { SharesPanel } from "./panels/SharesPanel";
@@ -13,7 +8,6 @@ import { StatusPanel } from "./panels/StatusPanel";
 import { SupportPanel } from "./panels/SupportPanel";
 import { TemplatesPanel } from "./panels/TemplatesPanel";
 import { WorkspacesPanel } from "./panels/WorkspacesPanel";
-import { ErrorLine } from "./ui";
 
 type View = "status" | "workspaces" | "rooms" | "shares" | "templates" | "fixtures" | "support";
 
@@ -28,82 +22,83 @@ const VIEWS: { id: View; label: string }[] = [
 ];
 
 /**
- * Token screen. The token is validated against `/status` before it is kept, so
- * a typo surfaces here instead of as an error on every panel.
+ * The gate: an account, not a pasted secret.
+ *
+ * The panel is a static entry point with no session of its own, so it asks the same
+ * account API the app uses who is signed in, and then asks the operator routes whether
+ * that account is on the deployment's list. The two answers are different refusals — a
+ * 401 means "not signed in" and a 403 means "signed in, not an operator" — and the
+ * panel says which one it got, because "your account is not an operator" is a fact the
+ * reader can act on and "the token was rejected" was not.
  */
-function TokenScreen({ onReady }: { onReady: (token: string) => void }) {
-  const [draft, setDraft] = useState("");
+function Gate({ onReady }: { onReady: () => void }) {
+  const [state, setState] = useState<"checking" | "ready" | "anonymous" | "denied" | "failed">(
+    "checking",
+  );
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    const value = draft.trim();
-    if (value.length === 0) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await getStatus(value);
-      onReady(value);
-    } catch (cause) {
-      setError(errorText(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        await getStatus();
+        if (live) setState("ready");
+      } catch (cause) {
+        if (!live) return;
+        const status = (cause as { status?: number }).status;
+        if (status === 401) setState("anonymous");
+        else if (status === 403) setState("denied");
+        else {
+          setError(errorText(cause));
+          setState("failed");
+        }
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (state === "ready") {
+    onReady();
+    return null;
+  }
 
   return (
     <div className="admin-gate">
-      <form className="admin-card admin-gate-card" onSubmit={(event) => void submit(event)}>
+      <div className="admin-card admin-gate-card">
         <h1>
           Suite <span className="admin-muted">operator</span>
         </h1>
-        <p className="admin-muted">
-          Full read and delete access to every workspace on this relay. The panel is served from its
-          own entry point and is never linked from the app.
-        </p>
-        <label className="admin-field">
-          <span>Admin token</span>
-          <input
-            className="admin-input admin-mono"
-            type="password"
-            autoComplete="off"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="SUITE_ADMIN_TOKEN"
-          />
-        </label>
-        <button
-          type="submit"
-          className="admin-button admin-button-primary"
-          disabled={busy || draft.trim().length === 0}
-        >
-          {busy ? "Checking…" : "Unlock"}
-        </button>
-        <ErrorLine message={error} />
-        <p className="admin-muted admin-small">
-          Kept in this tab's <code>sessionStorage</code> only: never localStorage, never a URL.
-          Closing the tab ends the session.
-        </p>
-      </form>
+        {state === "checking" ? <p className="admin-muted">Checking your session…</p> : null}
+        {state === "anonymous" ? (
+          <>
+            <p className="admin-muted">
+              This panel reads and deletes every workspace on this relay. Sign in with an account
+              this deployment named as an operator.
+            </p>
+            <a className="admin-button admin-button-primary" href="/admin.html">
+              Sign in in the app, then reload this page
+            </a>
+          </>
+        ) : null}
+        {state === "denied" ? (
+          <p className="admin-muted">
+            You are signed in, and this account is not an operator on this deployment. Ask whoever
+            runs it to add your address to <code>SUITE_ADMIN_EMAILS</code>.
+          </p>
+        ) : null}
+        {state === "failed" ? <p className="admin-muted">{error}</p> : null}
+      </div>
     </div>
   );
 }
 
 export function App() {
-  const [token, setToken] = useState<string | null>(() => storedAdminToken());
+  const [ready, setReady] = useState(false);
   const [view, setView] = useState<View>("status");
 
-  if (token === null) {
-    return (
-      <TokenScreen
-        onReady={(value) => {
-          rememberAdminToken(value);
-          setToken(value);
-        }}
-      />
-    );
-  }
+  if (!ready) return <Gate onReady={() => setReady(true)} />;
 
   return (
     <div className="admin-shell">
@@ -128,8 +123,8 @@ export function App() {
           type="button"
           className="admin-button"
           onClick={() => {
-            forgetAdminToken();
-            setToken(null);
+            void signOut();
+            setReady(false);
             setView("status");
           }}
         >
@@ -138,13 +133,13 @@ export function App() {
       </header>
 
       <main className="admin-main">
-        {view === "status" ? <StatusPanel token={token} /> : null}
-        {view === "workspaces" ? <WorkspacesPanel token={token} /> : null}
-        {view === "rooms" ? <RoomsPanel token={token} /> : null}
-        {view === "shares" ? <SharesPanel token={token} /> : null}
-        {view === "templates" ? <TemplatesPanel token={token} /> : null}
-        {view === "fixtures" ? <FixturesPanel token={token} /> : null}
-        {view === "support" ? <SupportPanel token={token} /> : null}
+        {view === "status" ? <StatusPanel /> : null}
+        {view === "workspaces" ? <WorkspacesPanel /> : null}
+        {view === "rooms" ? <RoomsPanel /> : null}
+        {view === "shares" ? <SharesPanel /> : null}
+        {view === "templates" ? <TemplatesPanel /> : null}
+        {view === "fixtures" ? <FixturesPanel /> : null}
+        {view === "support" ? <SupportPanel /> : null}
       </main>
     </div>
   );

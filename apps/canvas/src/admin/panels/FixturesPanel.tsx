@@ -26,7 +26,7 @@ function IdList({ title, ids }: { title: string; ids: string[] }) {
   );
 }
 
-export function FixturesPanel({ token }: { token: string }) {
+export function FixturesPanel() {
   const [workspaceId, setWorkspaceId] = useState("");
   const [boards, setBoards] = useState("1");
   const [cards, setCards] = useState("10");
@@ -41,7 +41,7 @@ export function FixturesPanel({ token }: { token: string }) {
     setError(null);
     setBusy(true);
     try {
-      const created = await createFixtures(token, {
+      const created = await createFixtures({
         ...(workspaceId.trim().length > 0 ? { workspaceId: workspaceId.trim() } : {}),
         boards: Number(boards),
         cards: Number(cards),

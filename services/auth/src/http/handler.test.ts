@@ -68,9 +68,12 @@ function harness(
   // a fake here keeps the test out of Better Auth's cookie internals while the
   // rest of the request path stays real.
   const sessions = new Map<string, AccountSession>([
-    [OWNER, { userId: OWNER, organizationId: ORG, role: "owner", admittedAt: 1 }],
-    [EDITOR, { userId: EDITOR, organizationId: ORG, role: "member", admittedAt: 1 }],
-    [TESTER, { userId: TESTER, organizationId: null, role: null, admittedAt: 1 }],
+    [OWNER, { userId: OWNER, organizationId: ORG, role: "owner", admittedAt: 1, operator: false }],
+    [
+      EDITOR,
+      { userId: EDITOR, organizationId: ORG, role: "member", admittedAt: 1, operator: false },
+    ],
+    [TESTER, { userId: TESTER, organizationId: null, role: null, admittedAt: 1, operator: false }],
   ]);
 
   const redemptions: EnrollmentRedeemInput[] = [];

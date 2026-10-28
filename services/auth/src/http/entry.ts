@@ -150,7 +150,7 @@ export function createAuthEntry(env: AuthEnvironment, deps: AuthEntryDeps): Auth
   return {
     handler: (request) => instance.handler(request),
     redeem: enrollmentRedemption({ baseURL, handler: instance.handler }),
-    sessions: sessionReader(instance, deps.memberships),
+    sessions: sessionReader(instance, deps.memberships, env.SUITE_ADMIN_EMAILS),
     repositories: {
       licences: deps.licences,
       memberships: deps.memberships,

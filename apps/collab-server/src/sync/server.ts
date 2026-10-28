@@ -490,6 +490,9 @@ const health = createServer((request, response) => {
           scheduleProjection(workspaceId, { immediate: true });
         },
         logger: logger.child({ component: "admin" }),
+        // The operator door is a session, verified against the same key set every join
+        // uses: one identity, one answer to "who is this", in both directions.
+        sessions: sessions ?? noSessionVerifier,
       });
     })
     .then((handled) => {

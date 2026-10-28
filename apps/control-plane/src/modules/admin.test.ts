@@ -1,13 +1,16 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { type AdminModuleOptions, createAdminModule } from "./admin.js";
+import { publishSessionReader, resetSessionReader } from "./context.js";
 
 /**
  * The operator door.
  *
- * What matters is that it cannot be used without the token, and that admitting
- * someone is one write followed by one notice — the queue is the only thing that
- * turns a held account into a working one.
+ * What matters is who gets through it: a signed-in account this deployment named as
+ * an operator, and nobody else — not an anonymous caller, not a signed-in account that
+ * is not on the list, and not an organization owner, whose role is a tenant fact rather
+ * than a platform one. Admitting someone is one write followed by one notice, because
+ * the queue is the only thing that turns a held account into a working one.
  */
 function silence() {
   return { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as never;
@@ -64,13 +67,41 @@ function query(rows: unknown[] = []) {
   };
 }
 
-const token = "operator-token-long-enough";
+const OPERATOR = "operator@suite.run";
+
+/** The cookie the fake session reader treats as a signed-in operator. */
+const OPERATOR_COOKIE = "session=operator";
+
+/**
+ * Publishes a session reader, which is what the auth module does at boot.
+ *
+ * The module under test is the admin one; the reader stands in for Better Auth so the
+ * test can ask the one question the gate asks — is this session an operator — without
+ * a database.
+ */
+function signedIn(
+  sessions: Record<string, { operator: boolean }> = {
+    [OPERATOR_COOKIE]: { operator: true },
+  },
+) {
+  publishSessionReader(async (headers) => {
+    const found = sessions[headers.cookie ?? ""];
+    if (found === undefined) return null;
+    return {
+      userId: "user-1",
+      organizationId: null,
+      role: null,
+      admittedAt: 1,
+      operator: found.operator,
+    };
+  });
+}
 
 function moduleWith(options: Partial<AdminModuleOptions> & { rows?: unknown[] } = {}) {
   const sql = query(options.rows ?? []);
   const module = createAdminModule({
     env: {
-      SUITE_ADMIN_TOKEN: token,
+      SUITE_ADMIN_EMAILS: OPERATOR,
       SUITE_CONTROL_PLANE_DATABASE_URL: "postgres://localhost/suite",
       ...options.env,
     } as AdminModuleOptions["env"],
@@ -79,6 +110,8 @@ function moduleWith(options: Partial<AdminModuleOptions> & { rows?: unknown[] } 
   });
   return { module, sql };
 }
+
+afterEach(() => resetSessionReader());
 
 describe("the operator admission queue", () => {
   it("answers only its own path", async () => {
@@ -91,28 +124,35 @@ describe("the operator admission queue", () => {
     expect(handled).toBe(false);
   });
 
-  it("refuses without a token", async () => {
+  it("refuses a caller with no session", async () => {
+    signedIn();
     const { module } = moduleWith();
     const { out, res } = response();
     await module.handle(request("GET", null), res);
     expect(out.status).toBe(401);
-    expect(out.headers["www-authenticate"]).toBe("Bearer");
+    expect(out.headers["www-authenticate"]).toBe("Session");
+    expect(JSON.parse(out.body).error).toBe("unauthorized");
   });
 
-  it("refuses a token that is not the token", async () => {
+  it("refuses a signed-in account that is not an operator", async () => {
+    // The distinction that matters: being signed in is not being an operator, and an
+    // account with its own organization is not one either.
+    signedIn({ "session=member": { operator: false } });
     const { module, sql } = moduleWith();
     const { out, res } = response();
-    await module.handle(request("GET", null, { authorization: "Bearer guess" }), res);
-    expect(out.status).toBe(401);
+    await module.handle(request("GET", null, { cookie: "session=member" }), res);
+    expect(out.status).toBe(403);
+    expect(JSON.parse(out.body).error).toBe("forbidden");
     expect(sql.calls).toHaveLength(0);
   });
 
   it("lists the accounts still waiting", async () => {
+    signedIn();
     const { module } = moduleWith({
       rows: [{ email: "held@example.com", name: "Held", createdAt: 1 }],
     });
     const { out, res } = response();
-    await module.handle(request("GET", null, { authorization: `Bearer ${token}` }), res);
+    await module.handle(request("GET", null, { cookie: OPERATOR_COOKIE }), res);
     expect(out.status).toBe(200);
     expect(JSON.parse(out.body)).toMatchObject({
       ok: true,
@@ -121,11 +161,12 @@ describe("the operator admission queue", () => {
   });
 
   it("admits the addresses it was given, in one write", async () => {
+    signedIn();
     const { module, sql } = moduleWith({ rows: [{ email: "held@example.com" }] });
     const { out, res } = response();
     await module.handle(
       request("POST", JSON.stringify({ emails: ["Held@Example.com"] }), {
-        authorization: `Bearer ${token}`,
+        cookie: OPERATOR_COOKIE,
         "content-type": "application/json",
       }),
       res,
@@ -137,20 +178,34 @@ describe("the operator admission queue", () => {
   });
 
   it("refuses a body with no addresses", async () => {
+    signedIn();
     const { module, sql } = moduleWith();
     const { out, res } = response();
     await module.handle(
-      request("POST", JSON.stringify({ emails: [] }), { authorization: `Bearer ${token}` }),
+      request("POST", JSON.stringify({ emails: [] }), { cookie: OPERATOR_COOKIE }),
       res,
     );
     expect(out.status).toBe(400);
     expect(sql.calls).toHaveLength(0);
   });
 
-  it("is not a door at all when no token is configured", async () => {
-    const { module } = moduleWith({ env: { SUITE_ADMIN_TOKEN: "" } as never });
+  it("is not a door at all when the deployment names no operator", async () => {
+    signedIn();
+    const { module } = moduleWith({ env: { SUITE_ADMIN_EMAILS: "" } as never });
     const { out, res } = response();
-    await module.handle(request("GET", null, { authorization: "Bearer anything" }), res);
+    await module.handle(request("GET", null, { cookie: OPERATOR_COOKIE }), res);
     expect(out.status).toBe(503);
+    expect(JSON.parse(out.body).error).toBe("admin-not-configured");
+  });
+
+  it("is not a door either when no account module is running here", async () => {
+    // A control plane with identity switched off cannot tell who is calling, and a
+    // guess in that position is the failure this gate exists to avoid.
+    resetSessionReader();
+    const { module } = moduleWith();
+    const { out, res } = response();
+    await module.handle(request("GET", null, { cookie: OPERATOR_COOKIE }), res);
+    expect(out.status).toBe(503);
+    expect(JSON.parse(out.body).error).toBe("auth-not-configured");
   });
 });

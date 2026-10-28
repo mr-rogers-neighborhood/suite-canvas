@@ -109,24 +109,22 @@ function ShareTable({
 }
 
 function Detail({
-  token,
   id,
   onClose,
   onChanged,
 }: {
-  token: string;
   id: string;
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const detail = useLoad<WorkspaceDetail>(() => getWorkspace(token, id));
+  const detail = useLoad<WorkspaceDetail>(() => getWorkspace(id));
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const revoke = async (share: AdminShare) => {
     setError(null);
     try {
-      await revokeShare(token, share.id);
+      await revokeShare(share.id);
       detail.reload();
       onChanged();
     } catch (cause) {
@@ -139,7 +137,7 @@ function Detail({
     setError(null);
     setExporting(true);
     try {
-      await downloadExport(token, id);
+      await downloadExport(id);
     } catch (cause) {
       setError(errorText(cause));
     } finally {
@@ -220,8 +218,8 @@ function Detail({
   );
 }
 
-export function WorkspacesPanel({ token }: { token: string }) {
-  const list = useLoad(() => listWorkspaces(token));
+export function WorkspacesPanel() {
+  const list = useLoad(() => listWorkspaces());
   const [selected, setSelected] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -297,7 +295,7 @@ export function WorkspacesPanel({ token }: { token: string }) {
                       <ConfirmButton
                         label="Revoke links"
                         confirmLabel="Confirm revoke"
-                        onConfirm={() => act(() => revokeAllShares(token, row.id))}
+                        onConfirm={() => act(() => revokeAllShares(row.id))}
                         disabled={row.shares === 0}
                       />
                       <Button tone="danger" onClick={() => setDeleting(row.id)}>
@@ -312,7 +310,7 @@ export function WorkspacesPanel({ token }: { token: string }) {
                           id={row.id}
                           onCancel={() => setDeleting(null)}
                           onDelete={async () => {
-                            await act(() => deleteWorkspace(token, row.id));
+                            await act(() => deleteWorkspace(row.id));
                             setDeleting(null);
                             if (selected === row.id) setSelected(null);
                           }}
@@ -330,7 +328,6 @@ export function WorkspacesPanel({ token }: { token: string }) {
       {selected === null ? null : (
         <Detail
           key={`${selected}-${detailVersion}`}
-          token={token}
           id={selected}
           onClose={() => setSelected(null)}
           onChanged={list.reload}

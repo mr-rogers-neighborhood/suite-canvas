@@ -33,6 +33,17 @@ const MAX_FILE_LINES = 900;
 const MAX_PARAMS = 6;
 const OBSERVE_ALLOWED = "apps/canvas/src/store/workspaceSnapshotStore.ts";
 
+/**
+ * The one file allowed to inject markup, and why it is not a hole.
+ *
+ * An icon set is thousands of icons as path data, which cannot be a component per icon.
+ * `IconGlyph` sets `__html` from a *checked-in* dependency's own body — never from the
+ * document, the network or a URL — and the component above it narrows the set to the
+ * bundled package. Anything else that reaches for this API is the rule's target, so the
+ * exemption is one exact path rather than a pattern.
+ */
+const DYNAMIC_HTML_ALLOWED = "apps/canvas/src/icons/IconGlyph.tsx";
+
 const GRAPH_ROOTS = [
   "boards",
   "cards",
@@ -98,7 +109,10 @@ for (const file of files) {
     if (signature && countParams(signature[1]) > MAX_PARAMS) {
       problems.push(`${rel}:${index + 1}: more than ${MAX_PARAMS} parameters. Pass an object.`);
     }
-    if (/dangerouslySetInnerHTML|\beval\s*\(|\bnew Function\s*\(/.test(line)) {
+    if (
+      /dangerouslySetInnerHTML|\beval\s*\(|\bnew Function\s*\(/.test(line) &&
+      !(rel === DYNAMIC_HTML_ALLOWED && line.includes("dangerouslySetInnerHTML"))
+    ) {
       problems.push(`${rel}:${index + 1}: banned dynamic-HTML or dynamic-code API.`);
     }
     if (/\bworkspace\.observe\s*\(/.test(line) && rel !== OBSERVE_ALLOWED) {

@@ -45,12 +45,7 @@ describe("validateConfig", () => {
       licences: null,
       attachments: null,
     });
-    expect(result.config.tokens).toEqual({
-      admin: null,
-      adminRead: null,
-      projection: null,
-      source: null,
-    });
+    expect(result.config.tokens).toEqual({ projection: null, source: null });
     expect(result.config.hosted).toBe(false);
     expect(result.config.allowedOrigins).toEqual(["*"]);
     expect(result.config.logLevel).toBe("info");
@@ -75,7 +70,6 @@ describe("validateConfig", () => {
       SUITE_WORKSPACES_DB: "data/workspaces.sqlite",
       SUITE_SETTINGS_DB: ":memory:",
       SUITE_LICENCE_DB: "data/licences.sqlite",
-      SUITE_ADMIN_TOKEN: token,
       SUITE_PROJECTION_TOKEN: `${token}-projection`,
       SUITE_SOURCE_TOKEN: `${token}-source`,
       SUITE_ALLOWED_ORIGINS: "https://canvas.example.com, http://localhost:5173",
@@ -92,7 +86,6 @@ describe("validateConfig", () => {
     expect(result.config.ports).toEqual({ ws: 4000, health: 4001 });
     expect(result.config.paths.documents).toBe("data/documents.sqlite");
     expect(result.config.paths.settings).toBe(":memory:");
-    expect(result.config.tokens.admin).toBe(token);
     expect(result.config.allowedOrigins).toEqual([
       "https://canvas.example.com",
       "http://localhost:5173",
@@ -124,12 +117,6 @@ describe("validateConfig", () => {
       "attachments sharing the document file",
       { SUITE_DB: "same.sqlite", SUITE_ATTACHMENTS_DB: "same.sqlite" },
       "SUITE_ATTACHMENTS_DB",
-    ],
-    ["a short admin token", { SUITE_ADMIN_TOKEN: "too-short" }, "SUITE_ADMIN_TOKEN"],
-    [
-      "a token with a space",
-      { SUITE_ADMIN_TOKEN: "two words that are long enough" },
-      "SUITE_ADMIN_TOKEN",
     ],
     ["a short projection token", { SUITE_PROJECTION_TOKEN: "tok" }, "SUITE_PROJECTION_TOKEN"],
     ["a malformed hosted switch", { SUITE_HOSTED: "yes" }, "SUITE_HOSTED"],
@@ -163,11 +150,6 @@ describe("validateConfig", () => {
     ],
     ["a non-numeric workspace quota", { SUITE_MAX_WORKSPACES: "lots" }, "SUITE_MAX_WORKSPACES"],
     ["a malformed public URL", { SUITE_PUBLIC_URL: "not a url" }, "SUITE_PUBLIC_URL"],
-    [
-      "a short read-only admin token",
-      { SUITE_ADMIN_READ_TOKEN: "short" },
-      "SUITE_ADMIN_READ_TOKEN",
-    ],
     ["a malformed auth URL", { SUITE_AUTH_URL: "not a url" }, "SUITE_AUTH_URL"],
     ["an auth URL without a scheme", { SUITE_AUTH_URL: "accounts.example.com" }, "SUITE_AUTH_URL"],
     ["a version with a space", { SUITE_VERSION: "one two" }, "SUITE_VERSION"],
@@ -212,21 +194,6 @@ describe("validateConfig", () => {
 
     expect(result.ok).toBe(false);
     expect(JSON.stringify(result.problems)).not.toContain(token);
-  });
-
-  it("treats an unset admin token as off rather than broken", () => {
-    const result = validateConfig({ SUITE_ADMIN_TOKEN: "" });
-    expect(result.ok).toBe(true);
-    expect(result.config.tokens.admin).toBeNull();
-    expect(result.config.allowedOrigins).toEqual(["*"]);
-  });
-
-  it("reads a read-only operator token beside the full one", () => {
-    const token = "read-token-for-the-parser";
-    const result = validateConfig({ SUITE_ADMIN_READ_TOKEN: token });
-    expect(result.ok).toBe(true);
-    expect(result.config.tokens.adminRead).toBe(token);
-    expect(result.config.tokens.admin).toBeNull();
   });
 
   it("normalises the auth URL to the origin the token carries", () => {

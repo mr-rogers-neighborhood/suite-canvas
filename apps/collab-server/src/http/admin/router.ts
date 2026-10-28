@@ -22,11 +22,11 @@ import { adminConfigured, allows, resolveAdminCredential, scopeOfMethod } from "
 import { deleteWorkspaceData, listWorkspaces, workspaceDetail } from "./workspaces.js";
 
 /**
- * The operator API router: `/metrics` and `/api/admin/*` behind a scoped bearer
- * token. It returns false when the path is not its own. Both routes only exist
- * while an operator token is configured: an unconfigured server answers 404,
- * never 401. There is no session path to a mutation or to a scrape, and no
- * unscoped path either — `read` cannot mutate.
+ * The operator API router: `/metrics` and `/api/admin/*` behind an operator session.
+ * It returns false when the path is not its own. Both routes only exist while a control
+ * plane is configured to verify a session against: a server with no identity answers
+ * 404, never 401. The session has to be signed by that control plane and has to carry
+ * `operator: true`, and there is no unscoped path — `read` cannot mutate.
  */
 
 export const ADMIN_API_PATH = "/api/admin";
@@ -76,6 +76,16 @@ function actionOf(method: string, pathname: string): string {
   return `${method.toLowerCase()}-${first.length === 0 ? "admin" : first}`;
 }
 
+/** True for an address on this machine, which is where a scrape timer runs. */
+function isLoopback(address: string): boolean {
+  return (
+    address === "127.0.0.1" ||
+    address === "::1" ||
+    address === "::ffff:127.0.0.1" ||
+    address.startsWith("127.")
+  );
+}
+
 /** The id a mutation applied to: the first segment that looks like an id, else the route. */
 function targetOf(pathname: string): string {
   const route = pathname.replace(METRICS_PATH, "metrics").slice(ADMIN_API_PATH.length);
@@ -108,9 +118,30 @@ export async function handleAdminRequest(
     return true;
   }
 
-  // No configured token at all is a 404 (the feature is off). Everything below
-  // answers, including a missing or wrong token: this handler never rejects, so
-  // a caller's `.then` cannot be left waiting on a request it already refused.
+  /**
+   * A scrape from this machine with no credential, when the deployment says so.
+   *
+   * `/metrics` exists to be polled by a timer on the same box, and a timer cannot hold a
+   * session: it has no browser and no cookie. `SUITE_METRICS_LOCAL=1` therefore allows an
+   * *unauthenticated read of `/metrics` from a loopback address* and nothing else — not a
+   * mutation, not another route, not a request that arrived through the proxy. The
+   * default is off, so a deployment that never set the variable is exactly as closed as
+   * before.
+   */
+  const localScrape =
+    isMetrics &&
+    method === "GET" &&
+    (process.env.SUITE_METRICS_LOCAL ?? "").trim() === "1" &&
+    isLoopback(clientAddress(request));
+
+  if (localScrape) {
+    sendMetrics(response, deps.metrics ?? processMetrics);
+    return true;
+  }
+
+  // No control plane to verify a session against is a 404 (the feature is off).
+  // Everything below answers, including a missing or wrong session: this handler never
+  // rejects, so a caller's `.then` cannot be left waiting on a request it already refused.
   if (!adminConfigured()) return false;
 
   const needed = scopeOfMethod(method);
@@ -126,8 +157,10 @@ export async function handleAdminRequest(
       );
     }
 
-    const credential = resolveAdminCredential(bearerToken(request));
-    if (credential === null) throw HttpError.unauthorized("A valid admin token is required.");
+    const credential = await resolveAdminCredential(bearerToken(request), deps.sessions);
+    if (credential === null) {
+      throw HttpError.unauthorized("An operator session is required.");
+    }
 
     // One draft per mutating request. A refusal by scope is a mutation attempt,
     // so it gets a row too — an attempt to escalate is worth recording.
@@ -146,7 +179,7 @@ export async function handleAdminRequest(
     if (!allows(credential, needed)) {
       if (row !== undefined) row.result = "refused-scope";
       throw HttpError.forbidden(
-        `This admin token has the ${credential.scopes.join(" and ")} scope; ${needed} is required.`,
+        `This session holds the ${credential.scopes.join(" and ")} scope; ${needed} is required.`,
       );
     }
 

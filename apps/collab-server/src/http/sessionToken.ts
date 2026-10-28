@@ -63,6 +63,15 @@ export interface SessionClaims {
   issuedAt: number;
   /** Epoch milliseconds from `exp`. */
   expiresAt: number;
+  /**
+   * True when the deployment named this account a platform operator.
+   *
+   * Distinct from `role`, which is the account's role *inside* the organization the
+   * session acts in: an organization owner is not an operator of the deployment. Only
+   * `/api/admin` reads this, and it is minted from `SUITE_ADMIN_EMAILS` on the control
+   * plane, so it cannot be claimed by a client.
+   */
+  operator: boolean;
 }
 
 /**
@@ -162,6 +171,9 @@ export function sessionClaimsOf(payload: Record<string, unknown>): SessionClaims
     limits: limitsOf(payload.limits),
     issuedAt,
     expiresAt,
+    // Anything but a literal `true` is not an operator: a claim this build does not
+    // understand must not widen a door.
+    operator: payload.operator === true,
   };
 }
 

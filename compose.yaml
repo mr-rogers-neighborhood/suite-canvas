@@ -71,13 +71,14 @@ services:
       SUITE_ATTACHMENTS_DB: ${SUITE_ATTACHMENTS_DB:-/data/attachments.sqlite}
       SUITE_REQUIRE_DURABLE_STORES: "1"
       # Credentials and switches. Empty tokens are the documented defaults:
-      # admin API off, worker tokens generated per start, self-host mode.
+      # worker tokens generated per start, self-host mode, no operators.
       SUITE_PROJECTION_TOKEN: ${SUITE_PROJECTION_TOKEN:-}
       SUITE_SOURCE_TOKEN: ${SUITE_SOURCE_TOKEN:-}
-      SUITE_ADMIN_TOKEN: ${SUITE_ADMIN_TOKEN:-}
-      # The narrower operator token: `/metrics` and the inventories, never a
-      # mutation. Unset means the full token above is the only way in.
-      SUITE_ADMIN_READ_TOKEN: ${SUITE_ADMIN_READ_TOKEN:-}
+      # The operator surface is a session, not a secret: an account whose address is
+      # on this list may read and mutate `/api/admin/*` and read `/metrics`.
+      SUITE_ADMIN_EMAILS: ${SUITE_ADMIN_EMAILS:-}
+      # 1 lets a scrape from inside the container read /metrics with no credential.
+      SUITE_METRICS_LOCAL: ${SUITE_METRICS_LOCAL:-}
       # The control plane's origin: the relay verifies a session JWT against the
       # key set published there (ADR-0074). Unset means no account can sync, and
       # anonymous and share-link use are unaffected.
@@ -203,6 +204,9 @@ services:
       SUITE_AUTH_MAX_ORGS_PER_USER: ${SUITE_AUTH_MAX_ORGS_PER_USER:-}
       SUITE_TURNSTILE_SECRET: ${SUITE_TURNSTILE_SECRET:-}
       SUITE_ADMISSION_REQUIRED: ${SUITE_ADMISSION_REQUIRED:-}
+      # Who may use the operator surface: the admissions queue and the starter
+      # templates. Read here and on the relay, so one list answers both.
+      SUITE_ADMIN_EMAILS: ${SUITE_ADMIN_EMAILS:-}
       # Billing, as `services/billing/src/stripe/plugin.ts` reads it.
       SUITE_BILLING_ENABLED: ${SUITE_BILLING_ENABLED:-0}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}

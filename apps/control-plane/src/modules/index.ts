@@ -100,6 +100,9 @@ export async function loadModules(options: {
       }
       modules.push(found);
       status.push({ name, state: "mounted" });
+      // A module that publishes something another module reads starts here, before the
+      // first request could ask for it. A failure is the module's to report on its routes.
+      if (found.warmUp) void found.warmUp();
     } catch (error) {
       options.logger.error("route module failed to load", {
         module: name,

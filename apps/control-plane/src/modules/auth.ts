@@ -272,6 +272,18 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
 
   return {
     name: "auth",
+    /**
+     * Boots the instance now, so the session reader other modules read exists before
+     * anybody signs in. Exposed rather than inlined so the load below can await it.
+     */
+    warmUp: async (): Promise<void> => {
+      if (!enabled) return;
+      try {
+        await service();
+      } catch (error) {
+        logger.error("the account service did not start", { error: messageOf(error) });
+      }
+    },
     async handle(request, response): Promise<boolean> {
       const path = pathOf(request.url);
       const ownsAuth = path === AUTH_PREFIX || path.startsWith(`${AUTH_PREFIX}/`);
@@ -484,5 +496,17 @@ function defaultBoot(logger: Logger, source: Readonly<Record<string, string | un
   };
 }
 
-/** The object `loadModules` mounts. */
+/** The object `loadModules` mounts. The host calls its `warmUp` as it mounts it. */
 export const module: RouteModule = createAuthModule();
+
+/**
+ * Boot once at load, not on the first `/api/auth/*` request.
+ *
+ * The operator routes read the session reader this module publishes, and a reader that
+ * only appears after somebody signs in means the panel answers "the account module is not
+ * running here" on a perfectly configured deployment — the panel's first call is to the
+ * relay, not to a sign-in route, so the boot never happened. Booting here makes the reader
+ * exist from the start; a boot that fails still leaves the memo clear, so the first request
+ * retries and `/health` keeps reporting what it found.
+ */
+void module.warmUp?.();

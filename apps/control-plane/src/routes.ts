@@ -24,6 +24,14 @@ export interface RouteModule {
   name: string;
   /** Returns true when the module handled the request. */
   handle(req: IncomingMessage, res: ServerResponse): boolean | Promise<boolean>;
+  /**
+   * Optional start-up work, run once when the host mounts the module.
+   *
+   * It exists for a module that publishes something another module reads: the auth module
+   * boots its instance here so the session reader the operator routes ask for exists
+   * before anybody signs in. A module without it is mounted exactly as before.
+   */
+  warmUp?(): Promise<void>;
 }
 
 /**

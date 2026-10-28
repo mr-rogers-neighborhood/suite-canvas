@@ -185,6 +185,12 @@
 		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
 	}
 
+	# The settings surface. Declared before the `/admin` panel rewrite below, which would
+	# otherwise answer it with the panel's HTML: the panel is a page, this is its API.
+	handle /admin/settings* {
+		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
+	}
+
 	handle /api/workspaces/claim {
 		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
 	}

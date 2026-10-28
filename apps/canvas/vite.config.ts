@@ -26,6 +26,7 @@ export default defineConfig({
       // The operator API, not the panel: `/admin.html` is a page Vite serves
       // itself, so only the template routes are forwarded.
       "/admin/templates": { target: "http://127.0.0.1:1236", changeOrigin: false },
+      "/admin/settings": { target: "http://127.0.0.1:1236", changeOrigin: false },
       "/api/workspaces": { target: "http://127.0.0.1:1236", changeOrigin: false },
       "/api/invites": { target: "http://127.0.0.1:1236", changeOrigin: false },
       "/stripe": { target: "http://127.0.0.1:1236", changeOrigin: false },

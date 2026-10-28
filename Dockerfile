@@ -30,6 +30,7 @@ COPY e2e/package.json e2e/package.json
 COPY packages/graph/package.json packages/graph/package.json
 COPY packages/import-obsidian/package.json packages/import-obsidian/package.json
 COPY packages/licence/package.json packages/licence/package.json
+COPY packages/settings/package.json packages/settings/package.json
 COPY services/auth/package.json services/auth/package.json
 COPY services/billing/package.json services/billing/package.json
 
@@ -62,6 +63,7 @@ COPY . .
 # the one `pnpm typecheck` gates.
 RUN pnpm --filter @suite/graph build \
   && pnpm --filter @suite/licence build \
+  && pnpm --filter @suite/settings build \
   && pnpm --filter @suite/billing build \
   && pnpm --filter @suite/import-obsidian build \
   && pnpm --filter @suite/canvas build \
@@ -95,6 +97,7 @@ ENV PORT=1234 \
 COPY --from=build --chown=root:root /app/apps/collab-server/src ./apps/collab-server/src
 COPY --from=build --chown=root:root /app/packages/graph/dist ./packages/graph/dist
 COPY --from=build --chown=root:root /app/packages/licence/dist ./packages/licence/dist
+COPY --from=build --chown=root:root /app/packages/settings/dist ./packages/settings/dist
 COPY --from=build --chown=root:root /app/services/auth/src ./services/auth/src
 COPY --from=build --chown=root:root /app/services/auth/sql ./services/auth/sql
 EXPOSE 1234 1235
@@ -119,6 +122,10 @@ COPY --from=build --chown=root:root /app/apps/control-plane/src ./apps/control-p
 COPY --from=build --chown=root:root /app/services/auth/src ./services/auth/src
 COPY --from=build --chown=root:root /app/services/auth/sql ./services/auth/sql
 COPY --from=build --chown=root:root /app/services/billing/dist ./services/billing/dist
+# The settings registry the admin surface and the boot overlay both import. A
+# workspace package a module imports has to be here or the module fails to load and
+# `/health` says so — which is how this one was found.
+COPY --from=build --chown=root:root /app/packages/settings/dist ./packages/settings/dist
 EXPOSE 1236
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||1236)+'/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

@@ -39,6 +39,15 @@ export const MODE_NAMES: Record<CanvasMode, { label: string; title: string }> = 
   },
 };
 
+/**
+ * The cycle the button walks: place → thread → fan → place. One reader, so the pill and
+ * anything else that offers "the next mode" cannot disagree about what it is.
+ */
+export function nextMode(mode: CanvasMode): CanvasMode {
+  const index = canvasModes.indexOf(mode);
+  return canvasModes[(index + 1) % canvasModes.length] ?? "place";
+}
+
 /** True for the modes that keep drawing instead of placing one thing at a time. */
 export function isChainingMode(mode: CanvasMode): boolean {
   return mode !== "place";

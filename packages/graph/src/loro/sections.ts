@@ -80,6 +80,16 @@ export function sectionsMethods(ctx: DocContext) {
       ctx.commit(`${STRUCT_ORIGIN}rename-section`);
     },
 
+    /** The section's own icon, which beats nothing: a section has no type to inherit from. */
+    setSectionIcon(id: string, icon: string | null): void {
+      const fields = ctx.sections.get(id);
+      if (!isMap(fields)) return;
+      if (icon) fields.set("icon", icon);
+      else fields.delete("icon");
+      fields.set("updatedAt", Date.now());
+      ctx.commit(`${STRUCT_ORIGIN}section-icon`);
+    },
+
     setSectionColor(id: string, color: Section["color"] | null): void {
       const fields = ctx.sections.get(id);
       if (!isMap(fields)) return;
@@ -260,6 +270,7 @@ export function sectionsMethods(ctx: DocContext) {
       fields.set("createdAt", section.createdAt);
       fields.set("updatedAt", section.updatedAt);
       if (section.color) fields.set("color", section.color);
+      if (section.icon) fields.set("icon", section.icon);
       writeIdSet(fields.ensureMergeableMap("tags"), section.tags);
       ctx.api.sections.writeSectionConnectors(fields, section.connectors ?? []);
     },

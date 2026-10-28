@@ -435,18 +435,12 @@ body {
    * way a dash ends up looking like a bar.
    */
   border-top: var(--paint-border-top, var(--paint-dash-thickness-top, 1px) solid transparent);
-  border-right: var(
-    --paint-border-right,
-    var(--paint-dash-thickness-right, 1px) solid transparent
-  );
+  border-right: var(--paint-border-right, var(--paint-dash-thickness-right, 1px) solid transparent);
   border-bottom: var(
     --paint-border-bottom,
     var(--paint-dash-thickness-bottom, 1px) solid transparent
   );
-  border-left: var(
-    --paint-border-left,
-    var(--paint-dash-thickness-left, 1px) solid transparent
-  );
+  border-left: var(--paint-border-left, var(--paint-dash-thickness-left, 1px) solid transparent);
   /* A painted card's underlay is the silhouette, so it defaults to whatever the card
      resolved rather than to a radius of its own. */
   border-radius: var(--paint-radius, var(--card-radius, 12px));
@@ -1529,8 +1523,16 @@ html[data-inspector-linking] .card-inspector {
   margin: 0;
 }
 
+/*
+ * The tab strip's spacing is the strip's, not each caller's.
+ *
+ * It used to be `px-3 pb-2` at every call site, which left the tabs flush under the
+ * header in the inspector and under nothing at all in a focus or embedded surface. One
+ * rule now owns the top margin so no variant can be flush.
+ */
 .card-panel-tabs {
   flex: 0 0 auto;
+  padding-top: 0.5rem;
 }
 
 /* The body is its own surface: a blank card reads as a place to write instead

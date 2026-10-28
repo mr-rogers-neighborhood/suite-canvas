@@ -178,6 +178,7 @@ export function tagFromMap(id: string, fields: LoroMap): Tag {
 
 export function sectionFromMap(id: string, fields: LoroMap): Section {
   const color = readString(fields, "color");
+  const icon = readString(fields, "icon");
   const style = readSurfaceStyle(fields);
   return sectionSchema.parse({
     id,
@@ -193,6 +194,7 @@ export function sectionFromMap(id: string, fields: LoroMap): Section {
     createdAt: readNumber(fields, "createdAt") ?? 0,
     updatedAt: readNumber(fields, "updatedAt") ?? 0,
     ...(color ? { color } : {}),
+    ...(icon ? { icon } : {}),
     ...(style ? { style } : {}),
   });
 }

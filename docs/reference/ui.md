@@ -54,7 +54,9 @@ Peers show on tabs as small avatars, aggregated per board, so "where is everyone
 
 One inspector exists. `CardPanel` renders in two variants, `inspector` (docked beside the canvas) and `embedded` (inside a card focus), and both read the same card model, so a property can be fixed without going to the canvas (ADR-0050).
 
-Its tab strip has Details, Content and Style. Details carries the type and tag pickers, the properties, the placement and the links; Content is the body editor, or the step list for a tutorial; Style is the per-card style surface. The strip behaves as one tab stop with arrow-key movement, and the selected tab is the only one with `tabIndex=0`.
+What an inspector shows is one table, `apps/canvas/src/inspector/capabilities.ts`, not a branch per entity. A tab and a body row each declare the kinds they serve, and a surface asks for the ones that serve what it is describing: a card gets Details, Content and Style; a portal gets Details, Contents and Style; a section gets Details and Contents, because its paint is the one colour it owns and everything else about it is the theme. A kind that has nothing for a tab never sees the tab, and a mixed selection intersects rather than unions.
+
+`InspectorTabs` draws the strip for all of them: one tab stop, arrow-key movement, and the selected tab the only one with `tabIndex=0`, so the panels differ in their body and not in their controls.
 
 `ContainerPanel` covers the container selection (section or portal), `LinkInspector` covers one edge, and `ExplainPanel` shows the explain context. `TypeSettingsDialog` edits the type registry and its fields. Each of these writes through `@suite/graph`; none keeps a copy of the record it edits.
 
@@ -103,6 +105,8 @@ Marquee and drag boxes ride the same ephemeral channels as the pointer. They are
 
 Every overlay portals into `document.body`. A `position: fixed` menu rendered inside the canvas would be positioned against that transformed ancestor instead of the window, which puts it off screen; portalling is the reason a menu opens where the pointer is.
 
+The board's right-click menu is one table too: `apps/canvas/src/canvas/board/menu/entityMenu.ts` holds rows, each declaring the kinds it serves, and a press resolves what it landed on and keeps the rows that serve it, drawn in group order (appearance, structure, layout, transfer, share, then anything destructive). A card, a portal, a section, a link and a connector therefore share a shape and differ only in which rows exist for them; a press inside a multi-selection resolves to the whole selection, which is why a verb can count (`Duplicate 4 cards`). `board/useBoardMenu.ts` builds the context and nothing else.
+
 `ContextMenu` clamps itself to the viewport and flips a submenu to the left of its parent when the menu was opened near the right edge. A submenu opens on hover, on focus and on click, and a click never toggles it shut, because the pointer already opened it. It also takes focus on its first item when it opens, for the reason in [Focus and keyboard](#focus-and-keyboard).
 
 `Dialog` is the confirmation shell: a title, optional description, and a list of actions marked primary or danger. The scrim is a labelled button, so a pointer press outside the panel is a dismissal a screen reader can also reach.
@@ -119,7 +123,7 @@ Two confirmations ask for more than a press. `DeleteWorkspaceDialog` requires th
 
 Style is document data, at two levels and no more. `apps/canvas/src/styles/surface/StyleTab.tsx` edits a card, a link or a type; a card wears its type's style and then its own, and everything else wears the theme. `apps/canvas/src/canvas/surfaceContext.ts` resolves the two levels and hands the result to `surfacePaintVars`, so a collaborator sees the same colours.
 
-The same editor is mounted in three places: the inspector, the type editor in `apps/canvas/src/panels/TypeSettingsDialog.tsx`, and `apps/canvas/src/app/AppearanceHost.tsx`, which opens where a reader right-clicks. `apps/canvas/src/canvas/board/menu/appearanceMenu.ts` adds the palette quick-picks to the same menu, so one colour is one click.
+The same editor is mounted in three places: the inspector, the type editor in `apps/canvas/src/panels/TypeSettingsDialog.tsx`, and `apps/canvas/src/app/AppearanceHost.tsx`, which opens where a reader right-clicks. The menu's `Colour` row in `apps/canvas/src/canvas/board/menu/entityMenu.ts` adds the palette quick-picks to the same menu, so one colour is one click and a selection of cards is restyled in one.
 
 Colours come from the workspace palette: `PaletteEditor` in Settings edits it as one list, each swatch carrying a light and a dark value, and both travel in the document.
 

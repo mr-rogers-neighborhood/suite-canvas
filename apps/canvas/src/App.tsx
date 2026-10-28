@@ -12,6 +12,8 @@ import { useWorkspaceSyncFacts } from "./app/useWorkspaceSyncFacts";
 import { WorkspaceShellView } from "./app/WorkspaceShellView";
 import { useSurfacePalette, useWorkspacePalette } from "./app/workspacePaint";
 import { signedIn as accountSignedIn, useAccountStore } from "./auth/useAccountStore";
+import { attachDots } from "./canvas/attachDots";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./canvas/interactions/multiSelect";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
 import { placementLookup, resolveSelection } from "./canvas/placeSelection";
 import { usePlaceStackStore } from "./canvas/placeStack";
@@ -346,15 +348,16 @@ function WorkspaceShell({
    */
   /**
    * A workspace heals once per session: older documents accumulated copies of the same
-   * relationship while a link's identity was its dots, and the first load is where they
-   * can be folded back into one line per pair. Skipped for a viewer, whose copy of the
-   * document is not theirs to rewrite.
+   * relationship while a link's identity was its dots, and extra portals to boards that
+   * already had one. The first load is where both fold back to one. Skipped for a viewer,
+   * whose copy of the document is not theirs to rewrite.
    */
   const pruned = useRef(false);
   useEffect(() => {
     if (pruned.current || !ready || !canEditLayout) return;
     pruned.current = true;
     workspace.pruneDuplicateLinks();
+    workspace.pruneDuplicatePortals();
   }, [ready, canEditLayout, workspace]);
 
   const previousPurpose = useRef<CanvasPurpose>(purpose);
@@ -386,6 +389,49 @@ function WorkspaceShell({
   );
 
   /**
+   * A placed card's link to its anchor, through the dots that face each other.
+   *
+   * The one implementation the stack and the drop share, so a card placed either way
+   * attaches the same way. Returns whether a link was drawn; a card with nothing to
+   * anchor to becomes the anchor itself.
+   */
+  const attachPlacedCard = useCallback(
+    (cardId: string, box: { x: number; y: number }, anchorId: string | null): boolean => {
+      if (!activeBoardId || anchorId === null || anchorId === cardId) return false;
+      const anchor = workspace.getPlacement(activeBoardId, anchorId);
+      const card = workspace.getPlacement(activeBoardId, cardId);
+      if (!anchor || !card) return false;
+      const anchorBox = {
+        x: anchor.x,
+        y: anchor.y,
+        width: anchor.width ?? DEFAULT_CARD_WIDTH,
+        height: anchor.height ?? DEFAULT_CARD_HEIGHT,
+      };
+      const cardBox = {
+        x: box.x,
+        y: box.y,
+        width: card.width ?? DEFAULT_CARD_WIDTH,
+        height: card.height ?? DEFAULT_CARD_HEIGHT,
+      };
+      const dots = attachDots({
+        anchorDots: workspace.getCard(anchorId)?.connectors ?? [],
+        anchorBox,
+        cardDots: workspace.getCard(cardId)?.connectors ?? [],
+        cardBox,
+      });
+      workspace.addEdge({
+        boardId: activeBoardId,
+        source: anchorId,
+        target: cardId,
+        ...(dots.source ? { sourceConnector: dots.source.id } : {}),
+        ...(dots.target ? { targetConnector: dots.target.id } : {}),
+      });
+      return true;
+    },
+    [activeBoardId, workspace],
+  );
+
+  /**
    * A picked set dropped on the board lands as a stepped stack under the pointer.
    *
    * One resolver for the whole pick, the same one the stack asks: a board row becomes
@@ -403,6 +449,11 @@ function WorkspaceShell({
         (item) =>
           item.kind === "board" || workspace.getPlacement(activeBoardId, item.cardId) === undefined,
       );
+      // A drop is a placement like any other, so a thread or fan macro applies: the seed
+      // is the card the reader had selected, which is the hub a fan keeps.
+      const dropMode = useUiStore.getState().mode;
+      const seed = useUiStore.getState().selectedNodeIds[0] ?? null;
+      let anchorId = dropMode === "place" ? null : seed;
       missing.forEach((item, index) => {
         const stepped = { x: point.x + 24 * index, y: point.y + 24 * index };
         if (item.kind === "board") {
@@ -412,9 +463,12 @@ function WorkspaceShell({
           return;
         }
         placeCard(item.cardId, stepped);
+        if (dropMode === "place") return;
+        const attached = attachPlacedCard(item.cardId, stepped, anchorId);
+        if (attached) anchorId = dropMode === "thread" ? item.cardId : anchorId;
       });
     },
-    [activeBoardId, canEditLayout, workspace, createPortal, placeCard],
+    [activeBoardId, canEditLayout, workspace, createPortal, placeCard, attachPlacedCard],
   );
 
   /** The rows that act on the document, so the palette and the dock agree. */
@@ -790,7 +844,10 @@ function WorkspaceShell({
             activeBoardId === null ||
             workspace.getPlacement(activeBoardId, id) === undefined,
         );
-        usePlaceStackStore.getState().start(missing);
+        // The macro's seed is the card the reader had selected, which is the hub a fan
+        // keeps; a thread moves its anchor on with each placement.
+        const seed = useUiStore.getState().selectedNodeIds[0] ?? null;
+        usePlaceStackStore.getState().start(missing, seed);
       }}
       onDropSelection={onDropSelection}
       toggleLibraryType={toggleLibraryType}

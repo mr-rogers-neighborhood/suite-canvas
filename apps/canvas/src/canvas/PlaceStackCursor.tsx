@@ -2,6 +2,7 @@ import { useReactFlow } from "@xyflow/react";
 import { useEffect, useState } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { attachDots, type FacingBox } from "./attachDots";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./interactions/multiSelect";
 import { placementLookup, resolveSelection } from "./placeSelection";
 import { usePlaceStackStore } from "./placeStack";
@@ -19,6 +20,7 @@ export function PlaceStackCursor() {
   const workspace = useCanvasStore((state) => state.workspace);
   const activeBoardId = useUiStore((state) => state.activeBoardId);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
+  const mode = useUiStore((state) => state.mode);
   const { screenToFlowPosition } = useReactFlow();
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
 
@@ -83,13 +85,61 @@ export function PlaceStackCursor() {
           consumed.push(existing);
         }
       } else {
-        workspace.placeCard(activeBoardId, item.cardId, box);
+        const placed = workspace.placeCard(activeBoardId, item.cardId, box);
+        if (placed && mode !== "place") attachPlaced(item.cardId, box);
       }
       usePlaceStackStore.getState().remove(consumed);
     };
+    /**
+     * The placement macro: a card dropped with thread or fan chosen gets one link back to
+     * its anchor, through the dots that face each other.
+     *
+     * `thread` anchors on the card placed before this one; `fan` keeps one hub, which is
+     * the card the reader had selected when the stack was picked up, or else the first
+     * card placed. `place` draws nothing. With nothing to anchor to, the card lands alone
+     * and becomes the anchor — which is what a first press should do.
+     */
+    const attachPlaced = (cardId: string, box: { x: number; y: number }) => {
+      const anchorId = usePlaceStackStore.getState().anchorId;
+      if (anchorId === null || anchorId === cardId) {
+        usePlaceStackStore.getState().setAnchor(cardId);
+        return;
+      }
+      const anchor = workspace.getPlacement(activeBoardId, anchorId);
+      const card = workspace.getPlacement(activeBoardId, cardId);
+      if (!anchor || !card) return;
+      const anchorBox: FacingBox = {
+        x: anchor.x,
+        y: anchor.y,
+        width: anchor.width ?? DEFAULT_CARD_WIDTH,
+        height: anchor.height ?? DEFAULT_CARD_HEIGHT,
+      };
+      const cardBox: FacingBox = {
+        x: box.x,
+        y: box.y,
+        width: card.width ?? DEFAULT_CARD_WIDTH,
+        height: card.height ?? DEFAULT_CARD_HEIGHT,
+      };
+      const dots = attachDots({
+        anchorDots: workspace.getCard(anchorId)?.connectors ?? [],
+        anchorBox,
+        cardDots: workspace.getCard(cardId)?.connectors ?? [],
+        cardBox,
+      });
+      workspace.addEdge({
+        boardId: activeBoardId,
+        source: anchorId,
+        target: cardId,
+        ...(dots.source ? { sourceConnector: dots.source.id } : {}),
+        ...(dots.target ? { targetConnector: dots.target.id } : {}),
+      });
+      // A thread moves its anchor on to the card it just linked; a fan keeps the hub.
+      if (mode === "thread") usePlaceStackStore.getState().setAnchor(cardId);
+    };
+
     window.addEventListener("pointerdown", down, true);
     return () => window.removeEventListener("pointerdown", down, true);
-  }, [queue.length, canEditLayout, activeBoardId, workspace, screenToFlowPosition]);
+  }, [queue.length, canEditLayout, activeBoardId, workspace, screenToFlowPosition, mode]);
 
   if (queue.length === 0) return null;
   const head = queue[0];

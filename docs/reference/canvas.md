@@ -121,8 +121,12 @@ sliding a label. Each publishes its live state to peers and writes only on relea
 
 ### The link tool
 
-Three modes, chosen from a three-segment control in the widget pill (`links/ModeControl.tsx`), and a
-mode only decides what a click on a dot does:
+Three modes, chosen from one button in the widget pill (`links/ModeControl.tsx`): the glyph is the mode
+it is in, a click advances `place → thread → fan → place` (`nextMode`), and the label says what the next
+click switches to. One button rather than a segmented control because the pill is shared with the
+camera and the zoom, and a three-wide control there cost more room than the one decision it carried.
+
+A mode decides what a click on a dot does, and what a stack does with the cards left in it:
 
 | Mode | A click on a dot | The shape it draws |
 | --- | --- | --- |
@@ -133,6 +137,12 @@ mode only decides what a click on a dot does:
 Shift chains and Control fans for one gesture without leaving the mode, and Escape walks the mode back
 to `place`. This is `links/linkThread.ts` (`stepLink`, `stepThread`, `stepFan`), pure and unit-tested;
 nothing about it places cards. There is no run, no queue and no held stack behind a mode.
+
+A stack placed while a mode is armed writes a link as well as a placement. `canvas/attachDots.ts`
+answers which dots: the pair facing the way the cards travel. It is pure. `connectorToward` picks
+the dot that points at the other box, `attachDots` returns the pair for a placement, and
+`PlaceStackCursor` and `App.onDropSelection` both call it. A thread moves the armed end to the card it
+just placed; a fan keeps the hub it started from, so `thread` chains and `fan` spreads.
 
 ## Gestures and input ownership
 

@@ -472,6 +472,10 @@ export class WorkspaceDocument extends CardsFacade {
     this.sectionsApi.renameSection(id, title);
   }
 
+  setSectionIcon(id: string, icon: string | null): void {
+    this.sectionsApi.setSectionIcon(id, icon);
+  }
+
   setSectionColor(id: string, color: Section["color"] | null): void {
     this.sectionsApi.setSectionColor(id, color);
   }
@@ -633,6 +637,11 @@ export class WorkspaceDocument extends CardsFacade {
    */
   pruneDuplicateLinks(): number {
     return this.edgesApi.pruneDuplicateLinks();
+  }
+
+  /** One portal per target board per host board, the earliest kept. */
+  pruneDuplicatePortals(): number {
+    return this.placementsApi.pruneDuplicatePortals();
   }
 
   listLinksTo(kind: EdgeEndpointKind, id: string): GraphEdge[] {

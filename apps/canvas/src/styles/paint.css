@@ -179,18 +179,12 @@
   color: var(--paint-ink, var(--ink));
   opacity: var(--paint-opacity, 1);
   border-top: var(--paint-border-top, var(--paint-dash-thickness-top, 1px) solid transparent);
-  border-right: var(
-    --paint-border-right,
-    var(--paint-dash-thickness-right, 1px) solid transparent
-  );
+  border-right: var(--paint-border-right, var(--paint-dash-thickness-right, 1px) solid transparent);
   border-bottom: var(
     --paint-border-bottom,
     var(--paint-dash-thickness-bottom, 1px) solid transparent
   );
-  border-left: var(
-    --paint-border-left,
-    var(--paint-dash-thickness-left, 1px) solid transparent
-  );
+  border-left: var(--paint-border-left, var(--paint-dash-thickness-left, 1px) solid transparent);
   border-radius: var(--paint-radius, 12px);
   clip-path: var(--paint-clip, none);
   animation:
@@ -304,18 +298,12 @@
   background: var(--paint-surface, var(--surface));
   /* A patterned side's edge is the strip's own thickness, exactly as on a card. */
   border-top: var(--paint-border-top, var(--paint-dash-thickness-top, 1px) solid transparent);
-  border-right: var(
-    --paint-border-right,
-    var(--paint-dash-thickness-right, 1px) solid transparent
-  );
+  border-right: var(--paint-border-right, var(--paint-dash-thickness-right, 1px) solid transparent);
   border-bottom: var(
     --paint-border-bottom,
     var(--paint-dash-thickness-bottom, 1px) solid transparent
   );
-  border-left: var(
-    --paint-border-left,
-    var(--paint-dash-thickness-left, 1px) solid transparent
-  );
+  border-left: var(--paint-border-left, var(--paint-dash-thickness-left, 1px) solid transparent);
   /* Same strips as a card's underlay: see the note in `global.css`. */
   background-image:
     var(--paint-dash-top, none), var(--paint-dash-right, none), var(--paint-dash-bottom, none),

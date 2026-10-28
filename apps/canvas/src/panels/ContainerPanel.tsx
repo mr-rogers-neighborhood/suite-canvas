@@ -3,7 +3,11 @@ import { sectionColors } from "@suite/graph";
 import { useState } from "react";
 import { SECTION_STROKE } from "../canvas/sections/sectionPalette";
 import { TagPicker } from "../cards/TagPicker";
-import { tabKeyDown } from "../dialogs/tabKeys";
+import { IconGlyph } from "../icons/IconGlyph";
+import { IconPicker } from "../icons/IconPicker";
+import type { InspectorTabId } from "../inspector/capabilities";
+import { tabLabel, tabsFor } from "../inspector/capabilities";
+import { InspectorTabs } from "../inspector/InspectorTabs";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -20,6 +24,8 @@ export interface ContainerPanelProps {
   onSetColor: (color: Section["color"] | null) => void;
   /** Renaming is inline, like a section's title on the canvas. */
   onRename?: ((title: string) => void) | undefined;
+  /** A section's own icon, or a portal's board icon. Absent hides the row. */
+  onSetIcon?: ((icon: string | null) => void) | undefined;
   /** A board's cover image, or null for the live miniature. */
   onSetCover?: ((attachmentId: string | null) => void) | undefined;
   /** Every row that names something makes it the target of a navigation. */
@@ -49,6 +55,7 @@ export function ContainerPanel({
   onLocate,
   onSetColor,
   onRename,
+  onSetIcon,
   onSetCover,
   onNavigate,
   onRetarget,
@@ -66,26 +73,20 @@ export function ContainerPanel({
   // The picker is a disclosure, not a count: it only exists while the panel is
   // asking which board should replace the one that went away.
   const [picking, setPicking] = useState(false);
+  const [choosingIcon, setChoosingIcon] = useState(false);
   /**
-   * The same three leaves the card inspector has (ADR-0051): what it is, what it
-   * holds, how it is painted. A portal's outline is a lot of rows, so it earns a
-   * tab rather than pushing Style past the fold.
+   * The same leaves the card inspector has (ADR-0051): what it is, what it holds, how it
+   * is painted. `tabsFor` decides which of them exist — a section has no Style tab,
+   * because its paint is the one colour it owns and everything else is the theme.
    */
-  const [tab, setTab] = useState<"details" | "contents" | "style">("details");
+  const [tab, setTab] = useState<InspectorTabId>("details");
+  const kinds = [portal ? "portal" : "section"] as const;
+  const tabs = tabsFor(kinds).map((entry) => ({
+    id: entry.id,
+    label: tabLabel(entry.id, kinds[0]),
+  }));
+  const details = tab === "details";
   const contentsCount = model.contents.reduce((total, group) => total + group.cards.length, 0);
-  // The strip is one tab stop: the selected tab carries `tabIndex=0` and the
-  // arrows move the selection, which is what the role promises.
-  const tabs: readonly ("details" | "contents" | "style")[] = portal
-    ? ["details", "contents", "style"]
-    : ["details", "style"];
-  const moveTab = (index: number) => {
-    const next = tabs[index];
-    if (next === undefined) return;
-    setTab(next);
-    document.getElementById(`container-tab-${next}`)?.focus();
-  };
-  // A section has no contents tab, so its details are never hidden behind one.
-  const details = !portal || tab === "details";
 
   // A section is tagged directly; a portal shows the board it opens, and a
   // board's tags belong to that record. Either way a tag is a label: nothing
@@ -151,76 +152,127 @@ export function ContainerPanel({
         </button>
       </header>
 
-      <div className="card-panel-tabs px-3 pb-2" data-testid="container-panel-tabs">
-        <div
-          role="tablist"
-          aria-label="Container sections"
-          className="segmented"
-          onKeyDown={(event) => tabKeyDown(event, tabs.indexOf(tab), tabs.length, moveTab)}
-        >
-          <button
-            type="button"
-            role="tab"
-            id="container-tab-details"
-            tabIndex={tab === "details" ? 0 : -1}
-            aria-selected={tab === "details"}
-            data-testid="container-tab-details"
-            className="segmented-option"
-            data-checked={tab === "details" ? "true" : undefined}
-            onClick={() => setTab("details")}
-          >
-            Details
-          </button>
-          {portal ? (
-            <button
-              type="button"
-              role="tab"
-              id="container-tab-contents"
-              tabIndex={tab === "contents" ? 0 : -1}
-              aria-selected={tab === "contents"}
-              data-testid="container-tab-contents"
-              className="segmented-option"
-              data-checked={tab === "contents" ? "true" : undefined}
-              onClick={() => setTab("contents")}
-            >
-              Contents
-            </button>
-          ) : null}
-          <button
-            type="button"
-            role="tab"
-            id="container-tab-style"
-            tabIndex={tab === "style" ? 0 : -1}
-            aria-selected={tab === "style"}
-            data-testid="container-tab-style"
-            className="segmented-option"
-            data-checked={tab === "style" ? "true" : undefined}
-            onClick={() => setTab("style")}
-          >
-            Style
-          </button>
-        </div>
-      </div>
+      <InspectorTabs
+        tabs={tabs}
+        active={tab}
+        ariaLabel="Container sections"
+        testId="container-panel-tabs"
+        tabTestId={(id) => `container-tab-${id}`}
+        idPrefix="container"
+        className="card-panel-tabs px-3 pb-1"
+        onSelect={setTab}
+      />
 
       {tab === "style" ? (
         <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5" data-testid="container-style">
-          {portal ? (
-            <StyleTab
-              targets={[{ kind: "card", id: model.id }]}
-              canEdit={canEdit && !model.orphan}
-              workspace={workspace}
-            />
-          ) : (
-            <p
-              className="text-[12px] leading-5 text-[var(--ink-muted)]"
-              data-testid="section-paint"
-            >
-              A section is painted by its own colour, and everything else about it is the theme.
-            </p>
-          )}
+          <StyleTab
+            targets={[{ kind: "card", id: model.id }]}
+            canEdit={canEdit && !model.orphan}
+            workspace={workspace}
+          />
+        </div>
+      ) : tab === "content" ? (
+        <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5" data-testid="container-content">
+          {portal && model.board ? (
+            <section className="mt-3" data-testid="container-contents">
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                {`Contents${contentsCount > 0 ? ` (${contentsCount})` : ""}`}
+              </h3>
+              {model.contents.length === 0 ? (
+                <p
+                  className="mt-1 text-[12px] text-[var(--ink-muted)]"
+                  data-testid="container-contents-empty"
+                >
+                  This board has no cards and no sections yet.
+                </p>
+              ) : (
+                <ul className="mt-1 space-y-1.5">
+                  {model.contents.map((group) => (
+                    <li
+                      key={group.sectionId ?? "loose"}
+                      data-testid="container-contents-section"
+                      data-section-id={group.sectionId ?? ""}
+                    >
+                      <p className="flex items-baseline gap-1.5">
+                        {group.color ? (
+                          <span
+                            aria-hidden="true"
+                            className="inline-block h-2 w-2 flex-none rounded-full"
+                            style={{ background: SECTION_STROKE[group.color] }}
+                          />
+                        ) : null}
+                        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ink)]">
+                          {group.title}
+                        </span>
+                        <span
+                          className="text-[11px] text-[var(--ink-muted)]"
+                          data-testid="container-contents-count"
+                        >
+                          {`${group.cards.length} card${group.cards.length === 1 ? "" : "s"}`}
+                        </span>
+                      </p>
+                      {group.cards.length === 0 ? (
+                        <p className="mt-0.5 pl-3.5 text-[11px] text-[var(--ink-muted)]">
+                          No cards yet
+                        </p>
+                      ) : (
+                        <ul className="mt-0.5 space-y-0.5 pl-3.5">
+                          {group.cards.map((card) => (
+                            <li key={card.id}>
+                              <button
+                                type="button"
+                                data-testid="container-contents-card"
+                                title={card.title}
+                                className="w-full truncate rounded px-1 py-0.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+                                onClick={() => onNavigate?.({ kind: "card", id: card.id })}
+                              >
+                                {card.title}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
+
+          {!portal ? (
+            <section>
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                {`Contents (${model.members.length})`}
+              </h3>
+              {model.members.length === 0 ? (
+                <p
+                  className="mt-1 text-[12px] text-[var(--ink-muted)]"
+                  data-testid="container-contents-empty"
+                >
+                  This section is empty.
+                </p>
+              ) : (
+                <ul className="mt-1 space-y-0.5" data-testid="container-members">
+                  {model.members.map((member) => (
+                    <li key={member.id}>
+                      <button
+                        type="button"
+                        data-testid="container-member-row"
+                        title={member.title}
+                        className="w-full truncate rounded px-1 py-0.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+                        onClick={() => onNavigate?.({ kind: "card", id: member.id })}
+                      >
+                        {member.title}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5">
+        <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5" data-testid="container-details">
           <div className="flex flex-wrap gap-1.5" data-testid="container-actions" hidden={!details}>
             {portal && model.board && onOpenBoard ? (
               <button
@@ -304,9 +356,64 @@ export function ContainerPanel({
             </section>
           ) : null}
 
-          {/* A portal with no board has nothing to colour: the record that carried
-            the colour is the one that went away. */}
-          {details && !(portal && model.orphan) ? (
+          {/* One icon row for every container: a section's own, or the board a portal
+              opens. The same picker a card and a board use. */}
+          {details && onSetIcon ? (
+            <section className="mt-3" data-testid="container-icon">
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                Icon
+              </h3>
+              <div className="mt-1 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  data-testid="container-icon-pick"
+                  aria-expanded={choosingIcon}
+                  disabled={!canEdit}
+                  className="flex h-7 items-center gap-1.5 rounded-md border border-[var(--hairline)] px-2 text-[12px] text-[var(--ink)] disabled:opacity-40"
+                  onClick={() => setChoosingIcon((open) => !open)}
+                >
+                  {model.icon ? (
+                    <IconGlyph icon={model.icon} size={14} />
+                  ) : (
+                    <span aria-hidden="true">{"\u25ab"}</span>
+                  )}
+                  <span>{model.icon ?? "Choose"}</span>
+                </button>
+                {model.icon ? (
+                  <button
+                    type="button"
+                    data-testid="container-icon-clear"
+                    disabled={!canEdit}
+                    className="rounded px-1.5 py-0.5 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40"
+                    onClick={() => onSetIcon(null)}
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+              {choosingIcon ? (
+                <div className="mt-1" data-testid="container-icon-picker">
+                  <IconPicker
+                    value={model.icon}
+                    inline={false}
+                    onPick={(icon) => {
+                      onSetIcon(icon);
+                      setChoosingIcon(false);
+                    }}
+                    onClose={() => setChoosingIcon(false)}
+                  />
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {/*
+           * A section has its own colour, and it is the one paint a section owns. A portal
+           * has none here: it is a card, so its colour is the card's, in Style — the row
+           * this replaces wrote the *board's* colour, which is a different record and the
+           * reason a portal looked like it had two colour controls.
+           */}
+          {details && !portal ? (
             <section className="mt-3">
               <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
                 Colour
@@ -363,72 +470,6 @@ export function ContainerPanel({
             </section>
           ) : null}
 
-          {tab === "contents" && portal && model.board ? (
-            <section className="mt-3" data-testid="container-contents">
-              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-                {`Contents${contentsCount > 0 ? ` (${contentsCount})` : ""}`}
-              </h3>
-              {model.contents.length === 0 ? (
-                <p
-                  className="mt-1 text-[12px] text-[var(--ink-muted)]"
-                  data-testid="container-contents-empty"
-                >
-                  This board has no cards and no sections yet.
-                </p>
-              ) : (
-                <ul className="mt-1 space-y-1.5">
-                  {model.contents.map((group) => (
-                    <li
-                      key={group.sectionId ?? "loose"}
-                      data-testid="container-contents-section"
-                      data-section-id={group.sectionId ?? ""}
-                    >
-                      <p className="flex items-baseline gap-1.5">
-                        {group.color ? (
-                          <span
-                            aria-hidden="true"
-                            className="inline-block h-2 w-2 flex-none rounded-full"
-                            style={{ background: SECTION_STROKE[group.color] }}
-                          />
-                        ) : null}
-                        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ink)]">
-                          {group.title}
-                        </span>
-                        <span
-                          className="text-[11px] text-[var(--ink-muted)]"
-                          data-testid="container-contents-count"
-                        >
-                          {`${group.cards.length} card${group.cards.length === 1 ? "" : "s"}`}
-                        </span>
-                      </p>
-                      {group.cards.length === 0 ? (
-                        <p className="mt-0.5 pl-3.5 text-[11px] text-[var(--ink-muted)]">
-                          No cards yet
-                        </p>
-                      ) : (
-                        <ul className="mt-0.5 space-y-0.5 pl-3.5">
-                          {group.cards.map((card) => (
-                            <li key={card.id}>
-                              <button
-                                type="button"
-                                data-testid="container-contents-card"
-                                title={card.title}
-                                className="w-full truncate rounded px-1 py-0.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
-                                onClick={() => onNavigate?.({ kind: "card", id: card.id })}
-                              >
-                                {card.title}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          ) : null}
-
           {portal && model.board ? (
             <section className="mt-3">
               <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
@@ -443,29 +484,6 @@ export function ContainerPanel({
                 disabled={!canEdit}
                 onPick={(attachmentId) => onSetCover?.(attachmentId)}
               />
-            </section>
-          ) : null}
-
-          {!portal && model.members.length > 0 ? (
-            <section className="mt-3">
-              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-                Inside
-              </h3>
-              <ul className="mt-1 space-y-0.5" data-testid="container-members">
-                {model.members.map((member) => (
-                  <li key={member.id}>
-                    <button
-                      type="button"
-                      data-testid="container-member-row"
-                      title={member.title}
-                      className="w-full truncate rounded px-1 py-0.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
-                      onClick={() => onNavigate?.({ kind: "card", id: member.id })}
-                    >
-                      {member.title}
-                    </button>
-                  </li>
-                ))}
-              </ul>
             </section>
           ) : null}
 

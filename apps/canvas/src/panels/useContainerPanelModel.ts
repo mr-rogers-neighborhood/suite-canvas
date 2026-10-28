@@ -68,6 +68,8 @@ export interface ContainerPanelModel {
   contents: ContainerContentsGroup[];
   /** A portal whose board is gone: the boards it could point at instead. */
   boardOptions: Array<{ id: string; name: string }>;
+  /** The icon this container shows: a section's own, or the board a portal opens. */
+  icon: string | null;
   /** What the portal's `board` field stores, whether or not it resolves. */
   targetBoardId: string | null;
   /** The board holding this container, for Locate. */
@@ -253,6 +255,8 @@ export function useContainerPanelModel(): ContainerPanelModel | null {
         title: board?.name ?? "Missing board",
         board,
         section: null,
+        // A portal shows the board it opens, so its icon is the board's.
+        icon: board?.icon ?? null,
         color: board?.color ?? null,
         members: [],
         links: board
@@ -283,6 +287,7 @@ export function useContainerPanelModel(): ContainerPanelModel | null {
       title: section.title || "Untitled section",
       board: null,
       section,
+      icon: section.icon ?? null,
       color: section.color ?? null,
       members: inside.map((placement) => ({
         id: placement.cardId,

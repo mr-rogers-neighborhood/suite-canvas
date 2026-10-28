@@ -43,6 +43,7 @@ function sectionModel(
     title: section.title,
     board: null,
     section,
+    icon: null,
     color: section.color ?? null,
     members: [],
     links: [],
@@ -70,6 +71,7 @@ function portalModel(
     title: board.name,
     board,
     section: null,
+    icon: board.icon ?? null,
     color: board.color ?? null,
     members: [],
     links: [],
@@ -92,6 +94,7 @@ function renderPanel(model: ContainerPanelModel, workspace: WorkspaceDocument) {
       onClose={noop}
       onLocate={noop}
       onSetColor={noop}
+      onSetIcon={noop}
       workspace={workspace}
       tags={tags}
     />,
@@ -175,20 +178,28 @@ describe("ContainerPanel tags", () => {
 });
 
 describe("ContainerPanel tabs", () => {
-  it("paints a section from the Style tab", () => {
+  it("gives a section no Style tab, because its colour is the paint it owns", () => {
     const { workspace, section } = setup();
 
     renderPanel(sectionModel(workspace, section.id), workspace);
-    // The panel opens on Details, where the identity and the links live.
+
+    // Details, where the identity, the colour and the links live.
     expect(screen.getByTestId("container-tags")).toBeTruthy();
+    expect(screen.getByTestId("container-colors")).toBeTruthy();
+    // A tab that held one sentence and nothing to change is not a tab.
+    expect(screen.queryByTestId("container-tab-style")).toBeNull();
+  });
 
-    fireEvent.click(screen.getByTestId("container-tab-style"));
+  it("offers one icon row, which a section and a portal both use", () => {
+    const { workspace, section, opened, board } = setup();
 
-    // A section is painted by its colour and the theme, so its Style tab says so
-    // rather than offering a second set of paint controls.
-    expect(screen.getByTestId("section-paint")).toBeInTheDocument();
-    // Details steps out of the way rather than stacking under the editor.
-    expect(screen.queryByTestId("container-tags")).toBeNull();
+    const { unmount } = renderPanel(sectionModel(workspace, section.id), workspace);
+    expect(screen.getByTestId("container-icon-pick")).toBeTruthy();
+    unmount();
+
+    const portal = workspace.createPortalCard({ boardId: board.id, targetBoardId: opened.id });
+    renderPanel(portalModel(workspace, opened.id, { id: portal.id }), workspace);
+    expect(screen.getByTestId("container-icon-pick")).toBeTruthy();
   });
 
   it("paints the portal card itself, not the board it opens", () => {
@@ -205,14 +216,18 @@ describe("ContainerPanel tabs", () => {
     expect(workspace.getBoard(opened.id)).not.toHaveProperty("style");
   });
 
-  it("keeps a portal's outline behind its Contents tab", () => {
+  it("gives a portal the same three leaves a card has", () => {
     const { workspace, opened, board } = setup();
     const portal = workspace.createPortalCard({ boardId: board.id, targetBoardId: opened.id });
 
     renderPanel(portalModel(workspace, opened.id, { id: portal.id }), workspace);
-    expect(screen.queryByTestId("container-contents")).toBeNull();
 
-    fireEvent.click(screen.getByTestId("container-tab-contents"));
+    // Details, Contents, Style — the card's own order. What the portal holds is
+    // one of them rather than a row pushing the rest past the fold.
+    expect(screen.getByTestId("container-tags")).toBeTruthy();
+    expect(screen.getByTestId("container-tab-content")).toHaveTextContent("Contents");
+
+    fireEvent.click(screen.getByTestId("container-tab-content"));
 
     expect(screen.getByTestId("container-contents")).toBeTruthy();
     expect(screen.queryByTestId("container-tags")).toBeNull();
@@ -224,21 +239,27 @@ describe("ContainerPanel tabs", () => {
  * roles with every tab in the tab order and no key handling at all.
  */
 describe("ContainerPanel tab strip keyboard", () => {
-  it("is one tab stop, with the selected tab in it", () => {
+  it("is one tab stop, and a section shows Details and Contents but no Style", () => {
     const { workspace, section } = setup();
     renderPanel(sectionModel(workspace, section.id), workspace);
 
     expect(screen.getByTestId("container-tab-details")).toHaveAttribute("tabindex", "0");
-    expect(screen.getByTestId("container-tab-style")).toHaveAttribute("tabindex", "-1");
+    expect(screen.getByTestId("container-tab-content")).toHaveAttribute("tabindex", "-1");
+    // Details and Contents; Style is the theme's job for a section, not a tab.
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
   });
 
-  it("moves the selection and the focus with the arrows", () => {
-    const { workspace, section } = setup();
-    renderPanel(sectionModel(workspace, section.id), workspace);
+  it("moves the selection and the focus with the arrows when there are two", () => {
+    const { workspace, opened, board } = setup();
+    const portal = workspace.createPortalCard({ boardId: board.id, targetBoardId: opened.id });
+    renderPanel(portalModel(workspace, opened.id, { id: portal.id }), workspace);
     const details = screen.getByTestId("container-tab-details");
 
     fireEvent.keyDown(details, { key: "ArrowRight" });
+    expect(screen.getByTestId("container-tab-content")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("container-tab-content")).toHaveFocus();
 
+    fireEvent.keyDown(screen.getByTestId("container-tab-content"), { key: "ArrowRight" });
     expect(screen.getByTestId("container-tab-style")).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("container-tab-style")).toHaveFocus();
   });

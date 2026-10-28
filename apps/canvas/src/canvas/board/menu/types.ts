@@ -33,6 +33,8 @@ export interface BoardMenuContext {
   createPortalAt: (position: { x: number; y: number }, targetBoardId: string) => void;
   createPortalToNewBoard: (position: { x: number; y: number }) => void;
   duplicateCards: (ids: string[]) => void;
+  /** One colour across the cards a menu acts on. */
+  setSwatches: (ids: readonly string[], swatch: string | null) => void;
   moveCardToBoard: (cardId: string, boardId: string) => void;
   otherBoards: (boardId: string | null) => { id: string; name: string }[];
   changeLayer: (nodeId: string, action: LayerAction) => void;

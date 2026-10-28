@@ -13,7 +13,7 @@ import {
 import { placementFromMap, sortByLayer } from "../records/entities.js";
 import { isMap, readNumber } from "../records/values.js";
 import type { Card, Placement } from "../schema.js";
-import { MIN_RANK_GAP, placementKey, STRUCT_ORIGIN } from "./constants.js";
+import { MIN_RANK_GAP, PORTAL_BOARD_FIELD_ID, placementKey, STRUCT_ORIGIN } from "./constants.js";
 import type { DocContext } from "./context.js";
 import { type LayerAction, type PlacementMoveInput, placementMoveSchema } from "./model.js";
 
@@ -143,6 +143,44 @@ export function placementsMethods(ctx: DocContext) {
       const placement = ctx.api.placements.placeCardInternal(boardId, cardId, position);
       if (placement) ctx.commit(`${STRUCT_ORIGIN}place-card`);
       return placement;
+    },
+
+    /**
+     * One portal per target board, per host board: the earliest one stays.
+     *
+     * A board is opened from a board, and a second portal to the same place on the same
+     * board says nothing the first does not. Older documents collected extras while a
+     * placement could make a portal for a board that already had one; this folds them
+     * back to one, as a single undo step.
+     *
+     * @returns how many portals were removed.
+     */
+    pruneDuplicatePortals(): number {
+      const kept = new Map<string, { cardId: string; createdAt: number }>();
+      const extra: string[] = [];
+      for (const placement of ctx.api.placements.listPlacements()) {
+        const card = ctx.api.cards.getCard(placement.cardId);
+        const target = card?.properties[PORTAL_BOARD_FIELD_ID];
+        if (typeof target !== "string" || target.length === 0) continue;
+        const key = `${placement.boardId}|${target}`;
+        const first = kept.get(key);
+        if (first === undefined) {
+          kept.set(key, { cardId: placement.cardId, createdAt: card?.createdAt ?? 0 });
+          continue;
+        }
+        // The earliest record wins, so which portal survives does not depend on order.
+        if ((card?.createdAt ?? 0) < first.createdAt) {
+          kept.set(key, { cardId: placement.cardId, createdAt: card?.createdAt ?? 0 });
+          extra.push(first.cardId);
+          continue;
+        }
+        extra.push(placement.cardId);
+      }
+      if (extra.length === 0) return 0;
+      ctx.batch(`${STRUCT_ORIGIN}prune-portals`, () => {
+        for (const cardId of extra) ctx.api.cards.trashCard(cardId);
+      });
+      return extra.length;
     },
 
     unplaceCard(boardId: string, cardId: string): void {

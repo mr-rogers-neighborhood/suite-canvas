@@ -312,7 +312,27 @@ export function useBoardCommands(
     return installBlueprintCard(workspace, cardId);
   }, [canManageSchema, boardOrder, selectedNodeIds, workspace]);
 
+  /**
+   * One colour across many cards. The palette row is the same one a single card
+   * gets, so a reader who right-clicked inside a selection restyles the selection
+   * rather than the card the press happened to land on.
+   */
+  const setSwatches = useCallback(
+    (ids: readonly string[], swatch: string | null) => {
+      if (!canEditLayout) return;
+      for (const id of ids) {
+        const style = projection.cardsById.get(id)?.style ?? {};
+        workspace.setCardStyle(id, {
+          ...style,
+          ...(swatch === null ? { swatch: undefined } : { swatch }),
+        });
+      }
+    },
+    [workspace, canEditLayout, projection.cardsById],
+  );
+
   return {
+    setSwatches,
     unplaceSelected,
     trashSelected,
     changeLayer,

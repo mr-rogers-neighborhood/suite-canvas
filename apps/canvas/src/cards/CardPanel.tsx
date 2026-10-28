@@ -11,6 +11,7 @@ import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
+import { inspectorPanelIds } from "../inspector/InspectorTabs";
 import { StyleTab } from "../styles/surface/StyleTab";
 import { CardBodySurface } from "./CardBodySurface";
 import { CardLinksSection } from "./CardLinksSection";
@@ -177,12 +178,6 @@ export function CardPanel({
 
   const inspector = variant === "inspector";
   const idPrefix = useId();
-  const detailsTabId = `${idPrefix}-details-tab`;
-  const detailsPanelId = `${idPrefix}-details-panel`;
-  const contentTabId = `${idPrefix}-content-tab`;
-  const contentPanelId = `${idPrefix}-content-panel`;
-  const styleTabId = `${idPrefix}-style-tab`;
-  const stylePanelId = `${idPrefix}-style-panel`;
   const [tab, setTab] = useState<CardPanelTab>(() => {
     if (editing === "body") return "content";
     if (focusedField) return "details";
@@ -272,14 +267,7 @@ export function CardPanel({
   );
   const bodyPeer = bodyPeers[0]?.user ?? null;
   const titlePeer = titlePeers[0]?.user ?? null;
-  const tabIds = {
-    detailsTabId,
-    detailsPanelId,
-    contentTabId,
-    contentPanelId,
-    styleTabId,
-    stylePanelId,
-  };
+  const tabIds = inspectorPanelIds(idPrefix);
 
   const cardIds = useMemo(() => new Set(cards.map((entry) => entry.id)), [cards]);
   const startEditing = (field: CardPanelEditingField) => {
@@ -334,7 +322,12 @@ export function CardPanel({
       )}
 
       {inspector ? (
-        <CardPanelTabs tab={tab} tutorialCard={tutorialCard} ids={tabIds} onSelect={selectTab} />
+        <CardPanelTabs
+          tab={tab}
+          tutorialCard={tutorialCard}
+          idPrefix={idPrefix}
+          onSelect={selectTab}
+        />
       ) : null}
 
       {showDetails ? (
@@ -342,8 +335,8 @@ export function CardPanel({
         <div
           data-testid="card-panel-details"
           role={inspector ? "tabpanel" : undefined}
-          id={inspector ? tabIds.detailsPanelId : undefined}
-          aria-labelledby={inspector ? tabIds.detailsTabId : undefined}
+          id={inspector ? tabIds.details.panel : undefined}
+          aria-labelledby={inspector ? tabIds.details.tab : undefined}
         >
           <CardTypeTagsSection
             card={card}
@@ -401,8 +394,8 @@ export function CardPanel({
             className="px-3 py-3"
             data-testid="card-panel-content"
             role="tabpanel"
-            id={tabIds.contentPanelId}
-            aria-labelledby={tabIds.contentTabId}
+            id={tabIds.content.panel}
+            aria-labelledby={tabIds.content.tab}
           >
             {tutorialCard ? (
               <TutorialStepsPanel
@@ -424,8 +417,8 @@ export function CardPanel({
           className="px-3 py-3"
           data-testid="card-panel-style"
           role="tabpanel"
-          id={tabIds.stylePanelId}
-          aria-labelledby={tabIds.styleTabId}
+          id={tabIds.style.panel}
+          aria-labelledby={tabIds.style.tab}
         >
           <StyleTab
             targets={[{ kind: "card", id: card.id }]}

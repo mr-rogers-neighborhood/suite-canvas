@@ -145,12 +145,17 @@ export function CardInspectorHost() {
           }
           if (container.section) focusSection(container.section.id, container.section.boardId);
         }}
+        // A portal's colour is its card's colour, edited in Style. This row is the
+        // section's own paint, so there is one control per record.
         onSetColor={(color) => {
+          if (container.kind === "section") workspace.setSectionColor(container.id, color);
+        }}
+        onSetIcon={(icon) => {
           if (container.kind === "portal") {
-            if (container.board) workspace.setBoardColor(container.board.id, color);
+            if (container.board) workspace.setBoardIcon(container.board.id, icon);
             return;
           }
-          workspace.setSectionColor(container.id, color);
+          workspace.setSectionIcon(container.id, icon);
         }}
         onSetCover={(attachmentId) => {
           if (container.kind === "portal" && container.board) {

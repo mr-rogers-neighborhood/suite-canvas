@@ -297,6 +297,8 @@ export const sectionSchema = z.object({
   /** Ordering among overlapping sections; cards always paint above all of them. */
   z: z.number().finite(),
   color: sectionColorSchema.optional(),
+  /** An icon reference, painted beside the section's title. Optional and additive. */
+  icon: iconRefSchema.optional(),
   /** Link attachment points, like a card's; a section can be a link endpoint. */
   connectors: z.array(connectorSchema).optional(),
   /** Freeform labels (ADR-0053 §6); a queryable grouping, never a membership rule. */

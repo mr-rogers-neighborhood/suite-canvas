@@ -65,6 +65,7 @@ export function useBoardMenu(
       createPortalAt: commands.createPortalAt,
       createPortalToNewBoard: commands.createPortalToNewBoard,
       duplicateCards: commands.duplicateCards,
+      setSwatches: commands.setSwatches,
       moveCardToBoard: commands.moveCardToBoard,
       otherBoards: commands.otherBoards,
       changeLayer: commands.changeLayer,

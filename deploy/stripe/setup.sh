@@ -81,6 +81,15 @@ first_id() {
 }
 
 test_key() {
+  local root="$here/../.."
+  local from_env
+  # `.env` first: a key there is the deployment's key, and newer CLIs keep a
+  # sandbox-vs-live choice of their own that a bare `stripe prices list` ignores.
+  from_env="$(sed -n 's/^STRIPE_SECRET_KEY=//p' "$root/.env" 2>/dev/null | head -1 | tr -d "\"'")"
+  if [ -n "$from_env" ]; then
+    printf '%s' "$from_env"
+    return 0
+  fi
   stripe config --list 2>/dev/null |
     sed -n "s/^test_mode_api_key = '\(.*\)'\$/\1/p"
 }
@@ -97,13 +106,14 @@ listen() {
   need_cli
   printf 'Forwarding Stripe test-mode webhooks to localhost:%s%s\n' "$port" "$webhook_path"
   printf 'Copy the whsec_... secret this prints into STRIPE_WEBHOOK_SECRET, then restart the control plane.\n\n'
-  exec stripe listen --forward-to "localhost:$port$webhook_path"
+  # The CLI requires an event selection; `--events '*'` was retired in its favour.
+  exec stripe listen --all-snapshot --forward-to "localhost:$port$webhook_path"
 }
 
 clock() {
   need_cli
   local created clock_id
-  created="$(stripe test_helpers test_clocks create --format json)"
+  created="$(stripe test_helpers test_clocks create -c)"
   clock_id="$(printf '%s' "$created" | first_id)"
   [ -n "$clock_id" ] || die "Stripe created no test clock: $created"
 
@@ -112,11 +122,11 @@ Test clock: $clock_id
 
 Attach it to the customer the plugin created for your organization:
 
-  stripe customers update <cus_...> -d test_clock=$clock_id
+  stripe customers update -c <cus_...> -d test_clock=$clock_id
 
 Move it forward a month and watch the renewal land:
 
-  stripe test_helpers test_clocks advance $clock_id -d "frozen_time=$(($(date +%s) + 2630000))"
+  stripe test_helpers test_clocks advance -c $clock_id -d "frozen_time=$(($(date +%s) + 2630000))"
 
 Then read the entitlement again:
 
@@ -131,6 +141,10 @@ create_fixtures() {
 
   local key
   key="$(test_key)"
+  # Every call below is a test-mode call. The CLI defaults to whatever mode the
+  # logged-in account was switched to, and a test key is the one thing that makes
+  # the answer independent of that choice.
+  [ -n "$key" ] && export STRIPE_API_KEY="$key"
   if [ -z "$key" ]; then
     cat >&2 <<'NOKEY'
 The Stripe CLI has no test-mode key stored, so no price can be created.
@@ -153,12 +167,12 @@ NOKEY
   local tier name lookup amount seats workspaces document_bytes attachment_bytes price
 
   while IFS=$'\t' read -r tier name lookup amount seats workspaces document_bytes attachment_bytes; do
-    price="$(stripe prices list --format json -d "lookup_keys[]=$lookup" -d limit=1 | first_id)"
+    price="$(stripe prices list -d "lookup_keys[]=$lookup" -d limit=1 | first_id)"
     if [ -n "$price" ]; then
       reused=$((reused + 1))
     else
       price="$(
-        stripe prices create --format json \
+        stripe prices create -c \
           -d "currency=$currency" \
           -d "unit_amount=$amount" \
           -d "recurring[interval]=month" \
@@ -187,7 +201,7 @@ NOKEY
 Add these to the control plane's environment:
 
 STRIPE_SECRET_KEY=$key
-STRIPE_WEBHOOK_SECRET=<whsec_... from `pnpm stripe --listen`>
+STRIPE_WEBHOOK_SECRET=<whsec_... from \`pnpm stripe --listen\`>
 STRIPE_PRICE_TIERS='$tiers'
 SUITE_CONTROL_PLANE_PORT=$port
 

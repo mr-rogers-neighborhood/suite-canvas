@@ -130,3 +130,44 @@ green. E2E is not part of it unless the owner asked for a run.
 
 Recorded decisions live in `internal/decisions/`, which is gitignored and local-only; ask the
 maintainer for the current copy before re-litigating one.
+
+## Tools for the deployment
+
+`.vscode/mcp.json` adds four MCP servers, all of them workspace-scoped so they do not load in other
+projects: `cloudflare` (`https://mcp.cloudflare.com/mcp`), `stripe` (`https://mcp.stripe.com`), `resend`
+(`https://mcp.resend.com/mcp`), and `aws-mcp`, which the AWS Agent Toolkit writes itself. None of them
+carries a secret: each authenticates with OAuth on first use, and Stripe is authorised against the
+**sandbox** so a live charge is never one tool call away.
+
+They are trimmed on purpose. A server's whole tool list crowding out the task at hand is worse than not
+having it, so **Chat: Open Customizations → Tools** is where each server is cut to the handful of tools a
+job needs; turn the rest back on for the length of that job. The same panel is where a server is switched
+off entirely, which is what the end of a deployment phase should look like.
+
+<!-- BEGIN AWS Agent Toolkit rules -->
+
+# AWS guidance for the new AWS experience
+
+This project is on the **new AWS experience**, in the `suite` CLI profile, Region **us-east-2**. Where
+this guidance conflicts with the project's own instructions above, the project's instructions win.
+
+- Say **project** rather than account, **team member** rather than IAM user, and **AWS Settings**
+  (`settings.aws.com`) for billing, spend limits and project management. Resources are viewed in the AWS
+  Management Console.
+- Every Regional resource goes in **us-east-2**. `us-east-1` is only for CloudWatch Logs or WAF entries
+  that a global resource requires, and an inventory checks both.
+- Nothing cross-Region: no replication, no multi-Region keys, no StackSets, no Lambda@Edge. Route 53
+  geolocation, latency and failover routing do not exist here.
+- Human access is managed by AWS; do not create IAM users for people. Service roles and instance profiles
+  are the way services get permissions.
+- Spend limits live in AWS Settings → Billing, and only a project owner can change one. Sudden "Access
+  Denied" on operations that used to work is a spend limit until proven otherwise.
+- If a service misbehaves, `aws freetier get-account-plan-state` first, then the Free Tier or Paid Tier
+  supported-services list for this experience. A service missing from both needs advanced features
+  activated.
+- For any AWS task, call `aws___search_documentation` with topic `agent_skills` and load the matching
+  skill with `aws___retrieve_skill` before acting, even when the answer seems known.
+- Before finishing, ask whether to clean up the resources that were created for a one-off task or keep
+  them; this account pays for what stays.
+
+<!-- END AWS Agent Toolkit rules -->

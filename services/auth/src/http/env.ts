@@ -20,6 +20,10 @@ export function authEnvironment(
     SUITE_AUTH_RP_ID: source.SUITE_AUTH_RP_ID,
     SUITE_AUTH_RP_NAME: source.SUITE_AUTH_RP_NAME,
     SUITE_AUTH_MAX_ORGS_PER_USER: source.SUITE_AUTH_MAX_ORGS_PER_USER,
+    // The operator list. Missing from this whitelist would be worse than a wrong
+    // value: the deployment would name an operator, mint `operator: false` anyway,
+    // and the only symptom would be a 401 that looks like a session problem.
+    SUITE_ADMIN_EMAILS: source.SUITE_ADMIN_EMAILS,
     SUITE_TURNSTILE_SECRET: source.SUITE_TURNSTILE_SECRET,
     SUITE_AUTH_REQUIRE_VERIFICATION: source.SUITE_AUTH_REQUIRE_VERIFICATION,
     SUITE_ADMISSION_REQUIRED: source.SUITE_ADMISSION_REQUIRED,

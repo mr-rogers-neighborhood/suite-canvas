@@ -83,6 +83,10 @@ services:
       # key set published there (ADR-0074). Unset means no account can sync, and
       # anonymous and share-link use are unaffected.
       SUITE_AUTH_URL: ${SUITE_AUTH_URL:-}
+      # Where this process fetches the key set. The public name is what the token's
+      # `iss`/`aud` say; this is the address the container can actually reach, so a
+      # relay does not have to resolve its own public hostname through the proxy.
+      SUITE_AUTH_JWKS_URL: ${SUITE_AUTH_JWKS_URL:-http://control-plane:1236/api/auth/jwks}
       SUITE_ALLOWED_ORIGINS: ${SUITE_ALLOWED_ORIGINS:-}
       SUITE_PUBLIC_URL: ${SUITE_PUBLIC_URL:-}
       SUITE_HOSTED: ${SUITE_HOSTED:-0}
@@ -243,7 +247,10 @@ services:
     ports:
       - "3001:3001"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/docs').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      # The docs image is Caddy on Alpine with no Node in it, so the probe has to be
+      # one the image actually has. `wget --spider` exits non-zero on a 4xx/5xx, which
+      # is the same "is the tree being served" question the Node one asked.
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:3001/docs"]
       interval: 30s
       timeout: 5s
       start_period: 10s

@@ -68,6 +68,16 @@ export interface ServerConfig {
    * anonymous and share-link use.
    */
   authUrl: string | null;
+  /**
+   * Where the key set lives, when that is not the public origin.
+   *
+   * `SUITE_AUTH_JWKS_URL`. A deployment has two names for the control plane: the
+   * browser's (`https://app.suite.run`, through the proxy) and the internal one
+   * (`control-plane:1236`). The public name is what the token's `iss`/`aud` say, and
+   * the internal one is what this process can actually reach; absent, the public
+   * origin answers both, which is the single-origin case.
+   */
+  authJwksUrl: string | null;
   allowedOrigins: readonly string[];
   trustProxy: boolean;
   logLevel: LogLevel;
@@ -464,6 +474,24 @@ function authUrlValue(env: ConfigEnv): {
 }
 
 /**
+ * The key set's own address. Any http(s) URL, because it is only fetched: it never has
+ * to match the origin the token names, and making that a rule would forbid the one
+ * shape a compose network needs.
+ */
+function jwksUrlValue(env: ConfigEnv): string | null {
+  const raw = text(env, "SUITE_AUTH_JWKS_URL");
+  if (raw === null || raw.length === 0) return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.href;
+  } catch {
+    // A malformed value would otherwise refuse every session silently, so it is
+    // reported at boot by the caller that reads this.
+  }
+  return null;
+}
+
+/**
  * A hosted relay signs licences, so it cannot validate them without a key. The
  * check parses the value exactly as `licence.ts` will, so a typo is a startup
  * error rather than a claim refused later with "no public key".
@@ -737,6 +765,7 @@ export function validateConfig(
       licencePublicKey: key.value,
       licence: licence.value,
       authUrl: auth.value,
+      authJwksUrl: jwksUrlValue(env),
       allowedOrigins: origins.value,
       trustProxy: trustProxy.value,
       logLevel: level.value,

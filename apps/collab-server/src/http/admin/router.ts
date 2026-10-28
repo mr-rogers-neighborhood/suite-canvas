@@ -157,10 +157,17 @@ export async function handleAdminRequest(
       );
     }
 
-    const credential = await resolveAdminCredential(bearerToken(request), deps.sessions);
-    if (credential === null) {
+    const resolution = await resolveAdminCredential(bearerToken(request), deps.sessions);
+    if (resolution.kind === "not-operator") {
+      // Signed in, and not on the deployment's list. Recorded for a mutation like any
+      // other refusal: an escalation attempt is worth a row.
+      if (row !== undefined) row.result = "refused-scope";
+      throw HttpError.forbidden("this account is not an operator on this deployment");
+    }
+    if (resolution.kind === "none") {
       throw HttpError.unauthorized("An operator session is required.");
     }
+    const credential = resolution.credential;
 
     // One draft per mutating request. A refusal by scope is a mutation attempt,
     // so it gets a row too — an attempt to escalate is worth recording.

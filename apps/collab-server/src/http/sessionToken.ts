@@ -100,8 +100,24 @@ export interface SessionVerifier {
 }
 
 export interface SessionVerifierOptions {
-  /** `SUITE_AUTH_URL`: the issuer, the audience and the origin of the key set. */
+  /**
+   * `SUITE_AUTH_URL`: the public origin, which is both the issuer and the audience.
+   * It is a *claim* to compare, not an address this process has to reach.
+   */
   authUrl: string;
+  /**
+   * `SUITE_AUTH_JWKS_URL`: where the key set actually lives, when that is not the
+   * public origin.
+   *
+   * Two addresses because a deployment has two names for one server: the browser
+   * reaches `https://app.suite.run` through Caddy, and the relay reaches the control
+   * plane as `control-plane:1236` on the compose network. Asking the relay to fetch
+   * its keys from the public name makes verification depend on a hairpin through the
+   * proxy, which fails behind `.localhost` and on any host that cannot resolve its own
+   * public address. Absent, the keys are read from the public origin, which is what a
+   * single-origin deployment does.
+   */
+  jwksUrl?: string | null;
   now?: () => number;
   /** Cache lifetime in milliseconds; defaults to {@link JWKS_CACHE_MAX_AGE_MS}. */
   cacheMaxAge?: number;
@@ -195,7 +211,11 @@ export function createSessionVerifier(options: SessionVerifierOptions): SessionV
   const issuer = normaliseAuthUrl(options.authUrl);
   if (issuer === null) throw new Error("SUITE_AUTH_URL must be an http or https URL.");
 
-  const keys: RemoteJWKSet = createRemoteJWKSet(new URL(JWKS_PATH, issuer), {
+  const keySetUrl =
+    options.jwksUrl && options.jwksUrl.trim().length > 0
+      ? new URL(options.jwksUrl.trim())
+      : new URL(JWKS_PATH, issuer);
+  const keys: RemoteJWKSet = createRemoteJWKSet(keySetUrl, {
     cacheMaxAge: options.cacheMaxAge ?? JWKS_CACHE_MAX_AGE_MS,
     cooldownDuration: options.cooldown ?? JWKS_COOLDOWN_MS,
     timeoutDuration: options.timeout ?? JWKS_TIMEOUT_MS,

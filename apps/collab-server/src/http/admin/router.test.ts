@@ -245,7 +245,7 @@ describe("admin API", () => {
     // A valid session for an account the deployment did not name: signed in, and still
     // not an operator. Owning a tenant is not operating the deployment.
     const member = await get(`${ADMIN_API_PATH}/status`, MEMBER_TOKEN);
-    expect(member.status).toBe(401);
+    expect(member.status).toBe(403);
 
     const accepted = await get(`${ADMIN_API_PATH}/status`);
     expect(accepted.status).toBe(200);
@@ -903,9 +903,11 @@ describe("admin mutations", () => {
       { confirm: "ws-a" },
       MEMBER_TOKEN,
     );
-    expect(refused.status).toBe(401);
-    expect((await get(`${ADMIN_API_PATH}/workspaces`, MEMBER_TOKEN)).status).toBe(401);
-    expect((await get(METRICS_PATH, MEMBER_TOKEN)).status).toBe(401);
+    expect(refused.status).toBe(403);
+    expect((await get(`${ADMIN_API_PATH}/workspaces`, MEMBER_TOKEN)).status).toBe(403);
+    expect((await get(METRICS_PATH, MEMBER_TOKEN)).status).toBe(403);
+    // A token this deployment cannot verify is the other answer, because the reader's
+    // next step is different: sign in, rather than ask to be added.
     expect((await get(`${ADMIN_API_PATH}/workspaces`, "not-a-session")).status).toBe(401);
     expect(documents.load(loroDocumentKey("ws-a"))).not.toBeNull();
 

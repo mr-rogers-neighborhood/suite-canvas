@@ -64,7 +64,8 @@ RUN pnpm --filter @suite/graph build \
   && pnpm --filter @suite/licence build \
   && pnpm --filter @suite/billing build \
   && pnpm --filter @suite/import-obsidian build \
-  && pnpm --filter @suite/canvas build
+  && pnpm --filter @suite/canvas build \
+  && pnpm --filter @suite/docs build
 
 # The runtime base both servers share: a non-root user, a writable /data, and
 # nothing else writable. The sources stay TypeScript and are executed through
@@ -127,4 +128,9 @@ CMD ["tsx", "apps/control-plane/src/server.ts"]
 FROM caddy:2-alpine AS web
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/apps/canvas/dist /srv
+# The documentation tree, in the image that serves it. Caddy can only answer
+# `docs.suite.run` from its own filesystem, so a separate container holding the
+# tree was a second copy of a static site that this host could not read: the
+# docs host answered 404 forever. `SUITE_DOCS_ROOT` defaults to exactly this path.
+COPY --from=build /app/apps/docs/dist /srv/docs
 EXPOSE 80 443

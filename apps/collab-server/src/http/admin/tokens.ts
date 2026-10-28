@@ -46,22 +46,31 @@ export function adminConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /**
- * The credential a presented session token names, or null.
+ * What a presented session names.
  *
- * A valid signature is not enough: the token also has to carry `operator: true`, which
- * the control plane mints from `SUITE_ADMIN_EMAILS`. An organization owner's token is a
- * perfectly good session and is still refused here, because owning a tenant is not
- * operating the deployment.
+ * Three answers rather than two, because they are three different facts to a caller:
+ * no usable session (`401`), a perfectly good session for an account that is not an
+ * operator (`403`), or the credential itself. Collapsing the middle case into "not
+ * authorized" is what makes an operator sit there wondering whether their session
+ * expired when the real answer is "your address is not on the list".
  */
+export type AdminResolution =
+  | { kind: "none" }
+  | { kind: "not-operator"; userId: string }
+  | { kind: "operator"; credential: AdminCredential };
+
 export async function resolveAdminCredential(
   presented: string | null,
   verifier: SessionVerifier,
-): Promise<AdminCredential | null> {
-  if (presented === null || presented.length === 0) return null;
+): Promise<AdminResolution> {
+  if (presented === null || presented.length === 0) return { kind: "none" };
   const result = await verifier.verify(presented);
-  if (!result.ok) return null;
-  if (!result.claims.operator) return null;
-  return { actor: `account:${result.claims.userId}`, scopes: ["read", "mutate"] };
+  if (!result.ok) return { kind: "none" };
+  if (!result.claims.operator) return { kind: "not-operator", userId: result.claims.userId };
+  return {
+    kind: "operator",
+    credential: { actor: `account:${result.claims.userId}`, scopes: ["read", "mutate"] },
+  };
 }
 
 /**

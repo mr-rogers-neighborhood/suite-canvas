@@ -138,6 +138,7 @@ every account path answers `503 auth-not-configured`.
 | --- | --- | --- |
 | `SUITE_AUTH_ENABLED` | `0` | `1` or `true` composes the service and mounts its routes |
 | `SUITE_AUTH_SECRET` | none | signing secret for cookies and the JWT key pair, at least 32 characters |
+| `SUITE_AUTH_JWKS_URL` | `${SUITE_AUTH_URL}/api/auth/jwks` | where the relay fetches the key set. Set it when the control plane is reachable under a different name than the public origin, which is every compose deployment: the token names `https://app.suite.run` and the relay reaches `control-plane:1236` |
 | `SUITE_AUTH_URL` | none | public origin the session cookie is scoped to, and the JWT's `iss` and `aud` |
 | `SUITE_AUTH_DATABASE_URL` | none | Postgres for accounts, organizations and licences; required when the service is on |
 | `SUITE_AUTH_MIGRATE` | on | `0`, `false`, `no` or `off` skips the boot migration for an operator who applies `services/auth/sql` out of band |

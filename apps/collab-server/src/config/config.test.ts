@@ -202,6 +202,20 @@ describe("validateConfig", () => {
     // The relay compares `iss`/`aud` and builds the JWKS URL from this, so a
     // path or a trailing slash must not survive.
     expect(result.config.authUrl).toBe("https://accounts.example.com");
+    // No separate key-set address means the public origin answers for it too.
+    expect(result.config.authJwksUrl).toBeNull();
+  });
+
+  it("reads a key-set address that is not the public origin", () => {
+    // The shape a compose deployment needs: the token names the public host, and the
+    // key set is fetched from the service name that container can reach.
+    const result = validateConfig({
+      SUITE_AUTH_URL: "https://app.suite.run",
+      SUITE_AUTH_JWKS_URL: "http://control-plane:1236/api/auth/jwks",
+    });
+    expect(result.ok).toBe(true);
+    expect(result.config.authUrl).toBe("https://app.suite.run");
+    expect(result.config.authJwksUrl).toBe("http://control-plane:1236/api/auth/jwks");
   });
 
   it("leaves session verification off when no auth URL is set", () => {

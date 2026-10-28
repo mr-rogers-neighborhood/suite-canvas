@@ -139,7 +139,7 @@ const seatGate = relaySeatGate(licenceRequired());
 // the relay compares against is the same shape the control plane signed.
 const authUrl = config.authUrl;
 const sessions: SessionVerifier | undefined =
-  authUrl === null ? undefined : createSessionVerifier({ authUrl });
+  authUrl === null ? undefined : createSessionVerifier({ authUrl, jwksUrl: config.authJwksUrl });
 if (sessions === undefined) {
   logger.info("session verification is off", {
     hint: "set SUITE_AUTH_URL to the control-plane origin",

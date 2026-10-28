@@ -447,3 +447,16 @@ export async function impersonate(accountId: string): Promise<void> {
 export async function stopImpersonating(): Promise<void> {
   await requestUrl(`${ACCOUNT_BASE}/stop-impersonating`, { method: "POST" });
 }
+
+/**
+ * One message, to prove the deployment can send one.
+ *
+ * The control plane builds the transport from the panel's own saved rows, so this is the
+ * honest test of what a sign-up will get — not of what `.env` said at boot.
+ */
+export async function sendTestMail(to: string): Promise<{ ok: boolean; transport: string }> {
+  return requestUrl(`${authServiceBase()}/admin/mail/test`, {
+    method: "POST",
+    body: JSON.stringify({ to }),
+  });
+}

@@ -1,11 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { mailSenders, mailTransportFromEnv } from "@suite/auth";
 import { readJsonBody, sendJson } from "@suite/billing";
+import { envWithSettings } from "@suite/settings";
 import { Pool } from "pg";
 import { type ConfigEnv, DATABASE_URL_VARIABLE } from "../config.js";
 import { createLogger, type Logger, REQUEST_ID_HEADER } from "../logging.js";
 import type { RouteModule } from "../routes.js";
 import { sessionReader } from "./context.js";
+import { readStoredSettings } from "./settings.js";
 
 /**
  * The operator surface: one admission queue and one starter-template list.
@@ -39,6 +41,9 @@ export const ADMISSIONS_PATH = "/admin/admissions";
 
 /** The operator's people list, and the one thing it may change: a support grant it revokes. */
 export const ACCOUNTS_PATH = "/admin/accounts";
+
+/** One message, to prove the deployment can send one. */
+export const MAIL_TEST_PATH = "/admin/mail/test";
 
 /** The launcher's list, readable without a token. */
 export const TEMPLATES_PATH = "/api/templates";
@@ -734,10 +739,72 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
     }
   };
 
+  /**
+   * Sends one message with the mail transport this deployment would actually use.
+   *
+   * The transport is built from the panel's saved rows laid over the environment, which
+   * is the same composition the auth service boots with, so an operator who fixes an SMTP
+   * password in the panel can prove it here instead of waiting for a sign-up to fail.
+   * `console` is answered as a success with its name in the reply, because it *did* hand
+   * the message to the log and saying otherwise would send the reader hunting for a bug.
+   */
+  const sendTestMail = async (request: IncomingMessage, response: ServerResponse) => {
+    const body = await readJsonBody(request, MAX_TEMPLATE_BODY_BYTES).catch(() => null);
+    const parsed = body?.isOk() === true ? (body.value as { to?: unknown }) : null;
+    const to = typeof parsed?.to === "string" ? parsed.to.trim() : "";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(to)) {
+      refuse(response, 400, "invalid-body", "expected { to } to be an email address");
+      return;
+    }
+
+    const rows = await readStoredSettings((env[DATABASE_URL_VARIABLE] ?? "").trim()).catch(
+      () => [],
+    );
+    const configured = envWithSettings({ env, rows });
+    const kind = configured.SUITE_MAIL_TRANSPORT?.trim() || "console";
+
+    try {
+      const transport = mailTransportFromEnv(configured, {
+        write: (line) => logger.info("test mail", { line }),
+      });
+      await transport.send({
+        to,
+        subject: "Suite: test message",
+        text: [
+          "This is a test message from the Suite operator panel.",
+          "",
+          `The transport that carried it is ${kind}.`,
+          "Nothing is wrong: no account was created and no link is inside.",
+        ].join("\n"),
+      });
+    } catch (error) {
+      logger.error("the test message did not send", {
+        transport: kind,
+        error: messageOf(error),
+      });
+      refuse(response, 502, "mail-failed", messageOf(error));
+      return;
+    }
+
+    logger.info("test message sent", { transport: kind, to });
+    sendJson(response, 200, { ok: true, transport: kind });
+  };
+
   return {
     name: "admin",
     async handle(request, response): Promise<boolean> {
       const path = new URL(request.url ?? "/", "http://localhost").pathname;
+
+      if (path === MAIL_TEST_PATH) {
+        if (!(await operatorGate(request, response))) return true;
+        if (!storageGate(response)) return true;
+        if (methodOf(request) !== "POST") {
+          methodNotAllowed(response, "POST", methodOf(request));
+          return true;
+        }
+        await sendTestMail(request, response);
+        return true;
+      }
 
       if (path === ADMISSIONS_PATH) {
         await handleAdmissions(request, response);

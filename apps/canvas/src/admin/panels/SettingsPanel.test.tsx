@@ -42,17 +42,20 @@ const rows = [
 ];
 
 const writeSetting = vi.fn(async () => {});
+const sendTestMail = vi.fn(async () => ({ ok: true, transport: "smtp" }));
 
 vi.mock("../api", () => ({
   errorText: (cause: unknown) => String(cause),
   listSettings: async () => ({ organizationId: null, settings: rows }),
   writeSetting: (...args: unknown[]) => writeSetting(...(args as [])),
   resetSetting: async () => {},
+  sendTestMail: (...args: unknown[]) => sendTestMail(...(args as [])),
 }));
 
 afterEach(() => {
   cleanup();
   writeSetting.mockClear();
+  sendTestMail.mockClear();
 });
 
 describe("the settings panel", () => {
@@ -113,5 +116,26 @@ describe("the settings panel", () => {
 
     await waitFor(() => expect(screen.getByTestId("billing-live-warning")).toBeTruthy());
     expect(screen.getByTestId("billing-live-warning").textContent).toContain("live");
+  });
+});
+
+describe("the mail test", () => {
+  it("sends to the address typed and says which transport carried it", async () => {
+    render(<SettingsPanel />);
+
+    const field = await screen.findByLabelText("Test message recipient");
+    fireEvent.change(field, { target: { value: "you@example.com" } });
+    fireEvent.click(screen.getByText("Send"));
+
+    await waitFor(() => expect(sendTestMail).toHaveBeenCalledWith("you@example.com"));
+    expect((await screen.findByTestId("mail-test-result")).textContent).toContain("smtp transport");
+  });
+
+  it("will not send to nobody", async () => {
+    render(<SettingsPanel />);
+
+    const send = (await screen.findByText("Send")) as HTMLButtonElement;
+
+    expect(send.disabled).toBe(true);
   });
 });

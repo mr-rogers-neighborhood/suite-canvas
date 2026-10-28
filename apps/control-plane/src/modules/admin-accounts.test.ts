@@ -189,3 +189,59 @@ describe("ending support access", () => {
     expect(out.status).toBe(0);
   });
 });
+
+describe("the mail test", () => {
+  const post = (body: unknown) =>
+    request("POST", "/admin/mail/test", JSON.stringify(body), authorized);
+
+  it("refuses an address that is not one", async () => {
+    const { module } = moduleWith([]);
+    const { out, res } = response();
+
+    await module.handle(post({ to: "not-an-address" }), res);
+
+    expect(out.status).toBe(400);
+  });
+
+  it("is an operator's door", async () => {
+    const { module } = moduleWith([]);
+    const { out, res } = response();
+
+    await module.handle(request("POST", "/admin/mail/test", '{"to":"a@b.co"}'), res);
+
+    expect(out.status).toBe(401);
+  });
+
+  it("hands the message to the console transport when that is what is configured", async () => {
+    // The default mail transport is `console`, so this proves the route reaches a
+    // transport and says which one carried the message, without a network.
+    const { module } = moduleWith([]);
+    const { out, res } = response();
+
+    await module.handle(post({ to: "operator@suite.run" }), res);
+
+    expect(out.status).toBe(200);
+    expect(JSON.parse(out.body)).toEqual({ ok: true, transport: "console" });
+  });
+
+  it("reports a transport that is configured but unusable", async () => {
+    const sql = query([]);
+    const module = createAdminModule({
+      env: {
+        SUITE_ADMIN_EMAILS: OPERATOR,
+        SUITE_CONTROL_PLANE_DATABASE_URL: "postgres://localhost/suite",
+        SUITE_MAIL_TRANSPORT: "smtp",
+        // No SUITE_SMTP_URL: the transport refuses to build, and the panel has to say so
+        // rather than claim the message went out.
+      } as AdminModuleOptions["env"],
+      logger: silence(),
+      pool: sql.run as unknown as AdminModuleOptions["pool"],
+    });
+    const { out, res } = response();
+
+    await module.handle(post({ to: "operator@suite.run" }), res);
+
+    expect(out.status).toBe(502);
+    expect(JSON.parse(out.body).message).toContain("SUITE_MAIL_TRANSPORT=smtp needs");
+  });
+});

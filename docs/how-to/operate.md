@@ -506,3 +506,14 @@ docker compose start app
   container.
 - A dead or wrong admin token makes `alert.sh` exit `2` rather than `0`. Fix the credential; do not
   ignore the page.
+
+## Prove the mail transport without a sign-up
+
+Settings → mail → **Send a test message** sends one message with the transport the saved
+rows configure, the same composition the account service boots with. A `smtp` or `resend`
+transport that cannot be built answers with its own error, so a wrong password or a
+missing `SUITE_MAIL_FROM` shows up in the panel rather than in a stranger's sign-up. The
+`console` transport answers as success and writes the message to the control-plane log,
+which is what it was asked to do.
+
+`POST /admin/mail/test` with `{"to": "you@example.com"}` is the same call, for a script.

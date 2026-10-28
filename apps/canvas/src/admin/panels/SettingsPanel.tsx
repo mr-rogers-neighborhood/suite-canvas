@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { type AdminSetting, errorText, listSettings, resetSetting, writeSetting } from "../api";
+import {
+  type AdminSetting,
+  errorText,
+  listSettings,
+  resetSetting,
+  sendTestMail,
+  writeSetting,
+} from "../api";
 import { Button, ErrorLine, Muted, PanelHeader, useLoad } from "../ui";
 
 /**
@@ -19,6 +26,9 @@ export function SettingsPanel() {
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [confirmLive, setConfirmLive] = useState("");
+  const [mailTo, setMailTo] = useState("");
+  const [mailResult, setMailResult] = useState<string | null>(null);
+  const [mailBusy, setMailBusy] = useState(false);
 
   const settings = data?.settings ?? [];
   const mode = settings.find((entry) => entry.key === "billing.mode")?.value;
@@ -65,6 +75,51 @@ export function SettingsPanel() {
           <code>_LIVE</code> key, webhook secret and prices are read. Fill those in before
           switching, or billing switches itself off.
         </p>
+      ) : null}
+
+      {/* The mail rows are only worth filling in if a message arrives, so the proof sits
+          beside them rather than in another tab. */}
+      {settings.some((entry) => entry.group === "mail") ? (
+        <div className="admin-card admin-settings-group" data-group="mail-test">
+          <h2 className="admin-settings-heading">Send a test message</h2>
+          <div className="admin-settings-row">
+            <div className="admin-settings-label">
+              <Muted>
+                Sends one message with the transport these rows configure, so a wrong password shows
+                up here instead of in a stranger's sign-up.
+              </Muted>
+              {mailResult === null ? null : (
+                <span role="status" data-testid="mail-test-result">
+                  {mailResult}
+                </span>
+              )}
+            </div>
+            <div className="admin-settings-control">
+              <input
+                className="admin-input"
+                type="email"
+                placeholder="you@example.com"
+                aria-label="Test message recipient"
+                value={mailTo}
+                disabled={mailBusy}
+                onChange={(event) => setMailTo(event.target.value)}
+              />
+              <Button
+                disabled={mailBusy || mailTo.trim().length === 0}
+                onClick={() => {
+                  setMailBusy(true);
+                  setMailResult(null);
+                  sendTestMail(mailTo.trim())
+                    .then((answer) => setMailResult(`Handed to the ${answer.transport} transport.`))
+                    .catch((cause: unknown) => setMailResult(errorText(cause)))
+                    .finally(() => setMailBusy(false));
+                }}
+              >
+                {mailBusy ? "Sending…" : "Send"}
+              </Button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {["billing", "mail", "licence", "backup", "limits", "flags"].map((group) => {

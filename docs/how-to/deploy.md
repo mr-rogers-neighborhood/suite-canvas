@@ -464,6 +464,23 @@ Four variables decide whether a person who signs up can ever get in:
 | `SUITE_MAIL_TRANSPORT` | `console` cannot deliver a verification link. Use `resend` with `RESEND_API_KEY` and `SUITE_MAIL_FROM`, or `smtp` with `SUITE_SMTP_URL`. |
 | `SUITE_ADMISSION_REQUIRED` | `1` holds every new account. Pair it with `SUITE_ADMIN_EMAILS` or the boot refuses: the queue would have no door. |
 | `STRIPE_WEBHOOK_SECRET` | Without it every delivery fails verification, so no payment is recorded. `pnpm stripe --listen` prints it locally; on the host it comes from the Stripe dashboard endpoint. |
+| `SUITE_AUTH_JWKS_URL` | The address the relay *fetches* the key set from, when that is not the public origin. Compose defaults it to `http://control-plane:1236/api/auth/jwks`; leave it set, or the relay asks the proxy for its own public hostname and no session verifies. |
+| `SUITE_ADMIN_EMAILS` | Who may use the operator surface. Comma-separated, matched against the signed-in address. Unset locks the admissions queue and the starter list to nobody. |
+
+**Name the first operator before the first boot.** `SUITE_ADMIN_EMAILS` is the only door to the
+admissions queue and the starter list, and an account becomes an operator by *address*, so create the
+account first and add its address to the variable:
+
+```sh
+# 1. the address is in .env, then restart the control plane so it is read
+SUITE_ADMIN_EMAILS=you@example.com
+# 2. sign up once at https://app.suite.run, follow the confirmation mail
+# 3. sign in at https://app.suite.run/admin.html; the panel says whether you are an operator
+```
+
+If step 3 answers "not an operator", the variable did not reach the process: it is read through a
+whitelist (`services/auth/src/http/env.ts`), and a missing value there mints `operator: false` rather
+than refusing to boot.
 
 Admitting the first users, once mail and the queue are live: sign in at
 `https://app.suite.run/admin.html` with an address from `SUITE_ADMIN_EMAILS` and use the

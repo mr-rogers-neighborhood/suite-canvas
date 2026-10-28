@@ -1,6 +1,7 @@
 import { type Board, type SectionColor, sectionColors } from "@suite/graph";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
+import { IconPicker } from "../icons/IconPicker";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { BoardGlyph } from "./BoardGlyph";
 
@@ -76,6 +77,8 @@ export interface BoardSwitcherProps {
   onOpenLibrary: () => void;
   onRename: (boardId: string, name: string) => void;
   onSetColor: (boardId: string, color: Board["color"] | null) => void;
+  /** An icon reference painted in the board's colour; `null` clears it. */
+  onSetIcon?: ((boardId: string, icon: string | null) => void) | undefined;
   onTogglePin: (boardId: string) => void;
   /** Viewers and shares may switch boards but not rename or recolour one. */
   canManage?: boolean;
@@ -102,12 +105,15 @@ export function BoardSwitcher({
   onOpenLibrary,
   onRename,
   onSetColor,
+  onSetIcon,
   onTogglePin,
   canManage = true,
   peersByBoard,
 }: BoardSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [rowMenu, setRowMenu] = useState<{ boardId: string; x: number; y: number } | null>(null);
+  /** The board whose icon picker is open, if any. */
+  const [iconFor, setIconFor] = useState<{ boardId: string; x: number; y: number } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const root = useRef<HTMLDivElement | null>(null);
@@ -270,6 +276,25 @@ export function BoardSwitcher({
           </button>
         </div>
       ) : null}
+      {iconFor === null ? null : (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onPointerDown={() => setIconFor(null)}
+            aria-hidden="true"
+          />
+          <div className="fixed z-50" style={{ left: iconFor.x, top: iconFor.y }}>
+            <IconPicker
+              value={boards.find((board) => board.id === iconFor.boardId)?.icon ?? null}
+              onClose={() => setIconFor(null)}
+              onPick={(icon) => {
+                onSetIcon?.(iconFor.boardId, icon);
+                setIconFor(null);
+              }}
+            />
+          </div>
+        </>
+      )}
       {rowMenu === null ? null : (
         <RowMenu
           board={boards.find((board) => board.id === rowMenu.boardId) ?? null}
@@ -290,6 +315,15 @@ export function BoardSwitcher({
             setRowMenu(null);
             onTogglePin(board.id);
           }}
+          {...(onSetIcon
+            ? {
+                onIcon: (board: Board) => {
+                  const at = { x: rowMenu?.x ?? 0, y: rowMenu?.y ?? 0 };
+                  setRowMenu(null);
+                  setIconFor({ boardId: board.id, ...at });
+                },
+              }
+            : {})}
         />
       )}
     </div>
@@ -321,6 +355,7 @@ function RowMenu({
   onRename,
   onColor,
   onTogglePin,
+  onIcon,
 }: {
   board: Board | null;
   position: { x: number; y: number };
@@ -330,6 +365,8 @@ function RowMenu({
   onRename: (board: Board) => void;
   onColor: (board: Board, color: Board["color"] | null) => void;
   onTogglePin: (board: Board) => void;
+  /** Absent when this session cannot change the board's mark. */
+  onIcon?: ((board: Board) => void) | undefined;
 }) {
   if (board === null) return null;
   return (
@@ -353,6 +390,18 @@ function RowMenu({
         >
           {pinned ? "Unpin" : "Pin to top"}
         </button>
+        {onIcon ? (
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="board-row-menu-icon"
+            disabled={!canManage}
+            className="flex w-full items-center rounded-lg px-2 py-1.5 text-left hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"
+            onClick={() => onIcon(board)}
+          >
+            Icon…
+          </button>
+        ) : null}
         <button
           type="button"
           role="menuitem"

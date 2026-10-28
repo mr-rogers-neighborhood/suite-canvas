@@ -273,6 +273,10 @@ export class WorkspaceDocument extends CardsFacade {
     this.boardsApi.renameBoard(id, name);
   }
 
+  setBoardIcon(id: string, icon: string | null): void {
+    this.boardsApi.setBoardIcon(id, icon);
+  }
+
   setBoardColor(id: string, color: Board["color"] | null): void {
     this.boardsApi.setBoardColor(id, color);
   }

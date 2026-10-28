@@ -177,6 +177,14 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     [workspace, id, setSelectedNodeIds, stopEditing],
   );
 
+  const typeTargets = useMemo(
+    () =>
+      workspace
+        .listTypes()
+        .filter((entry) => entry.name.length > 0)
+        .map((entry) => ({ id: entry.id, name: entry.name })),
+    [workspace],
+  );
   const moveTargets = useMemo(
     () =>
       boards
@@ -243,6 +251,12 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         linkCount={linkCount}
         onOpenInfo={() => openInspector(id)}
         onOpenTypeMenu={(anchor) => openTypeMenu(id, anchor)}
+        typeTargets={typeTargets}
+        {...(canEditContent
+          ? {
+              onSetType: (typeId: string) => workspace.setCardTypes(id, [typeId], typeId),
+            }
+          : {})}
         // A tour is the way into a presentation: double-click it to play it
         // (ADR-0064 §11). Reading the store here matches `openCardFocus` beside it.
         onDoubleClickPresent={() => {

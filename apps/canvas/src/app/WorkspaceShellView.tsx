@@ -465,6 +465,7 @@ export function WorkspaceShellView({
                 }}
                 onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
                 onSetColor={(boardId, color) => workspace.setBoardColor(boardId, color)}
+                onSetIcon={(boardId, icon) => workspace.setBoardIcon(boardId, icon)}
                 onTogglePin={pins.togglePin}
               />
               {pinnedBoards.map((board) => {

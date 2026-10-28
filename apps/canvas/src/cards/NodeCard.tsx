@@ -109,6 +109,9 @@ export interface NodeCardProps {
   onDuplicate?: () => void;
   /** Boards the card may move to, excluding the one it is on now. */
   moveTargets?: Array<{ id: string; name: string }>;
+  /** Every type this card could become, for the "Change type" submenu. */
+  typeTargets?: Array<{ id: string; name: string }>;
+  onSetType?: ((typeId: string) => void) | undefined;
   onMoveToBoard?: (boardId: string) => void;
   /** Title and body editing; the card editor role owns this. */
   canEditContent?: boolean;
@@ -180,6 +183,8 @@ export function NodeCard({
   onTrash,
   onDuplicate,
   moveTargets = [],
+  typeTargets = [],
+  onSetType,
   onMoveToBoard,
   canEditContent,
   canEditLayout,
@@ -289,6 +294,17 @@ export function NodeCard({
 
   const menuItems: ContextMenuItem[] = [
     { label: "Card info", onSelect: () => onOpenInfo?.() },
+    ...(onSetType && typeTargets.length > 1
+      ? [
+          {
+            label: "Change type",
+            items: typeTargets.map((entry) => ({
+              label: entry.name,
+              onSelect: () => onSetType(entry.id),
+            })),
+          },
+        ]
+      : []),
     ...(hasMeta && onToggleMeta
       ? [
           {

@@ -1,4 +1,4 @@
-import { FREE_LICENCE_TIER, licenceStateFor, postgresLicences } from "@suite/auth";
+import { authEnvironment, FREE_LICENCE_TIER, licenceStateFor, postgresLicences } from "@suite/auth";
 import {
   parseTierTable,
   type SubscriptionView,
@@ -6,7 +6,7 @@ import {
   type TierTable,
 } from "@suite/billing";
 import { describe, expect, it } from "vitest";
-import { tierParts } from "./auth-billing.js";
+import { billingConfigured, tierParts } from "./auth-billing.js";
 
 /**
  * One answer, asserted where it can actually be wrong.
@@ -202,5 +202,25 @@ describe("the entitlement read and the seat check", () => {
     expect(seat.claims.id).toBe(`free:${ORG}`);
     expect(seat.seats).toBe(FREE_LICENCE_TIER.seats);
     expect(seat.claims.workspaces).toBe(FREE_LICENCE_TIER.workspaces);
+  });
+});
+
+describe("billingConfigured", () => {
+  const stripe = {
+    SUITE_BILLING_ENABLED: "1",
+    STRIPE_SECRET_KEY: "sk_test_x",
+    STRIPE_WEBHOOK_SECRET: "whsec_x",
+    STRIPE_PRICE_TIERS: '{"price_solo":{"tier":"solo","workspaces":3}}',
+  };
+
+  it("should turn billing on for the process environment", () => {
+    expect(billingConfigured(stripe)).toBe(true);
+  });
+
+  it("should stay off for the auth whitelist, which is why the boot passes the source", () => {
+    // `AuthEnvironment` is a whitelist with no index signature and no Stripe variable, so
+    // a boot that handed `authEnvironment(...)` to `composeBilling` reported billing off
+    // whatever an operator set. This assertion is the reason `defaultBoot` reads `source`.
+    expect(billingConfigured({ ...authEnvironment(stripe) })).toBe(false);
   });
 });

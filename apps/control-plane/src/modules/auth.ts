@@ -437,7 +437,10 @@ export function relayWorkspaceData(
  */
 function defaultBoot(logger: Logger, source: Readonly<Record<string, string | undefined>>) {
   return async (env: AuthEnvironment): Promise<AuthEntry> => {
-    const billing = await composeBilling({ ...env }, logger);
+    // From `source`, not `env`: `AuthEnvironment` is the auth whitelist, so Stripe's
+    // variables are absent from it and `composeBilling` would report billing off no
+    // matter what an operator set.
+    const billing = await composeBilling(source, logger);
     // The relay is a second package's process, so this is the only place that
     // knows both: `@suite/auth` takes the port, and this composition builds it
     // from the two variables an operator set. Absent, the erase reports the three

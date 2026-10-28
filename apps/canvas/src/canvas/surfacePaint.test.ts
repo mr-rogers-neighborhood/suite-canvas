@@ -50,11 +50,32 @@ describe("surface paint", () => {
       "card",
     );
     const paint = surfacePaintVars(styled);
-    expect(paint["--paint-border-top"]).toBe("2px dashed var(--accent)");
+    // A patterned side keeps its thickness and paints nothing: the pattern is a strip
+    // inside the border box, because the browser's own `dashed` is a hairline at the
+    // thickness a card edge has.
+    expect(paint["--paint-border-top"]).toBe("2px solid transparent");
+    expect(paint["--paint-dash-top"]).toContain("var(--accent)");
+    expect(paint["--paint-dash-size-top"]).toBe("100% 2px");
     expect(paint["--paint-border-left"]).toBeUndefined();
 
     const removed = resolveSurfaceStyle({ sides: { bottom: { paint: "none" } } }, "card");
     expect(surfacePaintVars(removed)["--paint-border-bottom"]).toBe("none");
+    expect(surfacePaintVars(removed)["--paint-dash-bottom"]).toBeUndefined();
+  });
+
+  it("draws dots and dashes apart, so one is never mistaken for the other", () => {
+    const dashed = surfacePaintVars(
+      resolveSurfaceStyle({ sides: { left: { paint: "dashed" } } }, "card"),
+    );
+    const dotted = surfacePaintVars(
+      resolveSurfaceStyle({ sides: { left: { paint: "dotted" } } }, "card"),
+    );
+
+    // A vertical side runs its pattern downward, and a dot is thicker than a dash.
+    expect(dashed["--paint-dash-left"]).toContain("to bottom");
+    expect(dashed["--paint-dash-size-left"]).toBe("1.5px 100%");
+    expect(dotted["--paint-dash-size-left"]).toBe("2px 100%");
+    expect(dashed["--paint-dash-left"]).not.toBe(dotted["--paint-dash-left"]);
   });
 
   it("animates a dashed edge in the direction the geometry gives it", () => {

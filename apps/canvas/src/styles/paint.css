@@ -301,6 +301,20 @@
   border-right: var(--paint-border-right, 1px solid var(--hairline));
   border-bottom: var(--paint-border-bottom, 1px solid var(--hairline));
   border-left: var(--paint-border-left, 1px solid var(--hairline));
+  /* Same strips as a card's underlay: see the note in `global.css`. */
+  background-image:
+    var(--paint-dash-top, none), var(--paint-dash-right, none), var(--paint-dash-bottom, none),
+    var(--paint-dash-left, none);
+  background-size:
+    var(--paint-dash-size-top, 0 0), var(--paint-dash-size-right, 0 0),
+    var(--paint-dash-size-bottom, 0 0), var(--paint-dash-size-left, 0 0);
+  background-position:
+    0 0,
+    100% 0,
+    0 100%,
+    0 0;
+  background-origin: border-box;
+  background-clip: border-box;
   border-radius: var(--paint-radius, 12px);
   clip-path: var(--paint-clip, none);
 }

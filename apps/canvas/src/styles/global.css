@@ -440,6 +440,25 @@ body {
      resolved rather than to a radius of its own. */
   border-radius: var(--paint-radius, var(--card-radius, 12px));
   clip-path: var(--paint-clip, none);
+  /*
+   * A dashed or dotted edge is a gradient strip rather than a border style: at the
+   * thickness a card edge has, the browser's own keywords render as a hairline nobody
+   * can tell apart. One strip per patterned side, each spanning the border box, so the
+   * `*-dash` keyframes have something to march when a side flows.
+   */
+  background-image:
+    var(--paint-dash-top, none), var(--paint-dash-right, none), var(--paint-dash-bottom, none),
+    var(--paint-dash-left, none);
+  background-size:
+    var(--paint-dash-size-top, 0 0), var(--paint-dash-size-right, 0 0),
+    var(--paint-dash-size-bottom, 0 0), var(--paint-dash-size-left, 0 0);
+  background-position:
+    0 0,
+    100% 0,
+    0 100%,
+    0 0;
+  background-origin: border-box;
+  background-clip: border-box;
   animation:
     var(--paint-animation-top, none), var(--paint-animation-right, none),
     var(--paint-animation-bottom, none), var(--paint-animation-left, none);

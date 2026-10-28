@@ -221,14 +221,53 @@ export function shapeRadius(shape: StyleShape): string | undefined {
   }
 }
 
-/** The CSS border the paint asks for on one side, or none. */
+/**
+ * The stroke pattern a patterned side paints, and the thickness it paints at.
+ *
+ * The browser's own `dotted` and `dashed` keywords are not usable here: at the one
+ * pixel a card edge usually is, both render as a faint grey line and there is no way to
+ * say how long a dash is or how far apart dots sit. So the pattern is drawn, not
+ * requested — a gradient strip along the edge — and the numbers are ours. The period of
+ * each is a divisor of the twelve units the `*-dash` keyframes travel, so a flowing side
+ * still loops without a seam.
+ */
+const PATTERN: Partial<Record<StyleEdgePaint, { period: number; on: number; width: number }>> = {
+  // 7 on, 5 off, in twelfths.
+  dashed: { period: 12, on: 7, width: 1.5 },
+  // 2 on, 2 off: three repeats per twelve, which is why a dot reads as a dot rather than
+  // a short dash at any zoom a reader is likely to use.
+  dotted: { period: 4, on: 2, width: 2 },
+};
+
+/** The strip a patterned side paints: an image, and the size of the edge it covers. */
+export function sideStrip(
+  style: ResolvedSurfaceStyle,
+  side: StyleSide,
+): { image: string; size: string } | null {
+  const edge = style.sides[side];
+  const pattern = edge ? PATTERN[edge.paint] : undefined;
+  if (!edge || !pattern) return null;
+  const colour = colourRoleVar(edge.colour ?? style.ink);
+  const width = edge.width ?? pattern.width;
+  const along = side === "top" || side === "bottom" ? "to right" : "to bottom";
+  const image = `repeating-linear-gradient(${along}, ${colour} 0 ${pattern.on}px, transparent ${pattern.on}px ${pattern.period}px)`;
+  const size = along === "to right" ? `100% ${width}px` : `${width}px 100%`;
+  return { image, size };
+}
+
+/**
+ * The CSS border the paint asks for on one side, or none.
+ *
+ * A patterned side keeps the border's *thickness* and paints it transparent: the strip
+ * is drawn inside the border box, so the edge occupies the same pixels it would for a
+ * solid stroke and nothing about the card's geometry moves when the paint changes.
+ */
 export function sideBorder(style: ResolvedSurfaceStyle, side: StyleSide, defaultWidth = 1): string {
   const edge = style.sides[side];
   if (!edge || edge.paint === "none") return "none";
-  const width = edge.width ?? defaultWidth;
-  const colour = colourRoleVar(edge.colour ?? style.ink);
-  const kind = edge.paint === "solid" ? "solid" : edge.paint;
-  return `${width}px ${kind} ${colour}`;
+  const pattern = PATTERN[edge.paint];
+  if (pattern) return `${edge.width ?? pattern.width}px solid transparent`;
+  return `${edge.width ?? defaultWidth}px solid ${colourRoleVar(edge.colour ?? style.ink)}`;
 }
 
 /** The dash animation a side runs, or none. The default follows the geometry. */
@@ -272,6 +311,11 @@ export function surfacePaintVars(
     const edge = style.sides[side];
     if (!edge) continue;
     paint[`--paint-border-${side}`] = sideBorder(style, side);
+    const strip = sideStrip(style, side);
+    if (strip) {
+      paint[`--paint-dash-${side}`] = strip.image;
+      paint[`--paint-dash-size-${side}`] = strip.size;
+    }
     const animation = sideAnimation(style, side);
     if (animation) paint[`--paint-animation-${side}`] = animation;
   }

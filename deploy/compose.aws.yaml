@@ -39,6 +39,14 @@ services:
         awslogs-group: ${SUITE_LOG_GROUP:-suite-app}
         awslogs-stream: control-plane
         awslogs-max-buffered-events: "8192"
+    # RDS signs its endpoint certificate with the Amazon RDS CA, which no Node image
+    # trusts. `pg` now reads `sslmode=require` as `verify-full`, so the honest choice is to
+    # trust that CA rather than to weaken the mode: the bundle is mounted and Node adds it
+    # to its trust store. `deploy/rds-ca.sh` fetches it.
+    environment:
+      NODE_EXTRA_CA_CERTS: /etc/ssl/rds-global-bundle.pem
+    volumes:
+      - ${SUITE_RDS_CA_PATH:-/etc/suite/rds-global-bundle.pem}:/etc/ssl/rds-global-bundle.pem:ro
 
   caddy:
     logging:

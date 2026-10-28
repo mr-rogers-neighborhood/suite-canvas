@@ -54,7 +54,19 @@ else
   ok "$env_file is mode $perms"
 fi
 
-if grep -qE '^[[:space:]]*SUITE_DOMAIN=(canvas\.example\.com)?[[:space:]]*$' "$file"; then
+# Two site blocks, one hostname is a Caddy error, not a preference: `adapt` refuses the
+# whole config with "ambiguous site definition", so Caddy exits 1 having printed nothing
+# beyond "using config from file". A hosted deployment names SUITE_APP_HOST; the
+# single-host name stays for the self-host case.
+domain=$(value SUITE_DOMAIN)
+app_host=$(value SUITE_APP_HOST)
+self_host=$(value SUITE_SELF_HOST)
+
+if [ -n "$domain" ] && [ -n "$app_host" ] && [ "$domain" = "$app_host" ]; then
+  blocker "SUITE_DOMAIN and SUITE_APP_HOST are both $domain, so Caddy refuses the config as an ambiguous site definition; keep SUITE_APP_HOST for a hosted app and drop SUITE_DOMAIN"
+elif [ -z "$domain" ] && [ -z "$app_host" ]; then
+  blocker "neither SUITE_DOMAIN nor SUITE_APP_HOST is set; Caddy has no hostname to serve or get a certificate for"
+elif grep -qE '^[[:space:]]*SUITE_DOMAIN=(canvas\.example\.com)?[[:space:]]*$' "$file" && [ -z "$app_host" ]; then
   blocker "SUITE_DOMAIN is unset or still the example; Caddy would ask for a certificate it cannot get"
 fi
 

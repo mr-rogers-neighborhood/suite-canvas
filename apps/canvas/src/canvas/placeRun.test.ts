@@ -14,7 +14,7 @@ import {
 
 /**
  * A run's shape is geometry, and geometry is worth pinning exactly: the same
- * queue in the same mode must always produce the same board, or a preview and the
+ * queue in the same shape must always produce the same board, or a preview and the
  * commit can disagree. See ADR-0063.
  */
 
@@ -23,7 +23,7 @@ const START = { x: 0, y: 0 };
 
 function step(overrides: Partial<PlanPlacementInput> = {}) {
   return planPlacementStep({
-    mode: "place",
+    shape: "place",
     index: 0,
     size: SIZE,
     origin: null,
@@ -35,11 +35,15 @@ function step(overrides: Partial<PlanPlacementInput> = {}) {
 }
 
 /** Runs `count` steps, returning every box the run would place. */
-function run(mode: PlanPlacementInput["mode"], count: number, options = DEFAULT_PLACEMENT_OPTIONS) {
+function run(
+  shape: PlanPlacementInput["shape"],
+  count: number,
+  options = DEFAULT_PLACEMENT_OPTIONS,
+) {
   const boxes: RunBox[] = [];
   for (let index = 0; index < count; index += 1) {
     const result = step({
-      mode,
+      shape,
       index,
       origin: boxes[0] ?? null,
       anchor: boxes[index - 1] ?? null,
@@ -51,9 +55,9 @@ function run(mode: PlanPlacementInput["mode"], count: number, options = DEFAULT_
 }
 
 describe("planPlacementStep: the first card", () => {
-  it("lands on the start point in every mode, and draws no line", () => {
-    for (const mode of ["place", "thread", "fan"] as const) {
-      const result = step({ mode });
+  it("lands on the start point in every shape, and draws no line", () => {
+    for (const shape of ["place", "thread", "fan"] as const) {
+      const result = step({ shape });
       expect(result.position).toEqual(START);
       // There is nothing in the run to link to yet, and linking outside it would
       // be inventing a relationship.
@@ -74,7 +78,7 @@ describe("planPlacementStep: place", () => {
   });
 
   it("draws no links: a dump is a dump", () => {
-    expect(step({ mode: "place", index: 3, anchor: { x: 0, y: 0, ...SIZE } }).link).toBeNull();
+    expect(step({ shape: "place", index: 3, anchor: { x: 0, y: 0, ...SIZE } }).link).toBeNull();
   });
 
   it("nudges off a card that is already on the board", () => {
@@ -99,7 +103,7 @@ describe("planPlacementStep: thread", () => {
   it("centres a shorter card on a taller one", () => {
     const taller: RunBox = { x: 0, y: 0, width: 240, height: 300 };
     const result = planPlacementStep({
-      mode: "thread",
+      shape: "thread",
       index: 1,
       size: SIZE,
       origin: taller,
@@ -113,9 +117,8 @@ describe("planPlacementStep: thread", () => {
   });
 
   it("links each card to the one before it", () => {
-    expect(step({ mode: "thread", index: 2, anchor: { x: 0, y: 0, ...SIZE } }).link).toEqual({
+    expect(step({ shape: "thread", index: 2, anchor: { x: 0, y: 0, ...SIZE } }).link).toEqual({
       from: "anchor",
-      to: "left",
     });
   });
 });
@@ -124,7 +127,7 @@ describe("planPlacementStep: fan", () => {
   it("places spokes around the origin, never on it", () => {
     const origin: RunBox = { x: 0, y: 0, ...SIZE };
     const spokes = [1, 2, 3, 4, 5].map(
-      (index) => step({ mode: "fan", index, origin, anchor: origin }).position,
+      (index) => step({ shape: "fan", index, origin, anchor: origin }).position,
     );
 
     for (const spoke of spokes) {
@@ -138,8 +141,8 @@ describe("planPlacementStep: fan", () => {
 
   it("spaces spokes unevenly on purpose, so any count reads as a ring", () => {
     const origin: RunBox = { x: 0, y: 0, ...SIZE };
-    const first = step({ mode: "fan", index: 1, origin, anchor: origin }).position;
-    const second = step({ mode: "fan", index: 2, origin, anchor: origin }).position;
+    const first = step({ shape: "fan", index: 1, origin, anchor: origin }).position;
+    const second = step({ shape: "fan", index: 2, origin, anchor: origin }).position;
 
     // A fixed angle would place spoke two opposite spoke one; the golden angle does
     // not, which is what keeps three spokes and twelve spokes both readable.
@@ -152,10 +155,55 @@ describe("planPlacementStep: fan", () => {
     const origin: RunBox = { x: 0, y: 0, ...SIZE };
     const anchor: RunBox = { x: 400, y: 300, ...SIZE };
 
-    expect(step({ mode: "fan", index: 3, origin, anchor }).link).toEqual({
+    expect(step({ shape: "fan", index: 3, origin, anchor }).link).toEqual({
       from: "origin",
-      to: "left",
     });
+  });
+});
+
+describe("one run, one shape, one link per drop", () => {
+  /**
+   * Walks a run the way the store advances it — the first box becomes the hub, each
+   * later one continues from the box before it — and returns what each drop linked
+   * from. This is the whole model in one table, and the "web" is the row it rules out:
+   * a fan whose later spokes start from the previous spoke instead of the hub.
+   */
+  function linksOf(shape: PlanPlacementInput["shape"], count: number) {
+    const boxes: RunBox[] = [];
+    const from: Array<"origin" | "anchor" | null> = [];
+    for (let index = 0; index < count; index += 1) {
+      const result = planPlacementStep({
+        shape,
+        index,
+        size: SIZE,
+        origin: boxes[0] ?? null,
+        anchor: boxes[index - 1] ?? null,
+        start: START,
+        occupied: [],
+      });
+      from.push(result.link?.from ?? null);
+      boxes.push({ ...result.position, ...SIZE });
+    }
+    return from;
+  }
+
+  it("links every fan spoke to the hub, never to the spoke before it", () => {
+    // The first drop *is* the hub, so it has nothing to leave from.
+    expect(linksOf("fan", 4)).toEqual([null, "origin", "origin", "origin"]);
+  });
+
+  it("links each threaded card to the one before it", () => {
+    expect(linksOf("thread", 4)).toEqual([null, "anchor", "anchor", "anchor"]);
+  });
+
+  it("draws nothing for a dump, because a grid claims no relationship", () => {
+    expect(linksOf("place", 3)).toEqual([null, null, null]);
+  });
+
+  it("has no link on the first drop whatever the shape", () => {
+    for (const shape of ["place", "thread", "fan"] as const) {
+      expect(linksOf(shape, 1)).toEqual([null]);
+    }
   });
 });
 
@@ -234,7 +282,7 @@ describe("connectorToward: the dot that faces where the card landed", () => {
 
   it("leaves the top when the card it links to is above", () => {
     // Thread a card above the anchor and the link must leave the top edge, which is
-    // the whole point: the side is decided by where things are, not by the mode.
+    // the whole point: the side is decided by where things are, not by the shape.
     expect(connectorToward(dots, box, { x: 200, y: 20 })?.id).toBe("top");
   });
 
@@ -349,27 +397,27 @@ describe("inferConnectors: geometry proposes, the reader disposes", () => {
 
   it("moves the arrival dot when the port moves, which is the whole point", () => {
     // A card below and to the left, where the answer depends on where the line
-    // leaves. Measured from the source's centre the arrival side is the top; measured
-    // from the source's *right* port, that port is the far side of the target, so the
-    // arrival side becomes the right one. A fan pins one port, so every spoke obeys
-    // the same reference instead of drifting spoke by spoke.
+    // leaves. Leaving the far port faces the target's top; leaving the near one faces
+    // its right. That is what makes a starburst read as one shape: each spoke leaves
+    // the side facing it and lands on the dot opposite, without a pinned port.
     const belowLeft = { x: -400, y: 400, width: 200, height: 100 };
-    const fromCentre = inferConnectors({
-      sourceDots: dots,
-      targetDots: dots,
-      sourceBox,
-      targetBox: belowLeft,
-    });
     const fromRightPort = inferConnectors({
       sourceDots: dots,
       targetDots: dots,
       sourceBox,
       targetBox: belowLeft,
-      sourceAnchor: { x: 200, y: 50 },
+      overrides: { source: "right" },
+    });
+    const fromLeftPort = inferConnectors({
+      sourceDots: dots,
+      targetDots: dots,
+      sourceBox,
+      targetBox: belowLeft,
+      overrides: { source: "left" },
     });
 
-    expect(fromCentre.target?.id).toBe("top");
     expect(fromRightPort.target?.id).toBe("right");
+    expect(fromLeftPort.target?.id).toBe("top");
   });
 
   it("answers nulls for cards with no dots, rather than inventing one", () => {

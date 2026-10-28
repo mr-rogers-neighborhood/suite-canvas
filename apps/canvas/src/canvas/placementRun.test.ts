@@ -40,31 +40,44 @@ describe("starting a run", () => {
   });
 });
 
-describe("advancing a run", () => {
-  it("starts with no fan port, because the first spoke is what picks one", () => {
+describe("a run's shape", () => {
+  it("takes the shape it was started with, and keeps it", () => {
+    store().start(["a", "b"], { shape: "fan" });
+
+    expect(store().run?.shape).toBe("fan");
+  });
+
+  it("defaults to a dump, which is the shape that claims nothing", () => {
     store().start(["a", "b"]);
 
-    expect(store().run?.originConnector).toBeNull();
+    expect(store().run?.shape).toBe("place");
   });
 
-  it("keeps the fan port the first spoke chose for every spoke after it", () => {
-    store().start(["a", "b", "c", "d"]);
-    store().advance(cardStep("a"));
-    // The first spoke leaves the origin's right dot, so the run pins it.
-    store().advance(cardStep("b"), null, "dot-right");
-    store().advance(cardStep("c"));
+  it("learns its hub from the first card when it came from the library", () => {
+    store().start(["a", "b"], { shape: "fan" });
 
-    expect(store().run?.originConnector).toBe("dot-right");
+    expect(store().run?.hub).toBe("first");
+    expect(store().run?.originId).toBeNull();
+
+    store().advance(cardStep("a"));
+    expect(store().run?.originId).toBe("a");
   });
 
-  it("pins nothing when a step does not name a port", () => {
-    store().start(["a", "b", "c"]);
-    store().advance(cardStep("a"));
+  it("knows its hub up front when it started from a card on the board", () => {
+    // A spokes-only run: the card is already placed and is never dropped again.
+    store().start(["b", "c"], { shape: "fan", hub: "existing", originId: "hub" });
+
+    expect(store().run?.originId).toBe("hub");
+    expect(store().run?.anchorId).toBe("hub");
+
     store().advance(cardStep("b"));
-
-    expect(store().run?.originConnector).toBeNull();
+    // The hub never moves: that is the whole of what a fan means.
+    expect(store().run?.originId).toBe("hub");
+    expect(store().run?.anchorId).toBe("b");
   });
+});
 
+describe("advancing a run", () => {
   it("sets the origin on the first placement and the anchor on every one", () => {
     store().start(["a", "b", "c"]);
 
@@ -192,10 +205,10 @@ describe("a step can be a set, and can change the mode", () => {
     expect(store().run?.queue).toEqual([{ ids: ["a"] }]);
   });
 
-  it("keeps a step's own mode in the queue", () => {
-    store().startSteps([{ ids: ["a"] }, { ids: ["b", "c"], mode: "fan" }]);
+  it("holds a set as one step, so a section and its cards move together", () => {
+    store().startSteps([{ ids: ["a"] }, { ids: ["b", "c"] }], { shape: "place" });
 
-    expect(store().run?.queue[1]?.mode).toBe("fan");
+    expect(store().run?.queue[1]).toEqual({ ids: ["b", "c"] });
   });
 
   it("ignores an empty step list", () => {

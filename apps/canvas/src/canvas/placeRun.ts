@@ -49,10 +49,8 @@ const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const MAX_NUDGE_STEPS = 24;
 
 export interface PlacementLinkPlan {
-  /** Which box the line starts at: the run's origin, or the previous card. */
+  /** Which box the line starts at: the run's hub, or the card placed before this one. */
   from: "origin" | "anchor";
-  /** The side of the new card the line should aim at, so a chain reads as one. */
-  to: "left" | "top";
 }
 
 export interface PlacementStep {
@@ -61,7 +59,8 @@ export interface PlacementStep {
 }
 
 export interface PlanPlacementInput {
-  mode: CanvasMode;
+  /** The run's shape, fixed when it started. */
+  shape: CanvasMode;
   /** Which card of the run this is: 0 is the first, and is never linked. */
   index: number;
   /** The size of the card about to be placed. */
@@ -190,7 +189,7 @@ function planSpokes(
 export function planPlacementStep(input: PlanPlacementInput): PlacementStep {
   const options = input.options ?? DEFAULT_PLACEMENT_OPTIONS;
   const raw = (() => {
-    switch (input.mode) {
+    switch (input.shape) {
       case "place":
         return planGrid(input, options);
       case "thread":
@@ -203,11 +202,20 @@ export function planPlacementStep(input: PlanPlacementInput): PlacementStep {
   const box: RunBox = { ...raw, width: input.size.width, height: input.size.height };
   const position = freeSpot(box, input.occupied, Math.max(16, options.gap / 2));
 
-  // A dump draws nothing: `place` is the reading whose shape is not a relationship.
+  // One rule for every shape, and it is the whole difference between them: `place`
+  // draws nothing, `thread` continues from the card placed before this one, and
+  // `fan` returns to the hub. Absent means the box to link from does not exist yet,
+  // which is the first card of a run rather than a special case.
   const link: PlacementLinkPlan | null =
-    input.mode === "place" || input.index === 0
+    input.shape === "place"
       ? null
-      : { from: input.mode === "fan" ? "origin" : "anchor", to: "left" };
+      : input.shape === "fan"
+        ? input.origin === null
+          ? null
+          : { from: "origin" }
+        : input.anchor === null
+          ? null
+          : { from: "anchor" };
 
   return { position, link };
 }
@@ -280,6 +288,16 @@ export function connectorToward(
   return connectorFacing(connectors, side);
 }
 
+/**
+ * A dot's point in flow space: the fraction it sits at, times the box it belongs to.
+ *
+ * The arrival end has to be aimed at a *point*, not at an id: the dot it should face
+ * is the one the line leaves, which is somewhere on the source's perimeter.
+ */
+export function dotPoint(box: FacingBox, dot: Connector): { x: number; y: number } {
+  return { x: box.x + dot.x * box.width, y: box.y + dot.y * box.height };
+}
+
 /** The two dots a step would link through, or nulls when the card has none. */
 export interface InferredConnectors {
   source: Connector | null;
@@ -305,13 +323,11 @@ export function inferConnectors(input: {
   targetBox: FacingBox;
   overrides?: { source?: string | null; target?: string | null };
   /**
-   * Where the line actually leaves the source, when the reader (or a fan's first
-   * spoke) has already chosen a port. The arrival dot then faces *that*, so a
-   * spoke leaving a card's right port arrives on the new card's left one even
-   * when the new card sits below the middle of the source.
+   * Where the line leaves the source, when the caller already knows.
    *
-   * Omitted means "no port chosen yet": the source's centre is the reference,
-   * which is what a thread's next card and a one-off link have always used.
+   * Omitted is the normal case: the chosen source dot is computed first, and its
+   * own point becomes the reference. Pass it to override that, which is what a
+   * preview following the pointer does.
    */
   sourceAnchor?: { x: number; y: number } | null;
 }): InferredConnectors {
@@ -329,14 +345,21 @@ export function inferConnectors(input: {
     y: input.targetBox.y + input.targetBox.height / 2,
   };
 
+  const source =
+    pick(input.sourceDots, input.overrides?.source) ??
+    connectorToward(input.sourceDots, input.sourceBox, targetCentre) ??
+    null;
+  // The arrival dot faces where the line actually leaves, which is the chosen dot's
+  // own point rather than the card's centre. That is what makes a starburst read as
+  // one: every spoke leaves the side facing it and lands on the dot opposite.
+  const departure =
+    input.sourceAnchor ?? (source === null ? sourceCentre : dotPoint(input.sourceBox, source));
+
   return {
-    source:
-      pick(input.sourceDots, input.overrides?.source) ??
-      connectorToward(input.sourceDots, input.sourceBox, targetCentre) ??
-      null,
+    source,
     target:
       pick(input.targetDots, input.overrides?.target) ??
-      connectorToward(input.targetDots, input.targetBox, input.sourceAnchor ?? sourceCentre) ??
+      connectorToward(input.targetDots, input.targetBox, departure) ??
       null,
   };
 }

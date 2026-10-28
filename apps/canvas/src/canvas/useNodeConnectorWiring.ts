@@ -9,7 +9,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { isChaining, stepLink, stepShape, useLinkThreadStore } from "./links/linkThread";
 import type { ConnectorPeerState } from "./NodeConnectors";
-import { usePlacementRunStore } from "./placementRun";
+import { pointerOwnedByRun } from "./placementRun";
 
 /**
  * Whether a link gesture is in flight. It lives here, next to the connector
@@ -166,7 +166,7 @@ export function useNodeConnectorWiring(
       // A run holds cards in the reader's hand, and every click is a placement. A dot
       // under the pointer must not also start a link: that is how a fan turned into a
       // web, with a press meant for the next card arming a spoke from the last one.
-      if (usePlacementRunStore.getState().run !== null) return;
+      if (pointerOwnedByRun()) return;
 
       // An armed thread keeps chaining on plain clicks: Shift starts a chain,
       // and the clicks after it should not each need the modifier.

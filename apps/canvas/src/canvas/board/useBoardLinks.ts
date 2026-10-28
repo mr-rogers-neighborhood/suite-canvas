@@ -14,7 +14,7 @@ import {
 } from "../links/linkGeometry";
 import { linkEndConnector } from "../links/linkGesture";
 import { useLinkThreadStore } from "../links/linkThread";
-import { usePlacementRunStore } from "../placementRun";
+import { pointerOwnedByRun } from "../placementRun";
 import { useConnectorRevealState, useLinkDraftStore } from "../useNodeConnectorWiring";
 import { clientPoint, followPointer } from "./boardSupport";
 import type { useBoardProjection } from "./useBoardProjection";
@@ -274,7 +274,7 @@ export function useBoardLinks(
       if (!activeBoardId) return;
       // A live run owns the pointer: the reader is placing a card, and dragging a dot on
       // the way to the drop would draw a link nobody asked for.
-      if (usePlacementRunStore.getState().run !== null) return;
+      if (pointerOwnedByRun()) return;
       // The release also reaches onConnectEnd; the link already exists.
       connectCommitted.current = true;
       const target = endpointForDrop({ kind: "card", id: connection.target });

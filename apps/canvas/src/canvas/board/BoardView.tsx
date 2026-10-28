@@ -22,6 +22,7 @@ import { useBoardSections } from "./useBoardSections";
 import { useBoardSelection } from "./useBoardSelection";
 import { useBoardUi } from "./useBoardUi";
 import { useNoTextSelection } from "./useNoTextSelection";
+import { useSettledRun } from "./useSettledRun";
 
 /** Pointer samples published to peers land at most once per this window. */
 const POINTER_THROTTLE_MS = 60;
@@ -78,6 +79,8 @@ export function BoardView() {
   // Shift is the marquee key, so the browser must not read the same shift as "extend
   // the selection": without this a shift+drag swept the page's text instead.
   useNoTextSelection(boardRoot);
+  // A run that just placed its last card still owns the press until the pointer lifts.
+  useSettledRun();
 
   const links = useBoardLinks(ui, { refs, projection });
   const { labelHandlers, startEdgeDescription } = links;

@@ -389,7 +389,10 @@ function WorkspaceShell({
       // presence and the click handler all read it. It is entered here rather than from
       // the purpose control, because a queue can only come from the library.
       setPurpose("run");
-      placementRun.start(cardIds, source);
+      // The shape is the run's, captured here rather than read on every step: it is
+      // what a run *is*, and a live read is what let a mid-run mode write turn the
+      // rest of a fan into a chain.
+      placementRun.start(cardIds, { shape: runMode, hub: "first", source });
       // Out of the way: the next card lands where the reader aims, and the drawer that
       // was in front of the board is what they would be aiming around. It comes back
       // when the hand is empty.
@@ -408,7 +411,9 @@ function WorkspaceShell({
       if (!canEditLayout || cardIds.length === 0) return;
       const [first, ...rest] = cardIds;
       if (!first) return;
-      usePlacementRunStore.getState().start([first], { source: "picker" });
+      usePlacementRunStore
+        .getState()
+        .start([first], { shape: useUiStore.getState().mode, hub: "first", source: "picker" });
       // The rest are queued behind the first, so a selection can seed the loop and
       // still be added to by hand afterwards.
       if (rest.length > 0) usePlacementRunStore.getState().enqueue(rest);

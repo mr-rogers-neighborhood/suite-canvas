@@ -163,9 +163,11 @@ test("a fan is held too, and every spoke links to the first card", async ({ page
 
   await fitBoard(page);
   await expect(cards(page)).toHaveCount(4);
+  // Three spokes and three lines: one per spoke, all from the hub. A fourth line
+  // would be a chain link, which is the "web" this shape used to draw.
   await expect(edges(page)).toHaveCount(3);
-  // A fan from one origin leaves the same port every time, whatever direction the
-  // spoke goes: four spokes, one departure point.
+  // A starburst leaves the dot that faces each spoke, so four spokes around a hub do
+  // not share one departure point.
   const starts = await page.evaluate(() =>
     [...document.querySelectorAll<SVGPathElement>(".react-flow__edge-path")].map((path) => {
       const matrix = path.getScreenCTM();
@@ -174,8 +176,8 @@ test("a fan is held too, and every spoke links to the first card", async ({ page
       return `${Math.round(point.x / 8)}:${Math.round(point.y / 8)}`;
     }),
   );
-  expect(starts.length).toBeGreaterThan(0);
-  expect(new Set(starts).size).toBe(1);
+  expect(starts.length).toBe(3);
+  expect(new Set(starts).size).toBeGreaterThan(1);
 });
 
 /**

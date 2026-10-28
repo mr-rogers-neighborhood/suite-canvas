@@ -1,4 +1,3 @@
-import { useUiStore } from "../store/useUiStore";
 import { MODES, shortLabel } from "./links/ModeControl";
 import { usePlacementRunStore } from "./placementRun";
 import type { PlacementEngine } from "./usePlacementEngine";
@@ -13,16 +12,17 @@ import type { PlacementEngine } from "./usePlacementEngine";
  * ever be. So it floats free above the pill and says what a panel says.
  *
  * While it is up the mode segment is hidden rather than duplicated: the bar *is* the mode
- * control for the duration, because the mode that decided where the last card went is the
- * mode that decides the next one.
+ * control for the duration, because the shape that decided where the last card went is
+ * the shape that decides the next one. It reads the run's own shape rather than the live
+ * mode, so a run cannot be steered by a modifier pressed for something else.
  */
 export function PlacementRunBar({ engine }: { engine: PlacementEngine }) {
   const run = usePlacementRunStore((state) => state.run);
   const skip = usePlacementRunStore((state) => state.skip);
   const finish = usePlacementRunStore((state) => state.finish);
-  const mode = useUiStore((state) => state.mode);
 
   if (!run) return null;
+  const mode = run.shape;
   const total = run.placed.length + run.queue.length;
 
   return (

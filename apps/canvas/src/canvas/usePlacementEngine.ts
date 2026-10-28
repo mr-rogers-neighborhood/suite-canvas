@@ -1,13 +1,13 @@
-import type { Connector } from "@suite/graph";
 import { useReactFlow } from "@xyflow/react";
 import { useCallback } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./interactions/multiSelect";
+import type { CanvasMode } from "./links/linkGesture";
 import {
-  type PlacementSource,
   type ProposedLink,
   type RunStep,
+  type StartRunOptions,
   usePlacementRunStore,
 } from "./placementRun";
 import {
@@ -27,49 +27,6 @@ import {
  * steers one, and the canvas owns the camera the first card lands in. It reads
  * the stores itself so a caller cannot forget to pass the document or the mode.
  */
-/**
- * A dot's point in flow space: the box it belongs to, and the fraction of that box
- * it sits at.
- *
- * A fan pins the port its first spoke left from and every later spoke leaves the
- * same one, so the arrival dot has to be aimed at *that point* rather than at the
- * origin's centre — otherwise a spoke placed below the middle of the hub arrives
- * on its top edge while the line leaves its right one.
- */
-/**
- * The port a step's line leaves from.
- *
- * A dot the reader picked by hand wins, because that is a decision. Otherwise a
- * fan uses the port its own first spoke chose — the one the run pinned — and a
- * thread has no pinned port at all: its tail *is* where the next line starts, so
- * inference is the only honest answer there.
- */
-function chosenSource(
-  run: { originConnector: string | null },
-  from: "origin" | "anchor",
-  step: RunStep,
-): string | null {
-  const picked = step.overrides?.source ?? null;
-  if (picked !== null) return picked;
-  return from === "origin" ? run.originConnector : null;
-}
-
-/** The dot with this id, when the card still has it. */
-function sourceDotOf(
-  dots: readonly Connector[] | undefined,
-  id: string | null,
-): Connector | undefined {
-  return id === null ? undefined : dots?.find((dot) => dot.id === id);
-}
-
-function dotPoint(
-  box: { x: number; y: number; width: number; height: number },
-  dot: Connector | undefined,
-): { x: number; y: number } | null {
-  if (!dot) return null;
-  return { x: box.x + dot.x * box.width, y: box.y + dot.y * box.height };
-}
-
 export interface PlacementEngine {
   /**
    * Place the next step at the planner's position — the arrangement reading, and
@@ -97,7 +54,7 @@ export interface PlacementEngine {
   /** End the run wherever it is. */
   stop: () => void;
   /** Start a run from card ids, each becoming a one-card step. */
-  start: (queue: readonly string[], source: PlacementSource) => void;
+  start: (queue: readonly string[], start: StartRunOptions) => void;
 }
 
 export function usePlacementEngine(): PlacementEngine {
@@ -117,7 +74,12 @@ export function usePlacementEngine(): PlacementEngine {
   const planStep = useCallback(
     (
       step: RunStep,
-      run: { placed: string[]; originId: string | null; anchorId: string | null },
+      run: {
+        placed: string[];
+        shape: CanvasMode;
+        originId: string | null;
+        anchorId: string | null;
+      },
       /** Where the user put it down, for a held run. Absent means "plan it". */
       held?: { x: number; y: number } | undefined,
     ) => {
@@ -154,14 +116,11 @@ export function usePlacementEngine(): PlacementEngine {
           height: entry.height ?? DEFAULT_CARD_HEIGHT,
         }));
 
-      // Read at step time, never from a closure: a verb sets the mode and starts the
-      // run in the same tick, and a control change should steer the *next* card.
-      const liveMode = useUiStore.getState().mode;
       const placementOptions = useUiStore.getState().placementOptions;
       const planned = planPlacementStep({
-        // A step may read the shape differently from its neighbours, which is what
-        // makes a run an outline of intent (ADR-0063 amendment).
-        mode: step.mode ?? liveMode,
+        // The run's own shape, captured when it started. Reading the live mode here
+        // is what let a mid-run mode write plan the remaining steps as something else.
+        shape: run.shape,
         index: run.placed.length,
         size,
         origin: boxOf(run.originId),
@@ -214,20 +173,12 @@ export function usePlacementEngine(): PlacementEngine {
         targetDots: workspace.getCard(plan.head)?.connectors ?? [],
         sourceBox: anchorBox,
         targetBox: headBox,
+        // The reader's own pick wins for this one step; otherwise the geometry
+        // proposes, and the preview is the same call the commit makes.
         overrides: {
-          // A fan's port is decided by its first spoke and pinned on the run, so the
-          // preview shows the same departure for every spoke instead of a different
-          // side each time the pointer moves.
-          source: chosenSource(run, plan.planned.link.from, next),
+          source: next.overrides?.source ?? null,
           target: next.overrides?.target ?? null,
         },
-        sourceAnchor: dotPoint(
-          anchorBox,
-          sourceDotOf(
-            workspace.getCard(plan.linkFrom.cardId)?.connectors,
-            chosenSource(run, plan.planned.link.from, next),
-          ),
-        ),
       });
       return {
         anchorId: plan.linkFrom.cardId,
@@ -256,8 +207,6 @@ export function usePlacementEngine(): PlacementEngine {
       }
 
       let sectionId: string | null = run.sectionId;
-      // What the fan's next spoke leaves from, once this step has picked a port.
-      let pinnedConnector: string | null = null;
       // One batch: a step's placements, its one line and its section are one undo. A
       // run of `n` steps is `n` undo steps, which is what makes interrupting one safe
       // (ADR-0063 §5).
@@ -281,19 +230,15 @@ export function usePlacementEngine(): PlacementEngine {
             };
             // One inference, shared with the preview, so what the reader saw while
             // holding the card is what gets written (ADR-0061 third amendment).
-            const from = plan.planned.link.from;
-            const chosen = chosenSource(run, from, next);
-            const sourceDots = workspace.getCard(plan.linkFrom.cardId)?.connectors ?? [];
             const dots = inferConnectors({
-              sourceDots,
+              sourceDots: workspace.getCard(plan.linkFrom.cardId)?.connectors ?? [],
               targetDots: workspace.getCard(plan.head)?.connectors ?? [],
               sourceBox: anchorBox,
               targetBox: headBox,
               overrides: {
-                source: chosen,
+                source: next.overrides?.source ?? null,
                 target: next.overrides?.target ?? null,
               },
-              sourceAnchor: dotPoint(anchorBox, sourceDotOf(sourceDots, chosen)),
             });
             workspace.addEdge({
               boardId: activeBoardId,
@@ -302,9 +247,6 @@ export function usePlacementEngine(): PlacementEngine {
               ...(dots.source ? { sourceConnector: dots.source.id } : {}),
               ...(dots.target ? { targetConnector: dots.target.id } : {}),
             });
-            // The first spoke of a fan decides the port the rest leave from; a
-            // thread keeps moving its tail, so it pins nothing.
-            if (from === "origin") pinnedConnector = dots.source?.id ?? null;
           }
         }
         if (run.wrap) {
@@ -336,7 +278,7 @@ export function usePlacementEngine(): PlacementEngine {
           }
         }
       });
-      usePlacementRunStore.getState().advance(next, sectionId, pinnedConnector);
+      usePlacementRunStore.getState().advance(next, sectionId);
     },
     [activeBoardId, canEditLayout, planStep, workspace],
   );
@@ -370,16 +312,15 @@ export function usePlacementEngine(): PlacementEngine {
    *
    * **An arrangement is bulk**: `place` computes every position from the planner and
    * lands the set in one commit, because a dump makes no claim about relationships.
-   * **Everything else is held**: `thread`, `fan` and `branch` draw relationships, so
-   * the cards go into the user's hand as a stack and each click puts one down where
-   * they choose (ADR-0063 third amendment).
+   * **Everything else is held**: `thread` and `fan` draw relationships, so the cards
+   * go into the user's hand as a stack and each click puts one down where they
+   * choose (ADR-0063 third amendment).
    */
   const start = useCallback(
-    (queue: readonly string[], source: PlacementSource) => {
+    (queue: readonly string[], startOptions: StartRunOptions) => {
       if (!canEditLayout || queue.length === 0) return;
-      usePlacementRunStore.getState().start(queue, { source });
-      const arrangement = useUiStore.getState().mode === "place";
-      if (!arrangement) return;
+      usePlacementRunStore.getState().start(queue, startOptions);
+      if (startOptions.shape !== "place") return;
       workspace.batch("place-run:arrange", () => {
         // Bounded by the queue itself: a step that could not advance ends the loop
         // rather than spinning.

@@ -16,7 +16,6 @@ export function useLibraryRowActions({
   onLocateBoard,
   onOpenBoard,
   onPlaceBoard,
-  onSetBoardTemplate,
   onUnplaceBoardCards,
   onRestore,
   onOpenCard,
@@ -38,7 +37,8 @@ export function useLibraryRowActions({
   onLocateBoard: (boardId: string) => boolean;
   onOpenBoard: (boardId: string) => void;
   onPlaceBoard: (boardId: string) => void;
-  onSetBoardTemplate: ((boardId: string, template: boolean) => void) | undefined;
+  /** Kept for the blueprints pass; nothing reads it while they are hidden. */
+  onSetBoardTemplate?: ((boardId: string, template: boolean) => void) | undefined;
   onUnplaceBoardCards: (boardId: string) => void;
   onRestore: (cardId: string) => void;
   onOpenCard: (cardId: string) => void;
@@ -89,14 +89,8 @@ export function useLibraryRowActions({
         { label: "Open", onSelect: () => onOpenBoard(board.id) },
         { label: "Place on board", onSelect: () => onPlaceBoard(board.id) },
         { label: "Locate", onSelect: () => locateBoard(board) },
-        ...(onSetBoardTemplate
-          ? [
-              {
-                label: board.template === true ? "Stop being a blueprint" : "Save as blueprint",
-                onSelect: () => onSetBoardTemplate(board.id, board.template !== true),
-              },
-            ]
-          : []),
+        // Blueprints are unfinished and hidden until they land: a workspace
+        // starter is the only template shape the product offers today.
         { label: "Unplace its cards", onSelect: () => onUnplaceBoardCards(board.id) },
         { label: "Delete board…", danger: true, onSelect: () => setPendingDelete(board) },
       ];

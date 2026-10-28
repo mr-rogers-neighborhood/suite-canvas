@@ -148,10 +148,10 @@ export function useLibraryList({
   const visibleBoards = matchedBoards;
   // The Templates group answers the same query as the list: a search narrows
   // both halves instead of leaving a gallery of things the reader did not ask for.
-  const visibleTemplates =
-    tab === "boards"
-      ? boards.filter((board) => board.template && matchesBoardQuery(board.title))
-      : [];
+  // Blueprints are hidden, not deleted: the schema keeps `template` so a board
+  // already marked stays marked, but the gallery lists only the starters this
+  // build ships. Turning them back on is one filter.
+  const visibleTemplates: LibraryBoard[] = [];
   const visibleStarters =
     tab === "boards" ? starters.filter((entry) => matchesBoardQuery(entry.title)) : [];
 

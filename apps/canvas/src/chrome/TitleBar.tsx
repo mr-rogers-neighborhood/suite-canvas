@@ -265,9 +265,11 @@ export function TitleBar({
         // `flex-initial`, not `flex-1`: the bar's spare width belongs to search.
         // A growing box here split the slack with it, which is why the search
         // field stopped short of the empty space next to it.
-        <div className="ml-2 flex min-w-0 flex-initial items-center overflow-hidden">
-          {children}
-        </div>
+        // No `overflow-hidden` here: the board list opens downward from this
+        // row, and clipping it to the 44px bar left a dropdown with one visible
+        // row. Nothing in this row scrolls horizontally any more, so there is
+        // nothing to clip.
+        <div className="ml-2 flex min-w-0 flex-initial items-center">{children}</div>
       ) : null}
 
       {onOpenSearch ? (

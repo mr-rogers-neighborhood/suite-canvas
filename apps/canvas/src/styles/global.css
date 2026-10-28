@@ -1422,6 +1422,25 @@ body {
  * Opacity only — the panel keeps its pointer events, so a release over it still
  * lands on it rather than falling through to the canvas.
  */
+/*
+ * A press on the canvas is a gesture, not the start of a text selection.
+ *
+ * `useNoTextSelection` sets this for the length of the press, so a marquee or a card
+ * drag cannot select the page's words on its way across them — shift extends whatever
+ * was selected before, and that anchor is gone by the time a drag begins. Editors keep
+ * their own selection, because picking a word out of a card being written is the one
+ * drag here that means "text".
+ */
+html[data-canvas-drag] {
+  user-select: none;
+}
+
+html[data-canvas-drag] [contenteditable="true"],
+html[data-canvas-drag] input,
+html[data-canvas-drag] textarea {
+  user-select: text;
+}
+
 html[data-inspector-linking] .card-inspector {
   opacity: 0.3;
 }

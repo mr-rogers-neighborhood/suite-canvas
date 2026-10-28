@@ -1,38 +1,70 @@
-import { type RefObject, useEffect } from "react";
+import { useEffect } from "react";
 
 /**
- * Where a drag is allowed to select text: an editor, and nothing else.
+ * Where a press may still begin a text selection: an editor, a field, a dialog.
  *
- * A card's read-only text is part of the picture, not a document to drag across, so it
- * is deliberately absent. `.ProseMirror` is listed even though Tiptap marks it
- * `contenteditable`, because a mismatch between the two would silently break selecting
- * a word inside a card.
+ * A dialog is exempt because reading and copying what it says is the point of it, and
+ * a card's editor because picking a word out of a card being written is a normal thing
+ * to want. A card's *read-only* chrome is not: it is a picture of text.
  */
-const SELECTABLE = "[contenteditable='true'], .ProseMirror, input, textarea";
+const SELECTABLE = "[contenteditable='true'], .ProseMirror, input, textarea, [role='dialog']";
 
 /**
  * The canvas is not a text surface, so a drag across it selects nothing.
  *
- * Shift is the marquee key here, and the browser reads the same shift as "extend the
- * selection from the last anchor". That anchor is usually a card's own text, so a
- * shift+drag swept every word between it and the pointer — the whole page lighting up
- * blue — and the marquee that was meant to happen looked like it had gone wrong.
- * `pointerdown`'s `preventDefault` does not stop it; `selectstart` is the event the
- * browser asks before it starts, and it fires for the pane and for a card alike.
+ * Shift is the marquee key here, and a browser reads the same shift as "extend the
+ * selection from the last anchor", which is why a shift+drag could sweep every word on
+ * the page. Cancelling `selectstart` alone does not fix it: that event fires when a
+ * selection *begins*, and an extension of one already there never fires it at all — so
+ * the sweep came back the moment anything had been selected before the gesture.
  *
- * Captured on the board root rather than the pane: the reported gesture usually begins
- * on a card, and a sweep that starts there is the same defect.
+ * The press is where it can be stopped, and it takes two things. **Dropping the ranges**
+ * removes the anchor an extension would grow from, and **`data-canvas-drag` on the root**
+ * turns selection off for as long as the pointer is down, so a drag that crosses a card's
+ * text cannot start one either. Both are reverted on release, so text is selectable at
+ * rest.
  */
-export function useNoTextSelection(root: RefObject<HTMLElement | null>): void {
+export function useNoTextSelection(): void {
   useEffect(() => {
-    const node = root.current;
-    if (!node) return;
-    const cancel = (event: Event) => {
+    const root = document.documentElement;
+
+    const press = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest(SELECTABLE)) return;
+      // The anchor goes first: a shift+press extends from it, and no gesture in a canvas
+      // wants the selection somebody made a minute ago.
+      window.getSelection()?.removeAllRanges();
+      root.dataset.canvasDrag = "true";
+    };
+
+    const release = () => {
+      delete root.dataset.canvasDrag;
+    };
+
+    /**
+     * A second gate, for the browsers and paths where `user-select: none` on the root
+     * does not stop the selection itself: while the press is down, nothing outside an
+     * editor may start one.
+     */
+    const select = (event: Event) => {
+      if (root.dataset.canvasDrag === undefined) return;
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest(SELECTABLE)) return;
       event.preventDefault();
     };
-    node.addEventListener("selectstart", cancel, true);
-    return () => node.removeEventListener("selectstart", cancel, true);
-  }, [root]);
+
+    window.addEventListener("pointerdown", press, true);
+    window.addEventListener("selectstart", select, true);
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("pointerdown", press, true);
+      window.removeEventListener("selectstart", select, true);
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+      window.removeEventListener("blur", release);
+      delete root.dataset.canvasDrag;
+    };
+  }, []);
 }

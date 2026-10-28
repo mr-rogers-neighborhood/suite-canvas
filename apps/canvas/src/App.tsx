@@ -12,7 +12,7 @@ import { useSurfacePalette, useWorkspacePalette } from "./app/workspacePaint";
 import { signedIn as accountSignedIn, useAccountStore } from "./auth/useAccountStore";
 import type { CanvasMode } from "./canvas/links/linkGesture";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
-import { type PlacementSource, usePlacementRunStore } from "./canvas/placementRun";
+import { isOpenRun, type PlacementSource, usePlacementRunStore } from "./canvas/placementRun";
 import type { CanvasPurpose } from "./canvas/purpose";
 import { usePlacementEngine } from "./canvas/usePlacementEngine";
 import { useRecordEngine } from "./canvas/useRecordEngine";
@@ -384,6 +384,14 @@ function WorkspaceShell({
   const runCards = useCallback(
     (cardIds: readonly string[], runMode: CanvasMode, source: PlacementSource) => {
       if (!canEditLayout || cardIds.length === 0) return;
+      // A run started from a card on the canvas is waiting for its spokes: a pick fills
+      // the hand rather than replacing the run the reader just set up.
+      const live = usePlacementRunStore.getState().run;
+      if (live !== null && live.source === "canvas" && isOpenRun(live)) {
+        usePlacementRunStore.getState().enqueue(cardIds);
+        setLibraryOpen(false, "run");
+        return;
+      }
       setMode(runMode);
       // A run is a state the canvas is in, and the whole canvas has to know: the cursor,
       // presence and the click handler all read it. It is entered here rather than from

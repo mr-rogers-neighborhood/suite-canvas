@@ -12,8 +12,22 @@ import type { CanvasMode } from "./links/linkGesture";
  */
 
 /** Where a run's queue came from; the engine behaves the same, the UI does not. */
-export const placementSources = ["selection", "view", "dock", "picker"] as const;
+export const placementSources = ["selection", "view", "dock", "picker", "canvas"] as const;
 export type PlacementSource = (typeof placementSources)[number];
+
+/**
+ * Sources whose run waits for cards instead of ending when its queue empties.
+ *
+ * A picker loop waits to be fed one card at a time. A run started from a card on the
+ * canvas has nothing in hand yet — the reader asked to fan *from here* and has still
+ * to choose what to fan, from the library or from the drop menu — so it waits too.
+ */
+const OPEN_SOURCES: readonly PlacementSource[] = ["picker", "canvas"];
+
+/** Whether a run waits for cards rather than ending with its queue. */
+export function isOpenRun(run: Pick<PlacementRun, "source">): boolean {
+  return OPEN_SOURCES.includes(run.source);
+}
 
 /**
  * One step of a run: a card, or a set placed as one unit (ADR-0063 amendment).
@@ -112,6 +126,13 @@ interface PlacementRunState {
   settling: boolean;
   /** The gesture that placed the last card is over; the run is gone. */
   settle: () => void;
+  /**
+   * Change what the rest of the run draws.
+   *
+   * A deliberate change, from the run's own bar: the shape is a run property so a
+   * modifier pressed for something else cannot steer it, but the reader can.
+   */
+  setShape: (shape: CanvasMode) => void;
   /** Begin a run from card ids; each becomes a single-card step. */
   start: (queue: readonly string[], options?: StartRunOptions) => void;
   /** Begin a run from steps, when a source can offer sets. */
@@ -178,6 +199,11 @@ export const usePlacementRunStore = create<PlacementRunState>((set, get) => ({
   settle: () => {
     if (get().settling) set({ settling: false });
   },
+  setShape: (shape) => {
+    const run = get().run;
+    if (!run || run.shape === shape) return;
+    set({ run: { ...run, shape } });
+  },
   start: (queue, options = {}) => {
     get().startSteps(queue.map(cardStep), options);
   },
@@ -185,7 +211,9 @@ export const usePlacementRunStore = create<PlacementRunState>((set, get) => ({
     // A queue longer than a board could usefully hold is a sign of a caller bug, not
     // a feature; clamping keeps a runaway selection from placing forever.
     const trimmed = steps.filter((step) => step.ids.length > 0).slice(0, GUARD);
-    if (trimmed.length === 0) {
+    // An open run may start with nothing in hand: "fan from this card" is a decision
+    // about the hub, and the spokes arrive afterwards.
+    if (trimmed.length === 0 && (options.source ?? "selection") !== "canvas") {
       set({ run: null });
       return;
     }
@@ -227,7 +255,7 @@ export const usePlacementRunStore = create<PlacementRunState>((set, get) => ({
     // The picker loop is the one run that outlives its queue: it is waiting to be
     // fed one card at a time, which is the whole point of it (ADR-0063 §6). Every
     // other run ends when its last card lands.
-    const ended = queue.length === 0 && run.source !== "picker";
+    const ended = queue.length === 0 && !isOpenRun(run);
     set({
       settling: ended,
       run: ended

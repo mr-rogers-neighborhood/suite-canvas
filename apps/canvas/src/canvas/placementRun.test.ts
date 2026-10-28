@@ -218,6 +218,56 @@ describe("a step can be a set, and can change the mode", () => {
   });
 });
 
+describe("a run that waits for cards", () => {
+  it("starts with nothing in hand when it came from a card on the canvas", () => {
+    // "Fan from here" is a decision about the hub; the spokes are still to be picked.
+    store().start([], { shape: "fan", hub: "existing", originId: "hub", source: "canvas" });
+
+    expect(store().run?.originId).toBe("hub");
+    expect(store().run?.queue).toEqual([]);
+  });
+
+  it("stays open when a pick is placed and the queue empties again", () => {
+    store().start([], { shape: "fan", hub: "existing", originId: "hub", source: "canvas" });
+    store().enqueue(["spoke"]);
+    store().advance(cardStep("spoke"));
+
+    expect(store().run).not.toBeNull();
+    expect(store().run?.queue).toEqual([]);
+    expect(store().run?.placed).toEqual(["spoke"]);
+  });
+
+  it("still ends when a library run's queue empties", () => {
+    store().start(["a", "b"], { shape: "thread" });
+    store().advance(cardStep("a"));
+    store().advance(cardStep("b"));
+
+    expect(store().run).toBeNull();
+  });
+
+  it("refuses to start with nothing in hand from a caller that is not the canvas", () => {
+    store().start([], { shape: "fan" });
+
+    expect(store().run).toBeNull();
+  });
+});
+
+describe("changing what the rest of a run draws", () => {
+  it("takes the new shape for the steps still in the queue", () => {
+    store().start(["a", "b", "c"], { shape: "fan" });
+    store().advance(cardStep("a"));
+    store().setShape("thread");
+
+    expect(store().run?.shape).toBe("thread");
+  });
+
+  it("ignores a change with no run to change", () => {
+    store().setShape("fan");
+
+    expect(store().run).toBeNull();
+  });
+});
+
 describe("the picker loop outlives its queue", () => {
   it("stays live with an empty queue, because it is waiting to be fed", () => {
     store().start(["a"], { source: "picker" });

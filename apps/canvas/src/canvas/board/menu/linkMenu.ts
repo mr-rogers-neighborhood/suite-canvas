@@ -122,6 +122,25 @@ export function connectorMenuBranch(ctx: BoardMenuContext): ContextMenuItem[] | 
   }
   return [
     modeItem,
+    // The dot names the card as surely as the card does, and a reader right-clicking a
+    // dot to fan from it means the card behind it.
+    ...(ctx.canCreateContent && nodeId
+      ? [
+          {
+            label: "Run from here",
+            items: [
+              {
+                label: "Fan cards from here",
+                onSelect: () => ctx.runFromCard(nodeId, "fan"),
+              },
+              {
+                label: "Thread cards from here",
+                onSelect: () => ctx.runFromCard(nodeId, "thread"),
+              },
+            ],
+          },
+        ]
+      : []),
     {
       label: "Reposition Connector",
       onSelect: () => {

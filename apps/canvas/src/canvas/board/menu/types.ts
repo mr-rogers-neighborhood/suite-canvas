@@ -33,6 +33,13 @@ export interface BoardMenuContext {
   createPortalAt: (position: { x: number; y: number }, targetBoardId: string) => void;
   createPortalToNewBoard: (position: { x: number; y: number }) => void;
   duplicateCards: (ids: string[]) => void;
+  /**
+   * Start a run that fans or threads out from a card already on the board.
+   *
+   * The card is the hub and is never dropped again; the reader still has to say what
+   * goes around it, so the run opens the library and waits for picks.
+   */
+  runFromCard: (cardId: string, shape: "fan" | "thread") => void;
   moveCardToBoard: (cardId: string, boardId: string) => void;
   otherBoards: (boardId: string | null) => { id: string; name: string }[];
   changeLayer: (nodeId: string, action: LayerAction) => void;

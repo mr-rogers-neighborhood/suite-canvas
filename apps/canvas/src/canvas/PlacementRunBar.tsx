@@ -35,9 +35,27 @@ export function PlacementRunBar({ engine }: { engine: PlacementEngine }) {
       data-mode={mode}
     >
       {/* The pill's mode segment withdraws during a run, so this is the only place the
-          value shows. It is the same glyph, painted from the same tokens. */}
-      <span className="placement-run__mode" aria-hidden="true">
-        {MODES[mode].glyph}
+          shape can be read — and the only place it can be changed. It is the same
+          glyph, painted from the same tokens, and it is a deliberate press rather than
+          a held modifier because the shape belongs to the run. */}
+      {/* biome-ignore lint/a11y/useSemanticElements: a strip of toggle buttons in a floating bar, not a form; a fieldset brings form layout defaults to an overlay */}
+      <span className="placement-run__shapes" role="group" aria-label="Shape">
+        {(["fan", "thread", "place"] as const).map((shape) => (
+          <button
+            key={shape}
+            type="button"
+            className="placement-run__shape"
+            data-testid={`placement-run-shape-${shape}`}
+            data-checked={mode === shape ? "true" : undefined}
+            title={MODES[shape].label}
+            aria-label={shortLabel(shape)}
+            aria-pressed={mode === shape}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => usePlacementRunStore.getState().setShape(shape)}
+          >
+            {MODES[shape].glyph}
+          </button>
+        ))}
       </span>
       <span className="placement-run__count" data-testid="placement-run-count">
         {`${run.placed.length} / ${total}`}

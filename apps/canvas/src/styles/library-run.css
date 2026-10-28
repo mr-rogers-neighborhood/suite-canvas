@@ -47,19 +47,34 @@
   color: var(--ink);
 }
 
-/* The mode the run is placing with. The pill's segment withdraws for the duration, so
-   this chip is the only place the value shows; it is painted from the same tokens. */
-.placement-run__mode {
+/* The shape the run is placing with. The pill's segment withdraws for the duration, so
+   these chips are the only place the value shows and the only place it can be changed;
+   they are painted from the same tokens as the pill's own segments. */
+.placement-run__shapes {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.placement-run__shape {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 18px;
   height: 18px;
   border-radius: 5px;
-  background: var(--value-fill);
-  color: var(--value-ink);
+  color: var(--ink-muted);
   font-size: 11px;
   line-height: 1;
+}
+
+.placement-run__shape[data-checked="true"] {
+  background: var(--value-fill);
+  color: var(--value-ink);
+}
+
+.placement-run__shape:hover {
+  color: var(--ink);
 }
 
 .placement-run__action {

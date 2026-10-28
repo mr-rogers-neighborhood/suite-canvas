@@ -1,27 +1,28 @@
 import { renderHook } from "@testing-library/react";
-import { createRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useNoTextSelection } from "./useNoTextSelection";
 
 /**
- * The shift+drag report, as an event test.
+ * The shift+drag sweep, as an event test.
  *
- * Shift is the marquee key, and the browser also reads it as "extend the selection from
- * the last anchor". A drag across the board therefore swept every word between a card's
- * text and the pointer. The cancel has to land on `selectstart`: nothing about
- * `pointerdown` stops a text selection, which is why the sweep survived the gesture
- * handlers already standing there.
+ * Shift is the marquee key, and a browser reads the same shift as "extend the selection
+ * from the last anchor". The first fix cancelled `selectstart`, which fires only when a
+ * selection *begins* — an extension never fires it — so the sweep returned as soon as
+ * anything had been selected beforehand. The press is the event that can stop it: the
+ * ranges are dropped so there is no anchor left, and the root is flagged so the drag
+ * cannot start a new one.
  */
 
-function mountBoard(): {
-  board: HTMLDivElement;
-  ref: ReturnType<typeof createRef<HTMLDivElement>>;
-} {
-  const board = document.createElement("div");
-  document.body.append(board);
-  const ref = createRef<HTMLDivElement>();
-  ref.current = board;
-  return { board, ref };
+function mount(target: HTMLElement): void {
+  document.body.append(target);
+}
+
+function pressOn(target: EventTarget): void {
+  target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+}
+
+function release(): void {
+  window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
 }
 
 /** True when the browser would still be allowed to start a selection there. */
@@ -33,47 +34,74 @@ function selectStartAllowed(target: EventTarget): boolean {
 
 afterEach(() => {
   document.body.innerHTML = "";
+  document.documentElement.removeAttribute("data-canvas-drag");
 });
 
-describe("a canvas", () => {
-  it("should refuse to start a text selection on its own surface", () => {
-    const { board, ref } = mountBoard();
-    renderHook(() => useNoTextSelection(ref));
+describe("a press on the canvas", () => {
+  it("should drop the selection that a shift+drag would otherwise extend", () => {
+    const board = document.createElement("div");
+    mount(board);
+    const text = document.createElement("span");
+    text.textContent = "selected a minute ago";
+    board.append(text);
+    document.getSelection()?.selectAllChildren(text);
+    expect(window.getSelection()?.rangeCount).toBe(1);
+    renderHook(() => useNoTextSelection());
 
-    expect(selectStartAllowed(board)).toBe(false);
+    pressOn(board);
+
+    expect(window.getSelection()?.rangeCount).toBe(0);
   });
 
-  it("should leave a card's editor alone", () => {
-    const { board, ref } = mountBoard();
+  it("should refuse to start a selection until the pointer is released", () => {
+    const board = document.createElement("div");
+    mount(board);
+    renderHook(() => useNoTextSelection());
+
+    pressOn(board);
+    expect(document.documentElement.dataset.canvasDrag).toBe("true");
+    expect(selectStartAllowed(board)).toBe(false);
+
+    release();
+    expect(document.documentElement.dataset.canvasDrag).toBeUndefined();
+  });
+
+  it("should leave a card's editor alone, where a drag means text", () => {
+    const board = document.createElement("div");
     const editor = document.createElement("div");
     editor.setAttribute("contenteditable", "true");
-    const text = document.createElement("span");
-    editor.append(text);
     board.append(editor);
-    renderHook(() => useNoTextSelection(ref));
+    mount(board);
+    renderHook(() => useNoTextSelection());
 
-    // The editor's own text is the one place a drag may still select, or a word could
-    // not be picked out of a card being written.
-    expect(selectStartAllowed(text)).toBe(true);
+    pressOn(editor);
+
+    expect(document.documentElement.dataset.canvasDrag).toBeUndefined();
+    expect(selectStartAllowed(editor)).toBe(true);
   });
 
-  it("should refuse a card's read-only text, which is a picture of text", () => {
-    const { board, ref } = mountBoard();
-    const card = document.createElement("div");
-    const text = document.createElement("span");
-    text.textContent = "A card's body";
-    card.append(text);
-    board.append(card);
-    renderHook(() => useNoTextSelection(ref));
+  it("should leave a dialog alone, because reading it is the point", () => {
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const text = document.createElement("p");
+    text.textContent = "A share link you want to copy";
+    dialog.append(text);
+    mount(dialog);
+    renderHook(() => useNoTextSelection());
 
-    expect(selectStartAllowed(text)).toBe(false);
+    pressOn(text);
+
+    expect(document.documentElement.dataset.canvasDrag).toBeUndefined();
   });
 
-  it("should stop listening when the board goes away", () => {
-    const { board, ref } = mountBoard();
-    const { unmount } = renderHook(() => useNoTextSelection(ref));
-    unmount();
+  it("should let go when the window loses focus mid-drag", () => {
+    const board = document.createElement("div");
+    mount(board);
+    renderHook(() => useNoTextSelection());
+    pressOn(board);
 
-    expect(selectStartAllowed(board)).toBe(true);
+    window.dispatchEvent(new Event("blur"));
+
+    expect(document.documentElement.dataset.canvasDrag).toBeUndefined();
   });
 });

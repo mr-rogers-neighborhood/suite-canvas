@@ -5,6 +5,7 @@ import { useUiStore } from "../store/useUiStore";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./interactions/multiSelect";
 import type { CanvasMode } from "./links/linkGesture";
 import {
+  isOpenRun,
   type ProposedLink,
   type RunStep,
   type StartRunOptions,
@@ -196,8 +197,9 @@ export function usePlacementEngine(): PlacementEngine {
       if (!run) return;
       const next = run.queue[0];
       if (!next) {
-        // A picker loop is *waiting*, not finished: it lives until it is stopped.
-        if (run.source !== "picker") usePlacementRunStore.getState().finish();
+        // An open run is *waiting*, not finished: a picker loop is being fed, and a
+        // run started from a card on the canvas has yet to be given its spokes.
+        if (!isOpenRun(run)) usePlacementRunStore.getState().finish();
         return;
       }
       const plan = planStep(next, run, held);

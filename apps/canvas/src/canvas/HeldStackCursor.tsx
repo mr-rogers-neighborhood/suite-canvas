@@ -147,7 +147,13 @@ export function HeldStackCursor({ engine }: { engine: PlacementEngine }) {
   if (!run) return null;
 
   // The title lives in the document's text tree, not on the card record.
-  const title = held ? workspace.displayTitle(held) || "Untitled" : "Nothing left";
+  const title = held
+    ? workspace.displayTitle(held) || "Untitled"
+    : // An empty hand is only "nothing left" once the queue has run out; an open run
+      // waiting for its first card is asking to be fed.
+      waiting
+      ? "Pick cards"
+      : "Nothing left";
   const left = run.queue.length;
 
   return (

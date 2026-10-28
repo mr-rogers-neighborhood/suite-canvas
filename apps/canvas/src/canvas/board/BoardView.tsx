@@ -77,8 +77,10 @@ export function BoardView() {
   const { lastPointerSent, marqueePress, boardRoot } = refs;
 
   // Shift is the marquee key, so the browser must not read the same shift as "extend
-  // the selection": without this a shift+drag swept the page's text instead.
-  useNoTextSelection(boardRoot);
+  // the selection": without this a shift+drag swept the page's text instead. Document
+  // wide, because the sweep grows out of whatever was selected before it, wherever that
+  // was, and the board is the only surface this hook is mounted on.
+  useNoTextSelection();
   // A run that just placed its last card still owns the press until the pointer lifts.
   useSettledRun();
 

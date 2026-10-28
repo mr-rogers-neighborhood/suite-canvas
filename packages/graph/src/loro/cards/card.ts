@@ -327,6 +327,18 @@ export function cardMethods(ctx: DocContext) {
 
       for (const placement of others) {
         ctx.placements.delete(placementKey(placement.boardId, placement.cardId));
+        // A link belongs to the board it was drawn on, and this card has left it: the
+        // line can never draw again, and leaving it behind is what made the same pair
+        // look doubly connected after a move.
+        for (const edge of ctx.api.edges
+          .listEdges()
+          .filter(
+            (entry) =>
+              entry.boardId === placement.boardId &&
+              (entry.source === cardId || entry.target === cardId),
+          )) {
+          ctx.edges.delete(edge.id);
+        }
       }
       const placed = ctx.api.placements.placeCardInternal(boardId, cardId, target);
       if (!placed) throw new Error(`Cannot place card ${cardId} on board ${boardId}`);
@@ -338,9 +350,23 @@ export function cardMethods(ctx: DocContext) {
       return Boolean(ctx.api.cards.getCard(cardId)?.deletedAt);
     },
 
+    /**
+     * Trashing a card takes its links with it.
+     *
+     * A link to a card in the trash is not a relationship the reader can see or act
+     * on, and keeping it meant a restored card grew a second line every time it was
+     * linked again. Restoring brings the card back without them; that is the honest
+     * trade, and it is what "delete the links" means.
+     */
     trashCard(id: string): void {
       const card = ctx.api.cards.getCard(id);
       if (!card || card.deletedAt) return;
+      const edges = ctx.api.edges
+        .listEdges()
+        .filter((edge) => edge.source === id || edge.target === id);
+      // Edges first: the card write commits, and one commit is one undo step, so the
+      // card and its lines leave together.
+      for (const edge of edges) ctx.edges.delete(edge.id);
       ctx.api.cards.mutateCard(id, (fields) => fields.set("deletedAt", Date.now()));
     },
 

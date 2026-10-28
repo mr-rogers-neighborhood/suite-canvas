@@ -99,33 +99,32 @@ describe("container link endpoints", () => {
     });
 
     expect(first).not.toBeNull();
-    expect(duplicate).toBeNull();
+    expect(duplicate?.id).toBe(first?.id);
     expect(workspace.listEdges()).toHaveLength(1);
   });
 
-  it("keeps two links between the same pair when they use different connectors", () => {
+  it("re-points the one link when the same pair is drawn on another connector", () => {
     const { workspace, board } = setup();
     const a = workspace.createCard({ boardId: board.id });
     const b = workspace.createCard({ boardId: board.id });
     const [first, second] = a.connectors;
     if (!first || !second) throw new Error("expected connectors");
 
-    expect(
-      workspace.addEdge({
-        boardId: board.id,
-        source: a.id,
-        target: b.id,
-        sourceConnector: first.id,
-      }),
-    ).not.toBeNull();
-    expect(
-      workspace.addEdge({
-        boardId: board.id,
-        source: a.id,
-        target: b.id,
-        sourceConnector: second.id,
-      }),
-    ).not.toBeNull();
+    const created = workspace.addEdge({
+      boardId: board.id,
+      source: a.id,
+      target: b.id,
+      sourceConnector: first.id,
+    });
+    const repointed = workspace.addEdge({
+      boardId: board.id,
+      source: a.id,
+      target: b.id,
+      sourceConnector: second.id,
+    });
+    expect(repointed?.id).toBe(created?.id);
+    expect(workspace.listEdges()).toHaveLength(1);
+    expect(workspace.getEdge(created?.id ?? "")?.sourceConnector).toBe(second.id);
   });
 });
 
@@ -383,9 +382,10 @@ describe("section connectors", () => {
       targetKind: "section",
       targetConnector: first.id,
     });
+    const elsewhere = workspace.createCard({ boardId: board.id });
     const kept = workspace.addEdge({
       boardId: board.id,
-      source: card.id,
+      source: elsewhere.id,
       target: section.id,
       targetKind: "section",
       targetConnector: second.id,

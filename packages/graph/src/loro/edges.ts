@@ -4,11 +4,10 @@ import {
   edgeEndpoints,
   edgeTouches,
   isSelfLink,
-  isUnpinned,
-  joinsEndpoints,
   joinsReversed,
   type LinkEndpoint,
-  linkKey,
+  pairKey,
+  pairKeyOf,
 } from "../links.js";
 import { edgeFromMap, normalizeEdge } from "../records/entities.js";
 import { isMap, writeSurfaceStyle } from "../records/values.js";
@@ -197,51 +196,49 @@ export function edgesMethods(ctx: DocContext) {
         ...(input.sourceConnector ? { sourceConnector: input.sourceConnector } : {}),
         ...(input.targetConnector ? { targetConnector: input.targetConnector } : {}),
       });
-      if (ctx.api.edges.isDuplicateEdge(edge)) return null;
+      // One relationship per pair per board: asking for a link these two already have
+      // re-points that line rather than writing a second one beside it. That is what
+      // keeps a place/unplace/re-place cycle from heaping arrows over one pair.
+      const existing = ctx.api.edges.edgeBetween(input.boardId, source, target);
+      if (existing) {
+        ctx.api.edges.repoint(existing, source, input.sourceConnector, input.targetConnector);
+        return ctx.api.edges.cachedEdge(existing.id) ?? null;
+      }
       ctx.api.edges.applyEdge(edge);
       ctx.commit(`${STRUCT_ORIGIN}add-edge`);
       return edge;
     },
 
+    /** The link between these two things on this board, if there is one. */
+    edgeBetween(
+      boardId: string,
+      source: LinkEndpoint,
+      target: LinkEndpoint,
+    ): GraphEdge | undefined {
+      const key = pairKeyOf(boardId, source, target);
+      return ctx.api.edges.listEdges().find((edge) => pairKey(edge) === key);
+    },
+
     /**
-     * Links two endpoints, refining the line already between them instead of drawing
-     * a second one beside it.
-     *
-     * A link can be made before its dots are known — a template, an import, a paste —
-     * and such a line is unpinned. When a caller now knows the dots the link leaves
-     * and arrives on, the existing record takes them. Adding a pinned line next to an
-     * unpinned one puts two lines between the same pair on screen, which reads as a
-     * duplicate the reader never asked for.
+     * Puts a link's dots on the ends the caller named, keeping the record's own
+     * direction: the line may have been drawn from the other end.
      */
-    linkEndpoints(input: CreateEdgeInput): GraphEdge | null {
-      const source: LinkEndpoint = { kind: input.sourceKind ?? "card", id: input.source };
-      const target: LinkEndpoint = { kind: input.targetKind ?? "card", id: input.target };
-      const pinned = input.sourceConnector !== undefined || input.targetConnector !== undefined;
-      if (pinned) {
-        const existing = ctx.api.edges
-          .listEdges()
-          .find(
-            (edge) =>
-              edge.boardId === input.boardId &&
-              isUnpinned(edge) &&
-              joinsEndpoints(edge, source, target),
-          );
-        if (existing) {
-          // The record keeps its own direction: the dots belong to the ends the caller
-          // named, and the line may have been drawn the other way round.
-          const reversed = joinsReversed(existing, source);
-          ctx.api.edges.mutateEdge(existing.id, (fields) => {
-            const write = (end: "source" | "target", connector: string | undefined) => {
-              if (connector === undefined) return;
-              fields.set(end === "source" ? "sourceConnector" : "targetConnector", connector);
-            };
-            write(reversed ? "target" : "source", input.sourceConnector);
-            write(reversed ? "source" : "target", input.targetConnector);
-          });
-          return ctx.api.edges.cachedEdge(existing.id) ?? null;
-        }
-      }
-      return ctx.api.edges.addEdge(input);
+    repoint(
+      edge: GraphEdge,
+      source: LinkEndpoint,
+      sourceConnector: string | undefined,
+      targetConnector: string | undefined,
+    ): void {
+      if (sourceConnector === undefined && targetConnector === undefined) return;
+      const reversed = joinsReversed(edge, source);
+      ctx.api.edges.mutateEdge(edge.id, (fields) => {
+        const write = (end: "source" | "target", connector: string | undefined) => {
+          if (connector === undefined) return;
+          fields.set(end === "source" ? "sourceConnector" : "targetConnector", connector);
+        };
+        write(reversed ? "target" : "source", sourceConnector);
+        write(reversed ? "source" : "target", targetConnector);
+      });
     },
 
     /** A link may only point at a thing that exists in this workspace. */
@@ -259,14 +256,31 @@ export function edgesMethods(ctx: DocContext) {
     },
 
     /**
-     * Two links between the same endpoints on the same connectors are the same
-     * connection; drawing it twice is a no-op rather than a second record.
+     * One link per pair, keeping the newest and deleting the rest, in one commit.
+     *
+     * @returns how many links were removed.
      */
-    isDuplicateEdge(candidate: GraphEdge): boolean {
-      const key = linkKey(candidate);
+    pruneDuplicateLinks(): number {
+      const newest = new Map<string, GraphEdge>();
+      for (const edge of ctx.api.edges.listEdges()) {
+        const key = pairKey(edge);
+        const current = newest.get(key);
+        if (current === undefined || edge.updatedAt > current.updatedAt) newest.set(key, edge);
+      }
+      const duplicates = ctx.api.edges
+        .listEdges()
+        .filter((edge) => newest.get(pairKey(edge))?.id !== edge.id);
+      for (const edge of duplicates) ctx.edges.delete(edge.id);
+      if (duplicates.length > 0) ctx.commit(`${STRUCT_ORIGIN}prune-links`);
+      return duplicates.length;
+    },
+
+    /** Whether another link already joins this candidate's pair on its board. */
+    isDuplicateEdge(candidate: GraphEdge): GraphEdge | undefined {
+      const key = pairKey(candidate);
       return ctx.api.edges
         .listEdges()
-        .some((edge) => edge.id !== candidate.id && linkKey(edge) === key);
+        .find((edge) => edge.id !== candidate.id && pairKey(edge) === key);
     },
 
     /** Every link with this thing at either end, including links to containers. */
@@ -355,7 +369,11 @@ export function edgesMethods(ctx: DocContext) {
           sourceKind: kind,
           sourceConnector: connectorId,
         };
-        if (ctx.api.edges.isDuplicateEdge(candidate)) return;
+        // A reconnect onto a pair that already has a link keeps this one and drops
+        // the other: two lines between the same things is what this rule exists to
+        // prevent, and the gesture just drawn is the one the reader means.
+        const clash = ctx.api.edges.isDuplicateEdge(candidate);
+        if (clash) ctx.api.edges.removeEdge(clash.id);
         ctx.api.edges.mutateEdge(id, (entry) => {
           entry.set("source", fields.id);
           entry.set("sourceKind", kind);
@@ -369,7 +387,8 @@ export function edgesMethods(ctx: DocContext) {
           targetKind: kind,
           targetConnector: connectorId,
         };
-        if (ctx.api.edges.isDuplicateEdge(candidate)) return;
+        const clash = ctx.api.edges.isDuplicateEdge(candidate);
+        if (clash) ctx.api.edges.removeEdge(clash.id);
         ctx.api.edges.mutateEdge(id, (entry) => {
           entry.set("target", fields.id);
           entry.set("targetKind", kind);

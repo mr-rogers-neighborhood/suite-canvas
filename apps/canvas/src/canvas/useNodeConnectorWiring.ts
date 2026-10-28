@@ -7,7 +7,7 @@ import { useBoardPeers } from "../hooks/useBoardPeers";
 import type { Point } from "../presence/Connector";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
-import { isChaining, stepLink, stepShape, useLinkThreadStore } from "./links/linkThread";
+import { stepLink, stepShape, useLinkThreadStore } from "./links/linkThread";
 import type { ConnectorPeerState } from "./NodeConnectors";
 
 /**
@@ -162,14 +162,12 @@ export function useNodeConnectorWiring(
         return;
       }
 
-      // An armed thread keeps chaining on plain clicks: Shift starts a chain,
-      // and the clicks after it should not each need the modifier.
+      // A click on a dot arms it, in every mode: place waits for a second dot to
+      // finish its one link, and thread and fan write on the *next* click and keep
+      // going. Arming is what makes "click this, then that" the same gesture as a drag.
       const thread = useLinkThreadStore.getState();
-      if (
-        thread.armed === null &&
-        !isChaining({ shiftKey: event?.shiftKey, ctrlKey: event?.ctrlKey, mode })
-      ) {
-        armThread(null);
+      if (thread.armed === null) {
+        armThread(clicked, "mode", mode);
         setSelectedConnector({ nodeId, connectorId });
         return;
       }
@@ -198,9 +196,11 @@ export function useNodeConnectorWiring(
           ...(step.link.to.kind === "card" ? { targetConnector: step.link.to.connectorId } : {}),
         });
       }
-      armThread(step.armed, by, shape);
+      // Place writes one link and lets go; thread moves its arm on, fan keeps it.
+      const next = shape === "place" ? null : step.armed;
+      armThread(next, by, shape);
       setSelectedConnector(
-        step.armed ? { nodeId: step.armed.id, connectorId: step.armed.connectorId } : null,
+        next ? { nodeId: next.id, connectorId: next.connectorId } : { nodeId, connectorId },
       );
     },
     [

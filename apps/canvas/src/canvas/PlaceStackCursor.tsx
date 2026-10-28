@@ -46,7 +46,14 @@ export function PlaceStackCursor() {
       event.stopPropagation();
       const queue = usePlaceStackStore.getState().queue;
       const lookup = placementLookup(workspace);
-      const item = resolveSelection(queue, lookup)[0];
+      const items = resolveSelection(queue, lookup);
+      // A card already on this board is not a card to place: pressing must not move
+      // what the reader already arranged, so the stack passes over it.
+      const item = items.find(
+        (entry) =>
+          entry.kind === "board" ||
+          workspace.getPlacement(activeBoardId, entry.cardId) === undefined,
+      );
       if (item === undefined) return;
       const at = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       // Centred on the pointer: "put it here" means the card appears under the hand.

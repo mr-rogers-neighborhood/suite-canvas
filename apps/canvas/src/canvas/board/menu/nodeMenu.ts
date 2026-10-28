@@ -17,12 +17,14 @@ export function selectionMenuBranch(ctx: BoardMenuContext): ContextMenuItem[] | 
     arrangeSelection,
     unplaceSelected,
     trashSelected,
+    openAppearance,
     selectedNodeIds,
   } = ctx;
   const menu = ctx.menu;
   const selection = selectionSummary(selectedNodeIds);
   if (!(menu.nodeId && selection.multiple && selection.ids.includes(menu.nodeId))) return null;
   const anchor = menu.flowPosition ?? { x: 0, y: 0 };
+  const at = { x: menu.x, y: menu.y };
   return [
     ...(canCreateContent
       ? [
@@ -103,6 +105,15 @@ export function selectionMenuBranch(ctx: BoardMenuContext): ContextMenuItem[] | 
           {
             label: "Remove from board",
             onSelect: () => unplaceSelected(),
+          },
+          {
+            // One panel for the whole selection, Mixed where they disagree: the same
+            // editor a single card and the inspector use, so nothing can drift.
+            label: `Appearance\u2026`,
+            onSelect: () => {
+              if (!menu.nodeId) return;
+              openAppearance({ kind: "card", id: menu.nodeId, ids: selection.ids, at });
+            },
           },
         ]
       : []),

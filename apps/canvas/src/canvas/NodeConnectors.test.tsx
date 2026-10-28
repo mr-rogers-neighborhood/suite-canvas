@@ -227,6 +227,90 @@ describe("connector reveal rule", () => {
   });
 });
 
+/**
+ * The three link gestures, driven the way a reader drives them: a click on a dot.
+ *
+ * A mode is only worth having if the clicks it names write the links it promises, so
+ * these assert the document rather than the button.
+ */
+describe("link gestures write what the mode promises", () => {
+  /**
+   * The document and the registers are module-level, shared by every test in this
+   * file: the links these tests draw and the arm they leave behind must not reach the
+   * next one, or a count of edges measures the order of the file.
+   */
+  afterEach(() => {
+    for (const edge of workspace.listEdges()) workspace.removeEdge(edge.id);
+    act(() => useLinkThreadStore.getState().clear());
+    useUiStore.setState({ mode: "place", selectedNodeIds: [] });
+  });
+
+  /** Clicks one dot of a card, by index, and waits for the arm to settle. */
+  const clickDot = (container: HTMLElement, cardId: string, index: number) => {
+    const dot = dotsOf(container, cardId)[index];
+    if (!dot) throw new Error(`no dot ${index} on ${cardId}`);
+    const target = dot.querySelector('[data-testid="connector-dot"]') ?? dot;
+    fireEvent.click(target as HTMLElement);
+  };
+
+  const linksOf = () =>
+    workspace
+      .listEdges()
+      .map(
+        (edge) =>
+          `${edge.source.slice(0, 4)}>${edge.target.slice(0, 4)},${edge.target.slice(0, 4)}>${edge.source.slice(0, 4)}`,
+      );
+
+  it("threads: a chain of clicks links each dot to the one before it", async () => {
+    const third = workspace.createCard({ boardId, position: { x: 900, y: 0 } });
+    const { container } = await mountSelected([NOTE_ID, PORTAL_ID, third.id]);
+    useUiStore.setState({ mode: "thread" });
+    await waitFor(() => expect(dotsOf(container, NOTE_ID).length).toBeGreaterThan(1));
+
+    clickDot(container, NOTE_ID, 1);
+    clickDot(container, PORTAL_ID, 3);
+    clickDot(container, third.id, 1);
+
+    await waitFor(() => expect(workspace.listEdges()).toHaveLength(2));
+    const pairs = linksOf();
+    expect(pairs.some((pair) => pair.includes(NOTE_ID.slice(0, 4)))).toBe(true);
+    expect(pairs.some((pair) => pair.includes(third.id.slice(0, 4)))).toBe(true);
+    useUiStore.setState({ mode: "place" });
+  });
+
+  it("fans: every click links back to the origin, not to the previous click", async () => {
+    const third = workspace.createCard({ boardId, position: { x: 900, y: 0 } });
+    const { container } = await mountSelected([NOTE_ID, PORTAL_ID, third.id]);
+    useUiStore.setState({ mode: "fan" });
+    await waitFor(() => expect(dotsOf(container, NOTE_ID).length).toBeGreaterThan(1));
+
+    clickDot(container, NOTE_ID, 1);
+    clickDot(container, PORTAL_ID, 3);
+    clickDot(container, third.id, 1);
+
+    await waitFor(() => expect(workspace.listEdges()).toHaveLength(2));
+    const hub = NOTE_ID.slice(0, 4);
+    for (const edge of workspace.listEdges()) {
+      expect([edge.source.slice(0, 4), edge.target.slice(0, 4)]).toContain(hub);
+    }
+    useUiStore.setState({ mode: "place" });
+  });
+
+  it("places: two clicks write one link, and two more never write a second over it", async () => {
+    const { container } = await mountSelected([NOTE_ID, PORTAL_ID]);
+    await waitFor(() => expect(dotsOf(container, NOTE_ID).length).toBeGreaterThan(1));
+
+    clickDot(container, NOTE_ID, 1);
+    clickDot(container, PORTAL_ID, 3);
+    await waitFor(() => expect(workspace.listEdges()).toHaveLength(1));
+
+    clickDot(container, NOTE_ID, 2);
+    clickDot(container, PORTAL_ID, 2);
+
+    await waitFor(() => expect(workspace.listEdges()).toHaveLength(1));
+  });
+});
+
 describe("connectors on every node kind", () => {
   it("should drag a portal's connector and persist the new position", async () => {
     const { container } = await mountSelected([PORTAL_ID]);

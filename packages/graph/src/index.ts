@@ -71,7 +71,8 @@ export {
   edgeEndpoints,
   edgeTouches,
   isSelfLink,
-  linkKey,
+  pairKey,
+  pairKeyOf,
   sameEndpoint,
 } from "./links.js";
 export type { TextRun } from "./loro/cards/richText.js";

@@ -627,12 +627,12 @@ export class WorkspaceDocument extends CardsFacade {
   }
 
   /**
-   * Adds the link a caller planned, or puts its dots on the line already there. A
-   * template or an import leaves an unpinned link between the same two things; a
-   * second pinned line beside it reads as a duplicate.
+   * Drops every link but one over each pair, keeping the most recently written: the
+   * one the reader drew last. Older documents accumulated copies while a link's
+   * identity was its dots; this heals them when a workspace is opened.
    */
-  linkEndpoints(input: CreateEdgeInput): GraphEdge | null {
-    return this.edgesApi.linkEndpoints(input);
+  pruneDuplicateLinks(): number {
+    return this.edgesApi.pruneDuplicateLinks();
   }
 
   listLinksTo(kind: EdgeEndpointKind, id: string): GraphEdge[] {

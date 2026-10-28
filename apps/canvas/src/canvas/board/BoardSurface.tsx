@@ -16,6 +16,7 @@ import { edgeTypes } from "../EdgeDescription";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../interactions/multiSelect";
 import { AboveLinkLayer } from "../links/AboveLinkLayer";
 import { useLinkThreadStore } from "../links/linkThread";
+import { ModeControl } from "../links/ModeControl";
 import { SectionLinkLayer } from "../links/SectionLinkLayer";
 import { LocalDragEase, prefersReducedMotion } from "../localEasing";
 import { nodeTypes } from "../NoteNode";
@@ -644,6 +645,7 @@ export function BoardSurface({
       <SnapGuideLayer guides={snapGuides} />
       <Background color="var(--rf-dot)" />
       <Controls showInteractive={false}>
+        <ModeControl />
         <PurposeControl />
         {/* Zoom to what is selected, inside the pill React Flow already draws:
             a readout and a grid switch in a second corner stack were a control

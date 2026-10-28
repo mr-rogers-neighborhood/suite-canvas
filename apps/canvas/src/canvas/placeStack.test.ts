@@ -20,6 +20,13 @@ describe("the place stack", () => {
     expect(usePlaceStackStore.getState().queue).toEqual(["a", "b"]);
   });
 
+  it("retires a board and every portal of it in one press", () => {
+    usePlaceStackStore.getState().start(["board", "portal", "note"]);
+    // The press placed the portal that opens `board`, so both ids are done.
+    usePlaceStackStore.getState().remove(["board", "portal"]);
+    expect(usePlaceStackStore.getState().queue).toEqual(["note"]);
+  });
+
   it("empties on stop, and an empty pick puts nothing in hand", () => {
     usePlaceStackStore.getState().start(["a"]);
     usePlaceStackStore.getState().stop();

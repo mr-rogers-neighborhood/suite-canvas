@@ -84,11 +84,29 @@ A link is one `GraphEdge`. Both ends name a node and optionally a connector:
 SVG path with no React, Loro or DOM in sight. The edge component, the section-link layer and the tests
 all call the same functions, which is what keeps a preview and the finished link on the same curve.
 
-A line left without dots by a template, an import, a paste or a quick connect is *unpinned*.
-`WorkspaceDocument.linkEndpoints` puts chosen dots on the record that is already there rather than
-drawing a second line beside it: a pinned line next to an unpinned one is two lines between the same
-pair on screen, which reads as a duplicate the reader cannot undo on its own. Two links between the same
-pair on *different* dots is still two links, because that is a difference the reader can mean.
+A link is **one relationship per pair, per board**. Its identity is the two things it joins, not the
+dots it happens to attach to and not its direction (`pairKey` in `links.ts`). `addEdge` is therefore an
+upsert: asking for a link two things already have re-points that line at the dots named and returns the
+same record.
+
+The rule exists because the opposite one was indistinguishable from a bug. Unplacing a card keeps its
+links, so while identity was the dots, every place, unplace and re-place that left a card on a different
+side wrote *another* relationship between the same two things: a fan grew an extra spoke, a thread grew
+an extra hop, and the board filled with lines no single gesture had drawn.
+
+The corollaries are the whole of the lifecycle:
+
+| Action | What happens to the links |
+| --- | --- |
+| Re-link the same pair | the existing line takes the new dots |
+| Unplace a card | links stay; they simply cannot draw while an end is off the board |
+| Move a card to another board | the links it had on the board it left are deleted, because a link is a relationship *on* a board |
+| Trash a card | the links that touch it are deleted with it, one undo step |
+| Restore a trashed card | the card returns alone |
+| Purge a card | unchanged: its links go |
+
+Documents written under the old rule held several links over one pair, so `pruneDuplicateLinks()` runs
+once when a workspace opens, keeping the most recently written line of each pair.
 
 A board end has no position, so it draws through the first portal card pointing at that board. With no
 portal on the board there is no line, and the link survives in the inspector. A link whose two ends are
@@ -98,9 +116,23 @@ Peers see link gestures live. `useBoardNodes` hides the shared edge while a peer
 ends, and `presence/PeerReconnectLayer.tsx` draws the dashed preview from the same path helper, so the
 two never stack.
 
-`board/useBoardLinks.ts` owns the four link gestures: the thread a click starts
-(`links/linkThread.ts`), the drag that creates a link, re-attaching an end, and sliding a label. Each
-publishes its live state to peers and writes only on release.
+`board/useBoardLinks.ts` owns the link gestures: the drag that creates one, re-attaching an end, and
+sliding a label. Each publishes its live state to peers and writes only on release.
+
+### The link tool
+
+Three modes, chosen from a three-segment control in the widget pill (`links/ModeControl.tsx`), and a
+mode only decides what a click on a dot does:
+
+| Mode | A click on a dot | The shape it draws |
+| --- | --- | --- |
+| `place` | arms it; the next dot on another thing writes one link and lets go | one line |
+| `thread` | links from the armed dot and arms the dot just clicked | a chain, A→B, B→C |
+| `fan` | links from the armed dot and keeps it armed | a hub, A→B, A→C |
+
+Shift chains and Control fans for one gesture without leaving the mode, and Escape walks the mode back
+to `place`. This is `links/linkThread.ts` (`stepLink`, `stepThread`, `stepFan`), pure and unit-tested;
+nothing about it places cards. There is no run, no queue and no held stack behind a mode.
 
 ## Gestures and input ownership
 
@@ -153,15 +185,21 @@ deliberately small: `explore` is the resting state and needs no button, and `exp
 reader chooses from the canvas itself.
 
 There is no placement run: no shapes, no anchors, no bar. Cards are placed one at a time, by a drop, a
-dock action, a double-click, or from a stack — pick rows in the library, press "Place cards", and the
-stack follows the pointer, one press per card (`canvas/placeStack.ts`, `canvas/PlaceStackCursor.tsx`).
+dock action, a double-click, or from a stack — pick rows in the library, press `Place N`, and the stack
+follows the pointer, one press per card (`canvas/placeStack.ts`, `canvas/PlaceStackCursor.tsx`).
 Dragging a picked row out of the drawer carries the whole pick, and the drop's dashed outline is the
-card's own box at the current zoom, so where it is drawn is where it lands. A link is drawn by dragging
-from a dot, or clicking one dot and then another; `place`, `thread` and `fan` survive only as the
-internal names of those gesture shapes (`links/linkThread.ts`).
+card's own box at the current zoom, so where it is drawn is where it lands.
 
-The appearance panel is one panel: right-clicking a card inside a selection edits the whole selection,
-and nothing opens on its own when a second card is picked (`app/AppearanceHost.tsx`).
+A card that is already on this board is not a card to place: the stack and the drop pass over it and
+leave it where the reader put it, and the stack's count is the number of presses that will actually
+happen. Placing many cards should never rearrange the ones already there.
+
+One card, one placement, per board: a placement is keyed `boardId:cardId` and a React Flow node is a
+card, so *several* placements of one card on one board is a model change of its own, not a side effect
+of a fix.
+
+The appearance panel is one panel: right-clicking a card inside a selection opens it for the whole
+selection (`app/AppearanceHost.tsx`), and nothing opens on its own when a second card is picked.
 
 ## Camera and viewport
 

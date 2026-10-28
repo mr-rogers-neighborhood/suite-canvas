@@ -344,6 +344,19 @@ function WorkspaceShell({
    * The previous value is a ref so a callback that changes identity cannot start a
    * second recording; the purpose itself is the trigger.
    */
+  /**
+   * A workspace heals once per session: older documents accumulated copies of the same
+   * relationship while a link's identity was its dots, and the first load is where they
+   * can be folded back into one line per pair. Skipped for a viewer, whose copy of the
+   * document is not theirs to rewrite.
+   */
+  const pruned = useRef(false);
+  useEffect(() => {
+    if (pruned.current || !ready || !canEditLayout) return;
+    pruned.current = true;
+    workspace.pruneDuplicateLinks();
+  }, [ready, canEditLayout, workspace]);
+
   const previousPurpose = useRef<CanvasPurpose>(purpose);
   useEffect(() => {
     if (previousPurpose.current === purpose) return;
@@ -384,7 +397,13 @@ function WorkspaceShell({
       if (!activeBoardId || !canEditLayout) return;
       const lookup = placementLookup(workspace);
       const items = resolveSelection(cardIds, lookup);
-      items.forEach((item, index) => {
+      // A card already on this board keeps the place the reader gave it: a drop adds
+      // what is missing rather than rearranging what is there.
+      const missing = items.filter(
+        (item) =>
+          item.kind === "board" || workspace.getPlacement(activeBoardId, item.cardId) === undefined,
+      );
+      missing.forEach((item, index) => {
         const stepped = { x: point.x + 24 * index, y: point.y + 24 * index };
         if (item.kind === "board") {
           const existing = lookup.portalFor(item.boardId);
@@ -761,7 +780,18 @@ function WorkspaceShell({
       setBoardTemplate={setBoardTemplate}
       setLibraryTab={setLibraryTab}
       placeCard={placeCard}
-      startPlaceStack={(cardIds) => usePlaceStackStore.getState().start(cardIds)}
+      startPlaceStack={(cardIds) => {
+        // Only what is not already here goes in the hand: the count on the stack is
+        // then the number of presses the reader will actually make.
+        const lookup = placementLookup(workspace);
+        const missing = cardIds.filter(
+          (id) =>
+            lookup.isBoard(id) ||
+            activeBoardId === null ||
+            workspace.getPlacement(activeBoardId, id) === undefined,
+        );
+        usePlaceStackStore.getState().start(missing);
+      }}
       onDropSelection={onDropSelection}
       toggleLibraryType={toggleLibraryType}
       toggleLibraryTag={toggleLibraryTag}

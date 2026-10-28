@@ -210,7 +210,7 @@ describe("moveCardToBoard", () => {
     expect(workspace.getPlacement("board-1", card.id)).toBeDefined();
   });
 
-  it("should leave an edge dormant when its other endpoint stays behind", () => {
+  it("should take the edge with the card when it leaves the board", () => {
     const { workspace, board, other, card } = setup();
     const second = workspace.createCard({ boardId: board.id, position: { x: 300, y: 50 } });
     const edge = workspace.addEdge({ boardId: board.id, source: card.id, target: second.id });
@@ -219,15 +219,12 @@ describe("moveCardToBoard", () => {
 
     workspace.moveCardToBoard(card.id, other.id);
 
-    // Dormant, not deleted: the workspace still holds the link.
+    // A link is a relationship on the board it was drawn on. Once the card has left,
+    // the line can never draw again, and keeping it meant the pair looked connected
+    // twice after the next link was made on the new board.
     expect(workspace.listBoardEdges(board.id)).toEqual([]);
-    expect(workspace.listEdges().map((entry) => entry.id)).toEqual([edge?.id]);
+    expect(workspace.listEdges()).toEqual([]);
     expect(workspace.listBoardCards(other.id).map((entry) => entry.id)).toEqual([card.id]);
-
-    workspace.moveCardToBoard(card.id, board.id);
-
-    expect(workspace.listBoardEdges(board.id).map((entry) => entry.id)).toEqual([edge?.id]);
-    expect(workspace.listEdges()).toHaveLength(1);
   });
 
   it("should converge across peers", () => {

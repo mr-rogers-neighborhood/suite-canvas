@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { edgeEndpoints, edgeTouches, isSelfLink, linkKey, sameEndpoint } from "./links.js";
+import { edgeEndpoints, edgeTouches, isSelfLink, pairKey, sameEndpoint } from "./links.js";
 import type { GraphEdge } from "./schema.js";
 
 function edge(overrides: Partial<GraphEdge> = {}): GraphEdge {
@@ -60,22 +60,28 @@ describe("edgeTouches", () => {
   });
 });
 
-describe("linkKey", () => {
-  it("ignores direction, so the same connection drawn backwards is a duplicate", () => {
+describe("pairKey", () => {
+  it("ignores direction, so the same pair drawn backwards is one relationship", () => {
     const forward = edge({ id: "one" });
     const backward = edge({ id: "two", source: "b", target: "a" });
-    expect(linkKey(forward)).toBe(linkKey(backward));
+    expect(pairKey(forward)).toBe(pairKey(backward));
   });
 
-  it("separates links that attach to different connectors", () => {
+  it("ignores the dots, because where a line attaches is not what it means", () => {
     const plain = edge({ id: "one" });
-    const anchored = edge({ id: "one", sourceConnector: "c1" });
-    expect(linkKey(plain)).not.toBe(linkKey(anchored));
+    const anchored = edge({ id: "one", sourceConnector: "c1", targetConnector: "c2" });
+    expect(pairKey(plain)).toBe(pairKey(anchored));
   });
 
   it("separates endpoints that share an id but differ in kind", () => {
     const card = edge({ id: "one", source: "shared" });
     const board = edge({ id: "one", source: "shared", sourceKind: "board" });
-    expect(linkKey(card)).not.toBe(linkKey(board));
+    expect(pairKey(card)).not.toBe(pairKey(board));
+  });
+
+  it("separates the same pair on two boards", () => {
+    const here = edge({ id: "one", boardId: "board-1" });
+    const there = edge({ id: "two", boardId: "board-2" });
+    expect(pairKey(here)).not.toBe(pairKey(there));
   });
 });

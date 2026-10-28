@@ -367,7 +367,7 @@ describe("WorkspaceDocument edges", () => {
     expect(workspace.listBoardEdges(board.id)).toHaveLength(1);
   });
 
-  it("hides edges that touch a trashed card", () => {
+  it("takes a trashed card's links with it, and restoring brings the card back alone", () => {
     const workspace = new WorkspaceDocument();
     const board = workspace.createBoard();
     const a = workspace.createCard({ boardId: board.id });
@@ -376,9 +376,13 @@ describe("WorkspaceDocument edges", () => {
 
     workspace.trashCard(b.id);
 
+    expect(workspace.listEdges()).toHaveLength(0);
     expect(workspace.listBoardEdges(board.id)).toHaveLength(0);
+    // The card comes back; the relationship does not. A link to something in the trash
+    // is not a relationship the reader can see, and keeping it is what grew a second
+    // line every time the card was linked again.
     workspace.restoreCard(b.id);
-    expect(workspace.listBoardEdges(board.id)).toHaveLength(1);
+    expect(workspace.listBoardEdges(board.id)).toHaveLength(0);
   });
 
   it("stores where a label sits along the link, clamped, and clears it", () => {
@@ -446,9 +450,11 @@ describe("WorkspaceDocument connectors", () => {
     const workspace = new WorkspaceDocument();
     const source = workspace.createCard({ boardId: DEFAULT_BOARD_ID });
     const target = workspace.createCard({ boardId: DEFAULT_BOARD_ID });
-    const [anchored, other] = source.connectors;
+    const elsewhere = workspace.createCard({ boardId: DEFAULT_BOARD_ID });
+    const [anchored] = source.connectors;
     const [destination] = target.connectors;
-    if (!anchored || !other || !destination) throw new Error("expected connectors");
+    const [awayEnd] = elsewhere.connectors;
+    if (!anchored || !destination || !awayEnd) throw new Error("expected connectors");
 
     const dropped = workspace.addEdge({
       boardId: DEFAULT_BOARD_ID,
@@ -457,18 +463,21 @@ describe("WorkspaceDocument connectors", () => {
       sourceConnector: anchored.id,
       targetConnector: destination.id,
     });
+    // A second relationship, to a different thing, so deleting the dot cannot take it.
     const kept = workspace.addEdge({
       boardId: DEFAULT_BOARD_ID,
       source: source.id,
-      target: target.id,
-      sourceConnector: other.id,
-      targetConnector: destination.id,
+      target: elsewhere.id,
+      sourceConnector: anchored.id,
+      targetConnector: awayEnd.id,
     });
 
     workspace.removeConnector(source.id, anchored.id);
 
     expect(workspace.getEdge(dropped?.id ?? "")).toBeUndefined();
-    expect(workspace.getEdge(kept?.id ?? "")).toBeDefined();
+    expect(workspace.getEdge(kept?.id ?? "")).toBeUndefined();
+    // Both left with the dot they hung from: a link has no dangling end.
+    expect(workspace.listEdges()).toHaveLength(0);
   });
 
   it("hides links whose connector no longer exists", () => {

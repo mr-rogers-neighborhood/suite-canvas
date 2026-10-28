@@ -16,14 +16,28 @@ export interface LinkEndpointRef {
  * (ADR-0061,
  * ADR-0063).
  *
- * One slot serves both gestures, because a click cannot mean two things: as a
- * *link* tool `place` drags one link, `thread` chains from the previous endpoint
- * and `fan` links every click from one fixed origin; as a *placement* tool the
- * same four make a single drop, a chain, spokes and a tree. `branch` is the
- * fourth shape — a chain that branches — and is placement-only today.
+ * The mode is the *link* tool: `place` draws one link per pair of clicks, `thread`
+ * chains from the dot just clicked, and `fan` links every click from one fixed origin.
+ * Dragging from a dot to a dot draws one link in any mode.
  */
 export const canvasModes = ["place", "thread", "fan"] as const;
 export type CanvasMode = (typeof canvasModes)[number];
+
+/** What each mode does to a click on a dot: the label, and the sentence behind it. */
+export const MODE_NAMES: Record<CanvasMode, { label: string; title: string }> = {
+  place: {
+    label: "Place",
+    title: "Place: click two dots to draw one link",
+  },
+  thread: {
+    label: "Thread",
+    title: "Thread: each click chains from the dot you just clicked",
+  },
+  fan: {
+    label: "Fan",
+    title: "Fan: every click links from the same origin dot",
+  },
+};
 
 /** True for the modes that keep drawing instead of placing one thing at a time. */
 export function isChainingMode(mode: CanvasMode): boolean {

@@ -227,9 +227,9 @@ describe("link endpoint matrix", () => {
             targetKind: sourceKind,
             sourceConnector: target.connectors[1],
             targetConnector: source.connectors[0],
-          }),
-        ).toBeNull();
-        // A different dot is a different connection, not a duplicate.
+          })?.id,
+        ).toBe(first.id);
+        // A different dot re-points the same relationship rather than adding another.
         const other = workspace.addEdge({
           boardId: home.id,
           source: source.id,
@@ -239,14 +239,15 @@ describe("link endpoint matrix", () => {
           sourceConnector: source.connectors[0],
           targetConnector: target.connectors[2] ?? target.connectors[0],
         });
-        expect(other).not.toBeNull();
+        expect(other?.id).toBe(first.id);
+        expect(workspace.listLinksTo(sourceKind, source.id)).toHaveLength(1);
       }
     }
   });
 });
 
-describe("several links between the same two things", () => {
-  it("keeps one connection per pair of dots", () => {
+describe("one link per pair", () => {
+  it("keeps one relationship however many dots it is drawn between", () => {
     const { workspace, home, endpoint } = fixture();
     const card = endpoint("card", 0);
     const section = endpoint("section", 1);
@@ -264,16 +265,20 @@ describe("several links between the same two things", () => {
         targetKind: "section",
         targetConnector: toDot,
       });
-      if (!edge) throw new Error("expected every distinct dot pair to be kept");
+      if (!edge) throw new Error("expected the link");
       created.push(edge.id);
     }
-    expect(created).toHaveLength(3);
-    // One entity, one inspector row: the model keeps them, the reading groups them.
-    expect(workspace.listLinksTo("card", card.id)).toHaveLength(3);
-    expect(workspace.listLinksTo("section", section.id)).toHaveLength(3);
+    // The same record every time: where the line attaches moved, the relationship did not.
+    expect(new Set(created).size).toBe(1);
+    expect(workspace.listLinksTo("card", card.id)).toHaveLength(1);
+    // And it takes the dots of the last call, so the line points where it was last drawn.
+    const [edge] = workspace.listLinksTo("card", card.id);
+    expect(edge?.source === card.id ? edge.sourceConnector : edge?.targetConnector).toBe(
+      card.connectors[1],
+    );
   });
 
-  it("refuses the same pair of dots twice, whichever way round it is drawn", () => {
+  it("refuses a second link whichever way round it is drawn, dots or none", () => {
     const { workspace, home, endpoint } = fixture();
     const card = endpoint("card", 0);
     const section = endpoint("section", 1);
@@ -286,35 +291,16 @@ describe("several links between the same two things", () => {
       targetConnector: section.connectors[3],
     });
     if (!first) throw new Error("expected the first link");
-    expect(
-      workspace.addEdge({
-        boardId: home.id,
-        source: section.id,
-        sourceKind: "section",
-        sourceConnector: section.connectors[3],
-        target: card.id,
-        targetConnector: card.connectors[0],
-      }),
-    ).toBeNull();
-  });
-
-  it("lets one dot fan out to several dots of the same other entity", () => {
-    const { workspace, home, endpoint } = fixture();
-    const card = endpoint("card", 0);
-    const section = endpoint("section", 1);
-    for (const dot of section.connectors.slice(0, 3)) {
-      expect(
-        workspace.addEdge({
-          boardId: home.id,
-          source: card.id,
-          sourceConnector: card.connectors[2],
-          target: section.id,
-          targetKind: "section",
-          targetConnector: dot,
-        }),
-      ).not.toBeNull();
-    }
-    expect(workspace.listLinksTo("card", card.id)).toHaveLength(3);
+    const second = workspace.addEdge({
+      boardId: home.id,
+      source: section.id,
+      sourceKind: "section",
+      sourceConnector: section.connectors[3],
+      target: card.id,
+      targetConnector: card.connectors[0],
+    });
+    expect(second?.id).toBe(first.id);
+    expect(workspace.listLinksTo("card", card.id)).toHaveLength(1);
   });
 });
 

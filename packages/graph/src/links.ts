@@ -70,14 +70,24 @@ export function isSelfLink(
 }
 
 /**
- * Identity of a drawn connection, ignoring direction: two links between the
- * same endpoints on the same connectors are duplicates.
+ * Identity of a relationship: the two things it joins, on one board.
+ *
+ * Not the dots. A link is a fact about a pair — "this note supports that concept" —
+ * and re-drawing it somewhere else on the cards is the same fact, not a new one. Keying
+ * by the dots meant every place, unplace and re-place that put a card on a different
+ * side wrote another relationship between the same two things, which drew as a pile of
+ * lines and read as a bug in the gesture that made them.
+ *
+ * The board is part of the key, because two boards hold two independent sets of
+ * relationships over the same cards.
  */
-export function linkKey(edge: GraphEdge): string {
-  const ends = edgeEndpoints(edge);
-  const describe = (endpoint: LinkEndpoint, connectorId?: string) =>
-    `${endpoint.kind}:${endpoint.id}:${connectorId ?? ""}`;
-  const left = describe(ends.source, edge.sourceConnector);
-  const right = describe(ends.target, edge.targetConnector);
-  return [left, right].sort().join("|");
+export function pairKey(edge: GraphEdge): string {
+  return pairKeyOf(edge.boardId, edgeEndpoints(edge).source, edgeEndpoints(edge).target);
+}
+
+/** `pairKey` for endpoints that are not a record yet: what `addEdge` is about to write. */
+export function pairKeyOf(boardId: string, source: LinkEndpoint, target: LinkEndpoint): string {
+  const describe = (endpoint: LinkEndpoint) => `${endpoint.kind}:${endpoint.id}`;
+  const ends = [describe(source), describe(target)].sort();
+  return `${boardId}|${ends[0]}|${ends[1]}`;
 }

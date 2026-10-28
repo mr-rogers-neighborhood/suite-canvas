@@ -90,3 +90,57 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/*
+ * The link tool: three segments in the widget pill, each painted by its value
+ * (`--value-place-*`, `--value-thread-*`, `--value-fan-*`) so the active one is the
+ * colour that value already means everywhere else. The pill owns the chrome.
+ */
+/*
+ * The mode names are words, not glyphs, so the pill widens to hold them: a 26px column
+ * cannot say "Thread" and an icon for it would need a legend. Every segment shares the
+ * new width, so the camera controls stay centred in one column.
+ */
+.react-flow__controls:has(.link-mode-control) {
+  width: 58px;
+}
+
+/* The camera and zoom segments stay one centred column inside the wider pill. */
+.react-flow__controls:has(.link-mode-control) .react-flow__controls-button {
+  margin-inline: auto;
+}
+
+.link-mode-control {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.link-mode-control__segment {
+  width: 100%;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 10px;
+  letter-spacing: 0.01em;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.link-mode-control__segment[data-active="true"] {
+  background: var(--value-fill);
+  color: var(--value-ink);
+  font-weight: 600;
+}
+
+.link-mode-control__segment:hover {
+  background: color-mix(in srgb, var(--value-hue) 12%, transparent);
+}
+
+.link-mode-control__segment[data-active="true"]:hover {
+  background: color-mix(in srgb, var(--value-hue) 12%, var(--value-fill));
+}

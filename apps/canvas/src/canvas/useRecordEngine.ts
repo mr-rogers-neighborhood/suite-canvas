@@ -10,7 +10,7 @@ import { planRecordClick, useRecordRunStore } from "./recordRun";
  * (ADR-0058
  * amendment, ADR-0064 §9).
  *
- * The sibling of `usePlacementEngine`: a hook, because the canvas captures the
+ * A hook rather than a prop, because the canvas captures the
  * click while the control and the Steps panel read the same run, and it reads the
  * stores itself so a caller cannot forget the document or the gesture. Recording
  * is gesture state; the steps it writes are document truth and go through

@@ -346,7 +346,7 @@ describe("WorkspaceDocument trash", () => {
 });
 
 describe("WorkspaceDocument edges", () => {
-  it("only draws edges whose endpoints are placed on the board", () => {
+  it("takes a card's links when it leaves the board, and does not bring them back", () => {
     const workspace = new WorkspaceDocument();
     const board = workspace.createBoard();
     const other = workspace.createBoard();
@@ -358,13 +358,15 @@ describe("WorkspaceDocument edges", () => {
     expect(workspace.listBoardEdges(board.id)).toHaveLength(1);
     expect(workspace.listBoardEdges(other.id)).toHaveLength(0);
 
-    // Dormant, not deleted: the link survives a detour through the inbox.
+    // A link is a relationship *on* a board, so an end leaving the board ends it. The
+    // record used to stay dormant and come back with the card, which is what made a
+    // re-placed stack look like it had drawn a link twice.
     workspace.unplaceCard(board.id, b.id);
     expect(workspace.listBoardEdges(board.id)).toHaveLength(0);
-    expect(workspace.getEdge(edge.id)).toBeDefined();
+    expect(workspace.getEdge(edge.id)).toBeUndefined();
 
     workspace.placeCard(board.id, b.id, { x: 0, y: 0 });
-    expect(workspace.listBoardEdges(board.id)).toHaveLength(1);
+    expect(workspace.listBoardEdges(board.id)).toHaveLength(0);
   });
 
   it("takes a trashed card's links with it, and restoring brings the card back alone", () => {

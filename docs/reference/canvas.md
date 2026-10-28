@@ -99,7 +99,7 @@ The corollaries are the whole of the lifecycle:
 | Action | What happens to the links |
 | --- | --- |
 | Re-link the same pair | the existing line takes the new dots |
-| Unplace a card | links stay; they simply cannot draw while an end is off the board |
+| Unplace a card | the links that touch it on that board are deleted with the placement, one undo step |
 | Move a card to another board | the links it had on the board it left are deleted, because a link is a relationship *on* a board |
 | Trash a card | the links that touch it are deleted with it, one undo step |
 | Restore a trashed card | the card returns alone |
@@ -109,8 +109,10 @@ Documents written under the old rule held several links over one pair, so `prune
 once when a workspace opens, keeping the most recently written line of each pair.
 
 A board end has no position, so it draws through the first portal card pointing at that board. With no
-portal on the board there is no line, and the link survives in the inspector. A link whose two ends are
-not both on this board is not drawn at all; the record is untouched.
+portal on the board there is no line, and the link survives in the inspector: the relation is with the
+board, which is still there. A link to a *card* is different, which is why unplacing a card deletes its
+links: a dormant record that came back with the card read as a second line every time the pair was
+linked again. A link whose two ends are not both on this board is not drawn at all.
 
 Peers see link gestures live. `useBoardNodes` hides the shared edge while a peer re-attaches one of its
 ends, and `presence/PeerReconnectLayer.tsx` draws the dashed preview from the same path helper, so the

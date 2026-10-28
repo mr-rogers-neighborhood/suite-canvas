@@ -183,7 +183,22 @@ export function placementsMethods(ctx: DocContext) {
       return extra.length;
     },
 
+    /**
+     * Take a card off a board, and with it every link that touched it there.
+     *
+     * A link is a relationship *on* a board, between two things drawn on it, so taking
+     * one end off the board ends the relationship. Keeping the record made a re-place
+     * bring an old line back: thread three cards, take them off, fan the same three, and
+     * the thread's last line reappeared beside the fan's spokes, which read as one press
+     * writing two links.
+     */
     unplaceCard(boardId: string, cardId: string): void {
+      const edges = ctx.api.edges
+        .listEdges()
+        .filter(
+          (edge) => edge.boardId === boardId && (edge.source === cardId || edge.target === cardId),
+        );
+      for (const edge of edges) ctx.edges.delete(edge.id);
       ctx.placements.delete(placementKey(boardId, cardId));
       ctx.commit(`${STRUCT_ORIGIN}unplace-card`);
     },

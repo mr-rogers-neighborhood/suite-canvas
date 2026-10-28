@@ -5,6 +5,12 @@
 # `.backup` command, which takes a read lock and writes a consistent single
 # file (including whatever is still in the write-ahead log).
 #
+# Accounts, organizations, invitations, starter templates and the panel's settings live in
+# Postgres, not in a SQLite store, so the snapshot also carries a `control-plane.sql` dump,
+# taken through the compose database service. Restoring without it brings the documents back
+# and leaves every account behind. `SUITE_POSTGRES_SERVICE`, `POSTGRES_USER` and `POSTGRES_DB`
+# name the service and the role the dump uses.
+#
 # The share database holds the share rows and the draft baselines
 # (`share_baselines`); the document database holds the workspace snapshots and
 # the projected share documents (`share-*` rooms); the attachments database
@@ -247,12 +253,43 @@ EOF
   printf 'file\tname\tsource\tbytes\tsha256\n'
 } >"$MANIFEST"
 
+# The control plane's own database: accounts, organizations, invitations, starter templates
+# and the panel's settings. It lives in Postgres, so the dump comes from the database
+# service rather than from the app volume — `postgres:17-alpine` ships `pg_dump`, and the
+# host needs no client of its own.
+dump_control_plane() {
+  local service=${SUITE_POSTGRES_SERVICE:-postgres}
+  local user=${POSTGRES_USER:-suite}
+  local database=${POSTGRES_DB:-suite}
+  local running=""
+  if command -v docker >/dev/null 2>&1; then
+    running=$(docker compose ps --status running --quiet "$service" 2>/dev/null || true)
+  fi
+  if [ -z "$running" ]; then
+    printf 'warning: the %s service is not running; accounts, templates and settings are not in this snapshot\n' "$service" >&2
+    printf 'file\tcontrol-plane\t-\tmissing\t-\n' >>"$MANIFEST"
+    return 0
+  fi
+  if ! docker compose exec -T "$service" pg_dump --no-owner --no-privileges -U "$user" -d "$database" \
+    >"$DEST/control-plane.sql" 2>"$DEST/control-plane.err"; then
+    printf 'error: pg_dump failed in the %s service; see %s\n' "$service" "$DEST/control-plane.err" >&2
+    exit 1
+  fi
+  rm -f "$DEST/control-plane.err"
+  printf 'file\tcontrol-plane\t%s\t%s\t%s\n' \
+    "$DEST/control-plane.sql" "$(bytes_of "$DEST/control-plane.sql")" \
+    "$(checksum "$DEST/control-plane.sql")" >>"$MANIFEST"
+  printf 'dumped the control plane (%s bytes)\n' "$(bytes_of "$DEST/control-plane.sql")"
+}
+
 snapshot documents "$DOCUMENTS_DB"
 snapshot shares "$SHARES_DB"
 snapshot workspaces "$WORKSPACES_DB"
 snapshot settings "$SETTINGS_DB"
 snapshot licences "$LICENCES_DB"
 snapshot attachments "$ATTACHMENTS_DB"
+# The control plane last: a SQLite failure should stop the run before the dump costs time.
+dump_control_plane
 
 {
   # Row count and payload bytes per table, so a restore can tell "readable" from
@@ -288,6 +325,12 @@ snapshot attachments "$ATTACHMENTS_DB"
     printf 'counts\tattachments\t%s\t%s\n' \
       "$(count_in "$DEST/attachments.sqlite" attachments)" \
       "$(bytes_in "$DEST/attachments.sqlite" "SELECT COALESCE(SUM(size), 0) FROM attachments;")"
+  fi
+  if [ -f "$DEST/control-plane.sql" ]; then
+    # Tables, not rows: counting rows needs a psql connection and the dump is the record.
+    printf 'counts\tcontrol_plane_dump\t%s\t%s\n' \
+      "$(grep -c '^CREATE TABLE' "$DEST/control-plane.sql" 2>/dev/null || printf '0')" \
+      "$(bytes_of "$DEST/control-plane.sql")"
   fi
   printf '\nattachment_ids\tsha256\t%s\n' "$(attachment_digest "$DEST/attachments.sqlite")"
 } >>"$MANIFEST"

@@ -62,6 +62,10 @@ const OVERRIDES = {
   // can admit an account by hand and read the list back; `SUITE_ADMISSION_REQUIRED`
   // stays off, so nothing is held unless someone turns the queue on.
   SUITE_ADMIN_TOKEN: randomBytes(32).toString("base64url"),
+  // The settings table encrypts every secret it holds. Generated here so the panel
+  // can store a Stripe key on the first run; without it a secret write is refused
+  // rather than stored in the clear.
+  SUITE_SETTINGS_KEY: randomBytes(32).toString("base64url"),
   SUITE_APP_URL: APP_ORIGIN,
   SUITE_MAIL_TRANSPORT: "console",
 };
@@ -94,10 +98,8 @@ function main() {
   console.log("  pnpm dev:db     # Postgres on 127.0.0.1:5433");
   console.log("  pnpm dev        # canvas :5173, relay :1234/:1235, control plane :1236");
   console.log("");
-  console.log("Billing needs three more values, which `pnpm stripe` prints once you");
-  console.log("have run `stripe login`: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET and");
-  console.log("STRIPE_PRICE_TIERS. Add them, set SUITE_BILLING_ENABLED=1, restart,");
-  console.log("then run `pnpm stripe --listen` in a fourth terminal.");
+  console.log("Billing is now configured from the admin panel at /admin: set the Stripe");
+  console.log("keys, pick test or live, and turn billing on. Nothing to restart.");
   return 0;
 }
 

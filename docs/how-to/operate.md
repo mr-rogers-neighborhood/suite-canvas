@@ -267,7 +267,14 @@ dead-man's switch on the successful run. Suite ships no agent, no SDK and no cal
 ## Backups
 
 `deploy/backup.sh` snapshots all six stores with SQLite's online backup, which stays consistent while
-the server runs and includes whatever is still in the `-wal` file:
+the server runs and includes whatever is still in the `-wal` file, and it dumps the control plane's
+Postgres database beside them. Accounts, organizations, invitations, starter templates and the panel's
+settings live there; a snapshot without them restores the documents and leaves every account behind.
+
+The dump runs through the compose database service, whose image ships `pg_dump`, so neither the host nor
+the app image needs a Postgres client. `SUITE_POSTGRES_SERVICE`, `POSTGRES_USER` and `POSTGRES_DB` name
+the service and role it uses, and the manifest records the dump's table count and checksum beside the
+stores:
 
 ```sh
 deploy/backup.sh                 # writes backups/suite-<UTC timestamp>/
@@ -293,6 +300,15 @@ Schedule it off-host. One cron entry is enough; the script fails loudly (non-zer
   SUITE_BACKUP_BUCKET=s3://suite-backups SUITE_BACKUP_PREFIX=suite \
   SUITE_BACKUP_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com \
   deploy/backup.sh /srv/backups >> /var/log/suite-backup.log 2>&1
+```
+
+Rehearse the restore as well as the snapshot. `pnpm drill:backup` seeds six throwaway stores, runs the
+real backup script over them, copies the snapshot into a fresh directory and compares the row counts, so
+a snapshot that verifies but comes back empty fails the drill rather than at the moment it is needed:
+
+```sh
+pnpm drill:backup          # cleans up after itself
+pnpm drill:backup --keep   # leaves the snapshot and the restored copy in a temp directory
 ```
 
 Every run verifies itself before it is trusted: `PRAGMA integrity_check` per store, a SHA-256 per file, a row count per table, and a SHA-256 over the sorted attachment ids. A snapshot that fails any of those never reaches the bucket.

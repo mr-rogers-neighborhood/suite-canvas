@@ -304,6 +304,26 @@ docker run --rm \
     done
     ls -l /data'
 
+# The control plane's database, when the snapshot carries one. It goes back through the
+# database service, the same way it came out, so neither the host nor the app image needs a
+# Postgres client.
+restore_control_plane() {
+  local dump="$SNAPSHOT/control-plane.sql"
+  [ -f "$dump" ] || {
+    printf 'warning: this snapshot has no control-plane dump; accounts, organizations, templates and panel settings stay as they are\n' >&2
+    return 0
+  }
+  local service=${SUITE_POSTGRES_SERVICE:-postgres}
+  local user=${POSTGRES_USER:-suite}
+  local database=${POSTGRES_DB:-suite}
+  printf 'restoring the control plane from control-plane.sql...\n'
+  docker compose exec -T "$service" psql --quiet --no-psqlrc -v ON_ERROR_STOP=1 -U "$user" -d "$database" \
+    <"$dump" >/dev/null
+  printf '  restored  control-plane.sql\n'
+}
+
+restore_control_plane
+
 printf 'starting app...\n'
 restart_app
 trap - ERR
@@ -363,6 +383,7 @@ Restore complete. Check next:
   docker compose exec app ls -l /data
 
 All six stores were restored together: documents, shares, workspaces, settings,
-licences and attachments. The last three are why the volume is replaced as a
-set — quotas revert, paid workspaces unlink and images break when one is stale.
+licences and attachments, plus the control plane's own database when the snapshot
+carried one. The stores are why the volume is replaced as a set: quotas revert, paid
+workspaces unlink and images break when one is stale.
 EOF

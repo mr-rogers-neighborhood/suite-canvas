@@ -28,12 +28,17 @@ die() {
 
 usage() {
   cat <<'USAGE'
-Usage: pnpm stripe [--login | --listen | --clock | --help]
+Usage: pnpm stripe [--login | --listen [URL] | --clock | --help]
 
   --login     run `stripe login`, then do what the no-flag form does
   (no flag)   create or reuse the fixture prices in fixtures.json, then print the
               environment the control plane needs. Requires a logged-in CLI.
-  --listen    forward Stripe webhooks to http://localhost:1236/api/auth/stripe/webhook
+  --listen    forward Stripe webhooks to the control plane. With no argument it
+              targets http://localhost:1236, which is the control plane started by
+              `pnpm --filter @suite/control-plane dev` on this machine. A stack
+              running under docker compose publishes no port, so pass the origin
+              Caddy serves instead:
+                pnpm stripe --listen https://app.localhost/api/auth/stripe/webhook
   --clock     create a test clock, and print the commands that move it forward
   --help      this text
 USAGE
@@ -104,10 +109,29 @@ login() {
 
 listen() {
   need_cli
-  printf 'Forwarding Stripe test-mode webhooks to localhost:%s%s\n' "$port" "$webhook_path"
+  local target="${1:-}"
+  local extra=()
+  if [ -z "$target" ]; then
+    target="localhost:$port$webhook_path"
+  else
+    # Through a proxy the certificate is the proxy's, and a compose stack uses Caddy's
+    # internal CA for `*.localhost`, which the CLI cannot have in its trust store.
+    case "$target" in
+      https://*localhost*)
+        extra+=(--skip-verify)
+        # The CLI resolves host names itself and does not treat `*.localhost` as loopback
+        # the way a browser and curl do, so `app.localhost` fails to look up until one
+        # hosts line exists. Verified the hard way: every delivery answered
+        # `no such host` until the line was added.
+        printf 'The Stripe CLI cannot resolve *.localhost by itself. Add this once:\n'
+        printf '  127.0.0.1 app.localhost docs.localhost suite.localhost   # to /etc/hosts\n\n'
+        ;;
+    esac
+  fi
+  printf 'Forwarding Stripe test-mode webhooks to %s\n' "$target"
   printf 'Copy the whsec_... secret this prints into STRIPE_WEBHOOK_SECRET, then restart the control plane.\n\n'
   # The CLI requires an event selection; `--events '*'` was retired in its favour.
-  exec stripe listen --all-snapshot --forward-to "localhost:$port$webhook_path"
+  exec stripe listen --all-snapshot "${extra[@]}" --forward-to "$target"
 }
 
 clock() {
@@ -211,14 +235,15 @@ Start the control plane in one terminal:
 
 Forward webhooks in another:
 
-  pnpm stripe --listen
+  pnpm stripe --listen                       # control plane started on this machine
+  pnpm stripe --listen https://app.localhost/api/auth/stripe/webhook   # docker compose
 ENV
 }
 
 case "${1:-}" in
   "") create_fixtures ;;
   --login) login ;;
-  --listen) listen ;;
+  --listen) listen "${2:-}" ;;
   --clock) clock ;;
   --help | -h) usage ;;
   *) usage >&2; exit 2 ;;

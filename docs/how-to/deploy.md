@@ -500,6 +500,7 @@ Four variables decide whether a person who signs up can ever get in:
 
 | Variable | Why it has to be right |
 | --- | --- |
+| `SUITE_CONTROL_PLANE_DATABASE_URL` | Compose defaults it to the `postgres` service, which does not exist on a host that uses RDS: the name resolves to nothing and the control plane boots degraded. Point it at the server with `?sslmode=require`. |
 | `SUITE_AUTH_SECRET` | Signs the session. Changing it signs everyone out. |
 | `SUITE_MAIL_TRANSPORT` | `console` cannot deliver a verification link. Use `resend` with `RESEND_API_KEY` and `SUITE_MAIL_FROM`, or `smtp` with `SUITE_SMTP_URL`. |
 | `SUITE_ADMISSION_REQUIRED` | `1` holds every new account. Pair it with `SUITE_ADMIN_EMAILS` or the boot refuses: the queue would have no door. |

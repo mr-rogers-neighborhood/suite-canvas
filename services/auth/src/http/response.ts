@@ -66,6 +66,10 @@ const STATUS_BY_CODE: Readonly<Record<HandlerRefusal["code"], number>> = {
   "invite-exhausted": 409,
   "auth-not-configured": 503,
   "seat-refused": 403,
+  // Payment required, not forbidden: the request was well formed and the account is real,
+  // it just has no plan behind it yet.
+  "plan-required": 402,
+  "workspace-limit": 403,
   "rate-limited": 429,
   "method-not-allowed": 405,
   "not-found": 404,

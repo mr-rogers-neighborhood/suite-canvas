@@ -119,6 +119,9 @@ export type RefusalKind = "upgrade" | "quota" | "admission" | "other";
 const UPGRADE_CODES: readonly string[] = [
   "seat-refused",
   "seat-limit",
+  // An account with no plan at all. This is the hosted launch state: local and offline
+  // use is free and needs no account, so an account exists to buy sync.
+  "plan-required",
   "workspace-limit",
   "document-limit",
   "attachment-limit",
@@ -144,6 +147,9 @@ export function upgradeMessage(code: string | null | undefined): string {
   const value = (code ?? "").trim().toLowerCase();
   if (value === "seat-refused" || value === "seat-limit") {
     return "This workspace's plan has no free seat left. Add a seat, or ask the owner to free one.";
+  }
+  if (value === "plan-required") {
+    return "Syncing needs a plan. Everything in this workspace stays on this device until you pick one.";
   }
   if (value === "workspace-limit") {
     return "This plan's workspaces are all in use. Upgrade to create another one; nothing was deleted.";

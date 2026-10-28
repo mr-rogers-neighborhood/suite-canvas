@@ -290,7 +290,17 @@ async function claimRoute(
       now: now(),
     });
     if (!room.ok) {
-      return err(new AuthError("seat-refused", seatProblemMessage(room.reason)));
+      // The two ceilings get two codes because they need two sentences in the app: a plan
+      // with no workspace at all is "choose a plan", and a plan whose workspaces are used
+      // up is "you have three already". `plan-required` is the launch state, because a
+      // hosted account is born with a zero-workspace licence.
+      const code =
+        room.reason === "workspace-allowance-exhausted" && (licence?.claims.workspaces ?? 0) <= 0
+          ? "plan-required"
+          : room.reason === "workspace-allowance-exhausted"
+            ? "workspace-limit"
+            : "seat-refused";
+      return err(new AuthError(code, seatProblemMessage(room.reason)));
     }
   }
 

@@ -4,27 +4,33 @@ import { FREE_LICENCE_TIER, freeSeatLicence } from "./freeTier.js";
 import { canAddWorkspace, checkSeatAllowance } from "./seats.js";
 
 /**
- * The free tier is the floor the product has to stand on: an organization that cannot
- * create a workspace and cannot hold its owner is the bug this tier exists to end
- * (`sql/0009_free_licence_provisioning.sql`).
+ * The born-with licence: the owner's seat, and nothing else.
  *
- * These are properties, not literals: the numbers may change, but never back to
- * `Infinity` ("unlimited" is the self-host answer and would make the free tier a paid
- * plan) and never to `0` (the fail-closed default, which admits nobody).
+ * Local and offline use is free, so an account exists to buy sync. The row therefore
+ * grants **no workspace** — `sql/0011_no_free_workspace.sql` is the wall — while keeping
+ * one seat, because a seat is a `member` row and an owner who cannot be a member cannot
+ * exist. The two zeroes mean different things and this file is where that is stated.
  */
 const NOW = 1_760_000_000_000;
 const ORG = "org-agency";
 
 describe("FREE_LICENCE_TIER", () => {
-  it("names a finite, positive ceiling for every allowance", () => {
+  it("grants no workspace and no bytes, because those are what a plan buys", () => {
+    for (const key of ["workspaces", "documentBytes", "attachmentBytes"] as const) {
+      expect(FREE_LICENCE_TIER[key], `${key} is what a subscription opens`).toBe(0);
+    }
+  });
+
+  it("still holds the owner's seat, because a seat is a member row", () => {
+    // Zero here would repeat the provisioning bug `0009` exists to fix: the creator of an
+    // organization is refused their own membership, and the organization is unreachable.
+    expect(FREE_LICENCE_TIER.seats).toBe(1);
+    expect(Number.isSafeInteger(FREE_LICENCE_TIER.seats)).toBe(true);
+  });
+
+  it("never answers Infinity, which is the self-host answer and a free paid plan", () => {
     for (const key of ["workspaces", "seats", "documentBytes", "attachmentBytes"] as const) {
-      const value = FREE_LICENCE_TIER[key];
-      expect(Number.isSafeInteger(value), `${key} is not a safe integer: ${value}`).toBe(true);
-      expect(
-        value,
-        `${key} is zero, so a free organization could not use the product`,
-      ).toBeGreaterThan(0);
-      expect(Number.isFinite(value), `${key} is unlimited, which is a paid plan`).toBe(true);
+      expect(Number.isFinite(FREE_LICENCE_TIER[key]), `${key} is unlimited`).toBe(true);
     }
   });
 
@@ -34,19 +40,12 @@ describe("FREE_LICENCE_TIER", () => {
     expect(FREE_LICENCE_TIER.tier).toBe(FREE_TIER);
   });
 
-  it("gives a new organization one workspace and its owner's seat", () => {
+  it("refuses the first workspace, which is the wall, and admits the owner", () => {
     const licence = freeSeatLicence(ORG, NOW);
 
-    // Creating the first workspace is the floor: `canAddWorkspace` counts the row
-    // *after* the write, so a ceiling of one has to allow the count of one.
-    expect(
-      canAddWorkspace({
-        organizationId: ORG,
-        licence: { kind: "licensed", licence },
-        workspaceCount: 0,
-        now: NOW,
-      }),
-    ).toEqual({ ok: true, seat: "licensed-member" });
+    // `canAddWorkspace` counts the row *after* the write, so even the very first claim is
+    // past a ceiling of zero. That is the launch state: an account without a subscription
+    // cannot sync a workspace.
     expect(
       canAddWorkspace({
         organizationId: ORG,

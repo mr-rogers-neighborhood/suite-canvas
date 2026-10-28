@@ -63,6 +63,8 @@ describe("refusals", () => {
   it("tells the three kinds apart", () => {
     expect(refusalKind("seat-refused")).toBe("upgrade");
     expect(refusalKind("workspace-limit")).toBe("upgrade");
+    // The hosted launch state: an account with no plan at all.
+    expect(refusalKind("plan-required")).toBe("upgrade");
     expect(refusalKind(null, 402)).toBe("upgrade");
     expect(refusalKind("admission-pending")).toBe("admission");
     expect(refusalKind("quota-exceeded")).toBe("quota");
@@ -72,6 +74,7 @@ describe("refusals", () => {
 
   it("says what ran out, not just that something did", () => {
     expect(upgradeMessage("seat-refused")).toContain("no free seat");
+    expect(upgradeMessage("plan-required")).toContain("Syncing needs a plan");
     expect(upgradeMessage("workspace-limit")).toContain("workspaces are all in use");
     expect(upgradeMessage("attachment-limit")).toContain("storage is full");
     expect(upgradeMessage("licence-expired")).toContain("subscription");

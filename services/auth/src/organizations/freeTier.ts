@@ -2,32 +2,37 @@ import { FREE_TIER } from "../licensing/entitlements.js";
 import type { SeatLicence } from "../types.js";
 
 /**
- * The free tier: the licence every organization is born with (ADR-0065 §7).
+ * The licence every organization is born with — and on a hosted deployment, the wall.
  *
  * An organization used to be born with *no* licence row at all, because nothing in this
  * package wrote one. `beforeAddMember` therefore read a row nobody created and refused
  * the creator their own organization with `seat-refusal: licence-missing`: signing up
- * was possible and creating a workspace was not. The row is now written by the same
- * transaction that writes the organization
- * (`sql/0009_free_licence_provisioning.sql`), and this module is where its numbers
- * live.
+ * was possible and creating a workspace was not. A trigger now writes this row in the
+ * same transaction as the organization (`sql/0009_free_licence_provisioning.sql`), and
+ * this module is where its numbers live.
  *
- * Every ceiling is a named number, and both tempting alternatives are wrong:
+ * ## Zero workspaces is the product decision
  *
- * - `Infinity` is the self-host answer (`UNLIMITED_QUOTA`, `packages/licence/src/quota.ts`)
- *   and would make a hosted free organization a paid plan with no payment;
- * - `0` is the fail-closed default (`DEFAULT_SEATS`, `seats.ts`) and would repeat the
- *   bug this module exists to fix, one member short.
+ * Local and offline use is free and needs no account at all, so an account exists to buy
+ * *sync* and collaboration. A hosted deployment therefore sells nothing for nothing: the
+ * born-with row holds the owner's seat and **no workspace, no document bytes and no
+ * attachment bytes**. `POST /api/workspaces/claim` is the only door from a local
+ * workspace to an owned one, and this ceiling closes it until a subscription replaces the
+ * row. The refusal is `plan-required`, which the app turns into the plan picker, so the
+ * wall is a prompt with a button rather than a 403 nobody reads.
  *
- * The numbers are the cheapest ceiling the code already enforces, not new policy:
- * `isPlanEntry` in `services/billing/src/stripe/tiers.ts` refuses a plan with fewer than
- * one workspace, and one workspace with its owner in it is the smallest licensable
- * organization the product can be used for.
+ * The seat stays at one, and that is not an oversight: a seat *is* a `member` row, and an
+ * organization whose owner cannot be a member cannot exist. `0` seats would repeat the
+ * provisioning bug this row was created to fix. `0` workspaces does the opposite: it
+ * makes the account useless for syncing until it pays, which is what was asked for.
  *
- * The same literals are written by migration 0009, because Postgres has to insert the
- * row in the organization's own transaction. `scripts/db-verify.mjs` reads the row the
- * trigger wrote and compares it with this object, so the two cannot drift without a
- * failing gate.
+ * `Infinity` remains the self-host answer (`UNLIMITED_QUOTA`,
+ * `packages/licence/src/quota.ts`), and a self-host never reads this row at all — the
+ * gate is inert without `SUITE_HOSTED=1`.
+ *
+ * The same literals are written by the migration, because Postgres has to insert the row
+ * in the organization's own transaction. `scripts/db-verify.mjs` reads the row the trigger
+ * wrote and compares it with this object, so the two cannot drift without a failing gate.
  */
 export interface FreeLicenceTier {
   /** Tier label. `free` is also what the entitlement read answers with no subscription. */
@@ -52,14 +57,14 @@ export interface FreeLicenceTier {
   days: number;
 }
 
-const MIB = 1024 * 1024;
-
 export const FREE_LICENCE_TIER: FreeLicenceTier = {
   tier: FREE_TIER,
-  workspaces: 1,
+  // No plan, no workspace to claim: this is the wall a subscription opens.
+  workspaces: 0,
+  // The owner's own membership. A seat is a `member` row, so this cannot be zero.
   seats: 1,
-  documentBytes: 64 * MIB,
-  attachmentBytes: 8 * MIB,
+  documentBytes: 0,
+  attachmentBytes: 0,
   days: 36_525,
 };
 

@@ -209,15 +209,31 @@ describe("POST /api/workspaces/claim", () => {
     expect(bodyOf(response)).toMatchObject({ error: "workspace-already-claimed" });
   });
 
-  it("refuses a new workspace past the licence ceiling", async () => {
+  it("refuses a workspace when the plan's workspaces are spent", async () => {
     const { deps, plane } = harness({ workspaces: 1 });
     plane.addWorkspace({ id: "ws-second", createdAt: 1 });
 
     const response = await createAuthHandler(deps)(
       post("/api/workspaces/claim", { workspaceId: "ws-second" }, OWNER),
     );
+    // A plan that names workspaces and has used them up is a different answer from a plan
+    // that names none: the first needs a bigger plan, the second needs one at all.
     expect(response.statusCode).toBe(403);
-    expect(bodyOf(response)).toMatchObject({ error: "seat-refused" });
+    expect(bodyOf(response)).toMatchObject({ error: "workspace-limit" });
+  });
+
+  it("answers plan-required when the licence grants no workspace at all", async () => {
+    const { deps, plane } = harness({ workspaces: 0 });
+    plane.addWorkspace({ id: "ws-first", createdAt: 1 });
+
+    const response = await createAuthHandler(deps)(
+      post("/api/workspaces/claim", { workspaceId: "ws-first" }, OWNER),
+    );
+
+    // 402 rather than 403: the request was well formed and the account is real, it just
+    // has no plan behind it. The app turns this code into the plan picker.
+    expect(response.statusCode).toBe(402);
+    expect(bodyOf(response)).toMatchObject({ error: "plan-required" });
   });
 
   it("rejects a body without a workspace id", async () => {

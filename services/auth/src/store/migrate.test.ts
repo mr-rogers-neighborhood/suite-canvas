@@ -150,6 +150,7 @@ describe("migration discovery", () => {
       "0008_drop_billing_tables.sql",
       "0009_free_licence_provisioning.sql",
       "0010_templates.sql",
+      "0011_no_free_workspace.sql",
     ]);
     for (const file of files) {
       expect(file.sql.length).toBeGreaterThan(0);
@@ -202,11 +203,12 @@ describe("migrate", () => {
       "0008_drop_billing_tables.sql",
       "0009_free_licence_provisioning.sql",
       "0010_templates.sql",
+      "0011_no_free_workspace.sql",
     ]);
     expect(report.skipped).toEqual([]);
-    expect(target.committed.size).toBe(10);
-    expect(target.connects).toBe(10);
-    expect(target.releases).toBe(10);
+    expect(target.committed.size).toBe(11);
+    expect(target.connects).toBe(11);
+    expect(target.releases).toBe(11);
     expect(lines).toEqual([
       "auth migration applied: 0001_control_plane.sql",
       "auth migration applied: 0002_plugins.sql",
@@ -218,6 +220,7 @@ describe("migrate", () => {
       "auth migration applied: 0008_drop_billing_tables.sql",
       "auth migration applied: 0009_free_licence_provisioning.sql",
       "auth migration applied: 0010_templates.sql",
+      "auth migration applied: 0011_no_free_workspace.sql",
     ]);
 
     // Each body sits between its own BEGIN and COMMIT.
@@ -308,6 +311,7 @@ describe("status", () => {
       "0008_drop_billing_tables.sql",
       "0009_free_licence_provisioning.sql",
       "0010_templates.sql",
+      "0011_no_free_workspace.sql",
     ]);
   });
 

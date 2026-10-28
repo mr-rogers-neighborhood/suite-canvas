@@ -30,6 +30,13 @@ export const authErrorCodes = [
   "auth-not-configured",
   /** The licence refuses this principal a seat. `reason` carries the seat refusal. */
   "seat-refused",
+  /**
+   * The licence grants no workspace at all, which on a hosted deployment is every account
+   * that has not subscribed. The app answers it with the plan picker.
+   */
+  "plan-required",
+  /** The licence's workspace ceiling is already spent. */
+  "workspace-limit",
   /** Too many attempts on a guessable route (a password, an invitation token). */
   "rate-limited",
   /** A malformed or ambiguous route (unknown path, unsupported method). */

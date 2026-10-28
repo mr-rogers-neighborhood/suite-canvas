@@ -30,16 +30,17 @@ for every quota.
 ### What an account actually gets
 
 The table above is the instance ceiling, not the answer a reader wants. A hosted
-account is capped by its licence row, and a new organization starts on the free
-tier. These are the numbers the seat check enforces, read from
-`FREE_LICENCE_TIER`.
+account is capped by its licence row, and a new organization is born with no
+workspace at all: local and offline use is free and needs no account, so an
+account is what buys sync. These are the numbers the seat check enforces, read
+from `FREE_LICENCE_TIER`.
 
-| Cap | Free tier | Plan tier |
+| Cap | Born-with licence | Plan tier |
 | --- | --- | --- |
-| Workspaces | 1 | from the plan |
+| Workspaces | 0 | from the plan |
 | Seats | 1 | from the plan |
-| Document bytes per workspace | 64 MiB (67,108,864 bytes) | from the plan |
-| Attachment bytes per workspace | 8 MiB (8,388,608 bytes) | from the plan |
+| Document bytes per workspace | 0 bytes | from the plan |
+| Attachment bytes per workspace | 0 bytes | from the plan |
 
 A plan sells one seat in this build (ADR-0082): there is no per-seat price, so a
 plan that declared more would bill one person and admit one person. The plan

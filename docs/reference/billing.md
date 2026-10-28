@@ -136,19 +136,31 @@ the customer keeps minting.
 the row turns `canceled` when it ends. `past_due` keeps the plan only until `periodEnd`,
 which bounds the grace window to the period Stripe last collected for.
 
-## The free tier and the licence row
+## The born-with licence, and the wall
 
 The entitlement read answers `free` for an organization with no live subscription, and the
 seat check reads a different row to decide what that organization may hold:
 `organization_licences` in the control-plane database. The two agree about the tier label,
 and the licence row is the one with numbers on it.
 
-Every organization starts on the free tier. Migration `0009_free_licence_provisioning.sql`
-puts a trigger on `organization` that writes the licence row in the same transaction, so an
-organization and its licence appear together or not at all. The ceilings are
-`FREE_LICENCE_TIER` in `services/auth/src/organizations/freeTier.ts`: one workspace, one
-seat (the owner), 64 MiB per document and 8 MiB per attachment, for a hundred years.
-`pnpm db:verify` compares the row the trigger writes with that object.
+**Local and offline use is free and needs no account**, so a hosted account exists to buy
+sync. Every organization is therefore born with a licence that grants the owner's seat and
+*no workspace*: migration `0009_free_licence_provisioning.sql` writes the row in the
+organization's own transaction through a trigger, and
+`0011_no_free_workspace.sql` sets its numbers to zero workspaces, zero document bytes and
+zero attachment bytes. `FREE_LICENCE_TIER` in
+`services/auth/src/organizations/freeTier.ts` is the same object, and `pnpm db:verify`
+compares the row the trigger writes with it.
+
+The one number that is not zero is the seat, because a seat *is* a `member` row: an
+organization whose owner cannot be a member cannot exist. Zero seats would repeat the
+provisioning bug `0009` fixed; zero workspaces is the intended wall.
+
+`POST /api/workspaces/claim` is the only door from a local workspace to an owned one, and
+it reads this row, so the wall sits there. The refusal is `plan-required` with a **402**: the
+request was well formed and the account is real, it just has no plan behind it. The app turns
+that code into the plan picker. `workspace-limit` (403) is the neighbouring case:
+a plan that names workspaces and has spent them.
 
 That row is a default, and it is replaced rather than joined. `organization_licences` is
 keyed by `organization_id`, so one organization holds exactly one licence: a second row
@@ -185,7 +197,7 @@ loses the plan and keeps its data, where a missing row would read as
 reach. The fallback row is byte-for-byte the row the trigger writes, `free:<org>` and
 all, so "downgraded" and "never subscribed" are the same state.
 
-`seats` is the subscription's seat quantity, never below the free tier's one seat: a plan
+`seats` is the subscription's seat quantity, never below the born-with row's one seat: a plan
 that sells no seats still admits the owner it always admitted. The plugin reports that
 quantity on create and on every update, and a quantity that is not a whole number is read
 as absent rather than as a fractional ceiling. A member whose join would take the count past

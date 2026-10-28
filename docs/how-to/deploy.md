@@ -507,6 +507,12 @@ An address that is not on the list gets `403 forbidden` and a sentence saying so
 is the honest answer rather than a lockout: the panel tells the reader their address
 needs adding.
 
+**A new account cannot sync until it subscribes.** Local and offline use is free and needs no
+account; an account is what buys sync, so the born-with licence grants no workspace and
+`POST /api/workspaces/claim` answers `402 plan-required` until a subscription replaces the
+row. The app shows the plan picker rather than a bare refusal. Testers skip payment with a
+100%-off promotion code at checkout, which keeps them on the real paid path.
+
 ## Support access and impersonation
 
 The Accounts tab opens a support session: the operator becomes the account, sees what it

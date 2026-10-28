@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { orderedSelection } from "../canvas/interactions/multiSelect";
 import { childrenFromLinks, planRadial } from "../canvas/interactions/radialLayout";
+import { redoWithStack, undoWithStack } from "../history/undoWithStack";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -49,8 +50,8 @@ export function useBoardPaletteActions(): BoardPaletteActions {
 
   const step = useCallback(
     (direction: "undo" | "redo") => {
-      if (direction === "undo") workspace.undo();
-      else workspace.redo();
+      if (direction === "undo") undoWithStack(workspace);
+      else redoWithStack(workspace);
       // A card that just disappeared must not stay selected or under the caret.
       const ui = useUiStore.getState();
       ui.setSelectedNodeIds([]);

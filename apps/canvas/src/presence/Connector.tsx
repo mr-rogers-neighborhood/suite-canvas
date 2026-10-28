@@ -11,6 +11,13 @@ export interface ConnectorProps {
   selected?: boolean;
   /** The armed end of a link chain: the next click links from here. */
   armed?: boolean;
+  /**
+   * This dot just took part in a link a placement drew.
+   *
+   * The line says the two things are joined; the lit dot says *which* ends were used,
+   * which is the part a chain of placements makes hard to read at speed.
+   */
+  flashing?: boolean;
   onSelect: (connectorId: string, event?: React.MouseEvent) => void;
   /** Persisted once, on release, so dragging never writes to the CRDT per frame. */
   onMoveEnd: (connectorId: string, position: { x: number; y: number }) => void;
@@ -153,6 +160,7 @@ export function Connector({
   color = "#94a3b8",
   selected = false,
   armed = false,
+  flashing = false,
   onSelect,
   onMoveEnd,
   onContextMenu,
@@ -361,6 +369,7 @@ export function Connector({
         type="source"
         position={side}
         data-testid="connector-dot"
+        data-flash={flashing ? "true" : undefined}
         className="connector-dot"
         style={{
           left: 0,

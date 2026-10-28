@@ -1,5 +1,5 @@
 import { useReactFlow } from "@xyflow/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { attachDots, type FacingBox } from "./attachDots";
@@ -29,6 +29,24 @@ export function PlaceStackCursor() {
     window.addEventListener("pointermove", move);
     return () => window.removeEventListener("pointermove", move);
   }, []);
+
+  /**
+   * A change of mode continues from the card just placed.
+   *
+   * The anchor is the thing a mode interprets: a thread walks it forward, a fan holds it
+   * still. Switching re-interprets the same reader intent, so it resets the anchor to the
+   * card they put down last, and the next press links from there.
+   */
+  const previousLinking = useRef<"thread" | "fan" | null>(mode === "place" ? null : mode);
+  useEffect(() => {
+    // Cycling from a fan to a thread passes through `place`, and passing through is not a
+    // decision: only a change between the two linking modes re-reads the anchor.
+    if (mode === "place") return;
+    if (previousLinking.current === mode) return;
+    previousLinking.current = mode;
+    const stack = usePlaceStackStore.getState();
+    if (stack.lastPlacedId !== null) stack.setAnchor(stack.lastPlacedId);
+  }, [mode]);
 
   useEffect(() => {
     if (queue.length === 0 || !canEditLayout || !activeBoardId) return;
@@ -85,8 +103,20 @@ export function PlaceStackCursor() {
           consumed.push(existing);
         }
       } else {
-        const placed = workspace.placeCard(activeBoardId, item.cardId, box);
-        if (placed && mode !== "place") attachPlaced(item.cardId, box);
+        // One press is one undo step, link and placement together: undoing a placement is
+        // what hands the card back to the stack, and a reader who has to press undo twice
+        // to get there has already lost the thread of what happened.
+        const placed = workspace.batch("place-stack", () => {
+          const landed = workspace.placeCard(activeBoardId, item.cardId, box);
+          if (landed && mode !== "place") attachPlaced(item.cardId, box);
+          return landed;
+        });
+        if (placed) {
+          // Every press moves "the card just placed", whether or not this mode draws a
+          // line: switching to a linking mode continues from it either way.
+          usePlaceStackStore.getState().setLastPlaced(item.cardId);
+          usePlaceStackStore.getState().notePlaced(item.cardId);
+        }
       }
       usePlaceStackStore.getState().remove(consumed);
     };
@@ -133,6 +163,14 @@ export function PlaceStackCursor() {
         ...(dots.source ? { sourceConnector: dots.source.id } : {}),
         ...(dots.target ? { targetConnector: dots.target.id } : {}),
       });
+      // The two ends that joined, lit for a moment: the line says they are linked, the
+      // highlight says *which dots* were used, which is what a chain makes hard to read.
+      usePlaceStackStore
+        .getState()
+        .flashConnectors([
+          ...(dots.source ? [{ nodeId: anchorId, connectorId: dots.source.id }] : []),
+          ...(dots.target ? [{ nodeId: cardId, connectorId: dots.target.id }] : []),
+        ]);
       // A thread moves its anchor on to the card it just linked; a fan keeps the hub.
       if (mode === "thread") usePlaceStackStore.getState().setAnchor(cardId);
     };

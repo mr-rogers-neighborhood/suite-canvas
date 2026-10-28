@@ -140,6 +140,14 @@ Shift chains and Control fans for one gesture without leaving the mode, and Esca
 to `place`. This is `links/linkThread.ts` (`stepLink`, `stepThread`, `stepFan`), pure and unit-tested;
 nothing about it places cards. There is no run, no queue and no held stack behind a mode.
 
+Switching between `thread` and `fan` continues from the card just placed, and passing through `place`
+on the way does not count as a decision: the anchor is re-read from the last placement, not from the hub
+the previous mode was holding. A press is one undo step, link and placement together, and undoing a
+placement the stack made puts the card back in the hand (`history/undoWithStack.ts`), so every undo
+route (`Mod+Z`, the title bar, the palette, the history panel) hands it back rather than leaving it in
+the inbox. The two connectors a placement joined are lit for a beat, so a chain says which ends were
+used and not only that a line exists.
+
 A stack placed while a mode is armed writes a link as well as a placement. `canvas/attachDots.ts`
 answers which dots: the pair facing the way the cards travel. It is pure. `connectorToward` picks
 the dot that points at the other box, `attachDots` returns the pair for a placement, and

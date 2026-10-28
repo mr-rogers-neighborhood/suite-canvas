@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { Connector, type Point } from "../presence/Connector";
 import { useLinkThreadStore } from "./links/linkThread";
+import { usePlaceStackStore } from "./placeStack";
 import { edgePoint, readSilhouette, type Silhouette } from "./silhouette";
 
 /** Everyone dragging one connector, plus where the first of them is holding it. */
@@ -243,6 +244,12 @@ export function NodeConnectors({
     updateNodeInternals(nodeId);
   }, [shape, updateNodeInternals, nodeId]);
 
+  // The dots a placement just linked through, so the join is visible as well as drawn.
+  const flash = usePlaceStackStore((state) => state.flash);
+  const flashingHere = new Set(
+    flash.filter((entry) => entry.nodeId === nodeId).map((entry) => entry.connectorId),
+  );
+
   if (count === 0) return null;
 
   return (
@@ -264,6 +271,7 @@ export function NodeConnectors({
           color={color}
           selected={selectedConnectorId === connector.id}
           armed={armedConnectorId === connector.id}
+          flashing={flashingHere.has(connector.id)}
           onSelect={(id, event) => onSelect?.(id, event)}
           onMoveEnd={(id, position) => onMoveEnd?.(id, position)}
           movingPeers={movingConnectorPeers[connector.id]?.users ?? []}

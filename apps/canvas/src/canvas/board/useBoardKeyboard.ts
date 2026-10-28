@@ -1,6 +1,7 @@
 import type { Card } from "@suite/graph";
 import { useEffect } from "react";
 import { portalTargetId } from "../../cards/portal";
+import { redoWithStack, undoWithStack } from "../../history/undoWithStack";
 import { useUiStore } from "../../store/useUiStore";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../interactions/multiSelect";
 import { isNudgeKey, nudgeDelta } from "../nudge";
@@ -167,8 +168,8 @@ function modifierChord(ctx: KeyContext): boolean {
   if (key === "z" || key === "y") {
     event.preventDefault();
     if (!commands.canEditContent && !commands.canEditLayout) return true;
-    if (key === "z" && !event.shiftKey) commands.workspace.undo();
-    else commands.workspace.redo();
+    if (key === "z" && !event.shiftKey) undoWithStack(commands.workspace);
+    else redoWithStack(commands.workspace);
     state.setSelectedNodeIds([]);
     state.stopEditing();
     return true;

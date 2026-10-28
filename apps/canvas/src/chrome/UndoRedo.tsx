@@ -1,3 +1,4 @@
+import { redoWithStack, undoWithStack } from "../history/undoWithStack";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -18,8 +19,8 @@ export function UndoRedo() {
 
   const step = (direction: "undo" | "redo") => {
     const ui = useUiStore.getState();
-    if (direction === "undo") workspace.undo();
-    else workspace.redo();
+    if (direction === "undo") undoWithStack(workspace);
+    else redoWithStack(workspace);
     // A card that just disappeared must not stay selected or under the caret.
     ui.setSelectedNodeIds([]);
     ui.stopEditing();

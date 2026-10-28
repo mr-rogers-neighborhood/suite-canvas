@@ -701,6 +701,29 @@ body {
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
 }
 
+/*
+ * A placement lit this dot: it is one end of the link that was just written. Painted as
+ * a ring rather than a size change, so the dot never moves under the next press, and it
+ * fades on its own — the stack clears the flag after a beat.
+ */
+.connector-dot[data-flash="true"] {
+  border-color: var(--ink);
+  animation: connector-flash 900ms ease-out 1;
+}
+
+@keyframes connector-flash {
+  0% {
+    box-shadow:
+      0 0 0 2px var(--surface),
+      0 0 0 9px color-mix(in srgb, var(--ink) 55%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 2px var(--surface),
+      0 0 0 3px color-mix(in srgb, var(--ink) 0%, transparent);
+  }
+}
+
 /* Indicate a connection point without moving or resizing the dot. */
 .connector-dot:hover {
   box-shadow:

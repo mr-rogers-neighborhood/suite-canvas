@@ -1,6 +1,7 @@
 import type { HistoryPoint, HistoryRestorePreview, WorkspaceDocument } from "@suite/graph";
 import { useCallback, useEffect, useState } from "react";
 import { pointDetail, previewLines, relativeTime } from "./historyFormat";
+import { undoWithStack } from "./undoWithStack";
 
 /**
  * The history panel: the saved points a workspace already has, and restoring one.
@@ -57,7 +58,7 @@ export function HistoryPanel({ workspace, now, revision = 0, onClose }: HistoryP
   };
 
   const undo = () => {
-    workspace.undo();
+    undoWithStack(workspace);
     reread();
     setRestored(false);
   };

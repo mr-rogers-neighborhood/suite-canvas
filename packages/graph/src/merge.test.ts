@@ -233,15 +233,22 @@ describe("planPublish", () => {
     expect(source.getPlacement(BOARD, "c1")?.z).toBe(draft.getPlacement(BOARD, "c1")?.z);
   });
 
-  it("should plan an unplace that removes only the placement", () => {
-    const { source, baseline, draft, options } = setup();
+  it("should plan an unplace and the links that leave the board with it", () => {
+    const { source, baseline, draft, options, edge } = setup();
     draft.unplaceCard(BOARD, "c1");
 
     const plan = planPublish(draft, baseline, source, options);
 
-    expect(plan.changes).toMatchObject([{ key: `board:${BOARD}:card:c1`, kind: "unplace" }]);
-    expect(applyPublish(source, draft, plan)).toBe(1);
+    // The placement goes, and so does the link that touched it: a relationship on a board
+    // cannot outlive one of its ends, or a re-place would draw an old line again.
+    expect(plan.changes).toMatchObject([
+      { key: `board:${BOARD}:card:c1`, kind: "unplace" },
+      { key: `edge:${edge.id}`, kind: "edge" },
+    ]);
+    expect(applyPublish(source, draft, plan)).toBeGreaterThan(0);
     expect(source.getPlacement(BOARD, "c1")).toBeUndefined();
+    expect(source.getEdge(edge.id)).toBeUndefined();
+    // The card itself is untouched: it is in the inbox, with its tags and content.
     expect(source.getCard("c1")).toBeDefined();
     expect(source.listInboxCards().map((card) => card.id)).toContain("c1");
   });

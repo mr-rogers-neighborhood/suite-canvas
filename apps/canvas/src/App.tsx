@@ -426,6 +426,13 @@ function WorkspaceShell({
         ...(dots.source ? { sourceConnector: dots.source.id } : {}),
         ...(dots.target ? { targetConnector: dots.target.id } : {}),
       });
+      // The dots that joined, lit for a moment, so a drop says what it connected.
+      usePlaceStackStore
+        .getState()
+        .flashConnectors([
+          ...(dots.source ? [{ nodeId: anchorId, connectorId: dots.source.id }] : []),
+          ...(dots.target ? [{ nodeId: cardId, connectorId: dots.target.id }] : []),
+        ]);
       return true;
     },
     [activeBoardId, workspace],
@@ -463,6 +470,7 @@ function WorkspaceShell({
           return;
         }
         placeCard(item.cardId, stepped);
+        usePlaceStackStore.getState().setLastPlaced(item.cardId);
         if (dropMode === "place") return;
         const attached = attachPlacedCard(item.cardId, stepped, anchorId);
         if (attached) anchorId = dropMode === "thread" ? item.cardId : anchorId;

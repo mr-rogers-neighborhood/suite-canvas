@@ -1,6 +1,7 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { undoWithStack } from "../history/undoWithStack";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { PlaceStackCursor } from "./PlaceStackCursor";
@@ -139,6 +140,88 @@ describe("the stack's placement macro", () => {
     expect(drawn).toHaveLength(2);
     const hub = cardIds[0];
     expect(drawn.every((edge) => edge.source === hub)).toBe(true);
+    cleanupSurface();
+  });
+
+  it("continues from the last card placed when the mode changes", () => {
+    // The reader's rule: switch modes mid-stack and the next link starts at the card you
+    // just put down, whichever mode drew the line before it.
+    act(() => useUiStore.setState({ mode: "fan" }));
+    const cleanupSurface = board();
+    act(() => usePlaceStackStore.getState().start(cardIds));
+
+    press(100, 1100);
+    press(400, 1100);
+    // Fan: both spokes leave the hub, and the second press is the last card placed.
+    act(() => useUiStore.setState({ mode: "thread" }));
+    press(700, 1100);
+
+    const drawn = edges();
+    const [first, second, third] = cardIds as [string, string, string];
+    // The fan linked the hub to the second card; the switch to thread carries on from
+    // *that* card, so the third link starts at the card just placed, not at the hub.
+    expect(drawn.map((edge) => `${edge.source}>${edge.target}`).sort()).toEqual(
+      [`${first}>${second}`, `${second}>${third}`].sort(),
+    );
+    cleanupSurface();
+  });
+
+  it("lights the two dots a placement linked through", () => {
+    act(() => useUiStore.setState({ mode: "thread" }));
+    const cleanupSurface = board();
+    act(() => usePlaceStackStore.getState().start(cardIds));
+
+    press(100, 1300);
+    press(400, 1300);
+
+    const flash = usePlaceStackStore.getState().flash;
+    expect(flash).toHaveLength(2);
+    expect(new Set(flash.map((entry) => entry.nodeId))).toEqual(new Set(cardIds.slice(0, 2)));
+    expect(flash.every((entry) => entry.connectorId.length > 0)).toBe(true);
+    cleanupSurface();
+  });
+
+  it("keeps the anchor when the cycle passes through place", () => {
+    // Cycling fan → place → thread is one decision by the reader, so the anchor survives
+    // the pass-through and the next link still starts at the card they placed last.
+    act(() => useUiStore.setState({ mode: "fan" }));
+    const cleanupSurface = board();
+    act(() => usePlaceStackStore.getState().start(cardIds));
+
+    press(100, 1500);
+    press(400, 1500);
+    act(() => useUiStore.setState({ mode: "place" }));
+    act(() => useUiStore.setState({ mode: "thread" }));
+    press(700, 1500);
+
+    const [first, second, third] = cardIds as [string, string, string];
+    expect(
+      edges()
+        .map((edge) => `${edge.source}>${edge.target}`)
+        .sort(),
+    ).toEqual([`${first}>${second}`, `${second}>${third}`].sort());
+    cleanupSurface();
+  });
+
+  it("hands a card back when its placement is undone", () => {
+    act(() => useUiStore.setState({ mode: "place" }));
+    const cleanupSurface = board();
+    act(() => usePlaceStackStore.getState().start(cardIds));
+
+    press(100, 1700);
+    press(400, 1700);
+    const stack = usePlaceStackStore.getState();
+    expect(stack.queue).toHaveLength(1);
+    expect(stack.placed).toHaveLength(2);
+
+    // One press is one undo step, so a single undo takes the placement (and its link).
+    act(() => undoWithStack(workspace));
+
+    // The card is off the board, so it goes back into the hand rather than the inbox.
+    const after = usePlaceStackStore.getState();
+    expect(after.queue).toHaveLength(2);
+    expect(after.placed).toHaveLength(1);
+    expect(after.queue[0]).toBe(cardIds[1]);
     cleanupSurface();
   });
 

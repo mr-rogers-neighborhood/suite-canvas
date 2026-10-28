@@ -110,10 +110,28 @@ The relay holds no Postgres credential, so it keeps its own copy in the `workspa
 The first claim wins. A later join from another organization is refused with
 `403 This workspace belongs to a different organization.`, and the recorded row is untouched.
 
-The relay's copy can be wrong in exactly one direction: a workspace nobody has opened on this relay is
-claimable by the first account that names its id in a verified session. That is the same first-claim rule
-the owner key had, made stronger by requiring a token the control plane signed. On a deployment where
-workspace ids are shared widely, treat an unopened workspace as unclaimed until its owner opens it.
+### A named limit: an unclaimed workspace's id is its credential
+
+A workspace nobody has opened on this relay is claimable by the first account that names its id in a
+verified session. That is the first-claim rule the owner key had, and it is what ADR-0076 decided when it
+deleted the key: **a workspace's identity is its document id**.
+
+Say it plainly, because the consequence is not obvious: while a workspace is unclaimed, holding its id is
+the same thing as owning it, and the relay cannot tell the browser that created it from any other. Three
+facts bound the exposure rather than removing it:
+
+- An id is a `crypto.randomUUID()`, so it is not guessable, and it reaches a second person only because
+  the first one pasted it somewhere.
+- A **share link never carries it.** A published page is `/s/<slug>`, and the slug is the share token,
+  which is stored hashed and can be revoked. So handing somebody a link hands them the page, not the
+  workspace.
+- A claim needs a session whose organization the account administers with `canManageLinks`, and the
+  refusal for an already-claimed workspace is tested (`workspace-owned-elsewhere`).
+
+An unclaimed workspace is therefore as private as its id is. Treat an unopened workspace as unclaimed until
+its owner opens it, and do not paste a workspace URL into a channel you would not paste a document into.
+[ADR-0084](../../internal/decisions/open/0084-a-device-key-adopts-an-anonymous-workspace.md) records the
+change that closes this: a key the browser holds, with no ceremony for the reader.
 
 ## Share links
 

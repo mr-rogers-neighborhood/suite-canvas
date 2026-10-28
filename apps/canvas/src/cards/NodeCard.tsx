@@ -1,10 +1,11 @@
-import type { Card, CardType } from "@suite/graph";
+import type { Card, CardType, StyleShape } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/interactions/multiSelect";
 import { NodeConnectors } from "../canvas/NodeConnectors";
 import { paintSurface, useSurfacePaint } from "../canvas/surfaceContext";
+import { isShapedSurface, shapeInset } from "../canvas/surfacePaint";
 import type { PresenceUser } from "../collab/presence";
 import { countRender } from "../dev/perf";
 import { ContextMenu, type ContextMenuItem } from "../dialogs/ContextMenu";
@@ -278,12 +279,29 @@ export function NodeCard({
   );
   const { paint, corrections } = cardPaint;
   const painted = Object.keys(paint).length > 0;
+  /**
+   * The silhouette, when it is not the card's own box.
+   *
+   * A shaped card cannot wear the box's chrome: its border, its shadow and its selection
+   * ring are all rectangles, and every one of them shows outside a diamond. The shape is
+   * the frame instead, so the box goes bare and the feedback follows the paint (ADR-0051
+   * §7, ADR-0060 §5).
+   */
+  const shape = isShapedSurface(paint["--paint-shape"] as StyleShape | undefined)
+    ? (paint["--paint-shape"] as StyleShape)
+    : null;
+  const inset = shapeInset(shape, {
+    width: width ?? DEFAULT_CARD_WIDTH,
+    height: height ?? DEFAULT_CARD_HEIGHT,
+  });
 
   const cardClass = [
     "node-card relative flex flex-col rounded-md border border-[var(--hairline)]",
     painted ? "is-painted" : "",
     selected && !draggingPeer && !focusedBy
-      ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-500/30"
+      ? shape
+        ? "is-selected border-transparent"
+        : "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-500/30"
       : "",
     // A dimmed card keeps its hover and selection affordances but recedes, so
     // the lens result reads first without losing the spatial context around it.
@@ -347,6 +365,7 @@ export function NodeCard({
       data-selected-by-peer={selectingPeer ? "true" : undefined}
       data-resizing-by-peer={resizingPeer ? "true" : undefined}
       data-board-id={boardId}
+      data-shape={shape ?? undefined}
       // A rule the floor had to correct says so on the card instead of
       // pretending the pair was legible (ADR-0046 §6).
       data-contrast-corrected={corrections.length > 0 ? "true" : undefined}
@@ -360,6 +379,16 @@ export function NodeCard({
           ...paintStyle(paint),
           width: width ?? DEFAULT_CARD_WIDTH,
           height: height ?? DEFAULT_CARD_HEIGHT,
+          // Where the silhouette is not the box, the chrome inside it has to be pulled
+          // away from corners the paint does not have. Published as variables so the
+          // stylesheet owns the spacing and the numbers stay in one table.
+          ...(shape
+            ? {
+                "--shape-inset-x": `${inset.x}px`,
+                "--shape-inset-y": `${inset.y}px`,
+                "--shape-title-inset-x": `${inset.titleX}px`,
+              }
+            : {}),
         } as CSSProperties
       }
       onPointerDown={(event) => {

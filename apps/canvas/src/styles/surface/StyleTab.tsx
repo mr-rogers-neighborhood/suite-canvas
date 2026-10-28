@@ -15,6 +15,7 @@ import {
   TEXT_SCALE_MIN,
 } from "@suite/graph";
 import { useSurfacePaint } from "../../canvas/surfaceContext";
+import { isShapedSurface } from "../../canvas/surfacePaint";
 import { type StyleSurfaceKind, useStyleDraft } from "./useStyleDraft";
 
 const SHAPE_LABELS: Record<StyleShape, string> = {
@@ -153,6 +154,26 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
     else sides[side] = { ...(sides[side] ?? {}), paint };
     update({ ...current, sides });
   };
+
+  /**
+   * A silhouette has one outline, not four sides.
+   *
+   * A diamond has no top edge to style separately from its bottom one, so offering four
+   * rows would be offering three choices that cannot be seen. The row writes the same
+   * paint to all four sides and reads it back from `top`, which is the side a *shape*
+   * already draws with — and the side a link's stroke lives on, so "the outline" is one
+   * field whichever surface is being edited.
+   */
+  const setOutline = (paint: StyleEdgePaint) => {
+    const source = current.sides?.top;
+    const sides: NonNullable<SurfaceStyle["sides"]> = {};
+    for (const side of styleSides) sides[side] = { ...(source ?? {}), paint };
+    update({ ...current, sides });
+  };
+
+  // The shape the surface actually wears, which may come from its type rather than from
+  // anything set here.
+  const shaped = isShapedSurface(resolved.shape);
 
   const inherits =
     kind === "card" &&
@@ -323,6 +344,18 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
               }}
             />
           </>
+        ) : shaped ? (
+          <ChipRow
+            label="Outline"
+            testId="style-outline"
+            value={current.sides?.top?.paint ?? "solid"}
+            disabled={!canEdit}
+            options={styleEdgePaints.map((paint) => ({
+              value: paint,
+              label: PAINT_LABELS[paint],
+            }))}
+            onSelect={(paint) => setOutline(paint ?? "solid")}
+          />
         ) : (
           styleSides.map((side) => (
             <ChipRow

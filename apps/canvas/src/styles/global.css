@@ -445,8 +445,30 @@ body {
     var(--paint-animation-bottom, none), var(--paint-animation-left, none);
 }
 
-/* A faded surface comes back to full when the reader is on it: a paint
-   decision for this reader, never a document write (ADR-0051 §5). */
+/*
+ * A shape is the frame.
+ *
+ * The card's box, its border, its shadow and its selection ring are four rectangles, and
+ * a diamond shows all four of them: the silhouette painted underneath only ever looked
+ * like a decoration on a card. Where `--paint-shape` names a silhouette, every rectangle
+ * stands down — the clip path is the only outline left — and the reader's own feedback
+ * follows the paint with a glow, because a rectangular ring is exactly what the shape is
+ * not. `shapeInset` hands the chrome its padding through `--shape-inset-*`, so a title in
+ * a diamond is pulled in far enough to be readable.
+ */
+.node-card[data-shape] {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.node-card[data-shape].is-selected {
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--accent) 75%, transparent))
+    drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 28%, transparent));
+}
+
+/*
+ * A faded surface comes back to full when the reader is on it: a paint
+ * decision for this reader, never a document write (ADR-0051 §5). */
 .node-card.is-painted:hover,
 .node-card.is-painted:focus-within,
 .node-card.is-painted.is-selected {
@@ -1144,6 +1166,26 @@ body {
   backdrop-filter: blur(18px) saturate(1.2);
   overflow: hidden;
   user-select: none;
+}
+
+/*
+ * A row being dragged out of the drawer takes the drawer with it.
+ *
+ * The ghost is heading for the board, and a panel floating under the cursor is what it
+ * would hit: every drop would land on the library it came from. It fades and stops taking
+ * presses instead of unmounting, so the release still finishes the gesture it started and
+ * the drawer is back the moment the pointer is up.
+ */
+.library-drawer[data-dragging="true"] {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .library-drawer[data-dragging="true"] {
+    transition: none;
+  }
 }
 
 /* Board scope needs room for the section facet row and the grouped list. */
@@ -3004,6 +3046,30 @@ html[data-inspector-linking] .card-inspector {
    */
   --card-radius: var(--paint-radius, var(--reader-card-radius, 12px));
   border-radius: var(--card-radius);
+}
+
+/* A shape's title reads as a bar across the top of the silhouette — the same device a
+   section header uses, so a titled shape is not a floating caption. It stops where the
+   shape stops, which is what the inset is for. */
+.node-card[data-shape] .card-header {
+  margin-inline: var(--shape-title-inset-x, var(--shape-inset-x, 0px));
+  padding-block-start: calc(0.5rem + var(--shape-inset-y, 0px) * 0.5);
+  border-bottom: 1px solid color-mix(in srgb, var(--paint-ink, var(--ink)) 14%, transparent);
+  /* A header's fill is a rectangle across the box, and a silhouette is not one: the
+     tint is what a reader sees *outside* the shape, so the bar is the rule and the
+     centred title instead. */
+  background: transparent;
+  border-radius: 0;
+}
+
+.node-card[data-shape] .card-header .card-title {
+  text-align: center;
+}
+
+.node-card[data-shape] [data-testid="card-body"],
+.node-card[data-shape] .card-meta {
+  margin-inline: var(--shape-inset-x, 0px);
+  padding-block-end: var(--shape-inset-y, 0px);
 }
 
 /* Compact trims the air a card spends on padding; it never changes type size, so a

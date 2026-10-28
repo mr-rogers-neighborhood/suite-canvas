@@ -1,8 +1,11 @@
-import { resolveSurfaceStyle } from "@suite/graph";
+import { resolveSurfaceStyle, styleShapes } from "@suite/graph";
 import { describe, expect, it } from "vitest";
 import {
   colourRoleVar,
+  isShapedSurface,
   shapeClipPath,
+  shapeInset,
+  shapeOutline,
   shapeRadius,
   sideAnimation,
   sideBorder,
@@ -73,5 +76,78 @@ describe("surface paint", () => {
 
   it("keeps an unstyled surface untouched", () => {
     expect(surfacePaintVars(undefined)).toEqual({});
+  });
+});
+
+describe("a silhouette that is not the box", () => {
+  it("publishes the shape as well as painting it", () => {
+    const paint = surfacePaintVars(resolveSurfaceStyle({ shape: "diamond" }, "card"));
+    // The clip path is for the browser; the variable is for everything that has to
+    // agree with it — the chrome, the connector dots, the rectangle that must not paint.
+    expect(paint["--paint-shape"]).toBe("diamond");
+    expect(surfacePaintVars(resolveSurfaceStyle({ shape: "rect" }, "card"))["--paint-shape"]).toBe(
+      undefined,
+    );
+  });
+
+  it("counts every shape but a rectangle as shaped", () => {
+    expect(isShapedSurface(undefined)).toBe(false);
+    expect(isShapedSurface(null)).toBe(false);
+    expect(isShapedSurface("rect")).toBe(false);
+    for (const shape of styleShapes.filter((candidate) => candidate !== "rect")) {
+      expect(isShapedSurface(shape)).toBe(true);
+    }
+  });
+
+  /**
+   * The geometry is a table and the paint is a string, so they are two statements of one
+   * silhouette. This is what keeps them one: every polygon the clip path draws must have
+   * a matching outline, with the same vertices in the same order.
+   */
+  it("draws the outline the clip path draws", () => {
+    for (const shape of styleShapes) {
+      const clip = shapeClipPath(shape);
+      const outline = shapeOutline(shape);
+      if (!clip) {
+        expect(outline, `${shape} paints no polygon`).toBe(null);
+        continue;
+      }
+      expect(outline, `${shape} paints a polygon`).not.toBe(null);
+      const painted = clip
+        .replace(/^polygon\(|\)$/g, "")
+        .split(",")
+        .map((pair) =>
+          pair
+            .trim()
+            .split(/\s+/)
+            .map((value) => Number.parseFloat(value) / 100),
+        );
+      expect(painted).toHaveLength(outline?.length ?? 0);
+      painted.forEach(([x, y], index) => {
+        expect(x).toBeCloseTo(outline?.[index]?.[0] ?? -1, 6);
+        expect(y).toBeCloseTo(outline?.[index]?.[1] ?? -1, 6);
+      });
+    }
+  });
+
+  it("keeps the chrome inside the silhouette, and the title bar inside that", () => {
+    const size = { width: 320, height: 200 };
+    // A rectangle pays nothing.
+    expect(shapeInset(undefined, size)).toEqual({ x: 0, y: 0, titleX: 0 });
+    expect(shapeInset("rect", size)).toEqual({ x: 0, y: 0, titleX: 0 });
+
+    // A circle inscribes a square of 70.7%, so its inset is 14.6% of each side.
+    const circle = shapeInset("circle", size);
+    expect(circle.x).toBeCloseTo(48, 0);
+    expect(circle.y).toBeCloseTo(30, 0);
+
+    // A diamond narrows toward its apex, so the title bar comes in further than the body:
+    // a bar as wide as the text block would hang outside the paint.
+    const diamond = shapeInset("diamond", size);
+    expect(diamond.titleX).toBeGreaterThan(diamond.x);
+
+    // A document is a rectangle with a turned corner: its bar is as wide as its body.
+    const document = shapeInset("document", size);
+    expect(document.titleX).toBe(document.x);
   });
 });

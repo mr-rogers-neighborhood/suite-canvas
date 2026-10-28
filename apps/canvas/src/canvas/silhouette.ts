@@ -14,11 +14,22 @@
  * a dot's position is document data, and it must survive a resize.
  */
 
+import { type StyleShape, styleShapes } from "@suite/graph";
+import { shapeOutline } from "./surfacePaint";
+
 export interface Silhouette {
   width: number;
   height: number;
   /** The radius the surface resolved, in pixels. Clamped only when read. */
   radius: number;
+  /**
+   * The clip-path silhouette a painted style gave it, when that is not the box.
+   *
+   * A diamond or a hexagon has no radius to correct against, so the paint publishes
+   * the shape as well (`--paint-shape`) and the outline is read from the same table
+   * `shapeClipPath` draws from.
+   */
+  shape?: StyleShape | null;
 }
 
 export interface NormalisedPoint {
@@ -73,6 +84,46 @@ function cornerCentre(px: number, py: number, shape: Silhouette, r: number) {
 }
 
 /**
+ * The point where a ray from the box centre through `position` leaves the polygon.
+ *
+ * A box corner is *outside* a diamond, so "on the box border" is nowehere near the paint
+ * there; the ray is what keeps the dot on the side the reader can see while preserving
+ * the direction they dropped it in. Every anchor slot a card starts with lands on an
+ * edge or a vertex, and a side midpoint on a diamond stays the vertex it already was.
+ */
+function projectOntoPolygon(
+  outline: ReadonlyArray<readonly [number, number]>,
+  position: NormalisedPoint,
+): NormalisedPoint | null {
+  const dx = position.x - 0.5;
+  const dy = position.y - 0.5;
+  if (dx === 0 && dy === 0) return null;
+  let best: { point: NormalisedPoint; distance: number } | null = null;
+  for (let index = 0; index < outline.length; index += 1) {
+    const from = outline[index];
+    const to = outline[(index + 1) % outline.length];
+    if (!from || !to) continue;
+    const ex = to[0] - from[0];
+    const ey = to[1] - from[1];
+    // Ray (centre + t·d) against segment (from + s·e), solved by crossing both sides
+    // with the other direction: t = (f × e)/(d × e) and s = (f × d)/(d × e).
+    const denominator = dx * ey - dy * ex;
+    if (denominator === 0) continue;
+    const fx = from[0] - 0.5;
+    const fy = from[1] - 0.5;
+    const t = (fx * ey - fy * ex) / denominator;
+    const s = (fx * dy - fy * dx) / denominator;
+    // Forward along the ray, and within the segment: anything else is behind the centre
+    // or past a vertex, so it is not where this direction leaves the shape.
+    if (s < -1e-9 || s > 1 + 1e-9 || t < -1e-9) continue;
+    const distance = Math.abs(t);
+    if (best && best.distance <= distance) continue;
+    best = { point: { x: from[0] + ex * s, y: from[1] + ey * s }, distance };
+  }
+  return best?.point ?? null;
+}
+
+/**
  * Where the painted edge is, for a normalised point on the box border.
  *
  * The answer is in the same unit, so a caller positions with it exactly as it would
@@ -87,7 +138,10 @@ function cornerCentre(px: number, py: number, shape: Silhouette, r: number) {
 export function edgePoint(shape: Silhouette, position: NormalisedPoint): NormalisedPoint {
   const r = clampRadius(shape);
   const point = { x: unit(position.x), y: unit(position.y) };
-  if (r === 0 || shape.width <= 0 || shape.height <= 0) return point;
+  if (shape.width <= 0 || shape.height <= 0) return point;
+  const outline = shapeOutline(shape.shape);
+  if (outline) return projectOntoPolygon(outline, point) ?? point;
+  if (r === 0) return point;
 
   const px = point.x * shape.width;
   const py = point.y * shape.height;
@@ -124,7 +178,7 @@ export function isSilhouetteCorrection(
   position: NormalisedPoint,
   threshold = 0.5,
 ): boolean {
-  if (clampRadius(shape) === 0) return false;
+  if (clampRadius(shape) === 0 && shapeOutline(shape.shape) === null) return false;
   const corrected = edgePoint(shape, position);
   return (
     Math.hypot(
@@ -166,5 +220,10 @@ export function readSilhouette(element: Element | null | undefined): Silhouette 
     surface ? window.getComputedStyle(surface).borderTopLeftRadius : style.borderTopLeftRadius,
   );
   const radius = Number.isFinite(declared) ? declared : Number.isFinite(painted) ? painted : 0;
-  return { width, height, radius };
+  // The silhouette is published on the same surface the radius is read from, so a dot
+  // and the chrome cannot disagree about which shape they are inside.
+  const owner = surface ?? box;
+  const declaredShape = window.getComputedStyle(owner).getPropertyValue("--paint-shape").trim();
+  const shape = styleShapes.find((candidate) => candidate === declaredShape) ?? null;
+  return { width, height, radius, shape };
 }

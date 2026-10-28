@@ -63,6 +63,150 @@ export function shapeClipPath(shape: StyleShape): string | undefined {
   }
 }
 
+/**
+ * The silhouette's vertices in 0..1 box fractions, for the shapes a clip path draws.
+ *
+ * The same numbers as `shapeClipPath`, restated as geometry because two other readers
+ * need them: `silhouette.ts` puts a connector dot on the outline, and `shapeInset` keeps
+ * text inside it. A path is a string, so the paint is written once and the geometry is
+ * derived from a table that must agree with it — `surfacePaint.test.ts` holds them
+ * together.
+ */
+const SHAPE_OUTLINE: Partial<Record<StyleShape, ReadonlyArray<readonly [number, number]>>> = {
+  diamond: [
+    [0.5, 0],
+    [1, 0.5],
+    [0.5, 1],
+    [0, 0.5],
+  ],
+  parallelogram: [
+    [0.12, 0],
+    [1, 0],
+    [0.88, 1],
+    [0, 1],
+  ],
+  hexagon: [
+    [0.25, 0],
+    [0.75, 0],
+    [1, 0.5],
+    [0.75, 1],
+    [0.25, 1],
+    [0, 0.5],
+  ],
+  document: [
+    [0, 0],
+    [1, 0],
+    [1, 0.82],
+    [0.86, 1],
+    [0, 1],
+  ],
+  database: [
+    [0, 0.08],
+    [0.5, 0],
+    [1, 0.08],
+    [1, 0.92],
+    [0.5, 1],
+    [0, 0.92],
+  ],
+};
+
+/** The polygon a shape paints, or null when it paints a rounded rectangle or nothing. */
+export function shapeOutline(
+  shape: StyleShape | null | undefined,
+): ReadonlyArray<readonly [number, number]> | null {
+  return shape ? (SHAPE_OUTLINE[shape] ?? null) : null;
+}
+
+/**
+ * True for a silhouette that is *not* the card's own box.
+ *
+ * These are the shapes whose paint replaces the frame rather than decorating it: the
+ * card's box, ring and shadow are rectangular, so they all have to stand down, the
+ * outline is one edge rather than four sides, and the content has to be pulled away
+ * from corners the silhouette does not have.
+ */
+export function isShapedSurface(shape: StyleShape | null | undefined): boolean {
+  return shape !== undefined && shape !== null && shape !== "rect";
+}
+
+/**
+ * How far text and chrome move in from the box edge to stay inside the silhouette,
+ * as fractions of the box's width and height.
+ *
+ * A circle inscribes a square of 70.7%, so its inset is 14.6% on each side. The polygon
+ * shapes are derived from the same question at the depth the header sits at, then
+ * rounded down: a diamond is the strict one, because its narrow ends are exactly where
+ * a title wants to be.
+ */
+const SHAPE_INSET: Record<StyleShape, { x: number; y: number }> = {
+  rect: { x: 0, y: 0 },
+  pill: { x: 0.05, y: 0 },
+  circle: { x: 0.15, y: 0.15 },
+  diamond: { x: 0.24, y: 0.14 },
+  parallelogram: { x: 0.14, y: 0.03 },
+  hexagon: { x: 0.11, y: 0.04 },
+  document: { x: 0.06, y: 0.04 },
+  database: { x: 0.07, y: 0.08 },
+};
+
+/**
+ * Half the horizontal span the silhouette has at a given depth, as a 0..1 fraction of
+ * the box's width.
+ *
+ * A silhouette's width changes with depth, and the top of a diamond is a point: a title
+ * bar placed there is either tiny or hanging outside the shape. This is the number that
+ * lets the bar stop where the paint stops, without a per-shape guess.
+ */
+function spanAtDepth(
+  outline: ReadonlyArray<readonly [number, number]>,
+  depth: number,
+): { min: number; max: number } | null {
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  for (let index = 0; index < outline.length; index += 1) {
+    const from = outline[index];
+    const to = outline[(index + 1) % outline.length];
+    if (!from || !to) continue;
+    const low = Math.min(from[1], to[1]);
+    const high = Math.max(from[1], to[1]);
+    // Only edges that straddle this depth contribute a crossing, and a horizontal edge
+    // contributes both its ends — which is what the `low === high` case is.
+    if (depth < low - 1e-9 || depth > high + 1e-9) continue;
+    const t = high === low ? 0 : (depth - from[1]) / (to[1] - from[1]);
+    const x = from[0] + (to[0] - from[0]) * t;
+    min = Math.min(min, x);
+    max = Math.max(max, x);
+  }
+  return min <= max ? { min, max } : null;
+}
+
+/**
+ * The inset this shape asks for, in pixels for a given box.
+ *
+ * `titleX` is wider than `x` wherever the silhouette narrows toward the top, because a
+ * header sits nearer the apex than the body does. It is derived rather than tabulated:
+ * the bar stops where the paint stops (diamond, hexagon, parallelogram), and it never
+ * comes in *further* than the body's inset, so a rounded shape keeps its own.
+ */
+export function shapeInset(
+  shape: StyleShape | null | undefined,
+  size: { width: number; height: number },
+): { x: number; y: number; titleX: number } {
+  if (!isShapedSurface(shape)) return { x: 0, y: 0, titleX: 0 };
+  const fractions = SHAPE_INSET[shape as StyleShape] ?? { x: 0, y: 0 };
+  const x = Math.round(size.width * fractions.x);
+  const y = Math.round(size.height * fractions.y);
+  const outline = shapeOutline(shape);
+  if (!outline || size.height <= 0) return { x, y, titleX: x };
+  // The header's own top edge: where the shape is narrowest over the bar's height.
+  const span = spanAtDepth(outline, (y * 0.5) / size.height);
+  if (!span) return { x, y, titleX: x };
+  // Symmetric, because a header is centred: a parallelogram's lean costs the bar its
+  // wider side rather than hanging it off one edge.
+  const symmetric = Math.round(size.width * Math.max(span.min, 1 - span.max));
+  return { x, y, titleX: Math.max(x, symmetric) };
+}
+
 /** The corner rounding a shape implies, when the style does not name one. */
 export function shapeRadius(shape: StyleShape): string | undefined {
   switch (shape) {
@@ -120,6 +264,10 @@ export function surfacePaintVars(
   else if (style.radius !== null) paint["--paint-radius"] = `${style.radius}px`;
   const clip = shapeClipPath(style.shape);
   if (clip) paint["--paint-clip"] = clip;
+  // The silhouette is published as well as painted: the card's chrome, its connector
+  // dots and the rectangle it must *not* draw all have to agree with the shape, and a
+  // clip path string is not something a stylesheet or a measurement can read.
+  if (isShapedSurface(style.shape) && style.shape) paint["--paint-shape"] = style.shape;
   for (const side of ["top", "right", "bottom", "left"] as const) {
     const edge = style.sides[side];
     if (!edge) continue;

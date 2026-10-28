@@ -1,11 +1,11 @@
-import type { SurfaceStyle } from "@suite/graph";
+import type { StyleShape, SurfaceStyle } from "@suite/graph";
 import { resolveSurfaceStyle } from "@suite/graph";
 import { type CSSProperties, useRef } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { PresenceAvatars } from "../presence/PresenceAvatars";
 import { BoardMiniature } from "./BoardMiniature";
 import type { BoardMiniatureModel, MiniatureDot } from "./portalMiniature";
-import { surfacePaintVars } from "./surfacePaint";
+import { isShapedSurface, shapeInset, surfacePaintVars } from "./surfacePaint";
 
 /** Fallback frame for a portal that has never been resized, or whose board is empty. */
 export const DEFAULT_PORTAL_SIZE = { width: 288, height: 256 } as const;
@@ -88,6 +88,14 @@ export function PortalCard({
   const paint = style ? surfacePaintVars(resolveSurfaceStyle(style, "card")) : {};
   const painted = Object.keys(paint).length > 0;
   const seamless = style?.surface === "none";
+  // A portal wears a silhouette the same way a note does: the frame, the shadow and the
+  // selection ring are rectangles, so the shape is the outline and they stand down.
+  const paintedShape = paint["--paint-shape"] as StyleShape | undefined;
+  const shape = isShapedSurface(paintedShape) ? paintedShape : null;
+  const inset = shapeInset(shape, {
+    width: width ?? DEFAULT_PORTAL_SIZE.width,
+    height: height ?? DEFAULT_PORTAL_SIZE.height,
+  });
 
   return (
     // A canvas node keeps its double-click gesture and its selection click, so
@@ -98,6 +106,7 @@ export function PortalCard({
       data-unavailable={unavailable ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
       data-seamless={seamless ? "true" : undefined}
+      data-shape={shape ?? undefined}
       role="button"
       tabIndex={0}
       // The accessible name is the card's own content, prefixed by this hidden
@@ -111,6 +120,13 @@ export function PortalCard({
           ...paintStyle(paint),
           width: width ?? DEFAULT_PORTAL_SIZE.width,
           height: height ?? DEFAULT_PORTAL_SIZE.height,
+          ...(shape
+            ? {
+                "--shape-inset-x": `${inset.x}px`,
+                "--shape-inset-y": `${inset.y}px`,
+                "--shape-title-inset-x": `${inset.titleX}px`,
+              }
+            : {}),
         } as CSSProperties
       }
       onPointerDown={(event) => {

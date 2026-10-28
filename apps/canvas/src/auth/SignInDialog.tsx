@@ -365,8 +365,9 @@ export function SignInDialog({
             className="mt-2 flex flex-col gap-1.5"
           >
             <p className="text-[12px] leading-5 text-[var(--ink-muted)]">
-              An account syncs this workspace, and the workspaces this device already holds come
-              with you.
+              An account keeps this workspace across your devices. Sync is part of a plan, so the
+              Plan tab is where that starts; everything here already works without one, on this
+              device.
             </p>
             {feedback}
             <label className="mt-1 text-[11px] text-[var(--ink-muted)]" htmlFor="sign-up-name">

@@ -6,9 +6,9 @@ One task at a time: the steps for a job you already know you need to do.
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Deploy a server](deploy.md) | One small instance, one Docker host, one app container, six SQLite stores on one volume, Caddy in front, Cloudflare in front of Caddy. | 2026-10-27 |
-| [Operate a deployment](operate.md) | Suite runs as a single Node process with six SQLite stores on one directory; there is no external database and no multi-replica mode. | 2026-10-27 |
-| [Release and roll back](release.md) | A release is a tag, an image built from it on the host that serves it, the image id that identifies it, a smoke test against a host, and a rollback pa… | 2026-10-27 |
+| [Deploy a server](deploy.md) | One small instance, one Docker host, one app container, six SQLite stores on one volume, Caddy in front, Cloudflare in front of Caddy. | 2026-10-28 |
+| [Operate a deployment](operate.md) | Suite runs as a single Node process with six SQLite stores on one directory; there is no external database and no multi-replica mode. | 2026-10-28 |
+| [Release and roll back](release.md) | A release is a tag, an image built from it on the host that serves it, the image id that identifies it, a smoke test against a host, and a rollback pa… | 2026-10-28 |
 | [Test and verify a change](test-and-verify.md) | Suite runs three test runners: Vitest for the workspace projects, Playwright for end-to-end journeys, and node --test for @suite/billing, which sits o… | 2026-10-27 |
 | [Add a feature](add-a-feature.md) | The data flow fixes the order: the document package owns the shape, the workspace document owns the write, the snapshot store owns the read, and the c… | 2026-10-26 |
 | [Change the editor](change-the-editor.md) | Add a node, a mark, a field renderer, a slash command or a mention action to the card editor, with the files each one touches and the tests that fail… | 2026-10-26 |

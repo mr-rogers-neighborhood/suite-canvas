@@ -82,6 +82,11 @@ export interface BillingPluginDeps {
   licence?: LicenceProjection;
   /** Creates a Stripe customer on sign-up. On by default; off is not a supported shape. */
   createCustomerOnSignUp?: boolean;
+  /**
+   * Whether Checkout shows a promotion-code field. On by default: it is how a comp or a
+   * launch discount reaches a customer without this process holding a second price list.
+   */
+  allowPromotionCodes?: boolean;
 }
 
 /**
@@ -225,6 +230,16 @@ export function billingPluginOptions(deps: BillingPluginDeps): StripeOptions {
           params: {
             client_reference_id: subscription.referenceId,
             metadata: { organizationId: subscription.referenceId },
+            /**
+             * A promotional code is a Stripe coupon, not a licence grant.
+             *
+             * Stripe owns the discount table, the expiry and the redemption limit, and the
+             * Checkout page has a field for it; the alternative — an operator typing comps
+             * into this process — would be a second source of truth about what somebody
+             * paid. The field is off by default on a Checkout Session, so it has to be
+             * asked for.
+             */
+            allow_promotion_codes: deps.allowPromotionCodes ?? true,
           },
         };
       },

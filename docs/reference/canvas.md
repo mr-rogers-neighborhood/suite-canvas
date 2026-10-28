@@ -150,7 +150,7 @@ other value a reader chooses from the canvas itself.
 A **run** is a state rather than a choice. It is a queue of cards being placed, and only the library has
 the cards to make one, so `library-run-place|thread|fan` starts it: the verb *is* the mode, the drawer
 steps aside so the next click is the placement, and when the hand is empty the drawer comes back. That is
-why `run` left the purpose control and the modifier map — a purpose preview on Shift meant holding Shift
+why `run` left the purpose control and the modifier map: a purpose preview on Shift meant holding Shift
 to thread read as "run", and a menu that offers to start something it cannot supply is a menu that sends
 the reader somewhere else to finish choosing. `record` and `present` remain states only a tour can enter,
 and the purpose control shows them purely as the way out (ADR-0064 amendment).

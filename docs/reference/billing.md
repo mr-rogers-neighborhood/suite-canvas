@@ -5,6 +5,18 @@ owns the Stripe customer, Checkout, the billing portal, the webhook, the subscri
 trials and seat sync. This repository supplies the plan list, the organization rule and the
 entitlement read.
 
+**Who can buy is a separate question from what buying unlocks.** Today an account is created by the
+sign-up form and a plan is bought afterwards; [ADR-0083](../../internal/decisions/open/0083-the-account-is-created-by-paying.md)
+records the door that replaces it: anonymous Checkout, then the account, organization and membership
+created from the completed session, and lists what is still missing. Until that lands, the plan
+surface below is reachable only by an existing account, and the sync refusal is what tells a reader
+that a plan is the next step.
+
+A **promotional code** is a Stripe coupon, not a licence grant. Checkout is created with
+`allow_promotion_codes`, so the field appears on Stripe's own page and an operator makes a percentage
+or 100% discount in the dashboard. This process holds no second table describing what somebody paid,
+which is the same reason ADR-0078 deleted the hand-written store.
+
 A licence is a signed token. A self-hosted relay reads one from `SUITE_LICENCE` and verifies it
 at boot ([ADR-0081](../../internal/decisions/open/0081-a-self-host-licence-arrives-in-the-environment.md));
 a hosted relay reads none, because its proof is the session JWT the auth instance signs

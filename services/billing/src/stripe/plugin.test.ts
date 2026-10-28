@@ -199,6 +199,26 @@ describe("getCheckoutSessionParams", () => {
     assert.deepEqual(result?.params?.metadata, { organizationId: "org_1" });
   });
 
+  it("asks Checkout for a promotion-code field, so a comp needs no second price list", async () => {
+    const subscription = subscriptionOf(optionsWith(granting().authorize));
+    const params = subscription.getCheckoutSessionParams;
+    assert.ok(params !== undefined);
+    type Input = Parameters<typeof params>[0];
+
+    const result = await params(
+      {
+        user: { id: "user_1" },
+        subscription: { referenceId: "org_1", plan: "solo", status: "incomplete" },
+        plan: plansOf(optionsWith(granting().authorize))[0],
+      } as unknown as Input,
+      {} as unknown as Parameters<typeof params>[1],
+      {} as unknown as Parameters<typeof params>[2],
+    );
+
+    // Off by default on a Checkout Session, and the only place a discount can come from.
+    assert.equal(result?.params?.allow_promotion_codes, true);
+  });
+
   it("should refuse a reference the user does not administer", async () => {
     const subscription = subscriptionOf(optionsWith(granting().authorize));
     const params = subscription.getCheckoutSessionParams;

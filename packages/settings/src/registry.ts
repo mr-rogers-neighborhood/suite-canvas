@@ -88,7 +88,7 @@ export const SETTINGS: readonly SettingDefinition[] = [
     env: "STRIPE_WEBHOOK_SECRET",
     fallback: "",
     group: "billing",
-    help: "The signing secret for test events. A webhook is verified against both sets.",
+    help: "The signing secret for test events. Read only while the mode is test.",
   },
   {
     key: "billing.stripe.webhookSecret.live",
@@ -96,7 +96,7 @@ export const SETTINGS: readonly SettingDefinition[] = [
     env: "STRIPE_WEBHOOK_SECRET_LIVE",
     fallback: "",
     group: "billing",
-    help: "The signing secret for live events.",
+    help: "The signing secret for live events. Read only while the mode is live.",
   },
   {
     key: "billing.stripe.prices.test",

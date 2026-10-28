@@ -61,7 +61,9 @@ export function SettingsPanel() {
 
       {mode === "live" ? (
         <p className="admin-warning" role="status" data-testid="billing-live-warning">
-          Billing is in <strong>live</strong> mode: checkouts charge real cards.
+          Billing is in <strong>live</strong> mode: checkouts charge real cards, and only the{" "}
+          <code>_LIVE</code> key, webhook secret and prices are read. Fill those in before
+          switching, or billing switches itself off.
         </p>
       ) : null}
 

@@ -29,15 +29,67 @@ import type { Logger } from "../logging.js";
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
-/** True when a checkout, a portal and a webhook all have what they need. */
+/** Which credential set the deployment is spending. Absent or unknown reads as test. */
+export function stripeMode(env: Env): "test" | "live" {
+  return env.SUITE_BILLING_MODE?.trim().toLowerCase() === "live" ? "live" : "test";
+}
+
+/**
+ * The Stripe keys for the active mode, and nothing from the other one.
+ *
+ * Both sets live in the settings table, so the mode is what decides which of them this
+ * process holds. That is the pinning: a webhook is verified with the active mode's signing
+ * secret only, so a test event that arrives while the deployment is live fails the
+ * signature check instead of writing a licence. The cost is that switching modes needs
+ * both keys for the new mode in place *before* the switch, which is why a half-configured
+ * live set leaves billing off and names what is missing rather than half-working.
+ */
+export interface StripeCredentials {
+  mode: "test" | "live";
+  secretKey: string;
+  webhookSecret: string;
+  priceTiers: string;
+}
+
+export function stripeCredentials(env: Env): StripeCredentials {
+  const mode = stripeMode(env);
+  const read = (name: string): string => (env[name] ?? "").trim();
+  return mode === "live"
+    ? {
+        mode,
+        secretKey: read("STRIPE_SECRET_KEY_LIVE"),
+        webhookSecret: read("STRIPE_WEBHOOK_SECRET_LIVE"),
+        priceTiers: read("STRIPE_PRICE_TIERS_LIVE"),
+      }
+    : {
+        mode,
+        secretKey: read("STRIPE_SECRET_KEY"),
+        webhookSecret: read("STRIPE_WEBHOOK_SECRET"),
+        priceTiers: read("STRIPE_PRICE_TIERS"),
+      };
+}
+
+/** True when a checkout, a portal and a webhook all have what the active mode needs. */
 export function billingConfigured(env: Env): boolean {
   const flag = env.SUITE_BILLING_ENABLED?.trim().toLowerCase();
   if (flag !== "1" && flag !== "true") return false;
+  const active = stripeCredentials(env);
   return (
-    (env.STRIPE_SECRET_KEY?.trim().length ?? 0) > 0 &&
-    (env.STRIPE_WEBHOOK_SECRET?.trim().length ?? 0) > 0 &&
-    (env.STRIPE_PRICE_TIERS?.trim().length ?? 0) > 0
+    active.secretKey.length > 0 && active.webhookSecret.length > 0 && active.priceTiers.length > 0
   );
+}
+
+/** What a mode is missing, for the one log line that explains billing staying off. */
+export function missingStripeSettings(env: Env): string[] {
+  const active = stripeCredentials(env);
+  const suffix = active.mode === "live" ? "LIVE" : "";
+  const missing: string[] = [];
+  if (active.secretKey.length === 0) missing.push(`STRIPE_SECRET_KEY${suffix ? `_${suffix}` : ""}`);
+  if (active.webhookSecret.length === 0)
+    missing.push(`STRIPE_WEBHOOK_SECRET${suffix ? `_${suffix}` : ""}`);
+  if (active.priceTiers.length === 0)
+    missing.push(`STRIPE_PRICE_TIERS${suffix ? `_${suffix}` : ""}`);
+  return missing;
 }
 
 /** Subscriptions live in the control-plane database, the same one accounts use. */
@@ -137,11 +189,15 @@ export function tierParts(deps: TierPartsDeps): TierParts {
  */
 export async function composeBilling(env: Env, logger: Logger): Promise<BillingComposition | null> {
   if (!billingConfigured(env)) {
-    logger.info("billing is off; no billing routes mounted");
+    logger.info("billing is off; no billing routes mounted", {
+      mode: stripeMode(env),
+      missing: missingStripeSettings(env),
+    });
     return null;
   }
 
-  const parsed = parseTierTable(env.STRIPE_PRICE_TIERS);
+  const stripe = stripeCredentials(env);
+  const parsed = parseTierTable(stripe.priceTiers);
   if (parsed.isErr()) throw new Error(`STRIPE_PRICE_TIERS is unusable: ${parsed.error.message}`);
   const tiers = parsed.value;
 
@@ -192,8 +248,9 @@ export async function composeBilling(env: Env, logger: Logger): Promise<BillingC
 
   return {
     plugin: createBillingPlugin({
-      secretKey: (env.STRIPE_SECRET_KEY ?? "").trim(),
-      webhookSecret: (env.STRIPE_WEBHOOK_SECRET ?? "").trim(),
+      // The active mode's set, so a webhook signed by the other mode cannot verify.
+      secretKey: stripe.secretKey,
+      webhookSecret: stripe.webhookSecret,
       tiers,
       authorizeOrganization,
       licence: parts.licence,

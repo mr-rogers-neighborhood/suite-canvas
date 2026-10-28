@@ -6,7 +6,13 @@ import {
   type TierTable,
 } from "@suite/billing";
 import { describe, expect, it } from "vitest";
-import { billingConfigured, tierParts } from "./auth-billing.js";
+import {
+  billingConfigured,
+  missingStripeSettings,
+  stripeCredentials,
+  stripeMode,
+  tierParts,
+} from "./auth-billing.js";
 
 /**
  * One answer, asserted where it can actually be wrong.
@@ -215,6 +221,48 @@ describe("billingConfigured", () => {
 
   it("should turn billing on for the process environment", () => {
     expect(billingConfigured(stripe)).toBe(true);
+  });
+
+  it("should read the credential set the mode names, and only that one", () => {
+    const both = {
+      ...stripe,
+      SUITE_BILLING_MODE: "live",
+      STRIPE_SECRET_KEY_LIVE: "sk_live_x",
+      STRIPE_WEBHOOK_SECRET_LIVE: "whsec_live",
+      STRIPE_PRICE_TIERS_LIVE: '{"price_live":{"tier":"solo","workspaces":3}}',
+    };
+
+    expect(stripeCredentials(both)).toEqual({
+      mode: "live",
+      secretKey: "sk_live_x",
+      webhookSecret: "whsec_live",
+      priceTiers: '{"price_live":{"tier":"solo","workspaces":3}}',
+    });
+    // The test set is present and deliberately not read.
+    expect(stripeCredentials({ ...both, SUITE_BILLING_MODE: "test" })).toEqual({
+      mode: "test",
+      secretKey: "sk_test_x",
+      webhookSecret: "whsec_x",
+      priceTiers: '{"price_solo":{"tier":"solo","workspaces":3}}',
+    });
+  });
+
+  it("should stay off when the live mode has no live keys yet", () => {
+    // The failure mode this prevents: mode flipped to live while the keys are still the
+    // test ones, so test events would keep writing licences on a live deployment.
+    const flipped = { ...stripe, SUITE_BILLING_MODE: "live" };
+
+    expect(billingConfigured(flipped)).toBe(false);
+    expect(missingStripeSettings(flipped)).toEqual([
+      "STRIPE_SECRET_KEY_LIVE",
+      "STRIPE_WEBHOOK_SECRET_LIVE",
+      "STRIPE_PRICE_TIERS_LIVE",
+    ]);
+  });
+
+  it("should treat an unknown mode as test rather than guessing", () => {
+    expect(stripeMode({ ...stripe, SUITE_BILLING_MODE: "prod" })).toBe("test");
+    expect(stripeMode(stripe)).toBe("test");
   });
 
   it("should stay off for the auth whitelist, which is why the boot passes the source", () => {

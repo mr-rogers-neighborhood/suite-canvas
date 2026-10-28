@@ -189,6 +189,12 @@ Billing owns `SUITE_BILLING_ENABLED`, `SUITE_BILLING_STORE`, `SUITE_BILLING_DATA
 `STRIPE_PRICE_TIERS`, `SUITE_SELF_HOST_URL`, `SES_FROM_ADDRESS` and `SUITE_SES_REGION`, all listed in
 [billing.md](billing.md).
 
+`SUITE_BILLING_MODE` names which credential set is live: `test` (the default) reads `STRIPE_SECRET_KEY`,
+`STRIPE_WEBHOOK_SECRET` and `STRIPE_PRICE_TIERS`, and `live` reads only the `_LIVE` versions of those
+three. A webhook is verified with the active mode's signing secret and no other, so a test event that
+arrives while the deployment is live fails verification instead of writing a licence. Switching to live
+with the `_LIVE` set incomplete leaves billing off, and the boot log names the variables it wanted.
+
 `compose.yaml` adds three variables it consumes itself: `SUITE_DOMAIN` (the hostname Caddy serves),
 `SUITE_ACME_EMAIL` (the ACME account address) and `SUITE_IMAGE` (the image to run, defaulting to the image
 the host builds locally, `suite:local`).

@@ -60,17 +60,25 @@
   height: 1px;
 }
 
-.bulk-style-bar {
+/*
+ * The style editor for a multi-selection.
+ *
+ * Same controls as the inspector's Style tab, docked where the old bulk bar sat: a
+ * selection is the same record written to each of its members, so it is the same
+ * editor. Only the frame belongs to the canvas.
+ */
+.selection-style {
   position: absolute;
   z-index: 16;
   bottom: 84px;
   left: 50%;
   display: flex;
-  max-width: min(620px, calc(100vw - 32px));
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  max-width: min(680px, calc(100vw - 32px));
+  max-height: min(60vh, 520px);
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  padding: 8px 10px;
   border: 1px solid var(--hairline);
   border-radius: 14px;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
@@ -79,60 +87,11 @@
   backdrop-filter: blur(16px) saturate(1.1);
 }
 
-.bulk-style-bar__label {
+.selection-style__label {
   color: var(--ink-muted);
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
-}
-
-.bulk-style-bar__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  /* The row is a `fieldset` so its chips are one labelled group for a screen
-     reader; the browser's box around it is not part of the design. */
-  margin: 0;
-  padding: 0;
-  border: 0;
-  min-inline-size: 0;
-}
-
-.bulk-style-chip {
-  padding: 2px 8px;
-  border: 1px solid var(--hairline);
-  border-radius: 9999px;
-  color: var(--ink);
-  font-size: 11px;
-  line-height: 18px;
-}
-
-.bulk-style-chip:hover,
-.bulk-style-chip:focus-visible {
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
-}
-
-.bulk-style-chip[data-checked="true"] {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--surface);
-}
-
-.bulk-style-chip[data-mixed="true"] {
-  border-style: dashed;
-}
-
-.bulk-style-chip:disabled {
-  opacity: 0.5;
-}
-
-.bulk-style-bar__select {
-  padding: 2px 6px;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 11px;
 }
 
 .board-outline__empty {

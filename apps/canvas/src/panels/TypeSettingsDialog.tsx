@@ -460,7 +460,11 @@ export function TypeSettingsDialog({
                   Appearance
                 </p>
                 <div className="mb-4 rounded-lg border border-[var(--hairline)] p-2">
-                  <StyleTab kind="type" id={selected.id} canEdit typeName={selected.name} />
+                  <StyleTab
+                    targets={[{ kind: "type", id: selected.id }]}
+                    canEdit
+                    typeName={selected.name}
+                  />
                 </div>
 
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">

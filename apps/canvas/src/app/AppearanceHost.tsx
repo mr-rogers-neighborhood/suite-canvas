@@ -72,7 +72,11 @@ export function AppearanceHost() {
           {"\u00d7"}
         </button>
       </div>
-      <StyleTab kind={target.kind} id={target.id} canEdit={canEditLayout} typeName={typeName} />
+      <StyleTab
+        targets={[{ kind: target.kind, id: target.id }]}
+        canEdit={canEditLayout}
+        typeName={typeName}
+      />
       {/*
         A colour the palette does not have is the one thing this panel cannot
         change itself, so it says where the palette lives rather than leaving the

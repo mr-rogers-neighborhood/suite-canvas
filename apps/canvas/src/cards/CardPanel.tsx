@@ -428,8 +428,7 @@ export function CardPanel({
           aria-labelledby={tabIds.styleTabId}
         >
           <StyleTab
-            kind="card"
-            id={card.id}
+            targets={[{ kind: "card", id: card.id }]}
             canEdit={editLayout}
             typeName={typesById.get(card.primaryTypeId)?.name ?? null}
           />

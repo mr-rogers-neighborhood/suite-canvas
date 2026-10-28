@@ -3,12 +3,12 @@ import { StatusCursorLayer } from "../../cursor/StatusCursorLayer";
 import { ContextMenu, type ContextMenuItem } from "../../dialogs/ContextMenu";
 import { ExplainPanel } from "../../panels/ExplainPanel";
 import { NudgeHint } from "../BoardHints";
-import { BulkStyleBar } from "../BulkStyleBar";
 import { EdgeDescriptionInput } from "../EdgeDescription";
 import { HeldStackCursor } from "../HeldStackCursor";
 import { LibraryDropPreview } from "../PeerLibraryDragLayer";
 import { PlacementRunBar } from "../PlacementRunBar";
 import { PortalTransitionLayer } from "../PortalTransitionLayer";
+import { SelectionStylePanel } from "../SelectionStylePanel";
 import type { usePlacementEngine } from "../usePlacementEngine";
 import { ThreadLinkPreview } from "./ThreadLinkPreview";
 import type { useBoardLinks } from "./useBoardLinks";
@@ -44,8 +44,8 @@ export function BoardOverlays({
     workspace,
   } = ui;
   const { linkScene, cardsById } = projection;
-  // The two selection affordances share the strip above the dock: the nudge
-  // hint owns a lone card, and the bulk bar owns a multi-selection.
+  // The two selection affordances share the strip above the dock: the nudge hint owns
+  // a lone card, and the style panel owns a multi-selection.
   const styleTargets =
     selectedNodeIds.length > 1
       ? selectedNodeIds.flatMap((id) => {
@@ -79,7 +79,11 @@ export function BoardOverlays({
         <NudgeHint count={selectedNodeIds.length} lifted={styleTargets.length > 1} />
       ) : null}
       {canEditLayout && styleTargets.length > 1 ? (
-        <BulkStyleBar targets={styleTargets} canEdit={canEditLayout} workspace={workspace} />
+        <SelectionStylePanel
+          cardIds={styleTargets.map((target) => target.id)}
+          canEdit={canEditLayout}
+          workspace={workspace}
+        />
       ) : null}
       <ExplainPanel />
       <StatusCursorLayer />

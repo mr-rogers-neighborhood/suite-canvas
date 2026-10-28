@@ -32,7 +32,7 @@ function seed() {
 describe("StyleTab for a card", () => {
   it("writes a silhouette and a fill to the card", () => {
     const { doc, card } = seed();
-    render(<StyleTab kind="card" id={card.id} canEdit />);
+    render(<StyleTab targets={[{ kind: "card", id: card.id }]} canEdit />);
 
     fireEvent.click(screen.getByTestId("style-shape-pill"));
     fireEvent.click(screen.getByTestId("style-swatch-blue"));
@@ -43,7 +43,7 @@ describe("StyleTab for a card", () => {
 
   it("offers a Default and a None fill beside the palette", () => {
     const { doc, card } = seed();
-    render(<StyleTab kind="card" id={card.id} canEdit />);
+    render(<StyleTab targets={[{ kind: "card", id: card.id }]} canEdit />);
 
     fireEvent.click(screen.getByTestId("style-swatch-rose"));
     fireEvent.click(screen.getByTestId("style-swatch-default"));
@@ -55,7 +55,7 @@ describe("StyleTab for a card", () => {
 
   it("drops a side set back to solid rather than storing a default", () => {
     const { doc, card } = seed();
-    render(<StyleTab kind="card" id={card.id} canEdit />);
+    render(<StyleTab targets={[{ kind: "card", id: card.id }]} canEdit />);
 
     fireEvent.click(screen.getByTestId("style-side-left-dashed"));
     expect(doc.getCard(card.id)?.style?.sides?.left?.paint).toBe("dashed");
@@ -66,7 +66,7 @@ describe("StyleTab for a card", () => {
 
   it("writes nothing when the reader may not edit", () => {
     const { doc, card } = seed();
-    render(<StyleTab kind="card" id={card.id} canEdit={false} />);
+    render(<StyleTab targets={[{ kind: "card", id: card.id }]} canEdit={false} />);
 
     fireEvent.click(screen.getByTestId("style-shape-circle"));
 
@@ -75,7 +75,7 @@ describe("StyleTab for a card", () => {
 
   it("clears the card's own style on reset", () => {
     const { doc, card } = seed();
-    render(<StyleTab kind="card" id={card.id} canEdit />);
+    render(<StyleTab targets={[{ kind: "card", id: card.id }]} canEdit />);
     fireEvent.click(screen.getByTestId("style-shape-pill"));
 
     fireEvent.click(screen.getByTestId("style-reset"));
@@ -89,7 +89,7 @@ describe("a card's type", () => {
     const { doc, card, typeId } = seed();
     doc.updateType(typeId, { style: { shape: "pill" } });
 
-    render(<StyleTab kind="card" id={card.id} canEdit />);
+    render(<StyleTab targets={[{ kind: "card", id: card.id }]} canEdit />);
 
     // The controls stay bound to the card's own style, so "Default" keeps meaning
     // "inherit"; one line says what it is inheriting from.
@@ -101,7 +101,7 @@ describe("a card's type", () => {
     const { doc, card, typeId } = seed();
     doc.setCardStyle(card.id, { shape: "diamond", swatch: "violet" });
 
-    render(<StyleTab kind="card" id={card.id} canEdit />);
+    render(<StyleTab targets={[{ kind: "card", id: card.id }]} canEdit />);
     fireEvent.click(screen.getByTestId("style-make-default"));
 
     expect(doc.getType(typeId)?.style).toEqual({ shape: "diamond", swatch: "violet" });
@@ -111,7 +111,7 @@ describe("a card's type", () => {
 
   it("is not offered until the card has a style of its own", () => {
     const { card } = seed();
-    render(<StyleTab kind="card" id={card.id} canEdit />);
+    render(<StyleTab targets={[{ kind: "card", id: card.id }]} canEdit />);
 
     expect(screen.getByTestId("style-make-default")).toBeDisabled();
   });
@@ -120,7 +120,7 @@ describe("a card's type", () => {
 describe("StyleTab for a type", () => {
   it("writes the type's own style, which every card of it inherits", () => {
     const { doc, typeId } = seed();
-    render(<StyleTab kind="type" id={typeId} canEdit />);
+    render(<StyleTab targets={[{ kind: "type", id: typeId }]} canEdit />);
 
     fireEvent.click(screen.getByTestId("style-shape-diamond"));
 
@@ -129,7 +129,7 @@ describe("StyleTab for a type", () => {
 
   it("offers no promotion, because the type is where the default already lives", () => {
     const { typeId } = seed();
-    render(<StyleTab kind="type" id={typeId} canEdit />);
+    render(<StyleTab targets={[{ kind: "type", id: typeId }]} canEdit />);
 
     expect(screen.queryByTestId("style-make-default")).toBeNull();
   });
@@ -147,7 +147,7 @@ describe("StyleTab for a link", () => {
     });
     if (!edge) throw new Error("a link between two placed cards is drawable");
 
-    render(<StyleTab kind="edge" id={edge.id} canEdit />);
+    render(<StyleTab targets={[{ kind: "edge", id: edge.id }]} canEdit />);
 
     expect(screen.queryByTestId("style-shapes")).toBeNull();
     // A link has one stroke, so the four per-side rows are not there; the line

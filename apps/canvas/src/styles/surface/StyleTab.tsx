@@ -3,7 +3,7 @@ import { styleShapes, styleSides, TEXT_SCALE_MAX, TEXT_SCALE_MIN } from "@suite/
 import { useSurfacePaint } from "../../canvas/surfaceContext";
 import { isShapedSurface } from "../../canvas/surfacePaint";
 import { FLOW_OPTIONS, PAINT_OPTIONS, SHAPE_LABELS, SIDE_LABELS } from "../styleOptions";
-import { type StyleSurfaceKind, useStyleDraft } from "./useStyleDraft";
+import { type StyleTarget, useStyleDraft } from "./useStyleDraft";
 
 /**
  * An enumerated choice as chips, which is the only shape this editor uses for one.
@@ -18,6 +18,7 @@ function ChipRow<T extends string>({
   value,
   options,
   disabled,
+  mixed = false,
   onSelect,
 }: {
   label: string;
@@ -25,10 +26,12 @@ function ChipRow<T extends string>({
   value: T | undefined;
   options: readonly { value: T | undefined; label: string }[];
   disabled: boolean;
+  /** The selection disagrees about this row, so no option speaks for it. */
+  mixed?: boolean;
   onSelect: (value: T | undefined) => void;
 }) {
   return (
-    <div className="style-tab__row" data-testid={testId}>
+    <div className="style-tab__row" data-testid={testId} data-mixed={mixed ? "true" : undefined}>
       <span>{label}</span>
       <div className="style-tab__chips">
         {options.map((option) => (
@@ -37,7 +40,7 @@ function ChipRow<T extends string>({
             type="button"
             className="style-chip"
             data-testid={`${testId}-${option.value ?? "default"}`}
-            data-checked={value === option.value ? "true" : undefined}
+            data-checked={!mixed && value === option.value ? "true" : undefined}
             disabled={disabled}
             onClick={() => onSelect(option.value)}
           >
@@ -50,8 +53,14 @@ function ChipRow<T extends string>({
 }
 
 export interface StyleTabProps {
-  kind: StyleSurfaceKind;
-  id: string;
+  /**
+   * What is being painted: one surface, or every surface of a selection.
+   *
+   * A selection is the same record written to each of its members, so it is the same
+   * editor — what it adds is "do these agree", rendered per row as Mixed. There is no
+   * second panel and no second vocabulary.
+   */
+  targets: readonly StyleTarget[];
   canEdit: boolean;
   /** The document to write through; defaults to the live one. */
   workspace?: WorkspaceDocument | null;
@@ -71,20 +80,33 @@ export interface StyleTabProps {
  * board's right-click Appearance submenu. There is one editor, so the three cannot
  * drift.
  */
-export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null }: StyleTabProps) {
-  const { style, resolved, typeId, typeStyle, patch, reset, makeTypeDefault } = useStyleDraft(
-    { kind, id },
-    workspace,
-  );
+export function StyleTab({ targets, canEdit, workspace = null, typeName = null }: StyleTabProps) {
+  const draft = useStyleDraft(targets, workspace);
+  const { style, resolved, typeId, typeStyle, patch, reset, makeTypeDefault, mixed } = draft;
   const { palette, mode } = useSurfacePaint();
   const current = style ?? {};
 
   // A link is one stroke rather than a box with four sides (ADR-0051 §1), so its
   // editor shows the line and hides what a line cannot have: a silhouette, a
-  // background, a text scale.
-  const isLink = kind === "edge";
-  const hasShape = !isLink;
-  const hasText = !isLink;
+  // background, a text scale. A selection that mixes kinds has no common kind, and
+  // nothing is offered: a row that cannot reach every member is a row that lies.
+  const isLink = draft.kind === "edge";
+  const hasShape = draft.kind !== null && !isLink;
+  const hasText = draft.kind !== null && !isLink;
+  const kind = draft.kind;
+
+  /** A row reads Mixed when the selection disagrees about the key it edits. */
+  const mixedKey = (key: keyof SurfaceStyle): boolean => mixed.has(key);
+
+  /**
+   * A slider needs one number. When the selection disagrees it shows the first
+   * member's resolved value and says Mixed beside it, rather than pretending the
+   * number is the selection's.
+   */
+  const sliderValue = (key: keyof SurfaceStyle, fallback: number): number => {
+    const value = current[key];
+    return typeof value === "number" ? value : fallback;
+  };
 
   const update = (next: SurfaceStyle) => {
     if (!canEdit) return;
@@ -148,11 +170,15 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
       {hasShape ? (
         <section className="style-tab__group">
           <h3 className="style-tab__heading">Shape</h3>
-          <div className="style-tab__chips" data-testid="style-shapes">
+          <div
+            className="style-tab__chips"
+            data-testid="style-shapes"
+            data-mixed={mixedKey("shape") ? "true" : undefined}
+          >
             <button
               type="button"
               className="style-chip"
-              data-checked={current.shape === undefined ? "true" : undefined}
+              data-checked={!mixedKey("shape") && current.shape === undefined ? "true" : undefined}
               data-testid="style-shape-default"
               disabled={!canEdit}
               onClick={() => update({ ...current, shape: undefined })}
@@ -181,7 +207,11 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
         {/* A stroke has no fill, so the background row would be a control that
             cannot do anything (ADR-0051 §1). */}
         {isLink ? null : (
-          <div className="style-tab__row" data-testid="style-swatches">
+          <div
+            className="style-tab__row"
+            data-testid="style-swatches"
+            data-mixed={mixedKey("swatch") || mixedKey("surface") ? "true" : undefined}
+          >
             <span>Fill</span>
             <div className="style-tab__swatches">
               <button
@@ -189,7 +219,12 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
                 className="style-swatch"
                 data-testid="style-swatch-default"
                 data-checked={
-                  current.swatch === undefined && current.surface === undefined ? "true" : undefined
+                  !mixedKey("swatch") &&
+                  !mixedKey("surface") &&
+                  current.swatch === undefined &&
+                  current.surface === undefined
+                    ? "true"
+                    : undefined
                 }
                 disabled={!canEdit}
                 title="Theme default"
@@ -201,7 +236,9 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
                 type="button"
                 className="style-swatch"
                 data-testid="style-swatch-none"
-                data-checked={current.surface === "none" ? "true" : undefined}
+                data-checked={
+                  !mixedKey("surface") && current.surface === "none" ? "true" : undefined
+                }
                 disabled={!canEdit}
                 title="No fill"
                 onClick={() => update({ ...current, swatch: undefined, surface: "none" })}
@@ -214,7 +251,9 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
                   type="button"
                   className="style-swatch"
                   data-testid={`style-swatch-${swatch.id}`}
-                  data-checked={current.swatch === swatch.id ? "true" : undefined}
+                  data-checked={
+                    !mixedKey("swatch") && current.swatch === swatch.id ? "true" : undefined
+                  }
                   disabled={!canEdit}
                   title={swatch.name}
                   aria-label={swatch.name}
@@ -243,6 +282,7 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
             <ChipRow
               label="Style"
               testId="style-line-paint"
+              mixed={mixedKey("sides")}
               value={current.sides?.top?.paint ?? "solid"}
               disabled={!canEdit}
               options={PAINT_OPTIONS}
@@ -271,12 +311,13 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
                 }}
               />
               <span className="style-tab__value">
-                {(current.sides?.top?.width ?? 1.6).toFixed(1)}
+                {mixed.has("sides") ? "Mixed" : (current.sides?.top?.width ?? 1.6).toFixed(1)}
               </span>
             </label>
             <ChipRow
               label="Flow"
               testId="style-line-flow"
+              mixed={mixedKey("sides")}
               value={current.sides?.top?.flow ?? undefined}
               disabled={!canEdit}
               options={FLOW_OPTIONS}
@@ -307,6 +348,7 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
               key={side}
               label={SIDE_LABELS[side]}
               testId={`style-side-${side}`}
+              mixed={mixedKey("sides")}
               value={current.sides?.[side]?.paint ?? "solid"}
               disabled={!canEdit}
               options={PAINT_OPTIONS}
@@ -327,11 +369,13 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
               min={TEXT_SCALE_MIN}
               max={TEXT_SCALE_MAX}
               step={0.05}
-              value={current.textScale ?? 1}
+              value={sliderValue("textScale", 1)}
               disabled={!canEdit}
               onChange={(event) => update({ ...current, textScale: Number(event.target.value) })}
             />
-            <span className="style-tab__value">{Math.round(resolved.textScale * 100)}%</span>
+            <span className="style-tab__value">
+              {mixedKey("textScale") ? "Mixed" : `${Math.round(resolved.textScale * 100)}%`}
+            </span>
           </label>
         ) : null}
         <label className="style-tab__row">
@@ -344,7 +388,7 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
             min={resolved.opacity < 0.25 ? resolved.opacity : 0.25}
             max={1}
             step={0.05}
-            value={current.opacity ?? 1}
+            value={sliderValue("opacity", 1)}
             disabled={!canEdit}
             onChange={(event) => update({ ...current, opacity: Number(event.target.value) })}
           />

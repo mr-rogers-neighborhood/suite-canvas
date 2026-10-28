@@ -383,7 +383,7 @@ export function LinkInspector({
             (ADR-0051), showing the line controls a link can actually use. */}
         <section className="mt-3 border-t border-[var(--hairline)] pt-2">
           <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">Style</h3>
-          <StyleTab kind="edge" id={edgeId} canEdit={canEdit} />
+          <StyleTab targets={[{ kind: "edge", id: edgeId }]} canEdit={canEdit} />
         </section>
 
         <section className="mt-3">

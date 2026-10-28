@@ -206,8 +206,7 @@ export function ContainerPanel({
         <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5" data-testid="container-style">
           {portal ? (
             <StyleTab
-              kind="card"
-              id={model.id}
+              targets={[{ kind: "card", id: model.id }]}
               canEdit={canEdit && !model.orphan}
               workspace={workspace}
             />

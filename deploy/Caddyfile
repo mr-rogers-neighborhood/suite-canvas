@@ -22,8 +22,17 @@
 # live in that process and the documents are local files. See
 # docs/how-to/deploy.md.
 {
-	# Uncomment to register the ACME account with an email from the environment.
-	# email {$SUITE_ACME_EMAIL}
+	# The certificate authority to issue against. Let's Encrypt is the default; a
+	# deployment that has spent its rate limit (five duplicate certificates per exact
+	# hostname set per seven days) points this at a second authority instead of waiting,
+	# because the window is not negotiable and the site is down for its duration.
+	# `SUITE_ACME_CA=https://acme.zerossl.com/v2/DV90` moves issuance to ZeroSSL, whose
+	# account credentials Caddy fetches by itself when the email below is set.
+	acme_ca {$SUITE_ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
+	# The ACME account address. The default covers an unset variable; compose substitutes
+	# a value before it gets here, because Caddy reads an empty variable as a missing
+	# argument and refuses to load the whole file.
+	email {$SUITE_ACME_EMAIL:ops@suite.run}
 	servers {
 		protocols h1 h2
 	}

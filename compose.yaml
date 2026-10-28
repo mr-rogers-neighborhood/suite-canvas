@@ -333,7 +333,11 @@ services:
       # this machine arrives through it and is in no tailnet. The default fails closed
       # either way: nothing outside these ranges is served.
       SUITE_OPERATOR_ALLOW: ${SUITE_OPERATOR_ALLOW:-127.0.0.1/32 ::1/128 172.16.0.0/12}
-      SUITE_ACME_EMAIL: ${SUITE_ACME_EMAIL:-}
+      # A default rather than an empty string: Caddy rejects `email` with no argument,
+      # and an empty environment variable counts as no argument. `SUITE_ACME_CA` moves
+      # issuance to another authority when a rate limit is in the way.
+      SUITE_ACME_EMAIL: ${SUITE_ACME_EMAIL:-ops@suite.run}
+      SUITE_ACME_CA: ${SUITE_ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
       # The three production hosts and the two static roots they serve. The
       # defaults are `*.localhost` so a bare `docker compose up` uses Caddy's
       # internal CA instead of asking Let's Encrypt for a domain it does not own;

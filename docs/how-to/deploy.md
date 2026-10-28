@@ -551,6 +551,31 @@ A `deploy/Caddyfile` change needs `docker compose build caddy && docker compose 
 costs a couple of seconds of 502. Enable the commented `caddy-data` volume if you recreate Caddy often,
 or it re-issues certificates until Let's Encrypt's five-per-week limit stops you.
 
+### When the certificate authority says no
+
+The limit is real and it is measured per exact hostname set: five duplicate certificates in seven days,
+then `429 rateLimited` until the window rolls over, which is days away and not shortened by asking
+sooner. Caddy logged this and kept retrying while every host answered nothing, so the shape of the
+incident was a working origin with no TLS.
+
+The fix is a second authority rather than a wait. `SUITE_ACME_CA` selects the directory:
+
+```sh
+# .env on the host, then `docker compose build caddy && docker compose up -d caddy`
+SUITE_ACME_CA=https://acme.zerossl.com/v2/DV90
+SUITE_ACME_EMAIL=you@example.com     # ZeroSSL mints account credentials from the address
+```
+
+ZeroSSL hands Caddy its EAB credentials when an email is set, so nothing has to be registered by hand;
+the certificate is a normal 90-day DV certificate and the ACME account lives in `caddy-data` beside the
+Let's Encrypt one. `deploy/Caddyfile` defaults to Let's Encrypt, so this is a line in `.env`, not a
+change to the file. Two authorities side by side also mean a future rate limit costs one variable
+instead of an outage.
+
+The other half of the incident was ours: `caddy` had its state on `tmpfs`, so every recreate began with
+an empty `/data` and requested three fresh certificates. `deploy/compose.aws.yaml` mounts the
+`caddy-data` volume, and without it a handful of deploys in one afternoon spends the weekly allowance.
+
 ### Publishing to a registry again (optional)
 
 Not used today, and nothing above needs it. If a registry becomes available, GitHub Actions on a

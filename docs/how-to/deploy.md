@@ -103,9 +103,31 @@ Then, once, by hand (both are decisions rather than setup):
 
 ```sh
 sudo -iu suite
-git clone https://github.com/mr-rogers-neighborhood/suite /srv/suite
-sudo tailscale up --ssh        # prints a URL; click it, and SSH and /admin arrive over the tailnet
+git clone <your remote> /srv/suite
+sudo tailscale up --ssh        # optional: prints a URL; click it and SSH and /admin arrive over the tailnet
 ```
+
+A **private** repository needs credentials on the host, and the smallest credential that works is a
+read-only deploy key per repository rather than a personal token that also reads every other one:
+
+```sh
+sudo -iu suite
+ssh-keygen -t ed25519 -N '' -C 'suite host' -f ~/.ssh/suite_deploy
+gh repo deploy-key add ~/.ssh/suite_deploy.pub --title 'suite host' --allow-write=false   # from a workstation
+git clone git@github.com:<owner>/<repo>.git /srv/suite                                    # on the host
+```
+
+Reaching the operator panel needs no tailnet: `SUITE_OPERATOR_ALLOW` already admits loopback, so an
+SSH tunnel terminates inside it.
+
+```sh
+ssh -N -L 8443:127.0.0.1:443 suite@<host>      # then, locally:
+curl -fsS --resolve suite.example.com:8443:127.0.0.1 https://suite.example.com:8443/admin.html
+```
+
+The same request from the public internet answers `403 Not found`, because the door only admits the
+networks named there. That is the cheapest way to prove the panel is not exposed: one probe from each
+side.
 
 The host needs the checkout because it builds every image it runs: `caddy` bakes `deploy/Caddyfile`
 and the canvas bundle, and `app` is compiled here from the same tree (§9). Nothing is pulled from a

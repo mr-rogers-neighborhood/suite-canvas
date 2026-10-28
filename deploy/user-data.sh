@@ -14,7 +14,8 @@
 # - open a firewall port. The security group is the firewall; the host runs none, which is
 #   one fewer place for a rule to disagree with AWS.
 # - configure Tailscale. `tailscale up` prints a login URL that a person clicks, and an
-#   auth key baked into user-data is a credential in the instance metadata forever.
+#   auth key baked into user-data is a credential in the instance metadata forever. It is also
+#   optional, so a deployment that prefers a plain SSH tunnel to loopback can ignore it.
 # - touch the data volume. `mkfs` on the wrong device is the one mistake this file will not
 #   make on its own.
 set -euo pipefail
@@ -43,7 +44,9 @@ apt-get install -y --no-install-recommends \
 curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscliv2.zip
 unzip -q /tmp/awscliv2.zip -d /tmp && /tmp/aws/install --update && rm -rf /tmp/aws /tmp/awscliv2.zip
 
-# Tailscale is how SSH and `/admin` arrive, which is why the security group has no port 22.
+# Tailscale is optional: with it, SSH and `/admin` arrive over the tailnet and port 22 can stay
+# closed. Without it, open 22 to one address and reach the panel through an SSH tunnel, which
+# lands on loopback and is already inside `SUITE_OPERATOR_ALLOW`.
 curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg
 curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list -o /etc/apt/sources.list.d/tailscale.list
 apt-get update

@@ -1,5 +1,4 @@
 import type {
-  StyleColourRole,
   StyleEdgeFlow,
   StyleEdgePaint,
   StyleShape,
@@ -8,7 +7,6 @@ import type {
   WorkspaceDocument,
 } from "@suite/graph";
 import {
-  styleColourRoles,
   styleEdgeFlows,
   styleEdgePaints,
   styleShapes,
@@ -49,13 +47,6 @@ const PAINT_LABELS: Record<StyleEdgePaint, string> = {
   dotted: "Dotted",
   none: "None",
 };
-
-function roleLabel(role: StyleColourRole): string {
-  return role
-    .split("-")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
 
 /**
  * An enumerated choice as chips, which is the only shape this editor uses for one.
@@ -263,17 +254,9 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
             </div>
           </div>
         )}
-        <ChipRow
-          label={isLink ? "Stroke" : "Text"}
-          testId="style-ink"
-          value={current.ink}
-          disabled={!canEdit}
-          options={[
-            { value: undefined, label: "Default" },
-            ...styleColourRoles.map((role) => ({ value: role, label: roleLabel(role) })),
-          ]}
-          onSelect={(ink) => update({ ...current, ink })}
-        />
+        {/* The ink row is gone: it repainted a role the theme already resolves,
+            so choosing "Canvas" or "Hairline" on a card changed nothing a reader
+            could see. A colour someone can name is the palette, not a token. */}
       </section>
 
       <section className="style-tab__group">

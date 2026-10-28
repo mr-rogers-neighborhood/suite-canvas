@@ -74,25 +74,18 @@ describe("settings", () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
-  it("offers the four things a reader owns alone", () => {
+  it("offers the things a reader owns alone", () => {
     render(<SettingsDialog onClose={() => {}} />);
 
-    for (const control of [
-      "appearance-density",
-      "appearance-radius",
-      "appearance-canvas",
-      "appearance-motion",
-    ]) {
+    // Density is gone: one switch that changed no spacing until the layout moved.
+    for (const control of ["appearance-radius", "appearance-canvas", "appearance-motion"]) {
       expect(screen.getByTestId(control), control).toBeInTheDocument();
     }
+    expect(screen.queryByTestId("appearance-density")).toBeNull();
   });
 
   it("applies a change to the root immediately, so the canvas behind it is the preview", () => {
     render(<SettingsDialog onClose={() => {}} />);
-
-    fireEvent.click(screen.getByTestId("appearance-density-compact"));
-    expect(document.documentElement.dataset.density).toBe("compact");
-    expect(useAppearanceStore.getState().appearance.density).toBe("compact");
 
     fireEvent.change(screen.getByTestId("appearance-radius"), { target: { value: "4" } });
     expect(screen.getByTestId("appearance-radius-value")).toHaveTextContent("4px");

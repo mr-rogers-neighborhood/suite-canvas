@@ -70,16 +70,8 @@ export function AppearanceSection() {
 
       <PaletteEditor workspace={workspace} />
 
-      <ChipRow
-        label="Density"
-        testId="appearance-density"
-        value={appearance.density}
-        options={[
-          { value: "comfortable", label: "Comfortable" },
-          { value: "compact", label: "Compact" },
-        ]}
-        onSelect={(density) => change({ density: density as Appearance["density"] })}
-      />
+      {/* Density is one setting that means nothing until spacing actually moves;
+          it is out until then rather than a switch that changes no pixel. */}
 
       <label className="appearance-dialog__row">
         <span>Corners</span>

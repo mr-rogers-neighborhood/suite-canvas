@@ -24,14 +24,14 @@ describe("workspace name in the document", () => {
     workspace.createBoard({ id: "board-1", name: "Board 1" });
 
     // Before the workspace is named it borrows its first board's name.
-    expect(workspace.workspaceName()).toBe("Board 1");
+    expect(workspace.workspaceName()).toBe(DEFAULT_WORKSPACE_NAME);
 
     workspace.renameWorkspace("  Research 2026  ");
     expect(workspace.workspaceName()).toBe("Research 2026");
     expect(reopened(workspace).workspaceName()).toBe("Research 2026");
   });
 
-  it("derives the first board's name, then the neutral default", () => {
+  it("stays Untitled rather than borrowing a board's name", () => {
     const empty = new WorkspaceDocument(new LoroDoc());
     expect(empty.workspaceName()).toBe(DEFAULT_WORKSPACE_NAME);
     expect(DEFAULT_WORKSPACE_NAME).toBe("Untitled workspace");
@@ -39,7 +39,9 @@ describe("workspace name in the document", () => {
     const workspace = new WorkspaceDocument(new LoroDoc());
     workspace.createBoard({ id: "board-a", name: "Planning" });
     workspace.createBoard({ id: "board-b", name: "Later" });
-    expect(workspace.workspaceName()).toBe("Planning");
+    // Borrowing the first board's name is what put "Notebook" in the workspace
+    // switcher; a nameless workspace is Untitled until someone names it.
+    expect(workspace.workspaceName()).toBe(DEFAULT_WORKSPACE_NAME);
   });
 
   it("refuses empty, whitespace, control characters and overlong names with a reason", () => {
@@ -56,7 +58,7 @@ describe("workspace name in the document", () => {
     for (const [name, reason] of cases) {
       expect(() => workspace.renameWorkspace(name)).toThrow(reason);
       // A refused rename leaves the old name in place.
-      expect(workspace.workspaceName()).toBe("Board 1");
+      expect(workspace.workspaceName()).toBe(DEFAULT_WORKSPACE_NAME);
     }
 
     // The boundary itself is allowed.

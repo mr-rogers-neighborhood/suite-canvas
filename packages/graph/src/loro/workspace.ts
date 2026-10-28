@@ -38,8 +38,10 @@ export function workspaceMethods(ctx: DocContext) {
         const trimmed = stored.trim();
         if (trimmed.length > 0) return trimmed;
       }
-      const first = ctx.api.boards.listBoards()[0]?.name.trim();
-      return first && first.length > 0 ? first : DEFAULT_WORKSPACE_NAME;
+      // A workspace with no name of its own is Untitled, not its first board's
+      // name: borrowing one made the workspace switcher list board names and the
+      // library's board scope look like a workspace.
+      return DEFAULT_WORKSPACE_NAME;
     },
 
     /** Renames the workspace; a name that fails validation throws its reason. */

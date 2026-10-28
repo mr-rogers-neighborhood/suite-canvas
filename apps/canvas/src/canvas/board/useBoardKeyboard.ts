@@ -5,6 +5,7 @@ import { redoWithStack, undoWithStack } from "../../history/undoWithStack";
 import { useUiStore } from "../../store/useUiStore";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../interactions/multiSelect";
 import { isNudgeKey, nudgeDelta } from "../nudge";
+import { stackInHand, usePlaceStackStore } from "../placeStack";
 import type { useBoardProjection } from "./useBoardProjection";
 import { NEW_SECTION_SIZE } from "./useBoardSections";
 import type { useBoardUi } from "./useBoardUi";
@@ -77,8 +78,9 @@ function captureCard(ctx: KeyContext): boolean {
 }
 
 /**
- * The Escape ladder, most specific layer first. A held run and an armed thread
- * are layers above the board, so they never reach this hook.
+ * The Escape ladder, most specific layer first. An armed thread is a layer above the
+ * board, so it never reaches this hook; a stack in the reader's hand is not, and is the
+ * last rung here.
  */
 function escapeRung(ctx: KeyContext): boolean {
   const { event, state, commands } = ctx;
@@ -130,11 +132,19 @@ function escapeRung(ctx: KeyContext): boolean {
     state.setSelectedConnector(null);
     return true;
   }
-  return resetMode(ctx);
+  if (resetMode(ctx)) return true;
+  // The last rung: a stack in hand is the one thing left to put down. It sits below the
+  // mode climb on purpose — a tool is a choice that outlives a gesture, while a hand full
+  // of cards is a surface, and the reader who wants it gone presses Escape once more.
+  if (stackInHand()) {
+    usePlaceStackStore.getState().stop();
+    return true;
+  }
+  return false;
 }
 
 /**
- * The last rungs: the two mode axes walk back to their defaults, one per press.
+ * The two mode axes walk back to their defaults, one per press.
  *
  * Everything above this point *clears* something; a tool is not something to
  * clear, it is a choice that outlives the gesture. So the bottom of the ladder

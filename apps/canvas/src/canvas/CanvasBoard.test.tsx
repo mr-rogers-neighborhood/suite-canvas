@@ -6,6 +6,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { CanvasBoard } from "./CanvasBoard";
 import { NUDGE_LARGE_STEP, NUDGE_STEP } from "./nudge";
+import { usePlaceStackStore } from "./placeStack";
 
 // React Flow measures its container; jsdom has no layout engine.
 class ResizeObserverStub {
@@ -572,6 +573,41 @@ describe("CanvasBoard keyboard move", () => {
     expect(move).not.toHaveBeenCalled();
 
     move.mockRestore();
+  });
+});
+
+describe("CanvasBoard escape ladder", () => {
+  it("empties a held stack as the last rung", async () => {
+    usePlaceStackStore.getState().start(["held-a", "held-b"]);
+    const { container } = mount(false);
+    // Nothing else left to close: no selection, the resting mode and purpose.
+    useUiStore.setState({ selectedNodeIds: [], mode: "place", purpose: "explore" });
+
+    await waitFor(() => expect(container.querySelector(".react-flow__node")).not.toBeNull());
+    // A stack in hand is the last thing Escape puts down, after every surface above it.
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(usePlaceStackStore.getState().queue).toEqual([]);
+    usePlaceStackStore.getState().stop();
+  });
+
+  it("closes the selection before the hand", () => {
+    usePlaceStackStore.getState().start(["held-a"]);
+    mount(false);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(useUiStore.getState().selectedNodeIds).toEqual([]);
+    expect(usePlaceStackStore.getState().queue).toEqual(["held-a"]);
+
+    // The mode climb comes before the hand, one press per axis.
+    useUiStore.setState({ mode: "thread" });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(useUiStore.getState().mode).toBe("place");
+    expect(usePlaceStackStore.getState().queue).toEqual(["held-a"]);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(usePlaceStackStore.getState().queue).toEqual([]);
+    usePlaceStackStore.getState().stop();
   });
 });
 

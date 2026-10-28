@@ -194,9 +194,10 @@ that layer is a dialog. The board's own layer is the armed link thread
 
 With the stack empty, the ladder climbs from the most specific thing on the board to the plainest:
 section edit → selected section → container inspector → card focus → card edit → focus target → a portal
-back → the selection → `mode` → `purpose`. The last two are the only rungs that reset a choice rather
-than clear a surface, so pressing Escape with nothing left to close always ends with the reader placing
-on an exploration, whatever they had armed an hour ago.
+back → the selection → `mode` → `purpose` → the hand. The two mode rungs reset a choice rather than clear
+a surface, so pressing Escape with nothing left to close always ends with the reader placing on an
+exploration, whatever they had armed an hour ago; one more press drops a stack that is still in hand,
+which is the last thing there is to put down.
 
 ## Two axes, one of which is mostly implicit
 

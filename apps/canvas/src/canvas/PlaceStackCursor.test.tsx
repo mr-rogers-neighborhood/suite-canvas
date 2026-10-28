@@ -203,6 +203,44 @@ describe("the stack's placement macro", () => {
     cleanupSurface();
   });
 
+  it("undoes the placement and its link as one step", () => {
+    act(() => useUiStore.setState({ mode: "thread" }));
+    const cleanupSurface = board();
+    act(() => usePlaceStackStore.getState().start(cardIds));
+
+    press(100, 900);
+    press(400, 900);
+    expect(edges()).toHaveLength(1);
+    expect(workspace.getPlacement(boardId, cardIds[1] as string)).toBeDefined();
+
+    // One press is one change: the link does not survive its placement's undo, and the
+    // placement does not need a second press to leave.
+    act(() => undoWithStack(workspace));
+
+    expect(edges()).toHaveLength(0);
+    expect(workspace.getPlacement(boardId, cardIds[1] as string)).toBeUndefined();
+    expect(workspace.getPlacement(boardId, cardIds[0] as string)).toBeDefined();
+    cleanupSurface();
+  });
+
+  it("re-threads from what is still on the board after an undo", () => {
+    act(() => useUiStore.setState({ mode: "thread" }));
+    const cleanupSurface = board();
+    act(() => usePlaceStackStore.getState().start(cardIds));
+
+    press(100, 1000);
+    press(400, 1000);
+    act(() => undoWithStack(workspace));
+
+    // The hand is whole again and the anchor is the card still on the board, so the next
+    // press draws a line instead of quietly linking to a card that is no longer there.
+    press(700, 1000);
+
+    const [first, second] = cardIds as [string, string, string];
+    expect(edges().map((edge) => `${edge.source}>${edge.target}`)).toEqual([`${first}>${second}`]);
+    cleanupSurface();
+  });
+
   it("hands a card back when its placement is undone", () => {
     act(() => useUiStore.setState({ mode: "place" }));
     const cleanupSurface = board();

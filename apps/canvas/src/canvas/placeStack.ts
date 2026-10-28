@@ -90,10 +90,15 @@ export const usePlaceStackStore = create<PlaceStackState>()((set, get) => ({
     // The cards come back on top of the hand, in the order they left it: undoing twice
     // gives back two cards in the reverse of the order they were put down.
     const returning = [...get().placed].filter((id) => gone.has(id)).reverse();
+    const lastPlacedId = placed[placed.length - 1] ?? null;
     set({
       queue: [...returning, ...get().queue],
       placed,
-      lastPlacedId: placed[placed.length - 1] ?? null,
+      lastPlacedId,
+      // The anchor follows what is still on the board: an anchor on a card the undo
+      // removed would make the next press link to nothing, which is the bug that made a
+      // re-thread after an undo quietly draw no line at all.
+      anchorId: lastPlacedId,
     });
   },
   flashConnectors: (pairs) => {

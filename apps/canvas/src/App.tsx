@@ -461,20 +461,24 @@ function WorkspaceShell({
       const dropMode = useUiStore.getState().mode;
       const seed = useUiStore.getState().selectedNodeIds[0] ?? null;
       let anchorId = dropMode === "place" ? null : seed;
-      missing.forEach((item, index) => {
-        const stepped = { x: point.x + 24 * index, y: point.y + 24 * index };
-        if (item.kind === "board") {
-          const existing = lookup.portalFor(item.boardId);
-          if (existing === undefined) createPortal(item.boardId, stepped);
-          else placeCard(existing, stepped);
-          return;
-        }
-        placeCard(item.cardId, stepped);
-        usePlaceStackStore.getState().setLastPlaced(item.cardId);
-        if (dropMode === "place") return;
-        const attached = attachPlacedCard(item.cardId, stepped, anchorId);
-        if (attached) anchorId = dropMode === "thread" ? item.cardId : anchorId;
-      });
+      // One drop is one undo step: the placements and the links a mode draws for them
+      // arrive and leave together, so undo never leaves a card without its line.
+      workspace.batch("drop-stack", () =>
+        missing.forEach((item, index) => {
+          const stepped = { x: point.x + 24 * index, y: point.y + 24 * index };
+          if (item.kind === "board") {
+            const existing = lookup.portalFor(item.boardId);
+            if (existing === undefined) createPortal(item.boardId, stepped);
+            else placeCard(existing, stepped);
+            return;
+          }
+          placeCard(item.cardId, stepped);
+          usePlaceStackStore.getState().setLastPlaced(item.cardId);
+          if (dropMode === "place") return;
+          const attached = attachPlacedCard(item.cardId, stepped, anchorId);
+          if (attached) anchorId = dropMode === "thread" ? item.cardId : anchorId;
+        }),
+      );
     },
     [activeBoardId, canEditLayout, workspace, createPortal, placeCard, attachPlacedCard],
   );

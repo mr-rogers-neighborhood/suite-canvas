@@ -147,13 +147,32 @@ widget bar's link tool cycles it and a held key previews it. `purpose` says what
 it is deliberately small — `explore` is the resting state and needs no button, and `explain` is the only
 other value a reader chooses from the canvas itself.
 
-A **run** is a state rather than a choice. It is a queue of cards being placed, and only the library has
-the cards to make one, so `library-run-place|thread|fan` starts it: the verb *is* the mode, the drawer
-steps aside so the next click is the placement, and when the hand is empty the drawer comes back. That is
-why `run` left the purpose control and the modifier map: a purpose preview on Shift meant holding Shift
-to thread read as "run", and a menu that offers to start something it cannot supply is a menu that sends
-the reader somewhere else to finish choosing. `record` and `present` remain states only a tour can enter,
-and the purpose control shows them purely as the way out (ADR-0064 amendment).
+A **run** is a state rather than a choice. It is a queue of cards being placed, and it carries two things
+fixed when it starts: a **shape** and an **anchor**.
+
+| shape | the anchor | a drop draws |
+| --- | --- | --- |
+| `place` | none | nothing |
+| `thread` | moves to the card just placed | anchor → card |
+| `fan` | stays at the hub | hub → card |
+
+The shape is a property of the run, never a read of the live mode: a modifier pressed for something else
+used to change the shape halfway through, which is how a fan drew a web. It changes only from the run bar,
+the one control that shows it while a run is live.
+
+The hub is context. `library-run-place|thread|fan` starts a run from the library, where the first card
+dropped becomes the hub. `Run from here` on a card's menu (or on a connector's) starts a spokes-only run
+anchored on that card, which is never dropped again; the run waits with an empty hand, and a library pick
+fills it. A link released over empty canvas offers the other half of the same idea: add the card at the
+drop point, or add it to the library, and either way the line is drawn.
+
+While a run is live the drawer steps aside so the next click is the placement, and when the hand is empty
+it comes back. A run that placed its last card keeps owning the pointer until that press ends, because
+React Flow's own connection events fire before it does. That is why `run` left the purpose control and the
+modifier map: a purpose preview on Shift meant holding Shift to thread read as "run", and a menu that
+offers to start something it cannot supply is a menu that sends the reader somewhere else to finish
+choosing. `record` and `present` remain states only a tour can enter, and the purpose control shows them
+purely as the way out (ADR-0064 amendment, ADR-0063 fourth amendment).
 
 ## Camera and viewport
 

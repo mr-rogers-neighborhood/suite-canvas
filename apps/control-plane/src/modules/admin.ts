@@ -2,9 +2,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { mailSenders, mailTransportFromEnv } from "@suite/auth";
 import { readJsonBody, sendJson } from "@suite/billing";
 import { envWithSettings } from "@suite/settings";
-import { Pool } from "pg";
+import type { Pool } from "pg";
 import { type ConfigEnv, DATABASE_URL_VARIABLE } from "../config.js";
 import { createLogger, type Logger, REQUEST_ID_HEADER } from "../logging.js";
+import { createPool } from "../pool.js";
 import type { RouteModule } from "../routes.js";
 import { type AuditStore, auditSafely, createAuditStore } from "./audit.js";
 import { sessionReader } from "./context.js";
@@ -341,7 +342,7 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
   const databaseUrl = (env[DATABASE_URL_VARIABLE] ?? "").trim();
   let pool: Pick<Pool, "query"> | null = options.pool ?? null;
   const database = (): Pick<Pool, "query"> => {
-    if (pool === null) pool = new Pool({ connectionString: databaseUrl, max: 2 });
+    if (pool === null) pool = createPool({ connectionString: databaseUrl, max: 2 });
     return pool;
   };
 

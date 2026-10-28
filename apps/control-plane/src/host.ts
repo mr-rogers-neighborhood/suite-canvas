@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { healthPayload, healthStatus } from "./health.js";
+import { type HealthCheck, healthPayload, healthStatus } from "./health.js";
 import { createLogger, type Logger, REQUEST_ID_HEADER, requestIdOf } from "./logging.js";
 import type { ModuleStatus } from "./modules/index.js";
 import type { RouteModule } from "./routes.js";
@@ -16,6 +16,8 @@ export interface ControlPlaneOptions {
   modules: readonly RouteModule[];
   /** One entry per expected module; reported by `/health` only. */
   statuses: readonly ModuleStatus[];
+  /** Asked on every `/health` request: the dependencies a module cannot answer without. */
+  checks?: () => Promise<readonly HealthCheck[]>;
   buildId: string;
   logger?: Logger;
   now?: () => number;
@@ -91,6 +93,7 @@ export function createControlPlane(options: ControlPlaneOptions): ControlPlane {
       statuses: options.statuses,
       startedAt,
       now: now(),
+      checks: options.checks === undefined ? [] : await options.checks(),
     });
     sendJson(response, healthStatus(payload), payload);
   }

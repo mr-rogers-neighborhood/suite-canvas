@@ -13,6 +13,7 @@ import {
   type TierTable,
 } from "@suite/billing";
 import type { Logger } from "../logging.js";
+import { createPool } from "../pool.js";
 
 /**
  * The one file that knows both `@suite/auth` and `@suite/billing` exist.
@@ -201,8 +202,7 @@ export async function composeBilling(env: Env, logger: Logger): Promise<BillingC
   if (parsed.isErr()) throw new Error(`STRIPE_PRICE_TIERS is unusable: ${parsed.error.message}`);
   const tiers = parsed.value;
 
-  const { Pool } = await import("pg");
-  const pool = new Pool({ connectionString: databaseUrlOf(env), max: 4 });
+  const pool = createPool({ connectionString: databaseUrlOf(env), max: 4 });
 
   const queryable: Queryable = {
     query: async (text, values) => pool.query(text, values as unknown[] | undefined),

@@ -10,10 +10,11 @@ import {
   type StoredSetting,
   settingDefinition,
 } from "@suite/settings";
-import { Pool } from "pg";
+import type { Pool } from "pg";
 import type { AccountSession } from "../../../../services/auth/src/types.js";
 import { type ConfigEnv, DATABASE_URL_VARIABLE } from "../config.js";
 import { createLogger, type Logger } from "../logging.js";
+import { createPool } from "../pool.js";
 import type { RouteModule } from "../routes.js";
 import { type AuditStore, auditSafely, createAuditStore } from "./audit.js";
 import { sessionReader } from "./context.js";
@@ -143,7 +144,7 @@ export function createSettingsModule(options: SettingsModuleOptions): RouteModul
   const secretKey = (): string => (process.env.SUITE_SETTINGS_KEY ?? "").trim();
   let pool: Pick<Pool, "query"> | null = options.pool ?? null;
   const database = (): Pick<Pool, "query"> => {
-    if (pool === null) pool = new Pool({ connectionString: databaseUrl, max: 2 });
+    if (pool === null) pool = createPool({ connectionString: databaseUrl, max: 2 });
     return pool;
   };
 
@@ -351,7 +352,7 @@ export const module: RouteModule = createSettingsModule({
  */
 export async function readStoredSettings(databaseUrl: string): Promise<StoredSetting[]> {
   if (databaseUrl.trim().length === 0) return [];
-  const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  const pool = createPool({ connectionString: databaseUrl, max: 1 });
   try {
     return await readRows(pool);
   } catch {

@@ -16,8 +16,9 @@ import {
   type WorkspaceDataStore,
 } from "@suite/auth";
 import { envWithSettings, resolveSetting } from "@suite/settings";
-import { Pool } from "pg";
+import type { Pool } from "pg";
 import { createLogger, type Logger } from "../logging.js";
+import { createPool as createPgPool } from "../pool.js";
 import type { RouteModule } from "../routes.js";
 import { type AuditStore, auditSafely, createAuditStore } from "./audit.js";
 import { composeBilling } from "./auth-billing.js";
@@ -219,7 +220,7 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
 
   let authPool: Pool | null = null;
   const database = (): Pool => {
-    authPool ??= new Pool({ connectionString: authDatabaseUrl, max: 2 });
+    authPool ??= createPgPool({ connectionString: authDatabaseUrl, max: 2 });
     return authPool;
   };
 

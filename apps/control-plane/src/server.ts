@@ -9,6 +9,7 @@ import { validateConfig } from "./config.js";
 import { createControlPlane } from "./host.js";
 import { createLogger } from "./logging.js";
 import { loadModules } from "./modules/index.js";
+import { databaseProbe } from "./probes.js";
 
 const logger = createLogger().child({ component: "server" });
 
@@ -42,9 +43,16 @@ if (!boot.ok) {
 }
 const config = boot.config;
 
+// The database is a dependency of the modules rather than a module, so it is a check:
+// every route this process serves is a read or a write, and a process that cannot reach
+// Postgres has nothing to say. Health answers 503 while it is unreachable, which is what
+// turns the deployment's alarm into a report about the money path.
+const probe = config.databaseUrl === null ? null : databaseProbe({ url: config.databaseUrl });
+
 const plane = createControlPlane({
   modules: loaded.modules,
   statuses: loaded.status,
+  ...(probe === null ? {} : { checks: async () => [await probe.check()] }),
   buildId: config.buildId,
   logger,
 });
@@ -77,6 +85,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   closing = true;
   logger.info("shutting down", { signal, port });
   await plane.close();
+  await probe?.close();
   logger.info("stopped", { signal, port });
   process.exit(0);
 }

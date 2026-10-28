@@ -139,7 +139,12 @@ port 22 never has to be open. A local `docker compose` stack sets `SUITE_OPERATO
 bridge instead, because a browser on that machine arrives through it and is in no tailnet.
 
 An external monitor on `https://canvas.example.com/health`, expecting `200 {"ok":true}`, catches the
-instance being down; `deploy/alert.sh` from cron catches it being sick.
+instance being down; `deploy/alert.sh` from cron catches it being sick. The control plane's own
+`/health` on `:1236` is the money path's: it runs `SELECT 1` on every request and answers `503` with
+`checks: [{name: "database", state: "failed"}]` while Postgres is unreachable, so an RDS failover is
+visible rather than silent. Nothing has to be restarted afterwards, because the next request opens a
+fresh connection. That retry is why every pool here takes an `error` listener: an idle client dying is
+a warning in the log instead of a crash.
 
 ## 6. First boot
 
@@ -463,7 +468,7 @@ docker run --rm -d --name suite-cp-probe --read-only --tmpfs /tmp:size=32m,mode=
   -e PORT=1236 -e SUITE_CONTROL_PLANE_DATABASE_URL=postgres://suite:suite@<postgres-host>:5432/suite \
   -e SUITE_AUTH_ENABLED=0 -e SUITE_BILLING_ENABLED=0 suite-control-plane
 docker exec suite-cp-probe node -e "fetch('http://127.0.0.1:1236/health').then(async r=>console.log(r.status, await r.text()))"
-# 200 {"status":"ok","buildId":"0.0.0","uptimeMs":8744,"modules":[{"name":"auth","state":"mounted"},{"name":"billing","state":"mounted"},{"name":"admin","state":"mounted"}]}
+# 200 {"status":"ok",…,"checks":[{"name":"database","state":"ok"}]}
 ```
 
 And that the runtime tree carries no toolchain:

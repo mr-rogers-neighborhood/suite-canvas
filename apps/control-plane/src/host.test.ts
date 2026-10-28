@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { healthStatus } from "./health.js";
+import { type HealthCheck, healthStatus } from "./health.js";
 import { type ControlPlane, createControlPlane } from "./host.js";
 import { createLogger } from "./logging.js";
 import type { ModuleStatus } from "./modules/index.js";
@@ -23,12 +23,14 @@ const running: ControlPlane[] = [];
 async function start(options: {
   modules?: readonly RouteModule[];
   statuses?: readonly ModuleStatus[];
+  checks?: () => Promise<readonly HealthCheck[]>;
   buildId?: string;
 }): Promise<Started> {
   const lines: string[] = [];
   const plane = createControlPlane({
     modules: options.modules ?? [],
     statuses: options.statuses ?? [],
+    ...(options.checks === undefined ? {} : { checks: options.checks }),
     buildId: options.buildId ?? "test-build",
     logger: createLogger({ level: "debug", write: (line) => lines.push(line) }),
   });
@@ -212,9 +214,25 @@ describe("control plane health", () => {
 
     expect(response.status).toBe(503);
     expect(body.status).toBe("degraded");
-    expect(healthStatus({ status: "ok", buildId: "x", uptimeMs: 0, modules: body.modules })).toBe(
-      200,
-    );
+    expect(
+      healthStatus({ status: "ok", buildId: "x", uptimeMs: 0, modules: body.modules, checks: [] }),
+    ).toBe(200);
+  });
+
+  it("should answer 503 when a dependency check fails", async () => {
+    const server = await start({
+      statuses: [{ name: "auth", state: "mounted" }],
+      checks: async () => [{ name: "database", state: "failed", detail: "connect ECONNREFUSED" }],
+    });
+
+    const response = await fetch(`${server.url}/health`);
+    const body = (await response.json()) as { status: string; checks: HealthCheck[] };
+
+    expect(response.status).toBe(503);
+    expect(body.status).toBe("degraded");
+    expect(body.checks).toEqual([
+      { name: "database", state: "failed", detail: "connect ECONNREFUSED" },
+    ]);
   });
 
   it("should refuse every method but GET", async () => {

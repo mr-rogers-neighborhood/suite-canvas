@@ -117,7 +117,7 @@ function escapeRung(ctx: KeyContext): boolean {
     commands.goBackBoard();
     return true;
   }
-  // Last rung: drop the selection once nothing more specific owns Escape.
+  // Nothing selected: drop the selection once nothing more specific owns Escape.
   if (
     state.selectedNodeIds.length > 0 ||
     state.selectedEdgeIds.length > 0 ||
@@ -127,6 +127,30 @@ function escapeRung(ctx: KeyContext): boolean {
     state.setSelectedNodeIds([]);
     state.setSelectedEdgeIds([]);
     state.setSelectedConnector(null);
+    return true;
+  }
+  return resetMode(ctx);
+}
+
+/**
+ * The last rungs: the two mode axes walk back to their defaults, one per press.
+ *
+ * Everything above this point *clears* something; a tool is not something to
+ * clear, it is a choice that outlives the gesture. So the bottom of the ladder
+ * is a climb rather than a dismissal — press Escape with nothing left to close
+ * and the next click stops being a thread, then stops being a run, until the
+ * canvas is back to plain placing on an exploration. Without this the reader who
+ * changed modes an hour ago has no gesture that returns them, and Escape reads as
+ * broken the one time it does nothing.
+ */
+function resetMode(ctx: KeyContext): boolean {
+  const { state } = ctx;
+  if (state.mode !== "place") {
+    state.setMode("place");
+    return true;
+  }
+  if (state.purpose !== "explore") {
+    state.setPurpose("explore");
     return true;
   }
   return false;

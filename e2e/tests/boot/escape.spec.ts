@@ -114,6 +114,41 @@ test("the inspector fades while a link is drawn and comes back", async ({ page }
 });
 
 /**
+ * Past the last dismissal Escape is a climb, not a no-op: the two mode axes walk
+ * back to their defaults one press at a time, so a reader who armed a tool an
+ * hour ago has a way out that is not hunting for the control again.
+ */
+test("Escape with nothing left to close walks the modes back to place and explore", async ({
+  page,
+}) => {
+  await page.goto(workspaceUrl("modes"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+
+  const mode = page.getByTestId("link-mode-toggle");
+  const purpose = page.getByTestId("purpose-toggle");
+  await expect(mode).toHaveAttribute("data-mode", "place");
+  await expect(purpose).toHaveAttribute("data-purpose", "explore");
+
+  await mode.click();
+  await expect(mode).toHaveAttribute("data-mode", "thread");
+  // A tool is a choice that outlives the gesture, so nothing above the ladder
+  // owns it: this press is the rung itself.
+  await page.keyboard.press("Escape");
+  await expect(mode).toHaveAttribute("data-mode", "place");
+
+  // `run` opens the library, so its own layer takes the first press and the
+  // rung takes the second.
+  await purpose.click();
+  await expect(purpose).toHaveAttribute("data-purpose", "run");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("library-drawer")).toHaveCount(0);
+  await expect(purpose).toHaveAttribute("data-purpose", "run");
+
+  await page.keyboard.press("Escape");
+  await expect(purpose).toHaveAttribute("data-purpose", "explore");
+});
+
+/**
  * There is no home board and no new-tab board any more. The workspace remembers
  * where you were, so reopening it — a reload, the launcher row, a second tab
  * without `?board=` — lands on that board instead of on the first one

@@ -9,6 +9,17 @@
       "type": "http",
       "url": "https://mcp.resend.com/mcp",
       "tools": ["*"]
+    },
+    "cloudwatch": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["awslabs.cloudwatch-mcp-server@latest"],
+      "env": {
+        "AWS_PROFILE": "suite",
+        "AWS_REGION": "us-east-2",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "tools": ["*"]
     }
   }
 }

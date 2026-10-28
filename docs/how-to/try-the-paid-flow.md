@@ -148,7 +148,42 @@ replaces it: anonymous Checkout, then the account created from the completed ses
 list is the work. Until that lands, "buy without an account" has no path, and step 5 starts
 from a signed-in page.
 
-## 8. Put it down
+## 8. The same walk on the deployment
+
+The hosted stack is `https://app.suite.run`, and it differs in three ways: the webhook is
+registered in the Stripe dashboard rather than by a CLI listener, the database is RDS rather
+than a local Postgres, and the promo code is already made.
+
+Prerequisites, all already true: `SUITE_BILLING_ENABLED=1`, `SUITE_BILLING_MODE=test`, the two
+test price ids in `billing.stripe.prices.test`, and a webhook endpoint for
+`https://app.suite.run/api/auth/stripe/webhook`. The mode and the catalogue are on the
+operator panel's Settings tab, which is the answer to "are we live?" without an SSH session.
+
+1. Sign in at `https://app.suite.run` and open a workspace.
+2. The account menu, then Plan. Two plans, `personal` and `organization`, come from the
+   deployment's `billing.stripe.prices.test`; a plan missing from that page is missing from the
+   setting.
+3. Choose a plan. Stripe Checkout opens on Stripe's own origin, so no card detail reaches us.
+4. Apply the promo code `SUITE-TESTER`: 100% off, 20 redemptions, made for exactly this walk.
+   A test card (`4242 4242 4242 4242`, any future expiry, any CVC) also works.
+5. Back in the app, the Plan tab should show the tier and its limits, because that read comes
+   from `/api/billing/entitlement` rather than from a copy in the browser.
+6. Open a workspace that was capped before. The sync control should stop offering plans and
+   claim the workspace instead, which is the whole paid loop landing.
+7. Billing portal, then cancel. The entitlement should return to the free row, and the next
+   claim should be capped again.
+
+When a step does not do what this page says, the log is the first place to look:
+
+```sh
+AWS_PROFILE=suite deploy/cloudwatch/queries.sh webhooks 1
+AWS_PROFILE=suite deploy/cloudwatch/queries.sh errors 1
+```
+
+`webhooks` shows the delivery and its signature check. A rejected signature while in test mode
+usually means `billing.stripe.webhookSecret.test` was replaced by a different endpoint's secret.
+
+## 9. Put it down
 
 ```sh
 docker compose --profile docs down          # keeps the volumes

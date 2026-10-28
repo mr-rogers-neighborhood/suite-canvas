@@ -103,6 +103,11 @@ export function useLibrarySelection({
    * the run: it is a row like any other in this list, but there is nothing to
    * place — placing a board is what the portal row action does.
    */
+  /**
+   * The selected rows a run can place, in the same order. A board is a row like the
+   * rest, but there is nothing to place: it opens through a portal, which is the row
+   * action, not a card in the hand.
+   */
   const runnable = selected.filter((id) => {
     const item = ordered.find((entry) => entry.id === id);
     return item === undefined || !isBoardItem(item);
@@ -127,6 +132,7 @@ export function useLibrarySelection({
     selection,
     selecting,
     selected,
+    runnable,
     runnableCount: runnable.length,
     selectableOrder,
     selectRow,

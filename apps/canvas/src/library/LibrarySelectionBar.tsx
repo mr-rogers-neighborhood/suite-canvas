@@ -19,9 +19,10 @@ export function LibrarySelectionBar({
   onSelectAll,
   onClear,
 }: {
-  /** Selected card ids, in the order they appear on screen. */
+  /** Selected row ids, in the order they appear on screen. */
   selected: readonly string[];
-  runnable: number;
+  /** The selected ids a run can place, in the same order. */
+  runnable: readonly string[];
   canManageTrash: boolean;
   onRun: (mode: CanvasMode) => void;
   onRunLoop: (ids: readonly string[]) => void;
@@ -40,6 +41,16 @@ export function LibrarySelectionBar({
       >
         {`${selected.length} selected`}
       </span>
+      {selected.length > runnable.length ? (
+        // A board in the selection is not a card in the hand, and the count says so
+        // rather than leaving the reader to wonder where two rows went.
+        <span
+          className="mr-1 text-[11px] text-[var(--ink-muted)]"
+          data-testid="library-selection-skip"
+        >
+          {`· ${runnable.length} can be placed`}
+        </span>
+      ) : null}
       {selected.length === 0 ? (
         // The bar appears with the mode, not with the first row: an empty mode
         // with no visible verbs is a mode a reader has to guess at.
@@ -58,24 +69,26 @@ export function LibrarySelectionBar({
           data-mode={verb}
           // A selection of boards is a selection with nothing to place; the verb says so
           // instead of starting a run that would immediately end.
-          disabled={runnable === 0}
+          disabled={runnable.length === 0}
           // The verb is the mode: "Thread cards" is thread mode plus a queue.
           onClick={() => onRun(verb)}
         >
-          {`${VERB_LABELS[verb]} cards`}
+          {runnable.length === selected.length
+            ? `${VERB_LABELS[verb]} cards`
+            : `${VERB_LABELS[verb]} ${runnable.length}`}
         </button>
       ))}
       <button
         type="button"
         className="library-action"
         data-testid="library-run-loop"
-        disabled={runnable === 0}
+        disabled={runnable.length === 0}
         title="Place these one at a time, coming back here for the next"
         onClick={() => {
           // The loop places one and stays live, so the next pick joins the same
           // sequence instead of starting another (ADR-0063 §6).
-          if (selected.length === 0) return;
-          onRunLoop(selected);
+          if (runnable.length === 0) return;
+          onRunLoop(runnable);
         }}
       >
         One at a time

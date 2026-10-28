@@ -653,7 +653,10 @@ export function WorkspaceShellView({
 
         {workspaceSurface && !readOnly && !cardFocusId ? (
           <Dock
-            inboxCount={unplaced.length}
+            // The badge and the inbox tab count the same rows: a board nothing opens
+            // is an inbox row too, and a badge that leaves it out is a number the
+            // drawer then contradicts (ADR-0063 §3).
+            inboxCount={unplaced.length + inboxBoards}
             libraryOpen={libraryOpen}
             onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
             types={snapshot.types}

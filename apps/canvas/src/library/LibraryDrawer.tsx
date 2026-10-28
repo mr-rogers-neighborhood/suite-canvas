@@ -370,7 +370,7 @@ export function LibraryDrawer({
     selectAll: selectAllRows,
     runVerb,
     runLoop: runSelectionLoop,
-    runnableCount,
+    runnable,
   } = useLibrarySelection({
     tab,
     ordered,
@@ -508,7 +508,7 @@ export function LibraryDrawer({
       {selecting || selection.ids.length > 0 ? (
         <LibrarySelectionBar
           selected={selected}
-          runnable={runnableCount}
+          runnable={runnable}
           canManageTrash={canManageTrash}
           onRun={runVerb}
           onRunLoop={runSelectionLoop}

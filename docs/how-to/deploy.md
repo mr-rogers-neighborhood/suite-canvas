@@ -199,6 +199,19 @@ validation needs plain HTTP on port 80, and the edge redirect refuses it before 
 panel and a metrics scrape exist for the person who runs the deployment and for nobody else; anything
 else gets the 404 an unknown path gets, which means the panel is not discoverable either.
 
+**What `SUITE_OPERATOR_ALLOW` must contain on a compose host** is not obvious, and getting it wrong
+either locks you out or opens the panel. Measured on a running stack, twice:
+
+| Client | Address the door sees |
+| --- | --- |
+| a browser on the internet | its own public address, preserved through the port mapping |
+| a request from the host itself, including an SSH tunnel to `127.0.0.1:443` | the Docker **bridge gateway** (`172.17.0.1`, `172.18.0.1`, …), not loopback |
+
+So a list of loopback alone refuses the tunnel, and the bridge subnet is both safe and necessary:
+external addresses keep their identity, which is why `172.16.0.0/12` cannot be spoofed from outside.
+The compose default already carries it, so leave it there, and delete the tailnet entry only if you are not
+using one.
+
 Tailscale's personal plan is free and covers this. Install it on the box (the instance user-data does),
 run `tailscale up --ssh`, and connect your laptop: `ssh` and the panel both arrive over the tailnet, so
 port 22 never has to be open. A local `docker compose` stack sets `SUITE_OPERATOR_ALLOW` to the Docker

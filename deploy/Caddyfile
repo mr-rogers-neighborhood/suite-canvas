@@ -185,15 +185,12 @@
 		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
 	}
 
-	# The settings surface. Declared before the `/admin` panel rewrite below, which would
-	# otherwise answer it with the panel's HTML: the panel is a page, this is its API.
-	handle /admin/settings* {
-		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
-	}
-
-	# The people list and the support-access routes. Same reason: `/admin/accounts` is an
-	# API path that the panel rewrite below would otherwise answer with a page.
-	handle /admin/accounts* {
+	# The panel's own API paths, in one matcher, declared before the `/admin` panel rewrite
+	# below. Without them the rewrite answers each with the panel's HTML, which looks like a
+	# broken route rather than a misrouted one. Adding a route to the control plane means
+	# adding its path here.
+	@admin_api path /admin/settings* /admin/accounts* /admin/activity* /admin/mail/*
+	handle @admin_api {
 		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
 	}
 

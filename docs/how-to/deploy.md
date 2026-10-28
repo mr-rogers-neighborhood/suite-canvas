@@ -533,6 +533,27 @@ because a permission the operator can give themselves is not consent.
 Turning the flag off is the deployment-wide switch: set `flags.impersonation` to off in
 Settings and every impersonation request answers 403, grant or no grant, without a restart.
 
+Every impersonation also writes two rows and leaves one for the account: an
+`operator_audit` entry (who, when, and what came of it) and an `account_notices` sentence the
+account reads at its next sign-in. Neither names a secret, and the notice deliberately does
+not name the operator.
+
+### Tables the control plane creates
+
+Four tables appear on first use rather than in a migration, so an older database boots:
+
+| Table | Written by | Read by |
+| --- | --- | --- |
+| `suite_settings` | Settings | every process's boot overlay, and the panel |
+| `operator_support_grants` | the account, or an operator ending one | the impersonation gate |
+| `operator_role_overrides` | an operator wearing a role | the memberships reader, so the session and the relay's token agree |
+| `operator_audit` | every operator act | the Activity tab |
+| `account_notices` | an impersonation | the account's own dialog and strip |
+
+All five live in Postgres, so `deploy/backup.sh` covers them with the `pg_dump` it already
+takes. None has a retention policy: audit rows are kept forever, which is stated rather than
+assumed.
+
 `SUITE_APP_URL` is where the admission notice sends someone. Unset admits without sending one.
 
 A held account is not broken: it can sign in, edit, import and export on its own device. What it cannot

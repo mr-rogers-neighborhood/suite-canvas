@@ -37,6 +37,13 @@ the warning ignored:
 curl -sk --resolve app.localhost:443:127.0.0.1 https://app.localhost/health
 ```
 
+Accepting the warning by hand is enough for a look. A headless browser or a tool that refuses an
+unknown authority needs the root itself, which Caddy keeps in its volume:
+
+```sh
+docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
+```
+
 `SUITE_DOMAIN=canvas.example.com` in a local run makes Caddy ask Let's Encrypt for a domain this machine
 does not own; every host then answers nothing while it retries.
 

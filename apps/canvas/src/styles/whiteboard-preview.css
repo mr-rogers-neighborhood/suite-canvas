@@ -12,6 +12,13 @@
   stroke-width: 0.4;
 }
 
+/* Seamless means the drawing sits straight on the canvas: no ground, no frame,
+   nothing behind the strokes at all. */
+.whiteboard-card--seamless .whiteboard-preview__ground {
+  fill: none;
+  stroke: none;
+}
+
 .whiteboard-preview__empty {
   fill: var(--ink-muted);
   font-size: 5px;

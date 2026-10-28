@@ -262,9 +262,12 @@ export function TitleBar({
       ) : null}
 
       {children ? (
-        // `flex-1` matters: sized by content, this box measured zero for a full
-        // strip and its tabs slid under the controls beside it.
-        <div className="ml-2 flex min-w-0 flex-1 items-center overflow-hidden">{children}</div>
+        // `flex-initial`, not `flex-1`: the bar's spare width belongs to search.
+        // A growing box here split the slack with it, which is why the search
+        // field stopped short of the empty space next to it.
+        <div className="ml-2 flex min-w-0 flex-initial items-center overflow-hidden">
+          {children}
+        </div>
       ) : null}
 
       {onOpenSearch ? (

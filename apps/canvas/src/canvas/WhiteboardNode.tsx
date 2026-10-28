@@ -82,6 +82,9 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
         if (moved > 4) return;
         openInspector(card.id);
       }}
+      // Drawing is what a sketch is for, so the second click goes straight to the
+      // surface; the first still reads the card, exactly as a note does.
+      onDoubleClick={() => openCardFocus(card.id)}
     >
       <NodeResizer
         isVisible={canEditLayout && Boolean(selected)}

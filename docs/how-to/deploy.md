@@ -597,13 +597,31 @@ Creating that database, the fields that matter:
 | Template | Free tier, `db.t4g.micro`, 20 GB gp3 | accounts and subscriptions are small; the documents are not here |
 | Connectivity | same VPC, private subnets, no public access | only the instance's security group needs 5432, added as an inbound rule on the database's group |
 | Encryption | on, at creation | it cannot be turned on afterwards |
-| Backup | 7 days, deletion protection | a lost accounts table is a lost deployment |
+| Backup | as long as the plan allows; deletion protection | a lost accounts table is a lost deployment. A FREE-plan account caps automated retention at 1 day and refuses 7 with `FreeTierRestrictionError`, which is exactly why `deploy/backup.sh` writes its own `pg_dump` to S3 |
 | Parameters | `rds.force_ssl = 1` | the connection string carries `sslmode=require`, and this makes it enforced |
 
 Nothing migrates by hand. The control plane runs its migrations on the first request that needs
 identity, so a fresh database fills itself in and a failed migration clears the memo and retries
 rather than wedging the process. `pnpm db:verify` (or `scripts/db-verify.mjs` on the host) is the check
 that the eleven migrations landed.
+
+Two things RDS does not do for you, both of which fail in ways that look like something else:
+
+1. **The database itself.** RDS creates `postgres` and nothing else, so a connection string ending
+   `/suite` answers `database "suite" does not exist`, and only after the certificate verifies, so
+   the message changes as you fix each layer.
+
+   ```sh
+   docker run --rm postgres:17-alpine \
+     psql "postgres://suite:PASS@HOST:5432/postgres?sslmode=require" -c 'CREATE DATABASE suite'
+   ```
+
+2. **The certificate.** `sslmode=require` currently means `verify-full`, and RDS signs its endpoint
+   with a CA no Node image carries: the control plane answers
+   `503 checks:[{name:"database",state:"failed",detail:"self-signed certificate in certificate chain"}]`.
+   `sudo deploy/rds-ca.sh` fetches the public bundle, and `deploy/compose.aws.yaml` mounts it and
+   points `NODE_EXTRA_CA_CERTS` at it. Do not "fix" this with
+   `uselibpqcompat=true&sslmode=require`, which encrypts without verifying anything.
 
 Set `app.suite.run` to **DNS only** in Cloudflare. The proxy's idle timeout sits on a WebSocket that is
 supposed to stay open, and a collaboration socket behind it is dropped on a timer.

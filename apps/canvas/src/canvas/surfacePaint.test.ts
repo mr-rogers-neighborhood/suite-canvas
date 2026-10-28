@@ -1,9 +1,13 @@
-import { resolveSurfaceStyle, type SurfaceStyle, styleShapes } from "@suite/graph";
+import {
+  type ResolvedSurfaceStyle,
+  resolveSurfaceStyle,
+  type SurfaceStyle,
+  styleShapes,
+} from "@suite/graph";
 import { describe, expect, it } from "vitest";
 import {
   colourRoleVar,
   isShapedSurface,
-  type ResolvedSurfaceStyle,
   shapeClipPath,
   shapeInset,
   shapeOutline,

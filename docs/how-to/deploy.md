@@ -129,6 +129,37 @@ The same request from the public internet answers `403 Not found`, because the d
 networks named there. That is the cheapest way to prove the panel is not exposed: one probe from each
 side.
 
+`deploy/operator-tunnel.sh` opens that tunnel and prints the two URLs, so the command above does not
+have to be remembered:
+
+```sh
+deploy/operator-tunnel.sh --host <elastic-ip>          # or SUITE_TUNNEL_HOST
+deploy/operator-tunnel.sh --host <elastic-ip> --print  # just show the commands
+```
+
+**A browser cannot pass `--resolve`.** Visiting `https://127.0.0.1:8443` sends `127.0.0.1` as the
+hostname, Caddy finds no site block for it, and the panel does not appear. Either add
+`127.0.0.1 app.suite.run` to `/etc/hosts` while the tunnel is up, or take the simpler route for a
+person at a known address: put that address in `SUITE_OPERATOR_ALLOW` and use
+`https://app.suite.run/admin.html` directly.
+
+```sh
+# your own address, from the machine you will browse from
+curl -s https://api.ipify.org; echo
+# then: SUITE_OPERATOR_ALLOW=127.0.0.1/32 ::1/128 172.16.0.0/12 <that-address>/32
+#       docker compose up -d --no-build --force-recreate caddy
+```
+
+That is a list of networks, so it excludes everyone else; drop the entry when the address changes. A
+home connection's address moves, which is the argument for the tunnel as the durable path and the
+allowlist as the convenient one.
+
+**Who is an operator is decided by address, not by a role.** `SUITE_ADMIN_EMAILS` names the accounts
+that may use the panel, and the check compares the signed-in address against that list. There is no
+grant step and nothing to click: create the account, sign in, and the panel answers. An address that
+is not on the list gets `403 forbidden` and a sentence saying so, which is the honest answer rather
+than a lockout.
+
 The host needs the checkout because it builds every image it runs: `caddy` bakes `deploy/Caddyfile`
 and the canvas bundle, and `app` is compiled here from the same tree (§9). Nothing is pulled from a
 registry, so the clone is part of the deployment.
@@ -261,6 +292,19 @@ transport that prints verification links to a log nobody reads, a licence key pa
 ```sh
 deploy/preflight.sh                       # exit 1 when a blocker is found
 ```
+
+### Turnstile is two values and one policy
+
+The pair is split on purpose. `SUITE_TURNSTILE_SITE_KEY` is **public** and inlined into the canvas at
+build time, so it belongs on the build (`deploy/compose.aws.yaml` passes it, `Dockerfile` inlines it);
+changing it means rebuilding the `caddy` image. `SUITE_TURNSTILE_SECRET` is read by the control plane
+at runtime and only ever leaves it to Cloudflare, so it belongs in `.env` and a restart picks it up.
+
+Setting the secret makes the challenge **mandatory**: sign-up with no token answers
+`400 MISSING_RESPONSE`. That is why the site key has to be in the same deployment, and why the policy
+has to allow the widget. `deploy/Caddyfile` permits `challenges.cloudflare.com` in `script-src`,
+`connect-src` and `frame-src` on the two canvas hosts. Without those three the script is blocked, no
+token is produced, and every sign-up fails forever while the page itself looks perfect (ADR-0077).
 
 ```sh
 deploy/deploy.sh --no-backup              # builds suite:v1.1.0, starts app, waits for health

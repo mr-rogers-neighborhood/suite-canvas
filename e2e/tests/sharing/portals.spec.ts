@@ -1,26 +1,18 @@
 import { expect, type Page, test } from "@playwright/test";
 import { emptyPanePoint } from "../fixtures/marquee";
-import { createNote, libraryRowAction, newBoard } from "../fixtures/support";
+import { boardId, createNote, libraryRowAction, newBoard, openBoard } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-portal-${name}-${Date.now()}-${++sequence}`;
 
 const portalNodes = (page: Page) => page.getByTestId("portal-node");
-const boardTabs = (page: Page) => page.locator('[data-testid^="board-tab"]');
 
 async function createBoard(page: Page): Promise<string> {
   // The board command writes through the store, and the store adopts the
   // document when the canvas reports ready. A click that lands before that is
   // written into a snapshot the boot replaces, so the new board disappears.
   await expect(page.locator('.app-canvas[data-ready="true"]')).toBeVisible();
-  await expect(boardTabs(page)).toHaveCount(1);
-  await newBoard(page);
-  await expect(boardTabs(page)).toHaveCount(2);
-  const testId = await page
-    .locator('[data-testid^="board-tab"][aria-current="page"]')
-    .getAttribute("data-testid");
-  if (!testId) throw new Error("the new board has no tab");
-  return testId.replace("board-tab-", "");
+  return newBoard(page);
 }
 
 async function createPortal(page: Page, target: string): Promise<void> {
@@ -40,12 +32,10 @@ test("creates a portal and enters the target board through the camera", { tag: "
   await page.goto(workspaceUrl("enter"));
   await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
 
-  await createBoard(page);
+  const firstBoard = boardId(page);
+  const secondBoard = await createBoard(page);
   await createNote(page, "Target Two");
-  await page
-    .getByRole("navigation", { name: "Boards" })
-    .getByRole("button", { name: "Board 1", exact: true })
-    .click();
+  await openBoard(page, firstBoard);
   await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
 
   await createPortal(page, "Board 2");
@@ -57,11 +47,7 @@ test("creates a portal and enters the target board through the camera", { tag: "
   // The overlay exists for at least one frame; the board switch is the proof
   // that the completed transition landed.
   await expect(page.getByTestId("portal-transition")).toHaveCount(1);
-  await expect(
-    page
-      .getByRole("navigation", { name: "Boards" })
-      .getByRole("button", { name: "Board 2", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
+  await expect.poll(() => boardId(page)).toBe(secondBoard);
   await expect(
     page.locator('[data-testid="node-card"]').filter({ hasText: "Target Two" }),
   ).toHaveCount(1);
@@ -72,31 +58,21 @@ test("the back control exists only for a board entered through a portal", {
   tag: "@smoke",
 }, async ({ page }) => {
   await page.goto(workspaceUrl("back"));
-  await createBoard(page);
+  const firstBoard = boardId(page);
+  const secondBoard = await createBoard(page);
   await createNote(page, "Target Two");
-  await page
-    .getByRole("navigation", { name: "Boards" })
-    .getByRole("button", { name: "Board 1", exact: true })
-    .click();
+  await openBoard(page, firstBoard);
   await createPortal(page, "Board 2");
 
-  // A tab click leaves every board one click away, so it gets no back control.
+  // The switcher leaves every board one click away, so it gets no back control.
   await expect(page.getByTestId("portal-back")).toHaveCount(0);
 
   await portalNodes(page).dblclick();
-  await expect(
-    page
-      .getByRole("navigation", { name: "Boards" })
-      .getByRole("button", { name: "Board 2", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
+  await expect.poll(() => boardId(page)).toBe(secondBoard);
 
   // The portal entry is the one place the reader was *taken* somewhere.
   await page.getByTestId("portal-back").click();
-  await expect(
-    page
-      .getByRole("navigation", { name: "Boards" })
-      .getByRole("button", { name: "Board 1", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
+  await expect.poll(() => boardId(page)).toBe(firstBoard);
   await expect(portalNodes(page)).toHaveCount(1);
   // History is spent, so the control disappears with it.
   await expect(page.getByTestId("portal-back")).toHaveCount(0);
@@ -106,54 +82,34 @@ test("Escape leaves a portal entry the same way the back control does", { tag: "
   page,
 }) => {
   await page.goto(workspaceUrl("escape"));
-  await createBoard(page);
+  const firstBoard = boardId(page);
+  const secondBoard = await createBoard(page);
   await createNote(page, "Target Two");
-  await page
-    .getByRole("navigation", { name: "Boards" })
-    .getByRole("button", { name: "Board 1", exact: true })
-    .click();
+  await openBoard(page, firstBoard);
   await createPortal(page, "Board 2");
 
   await portalNodes(page).dblclick();
-  await expect(
-    page
-      .getByRole("navigation", { name: "Boards" })
-      .getByRole("button", { name: "Board 2", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
+  await expect.poll(() => boardId(page)).toBe(secondBoard);
 
   await page.keyboard.press("Escape");
-  await expect(
-    page
-      .getByRole("navigation", { name: "Boards" })
-      .getByRole("button", { name: "Board 1", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
+  await expect.poll(() => boardId(page)).toBe(firstBoard);
   await expect(portalNodes(page)).toHaveCount(1);
 });
 
 test("survives an A to B to A cycle", { tag: "@smoke" }, async ({ page }) => {
   await page.goto(workspaceUrl("cycle"));
-  await createBoard(page);
+  const firstBoard = boardId(page);
+  const secondBoard = await createBoard(page);
   await createNote(page, "Target Two");
-  await page
-    .getByRole("navigation", { name: "Boards" })
-    .getByRole("button", { name: "Board 1", exact: true })
-    .click();
+  await openBoard(page, firstBoard);
   await createPortal(page, "Board 2");
 
   await portalNodes(page).dblclick();
-  await expect(
-    page
-      .getByRole("navigation", { name: "Boards" })
-      .getByRole("button", { name: "Board 2", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
+  await expect.poll(() => boardId(page)).toBe(secondBoard);
 
   await createPortal(page, "Board 1");
   await portalNodes(page).dblclick();
-  await expect(
-    page
-      .getByRole("navigation", { name: "Boards" })
-      .getByRole("button", { name: "Board 1", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
+  await expect.poll(() => boardId(page)).toBe(firstBoard);
   await expect(portalNodes(page)).toHaveCount(1);
 });
 
@@ -199,25 +155,20 @@ test("marks a portal unavailable instead of breaking when its board is deleted",
   tag: "@smoke",
 }, async ({ page }) => {
   await page.goto(workspaceUrl("missing"));
-  const boardId = await createBoard(page);
-  await page
-    .getByRole("navigation", { name: "Boards" })
-    .getByRole("button", { name: "Board 1", exact: true })
-    .click();
+  const firstBoard = boardId(page);
+  const secondBoard = await createBoard(page);
+  await openBoard(page, firstBoard);
   await createPortal(page, "Board 2");
 
-  // A tab only ever closes now; deleting a board asks once, in the library.
+  // Deleting a board asks once, in the library — and the board on screen is the
+  // one that stays.
   await page.getByTestId("dock-library").click();
   await page.getByTestId("library-tab-boards").click();
-  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Delete board\u2026");
+  await libraryRowAction(page.getByTestId(`library-item-${secondBoard}`), "Delete board\u2026");
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
 
-  await expect(
-    page
-      .getByRole("navigation", { name: "Boards" })
-      .getByRole("button", { name: "Board 1", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
+  await expect.poll(() => boardId(page)).toBe(firstBoard);
   await expect(portalNodes(page)).toHaveAttribute("data-unavailable", "true");
   await expect(portalNodes(page)).toContainText("Unavailable board");
 });

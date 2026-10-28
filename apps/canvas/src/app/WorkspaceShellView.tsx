@@ -1,6 +1,6 @@
 import type { PaletteSwatch, WorkspaceDocument } from "@suite/graph";
 import type { CSSProperties, Dispatch, RefObject, SetStateAction } from "react";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { SignInEntry } from "../auth/SignInEntry";
 import type { AccountPhase } from "../auth/useAccountStore";
 import { BoardOutlineHost } from "../canvas/BoardOutline";
@@ -13,11 +13,13 @@ import { SurfacePaintProvider } from "../canvas/surfaceContext";
 import { CardFocusHost } from "../cards/CardFocusHost";
 import { CardInspectorHost } from "../cards/CardInspectorHost";
 import { TourOverlayHost } from "../cards/TourOverlayHost";
-import { type BoardPresence, BoardTabs } from "../chrome/BoardTabs";
+import { BoardGlyph } from "../chrome/BoardGlyph";
+import type { BoardPresence } from "../chrome/BoardSwitcher";
+import { BoardSwitcher } from "../chrome/BoardSwitcher";
 import { Dock } from "../chrome/Dock";
+import { StartPage } from "../chrome/StartPage";
 import { TitleBar } from "../chrome/TitleBar";
 import { UndoRedo } from "../chrome/UndoRedo";
-import { ViewsBar } from "../chrome/ViewsBar";
 import { CommandPaletteHost } from "../command/CommandPalette";
 import type { PaletteItem } from "../command/paletteRank";
 import { PerfOverlay } from "../dev/PerfOverlay";
@@ -29,14 +31,15 @@ import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { type LibraryBoard, LibraryDrawer, type LibraryItem } from "../library/LibraryDrawer";
 import { BOARD_STARTERS } from "../library/TemplateGallery";
 import { TypeSettingsHost } from "../panels/TypeSettingsHost";
+import { pinnedOrder, useBoardPins } from "../session/boardPins";
 import type { ShareSession } from "../session/session";
 import { rememberWorkspaceName } from "../session/workspaceName";
+import { readRecentWorkspaces, workspaceUrl } from "../session/workspaceTransfer";
 import { SharePublishButton } from "../sharing/SharePublishButton";
 import { StoragePanel } from "../sharing/StoragePanel";
 import { LoadingPlaceholder } from "../shell/LoadingPlaceholder";
 import type { useCanvasStore } from "../store/useCanvasStore";
-import type { LibraryTab } from "../store/useUiStore";
-import { useUiStore } from "../store/useUiStore";
+import type { LibraryTab, useUiStore } from "../store/useUiStore";
 import { AppearanceHost } from "./AppearanceHost";
 import { BlueprintInstallHost } from "./BlueprintInstallHost";
 import { HistoryPanelHost } from "./HistoryPanelHost";
@@ -77,7 +80,8 @@ export interface WorkspaceShellViewProps {
   palette: readonly PaletteSwatch[];
   roles: SurfacePalette;
   mode: "light" | "dark";
-  requestLeave: () => void;
+  /** Leaves for the launcher, or for another workspace's URL through the guard. */
+  requestLeave: (destination?: string) => void;
   setPaletteOpen: UiState["setPaletteOpen"];
   standalone: boolean;
   status: CanvasState["status"];
@@ -98,7 +102,6 @@ export interface WorkspaceShellViewProps {
   inRoom: boolean;
   openSignIn: () => void;
   readOnly: boolean;
-  setStylesOpen: UiState["setStylesOpen"];
   activeBoardId: string | null;
   activeBoardName: string | null;
   canManageSchema: boolean;
@@ -116,27 +119,29 @@ export interface WorkspaceShellViewProps {
   toggleOutline: () => void;
   libraryTab: LibraryTab;
   snapshot: WorkspaceSnapshot;
-  openBoards: WorkspaceSnapshot["boards"];
-  openBoardIds: string[];
+  /** Boards this session has been on, most recent first: the switcher's order. */
+  boardRecency: string[];
+  /** A placeholder tab is open: no board, the start page in its place. */
+  newTab: boolean;
+  openNewTab: () => void;
   boardHistory: UiState["boardHistory"];
   goBackBoard: UiState["goBackBoard"];
-  navigation: { homeBoardId: string | null; newTabBoardId: string | null };
   peersByBoard: Record<string, BoardPresence>;
   activateBoard: UiState["activateBoard"];
-  closeBoardTab: UiState["closeBoardTab"];
   runCards: (cardIds: readonly string[], mode: CanvasMode, source: PlacementSource) => void;
   boardPainted: boolean;
   boardPaint: Record<string, string>;
   boardEmpty: boolean;
   sharedEmpty: boolean;
   createCard: (typeId: string, point?: { x: number; y: number }) => string | undefined;
+  /** A new board, opened: what the start page and the tab chooser both mean. */
+  createBoard: () => void;
   createCardInRun: (typeId: string) => void;
   createPortal: (targetBoardId: string) => void;
   createSketch: () => void;
   createSection: () => void;
   createBoardPortal: () => void;
   openTypeSettings: UiState["openTypeSettings"];
-  stylesOpen: boolean;
   paletteItems: PaletteItem[];
   unplaced: string[];
   trashed: string[];
@@ -204,7 +209,6 @@ export function WorkspaceShellView({
   inRoom,
   openSignIn,
   readOnly,
-  setStylesOpen,
   activeBoardId,
   activeBoardName,
   canManageSchema,
@@ -222,20 +226,20 @@ export function WorkspaceShellView({
   toggleOutline,
   libraryTab,
   snapshot,
-  openBoards,
-  openBoardIds,
+  boardRecency,
+  newTab,
+  openNewTab,
   boardHistory,
   goBackBoard,
-  navigation,
   peersByBoard,
   activateBoard,
-  closeBoardTab,
   runCards,
   boardPainted,
   boardPaint,
   boardEmpty,
   sharedEmpty,
   createCard,
+  createBoard,
   createCardInRun,
   createPortal,
   createSketch,
@@ -281,6 +285,37 @@ export function WorkspaceShellView({
   leaveAnyway,
   dismissLeavePrompt,
 }: WorkspaceShellViewProps) {
+  const pins = useBoardPins();
+  // Only a pin earns a tab: an unpinned board is one click away in the switcher,
+  // and a bar that grows with every board is the strip we just removed.
+  const pinnedBoards = useMemo(
+    () => pinnedOrder(snapshot.boards, pins.pinned),
+    [snapshot.boards, pins.pinned],
+  );
+  // The launcher's recents, minus this workspace: the title menu is the second
+  // half of "where can I go", and it should not offer where you already are.
+  const otherWorkspaces = useMemo(
+    () =>
+      readRecentWorkspaces()
+        .filter((entry) => entry.id !== workspaceId)
+        .slice(0, 5)
+        .map((entry) => ({ id: entry.id, title: entry.title })),
+    [workspaceId],
+  );
+  // A workspace with no board at all: nothing to open, nothing to switch to. The
+  // start page is the only surface here that still makes sense.
+  const startPage =
+    workspaceSurface && activeBoardId === null && (newTab || snapshot.boards.length === 0);
+  // The start page says how much is on each board; the projection already has
+  // every placement, so this is a count and nothing else.
+  const boardCardCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const placement of snapshot.placements) {
+      counts[placement.boardId] = (counts[placement.boardId] ?? 0) + 1;
+    }
+    return counts;
+  }, [snapshot.placements]);
+
   return (
     <SurfacePaintProvider.Provider value={{ palette, roles, mode }}>
       <div
@@ -314,6 +349,8 @@ export function WorkspaceShellView({
             />
           }
           workspaceName={share ? documentLabel(share, workspaceId) : workspaceName}
+          otherWorkspaces={otherWorkspaces}
+          onOpenWorkspace={(id) => requestLeave(workspaceUrl(id, null))}
           canRenameWorkspace={!share && !readOnly}
           onRenameWorkspace={(name) => {
             try {
@@ -344,7 +381,6 @@ export function WorkspaceShellView({
                     boardId={activeBoardId}
                     title={activeBoardName ?? "Workspace"}
                     onLeave={requestLeave}
-                    {...(canManageSchema ? { onOpenStyles: () => setStylesOpen(true) } : {})}
                   />
                 </Suspense>
                 {standalone ? (
@@ -364,25 +400,14 @@ export function WorkspaceShellView({
         >
           {workspaceSurface ? (
             <>
-              <div className="views-bar">
-                <ViewsBar
-                  canManage={canManageSchema}
-                  // A view's result is a queue like any other; the view's sorts are
-                  // the order, so a threaded run follows the list on screen.
-                  {...(canEditLayout
-                    ? {
-                        onPlaceResults: (cardIds: readonly string[]) =>
-                          runCards(cardIds, useUiStore.getState().mode, "view"),
-                      }
-                    : {})}
-                />
-              </div>
               {/*
-              A way back exists only where the reader was *taken* somewhere: a
-              portal entry. Tab clicks already leave every board one click away,
-              so a chevron for those was a second, single-direction control in
-              the busiest corner of the bar.
-            */}
+                A way back exists only where the reader was *taken* somewhere: a
+                portal entry. Every other board is one click away in the
+                switcher, so a permanent Back would be a second, single-direction
+                navigation system. `shrink-0` on the button and a truncating
+                switcher are what keep it from being clipped by its neighbour —
+                the failure the old bar had.
+              */}
               {activeBoardId && boardHistory.at(-1)?.via === "portal" ? (
                 <button
                   type="button"
@@ -401,28 +426,62 @@ export function WorkspaceShellView({
                   <span aria-hidden="true">{"\u2039"}</span>
                 </button>
               ) : null}
-              <BoardTabs
-                boards={openBoards}
+              <BoardSwitcher
+                boards={snapshot.boards}
                 activeBoardId={activeBoardId}
-                homeBoardId={navigation.homeBoardId}
-                newTabBoardId={navigation.newTabBoardId}
-                openableBoards={snapshot.boards.filter((board) => !openBoardIds.includes(board.id))}
+                recency={boardRecency}
+                pinned={pins.pinned}
                 onSelect={activateBoard}
                 peersByBoard={peersByBoard}
-                canCreateBoards={canCreateBoards}
-                canManageBoards={canManageBoards}
-                onCreate={() => {
-                  const board = workspace.createBoard();
-                  activateBoard(board.id);
+                canManage={canManageBoards}
+                onCreate={createBoard}
+                onOpenLibrary={() => {
+                  setLibraryTab("boards");
+                  setLibraryOpen(true);
                 }}
                 onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
-                onClose={closeBoardTab}
+                onSetColor={(boardId, color) => workspace.setBoardColor(boardId, color)}
+                onTogglePin={pins.togglePin}
               />
+              {pinnedBoards.map((board) => {
+                const current = board.id === activeBoardId;
+                return (
+                  <button
+                    key={board.id}
+                    type="button"
+                    data-testid={`board-pinned-tab-${board.id}`}
+                    data-active={current ? "true" : undefined}
+                    aria-current={current ? "page" : undefined}
+                    aria-label={board.name}
+                    title={board.name}
+                    className={`inline-flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-[12px] transition-colors ${
+                      current
+                        ? "bg-black/[0.07] font-medium text-[var(--ink)] dark:bg-white/15"
+                        : "text-[var(--ink-muted)] hover:bg-black/[0.04] dark:hover:bg-white/10"
+                    }`}
+                    onClick={() => activateBoard(board.id)}
+                  >
+                    <BoardGlyph board={board} />
+                  </button>
+                );
+              })}
+              {canCreateBoards ? (
+                <button
+                  type="button"
+                  data-testid="board-new-tab"
+                  aria-label="New tab"
+                  title="New tab"
+                  className="inline-flex h-6 shrink-0 items-center rounded px-1.5 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+                  onClick={openNewTab}
+                >
+                  +
+                </button>
+              ) : null}
               {/*
-                The rest of the navigation sits in the same row as the tabs: undo
-                and redo of the document, the history drawer, and the outline. They
-                were spread across a corner stack and the bottom dock, which put one
-                group of controls in four places.
+                The document's own controls sit beside the board name: undo and
+                redo, the history drawer, and the outline. They were spread across
+                a corner stack and the bottom dock, which put one group of
+                controls in four places.
               */}
               {workspaceSurface && !readOnly ? (
                 <span className="flex shrink-0 items-center gap-0.5" data-testid="board-nav">
@@ -465,6 +524,20 @@ export function WorkspaceShellView({
           style={boardPainted ? (boardPaint as CSSProperties) : undefined}
         >
           <CanvasBoard />
+          {startPage ? (
+            <div
+              className="absolute inset-0 z-20 flex items-center justify-center bg-[var(--surface)] px-4"
+              data-testid="start-surface"
+            >
+              <StartPage
+                boards={snapshot.boards}
+                cardCounts={boardCardCounts}
+                canCreate={canCreateBoards}
+                onOpen={activateBoard}
+                onCreate={createBoard}
+              />
+            </div>
+          ) : null}
           {workspaceSurface && canCreateContent && boardEmpty ? (
             <div
               className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
@@ -546,6 +619,7 @@ export function WorkspaceShellView({
             cards={cardItems}
             trash={trashItems}
             boards={boardEntries}
+            onCreateBoard={canCreateBoards ? createBoard : undefined}
             onOpenBoard={activateBoard}
             onPlaceBoard={createPortal}
             onUnplaceBoardCards={unplaceBoardCards}

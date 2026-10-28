@@ -374,7 +374,8 @@ test("board editor creates content but has no library, board or schema chrome", 
   await expect(editor.getByTestId("workspace-actions")).toHaveCount(0);
   await expect(editor.getByTestId("dock-library")).toHaveCount(0);
   await expect(editor.getByTestId("library-drawer")).toHaveCount(0);
-  await expect(editor.getByTestId("board-create")).toHaveCount(0);
+  await expect(editor.getByTestId("board-switcher")).toBeVisible();
+  await expect(editor.getByTestId("board-switcher-new")).toHaveCount(0);
   await expect(editor.getByTestId("share-publish")).toBeVisible();
 
   // A canvas right-click offers the existing creation gestures.
@@ -474,7 +475,9 @@ test("workspace editor token edits the workspace without owner chrome", async ({
     await expect(editor.getByTestId("workspace-menu")).toHaveCount(0);
     // Full live workspace editing: dock, library, board creation, type settings.
     await expect(editor.getByTestId("dock-library")).toBeVisible();
-    await expect(editor.getByTestId("board-create")).toBeVisible();
+    await editor.getByTestId("board-switcher").click();
+    await expect(editor.getByTestId("board-switcher-new")).toBeVisible();
+    await editor.keyboard.press("Escape");
     await editor.getByTestId("dock-new-card").click();
     await expect(editor.getByTestId("dock-manage-types")).toBeVisible();
     await editor.getByTestId("dock-library").click();

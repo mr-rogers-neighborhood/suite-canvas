@@ -62,7 +62,6 @@ describe("ModeControl shift hint", () => {
     const cases = [
       { mode: "thread", key: "Shift", shiftKey: true, expect: "place" },
       { mode: "fan", key: "Control", ctrlKey: true, expect: "place" },
-      { mode: "branch", key: "Alt", altKey: true, expect: "place" },
     ] as const;
 
     for (const { mode, key, expect: previewed, ...held } of cases) {
@@ -140,7 +139,7 @@ describe("ModeControl shift hint", () => {
 });
 
 describe("ModeControl three-state cycle", () => {
-  it("walks place → thread → fan → branch → place on repeated clicks", () => {
+  it("walks place → thread → fan → place on repeated clicks", () => {
     render(<ModeControl />);
     const toggle = screen.getByTestId("link-mode-toggle");
 
@@ -154,12 +153,9 @@ describe("ModeControl three-state cycle", () => {
     expect(toggle).toHaveAttribute("data-mode", "fan");
     expect(toggle).not.toHaveAttribute("data-preview");
     fireEvent.click(toggle);
-    // The fourth shape: a chain that branches. See ADR-0063.
-    expect(toggle).toHaveAttribute("data-mode", "branch");
-    expect(toggle).not.toHaveAttribute("data-preview");
-    fireEvent.click(toggle);
+    // Back to the resting tool, and the store agrees with the paint.
     expect(toggle).toHaveAttribute("data-mode", "place");
-
+    expect(toggle).not.toHaveAttribute("data-preview");
     expect(useUiStore.getState().mode).toBe("place");
   });
 

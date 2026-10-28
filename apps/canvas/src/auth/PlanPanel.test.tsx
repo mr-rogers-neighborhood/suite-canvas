@@ -23,15 +23,17 @@ describe("the plan surface", () => {
     expect(screen.getByTestId("plan-quota")).toHaveTextContent("2.0 GB");
   });
 
-  it("says a deployment publishes no limits rather than showing zeroes", () => {
+  it("says nothing is limited here rather than showing zeroes", () => {
     render(<PlanPanel entitlement={{ ...ENTITLEMENT, limits: {}, quota: [] }} />);
-    expect(screen.getByTestId("plan-no-limits")).toHaveTextContent("publishes no limits");
+    expect(screen.getByTestId("plan-no-limits")).toHaveTextContent(
+      "Nothing is limited on this server",
+    );
     expect(screen.queryByTestId("plan-quota")).not.toBeInTheDocument();
   });
 
-  it("says the plan appears once there is a credential", () => {
+  it("says the plan appears once signed in", () => {
     render(<PlanPanel entitlement={null} />);
-    expect(screen.getByTestId("plan-tier")).toHaveTextContent("session credential");
+    expect(screen.getByTestId("plan-tier")).toHaveTextContent("once you are signed in");
   });
 
   it("always offers the customer portal, which is where a plan is changed", () => {

@@ -5,7 +5,6 @@ import { planNavigation, targetOfFocus } from "./navigateTarget";
 function scene(overrides: Partial<NavigationScene> = {}): NavigationScene {
   return {
     activeBoardId: "b1",
-    openBoardIds: ["b1"],
     boards: [{ id: "b1" }, { id: "b2" }, { id: "b3" }],
     cards: [{ id: "c1" }, { id: "c2" }, { id: "c3" }, { id: "c4" }, { id: "c5" }, { id: "p1" }],
     placements: [
@@ -37,7 +36,6 @@ describe("planNavigation", () => {
       cardId: "c1",
       boardId: "b1",
       switchBoard: false,
-      opensTab: false,
     });
   });
 
@@ -47,7 +45,6 @@ describe("planNavigation", () => {
       cardId: "c2",
       boardId: "b2",
       switchBoard: true,
-      opensTab: true,
     });
   });
 
@@ -103,9 +100,11 @@ describe("planNavigation", () => {
   });
 
   it("ignores a portal when no board is active", () => {
-    expect(
-      planNavigation({ kind: "board", id: "b2" }, scene({ activeBoardId: null, openBoardIds: [] })),
-    ).toEqual({ kind: "board", boardId: "b2", viaPortal: null });
+    expect(planNavigation({ kind: "board", id: "b2" }, scene({ activeBoardId: null }))).toEqual({
+      kind: "board",
+      boardId: "b2",
+      viaPortal: null,
+    });
   });
 
   it("focuses a section on the active board", () => {
@@ -114,7 +113,6 @@ describe("planNavigation", () => {
       sectionId: "s1",
       boardId: "b1",
       switchBoard: false,
-      opensTab: false,
     });
   });
 
@@ -124,7 +122,6 @@ describe("planNavigation", () => {
       sectionId: "s2",
       boardId: "b2",
       switchBoard: true,
-      opensTab: true,
     });
   });
 
@@ -138,7 +135,6 @@ describe("planNavigation", () => {
       edgeId: "e1",
       boardId: "b1",
       switchBoard: false,
-      opensTab: false,
     });
   });
 
@@ -148,7 +144,6 @@ describe("planNavigation", () => {
       edgeId: "e2",
       boardId: "b2",
       switchBoard: true,
-      opensTab: true,
     });
   });
 

@@ -9,8 +9,6 @@ import { useWorkspaceSnapshot } from "../store/workspaceStore";
 export interface NavigationScene {
   /** Board the user is on, or null before the first board is activated. */
   activeBoardId: string | null;
-  /** Boards that already have a tab. */
-  openBoardIds: readonly string[];
   boards: readonly Pick<Board, "id">[];
   cards: readonly Pick<Card, "id">[];
   placements: readonly Pick<Placement, "boardId" | "cardId">[];
@@ -27,8 +25,6 @@ interface BoardStep {
   boardId: string;
   /** True when the caller must activate the board before the action. */
   switchBoard: boolean;
-  /** True when the board has no tab yet; switching will create one. */
-  opensTab: boolean;
 }
 
 /**
@@ -52,8 +48,7 @@ function hasBoard(scene: NavigationScene, boardId: string): boolean {
 }
 
 function boardStep(scene: NavigationScene, boardId: string): BoardStep {
-  const switchBoard = scene.activeBoardId !== boardId;
-  return { boardId, switchBoard, opensTab: switchBoard && !scene.openBoardIds.includes(boardId) };
+  return { boardId, switchBoard: scene.activeBoardId !== boardId };
 }
 
 /**
@@ -102,12 +97,8 @@ export function planNavigation(target: Target, scene: NavigationScene): Navigati
   }
 }
 
-/** Builds the resolver's scene from the shared snapshot and the board tabs. */
-function sceneFor(
-  snapshot: WorkspaceSnapshot,
-  activeBoardId: string | null,
-  openBoardIds: readonly string[],
-): NavigationScene {
+/** Builds the resolver's scene from the shared snapshot. */
+function sceneFor(snapshot: WorkspaceSnapshot, activeBoardId: string | null): NavigationScene {
   const cards = new Map(snapshot.cards.map((card) => [card.id, card]));
   const portals = new Map<string, string>();
   if (activeBoardId) {
@@ -119,7 +110,6 @@ function sceneFor(
   }
   return {
     activeBoardId,
-    openBoardIds,
     boards: snapshot.boards,
     cards: snapshot.cards,
     placements: snapshot.placements,
@@ -137,7 +127,6 @@ function sceneFor(
 export function useNavigateTarget(): (target: Target) => boolean {
   const snapshot = useWorkspaceSnapshot();
   const activeBoardId = useUiStore((state) => state.activeBoardId);
-  const openBoardIds = useUiStore((state) => state.openBoardIds);
   const activateBoard = useUiStore((state) => state.activateBoard);
   const focusCard = useUiStore((state) => state.focusCard);
   const focusSection = useUiStore((state) => state.focusSection);
@@ -146,7 +135,7 @@ export function useNavigateTarget(): (target: Target) => boolean {
 
   return useCallback(
     (target: Target): boolean => {
-      const plan = planNavigation(target, sceneFor(snapshot, activeBoardId, openBoardIds));
+      const plan = planNavigation(target, sceneFor(snapshot, activeBoardId));
       if (!plan) return false;
       switch (plan.kind) {
         case "board": {
@@ -176,7 +165,6 @@ export function useNavigateTarget(): (target: Target) => boolean {
       activateBoard,
       focusCard,
       focusSection,
-      openBoardIds,
       requestPortalOpen,
       setSelectedEdgeIds,
       snapshot,

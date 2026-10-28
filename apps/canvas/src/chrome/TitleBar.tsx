@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { AccountPhase } from "../auth/useAccountStore";
+import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { type SyncClaim, type SyncRefusal, syncPresentation } from "../feedback/syncState";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import type { ConnectionStatus } from "../store/useCanvasStore";
@@ -40,6 +41,14 @@ export interface TitleBarProps {
   canRenameWorkspace?: boolean;
   /** Returns a readable error, or null when the rename was accepted. */
   onRenameWorkspace?: (name: string) => string | null;
+  /**
+   * Other workspaces this browser has open lately, with the current one already
+   * removed. Switching here rather than through the launcher is the point of
+   * making the title a menu: boards and workspaces are the same question.
+   */
+  otherWorkspaces?: readonly { id: string; title: string }[];
+  /** Leaves this workspace for another one; the leave guard decides if it asks. */
+  onOpenWorkspace?: (id: string) => void;
   /** Board switcher and saved views, rendered after the workspace name. */
   children?: React.ReactNode;
   /** Workspace-level actions (share, export), rendered before the theme. */
@@ -67,6 +76,8 @@ export function TitleBar({
   workspaceName,
   canRenameWorkspace = false,
   onRenameWorkspace,
+  otherWorkspaces = [],
+  onOpenWorkspace,
   children,
   actions,
   onNavigateHome,
@@ -76,7 +87,9 @@ export function TitleBar({
   const [draft, setDraft] = useState(workspaceName ?? "");
   const [error, setError] = useState<string | null>(null);
   const [statusOpen, setStatusOpen] = useState(false);
+  const [nameMenuOpen, setNameMenuOpen] = useState(false);
   const statusRef = useRef<HTMLDivElement | null>(null);
+  const nameRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!statusOpen) return;
@@ -90,6 +103,16 @@ export function TitleBar({
   }, [statusOpen]);
 
   useEscapeLayer(() => setStatusOpen(false), statusOpen);
+  useEscapeLayer(() => setNameMenuOpen(false), nameMenuOpen && !renaming);
+
+  useEffect(() => {
+    if (!nameMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!nameRef.current?.contains(event.target as Node)) setNameMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [nameMenuOpen]);
 
   // The button and the panel read one decision, so they cannot disagree.
   const presentation = syncPresentation({ phase, status, peerCount, role, claim, reason });
@@ -152,20 +175,84 @@ export function TitleBar({
             }}
           />
         ) : (
-          <button
-            type="button"
-            data-testid="workspace-name"
-            title={canRenameWorkspace ? "Rename workspace" : workspaceName}
-            className="workspace-name"
-            onClick={() => {
-              if (!canRenameWorkspace) return;
-              setDraft(workspaceName);
-              setError(null);
-              setRenaming(true);
-            }}
-          >
-            {workspaceName}
-          </button>
+          <div className="relative" ref={nameRef}>
+            <button
+              type="button"
+              data-testid="workspace-name"
+              aria-haspopup="menu"
+              aria-expanded={nameMenuOpen}
+              title={`${workspaceName} — switch workspace`}
+              className="workspace-name inline-flex max-w-[200px] items-center gap-1"
+              onClick={() => setNameMenuOpen((open) => !open)}
+            >
+              <span className="min-w-0 truncate">{workspaceName}</span>
+              <span aria-hidden="true" className="shrink-0 opacity-60">
+                {"\u25be"}
+              </span>
+            </button>
+            {nameMenuOpen ? (
+              <div
+                role="menu"
+                aria-label="Workspace"
+                data-testid="workspace-switcher"
+                ref={focusFirstMenuItem}
+                onKeyDown={menuKeyDown}
+                className="absolute left-0 top-full z-50 mt-1 w-60 overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 text-[12px] shadow-xl"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="workspace-switcher-rename"
+                  disabled={!canRenameWorkspace}
+                  className="flex w-full items-center rounded-lg px-2 py-1.5 text-left hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"
+                  onClick={() => {
+                    setNameMenuOpen(false);
+                    setDraft(workspaceName);
+                    setError(null);
+                    setRenaming(true);
+                  }}
+                >
+                  Rename workspace
+                </button>
+                {otherWorkspaces.length > 0 && onOpenWorkspace ? (
+                  <>
+                    <hr className="my-1 border-[var(--hairline)]" />
+                    <p className="px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--ink-muted)]">
+                      Workspaces
+                    </p>
+                    {otherWorkspaces.map((entry) => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        role="menuitem"
+                        data-testid={`workspace-switcher-open-${entry.id}`}
+                        className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                        onClick={() => {
+                          setNameMenuOpen(false);
+                          onOpenWorkspace(entry.id);
+                        }}
+                      >
+                        <span className="min-w-0 truncate">{entry.title}</span>
+                      </button>
+                    ))}
+                  </>
+                ) : null}
+                <hr className="my-1 border-[var(--hairline)]" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="workspace-switcher-home"
+                  className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                  onClick={() => {
+                    setNameMenuOpen(false);
+                    onNavigateHome?.();
+                  }}
+                >
+                  Back to launcher
+                </button>
+              </div>
+            ) : null}
+          </div>
         )
       ) : null}
       {error ? (
@@ -175,7 +262,9 @@ export function TitleBar({
       ) : null}
 
       {children ? (
-        <div className="ml-2 flex min-w-0 shrink items-center overflow-hidden">{children}</div>
+        // `flex-1` matters: sized by content, this box measured zero for a full
+        // strip and its tabs slid under the controls beside it.
+        <div className="ml-2 flex min-w-0 flex-1 items-center overflow-hidden">{children}</div>
       ) : null}
 
       {onOpenSearch ? (

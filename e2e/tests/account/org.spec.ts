@@ -1,10 +1,16 @@
-import { expect, type Page, test } from "@playwright/test";
-import { cardByTitle, cards, createNote, newBoard, workspaceIdFactory } from "../fixtures/support";
+import { expect, test } from "@playwright/test";
+import {
+  boardId,
+  cardByTitle,
+  cards,
+  createNote,
+  newBoard,
+  openBoard,
+  workspaceIdFactory,
+} from "../fixtures/support";
 
 const id = workspaceIdFactory("e2e-org");
 const workspaceUrl = (name: string) => `/?workspace=${id(name)}`;
-
-const boardTabs = (page: Page) => page.locator('[data-testid^="board-tab"]');
 
 test("duplicates a card from its menu without linking the copy to the original", async ({
   page,
@@ -52,16 +58,13 @@ test("moves a card to a second board and it leaves the first", async ({ page }) 
   await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Movable note");
   await expect(cards(page)).toHaveCount(3);
+  const firstBoard = boardId(page);
 
-  await newBoard(page);
-  await expect(boardTabs(page)).toHaveCount(2);
+  const secondBoard = await newBoard(page);
   // A new board opens empty; the card is still on the first one.
   await expect(cards(page)).toHaveCount(0);
 
-  await page
-    .getByRole("navigation", { name: "Boards" })
-    .getByRole("button", { name: "Board 1", exact: true })
-    .click();
+  await openBoard(page, firstBoard);
   await expect(cards(page)).toHaveCount(3);
 
   await cardByTitle(page, "Movable note").getByTestId("card-menu").click();
@@ -73,10 +76,7 @@ test("moves a card to a second board and it leaves the first", async ({ page }) 
   await expect(cards(page)).toHaveCount(2);
   await expect(cardByTitle(page, "Movable note")).toHaveCount(0);
 
-  await page
-    .getByRole("navigation", { name: "Boards" })
-    .getByRole("button", { name: "Board 2", exact: true })
-    .click();
+  await openBoard(page, secondBoard);
   await expect(cards(page)).toHaveCount(1);
   await expect(cardByTitle(page, "Movable note")).toHaveCount(1);
 });

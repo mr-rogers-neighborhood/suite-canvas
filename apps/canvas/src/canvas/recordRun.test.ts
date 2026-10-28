@@ -29,8 +29,9 @@ describe("planRecordClick", () => {
     expect(planRecordClick("fan", 0)).toEqual({ action: "newStep", stepIndex: 0 });
   });
 
-  it("reads branch as thread, because a branch is a shape and not a step verb", () => {
-    expect(planRecordClick("branch", 2)).toEqual({ action: "newStep", stepIndex: 2 });
+  it("grows the current step on a fan, and starts a new one on a thread", () => {
+    // A fan adds a target to the step being written; it does not begin another.
+    expect(planRecordClick("fan", 2)).toEqual({ action: "addTarget", stepIndex: 1 });
   });
 });
 

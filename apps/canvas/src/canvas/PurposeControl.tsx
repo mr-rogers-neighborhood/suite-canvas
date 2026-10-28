@@ -27,8 +27,10 @@ import { useModifierState } from "./useModifierState";
 const PREVIEW_DISPLAY: Record<CanvasPurpose, { label: string; glyph: string }> = {
   explore: { label: "Explore mode: edit the canvas", glyph: "\u25cb" },
   run: { label: "Run mode: place a sequence of cards", glyph: "\u2261" },
-  record: { label: "Record mode: capture steps into a tour", glyph: "\u25cf" },
   explain: { label: "Explain mode: gather this selection into a context", glyph: "\u25c8" },
+  // States a tour puts the reader in. Nothing in this control offers them — they are
+  // named here only so the button can say where the reader is while it lasts.
+  record: { label: "Record mode: capture steps into a tour", glyph: "\u25cf" },
   present: { label: "Presenting a tour", glyph: "\u25a3" },
 };
 
@@ -41,19 +43,12 @@ const PURPOSES: Record<CanvasPurpose, { label: string; glyph: string }> = {
     label: "Run mode: place a sequence of cards",
     glyph: "\u2261",
   },
-  record: {
-    label: "Record mode: capture steps into a tour",
-    glyph: "\u25cf",
-  },
   explain: {
     label: "Explain mode: gather this selection into a context",
     glyph: "\u25c8",
   },
-  // Not a mode the reader picks, so it is named as a state rather than offered.
-  present: {
-    label: "Presenting a tour",
-    glyph: "\u25a3",
-  },
+  record: { label: "Record mode: capture steps into a tour", glyph: "\u25cf" },
+  present: { label: "Presenting a tour", glyph: "\u25a3" },
 };
 
 /** "Record mode", the name without the clause after the colon, for a label that embeds it. */
@@ -61,11 +56,12 @@ function shortPurposeLabel(purpose: CanvasPurpose | "explain"): string {
   return PREVIEW_DISPLAY[purpose].label.split(":")[0] ?? PREVIEW_DISPLAY[purpose].label;
 }
 
-/** "Switch to record mode: capture steps into a tour". */
+/** "Switch to run mode: place a sequence of cards". */
 function switchLabel(purpose: CanvasPurpose, target: CanvasPurpose): string {
-  // Presenting is a tour's state, so leaving it is not "switching mode": it is
-  // stepping out of the takeover, which is the only thing this control can do here.
+  // A tour state is not a mode to switch out of; the tour's own control is the
+  // way out, and the label says so rather than promising a switch.
   if (purpose === "present") return "Stop presenting and return to the canvas";
+  if (purpose === "record") return "Stop recording and return to the canvas";
   const next = PURPOSES[target];
   return `Switch to ${next.label.charAt(0).toLowerCase()}${next.label.slice(1)}`;
 }
@@ -81,14 +77,10 @@ function switchLabel(purpose: CanvasPurpose, target: CanvasPurpose): string {
  * the purpose at the floor and the link mode above it, sharing the pill's corners
  * so the stack reads as one object.
  *
- * `present` is displayed but never cycled into — a presentation is scoped to a
- * tour, which is the only thing that can start one (ADR-0064 §11). From there this
- * control is the exit.
- *
- * The modifiers preview the same way the link tool's do (ADR-0066):
- * shift points at `run`, ctrl at `record`, alt at `explain`. A held key repaints the
- * button and refuses the click — the key *is* the override, and releasing ends it — so
- * the button never promises a switch it would not perform.
+ * The modifiers preview the same way the link tool's do (ADR-0066): shift points
+ * at `run`, ctrl at `explain`. A held key repaints the button and refuses the
+ * click — the key *is* the override, and releasing ends it — so the button never
+ * promises a switch it would not perform.
  */
 export function PurposeControl() {
   const purpose = useUiStore((state) => state.purpose);
@@ -98,7 +90,7 @@ export function PurposeControl() {
   // What a click would choose: the previewed value when a modifier points at one,
   // otherwise the next value in the cycle.
   const previewed =
-    purpose === "present"
+    purpose === "present" || purpose === "record"
       ? null
       : previewedValue<PreviewablePurpose>(previewablePurposes, modifiers, purpose);
   const target = previewed ?? nextPurpose(purpose);

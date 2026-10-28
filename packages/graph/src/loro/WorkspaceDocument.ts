@@ -245,22 +245,6 @@ export class WorkspaceDocument extends CardsFacade {
     this.workspaceApi.renameWorkspace(name);
   }
 
-  workspaceHomeBoardId(): string | null {
-    return this.workspaceApi.workspaceHomeBoardId();
-  }
-
-  setWorkspaceHomeBoardId(boardId: string | null): void {
-    this.workspaceApi.setWorkspaceHomeBoardId(boardId);
-  }
-
-  newTabBoardId(): string | null {
-    return this.workspaceApi.newTabBoardId();
-  }
-
-  setNewTabBoardId(boardId: string | null): void {
-    this.workspaceApi.setNewTabBoardId(boardId);
-  }
-
   palette(): PaletteSwatch[] {
     return this.workspaceApi.palette();
   }

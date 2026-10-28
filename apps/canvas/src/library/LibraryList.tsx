@@ -16,6 +16,7 @@ export function LibraryList({
   starters,
   onUseTemplate,
   onUseStarter,
+  onCreateBoard,
   onEditTemplate,
 }: {
   tab: string;
@@ -32,6 +33,8 @@ export function LibraryList({
   /** Absent when this session may not create boards. */
   onUseTemplate?: ((templateId: string) => void) | undefined;
   onUseStarter: (starterId: string) => void;
+  /** Absent when this session may not create boards. */
+  onCreateBoard?: (() => void) | undefined;
   onEditTemplate: (boardId: string) => void;
 }) {
   return (
@@ -43,6 +46,16 @@ export function LibraryList({
         >
           Showing the first 200 matches. Add a word to narrow them.
         </p>
+      ) : null}
+      {tab === "boards" && onCreateBoard ? (
+        <button
+          type="button"
+          data-testid="library-new-board"
+          className="mb-1 flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+          onClick={onCreateBoard}
+        >
+          <span aria-hidden="true">+</span> New board
+        </button>
       ) : null}
       {tab === "boards" && onUseTemplate && templates.length + starters.length > 0 ? (
         <TemplateGallery

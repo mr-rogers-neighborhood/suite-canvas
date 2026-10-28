@@ -2737,9 +2737,10 @@ html[data-inspector-linking] .card-inspector {
  */
 .command-bar {
   display: flex;
-  /* Fills whatever the tabs and the status group leave free. */
-  flex: 1 1 200px;
-  min-width: 0;
+  /* The bar's slack belongs here: the board switcher, pinned tabs and the
+     account copy are all fixed, so search is the one thing that can give. */
+  flex: 1 1 120px;
+  min-width: 88px;
   height: 26px;
   align-items: center;
   gap: 6px;

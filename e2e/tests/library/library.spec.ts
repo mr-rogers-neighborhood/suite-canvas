@@ -8,14 +8,7 @@ const workspaceUrl = (name: string) => `/?workspace=e2e-ws-${name}-${Date.now()}
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
 async function createBoard(page: Page): Promise<string> {
-  const before = await page.locator('[data-testid^="board-tab"]').count();
-  await newBoard(page);
-  await expect(page.locator('[data-testid^="board-tab"]')).toHaveCount(before + 1);
-  const testId = await page
-    .locator('[data-testid^="board-tab"][aria-current="page"]')
-    .getAttribute("data-testid");
-  if (!testId) throw new Error("the new board has no tab");
-  return testId.replace("board-tab-", "");
+  return newBoard(page);
 }
 
 async function createNoteFromDock(page: Page): Promise<void> {
@@ -187,13 +180,13 @@ test("deletes a board from the library and asks once", { tag: "@smoke" }, async 
   const boardId = await createBoard(page);
   await expect(cards(page)).toHaveCount(0);
 
-  // Deletion lives in the library now; the tab strip only closes tabs.
+  // Deletion lives in the library; the bar only goes places.
   await openLibrary(page, "boards");
   await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Delete board\u2026");
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
 
-  await expect(page.locator('[data-testid^="board-tab"]')).toHaveCount(1);
+  // Deleting the board on screen leaves the workspace on another one.
   await expect(page.getByTestId(`library-item-${boardId}`)).toHaveCount(0);
   await expect(cards(page)).toHaveCount(2);
 });
@@ -216,7 +209,6 @@ test("asks before deleting a board with cards and keeps them in the library", {
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
 
-  await expect(page.locator('[data-testid^="board-tab"]')).toHaveCount(1);
   // The card survives; it is simply no longer on the deleted board.
   await expect(page.getByTestId("dock-inbox-count")).toHaveCount(0);
   await openLibrary(page, "inbox");
@@ -278,7 +270,7 @@ test("syncs card titles and title carets between clients", { tag: "@smoke" }, as
 test("still resolves a legacy ?doc= link to a workspace", { tag: "@smoke" }, async ({ page }) => {
   await page.goto(`/?doc=e2e-legacy-${Date.now()}`);
   await expect(cards(page)).toHaveCount(2);
-  await expect(page.locator('[data-testid^="board-tab"]')).toHaveCount(1);
+  await expect(page.getByTestId("board-switcher")).toBeVisible();
 });
 
 test("scopes the cards list to the active board", { tag: "@smoke" }, async ({ page }) => {

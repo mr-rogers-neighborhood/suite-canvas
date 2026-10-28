@@ -111,12 +111,12 @@ describe("the record engine", () => {
     expect(result.current.held).toBe(0);
   });
 
-  it("reads branch as thread, because a branch is a shape", () => {
+  it("starts a new step per click in thread mode, because a thread is a sequence", () => {
     const { workspace, tutorial, first, second } = fixture();
     const { result } = renderHook(() => useRecordEngine());
 
     act(() => {
-      useUiStore.setState({ mode: "branch" });
+      useUiStore.setState({ mode: "thread" });
       result.current.start(tutorial.id);
     });
     act(() => result.current.record({ kind: "card", id: first.id }));

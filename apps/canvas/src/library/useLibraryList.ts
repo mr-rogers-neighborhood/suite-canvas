@@ -2,7 +2,6 @@ import type { WorkspaceDocument } from "@suite/graph";
 import { useMemo } from "react";
 import { useLibrarySearch } from "../hooks/useLibrarySearch";
 import type { LibraryScope, LibraryTab } from "../store/useUiStore";
-import { openedBoardIds } from "./boardReachability";
 import {
   facetCounts,
   filterItems,
@@ -146,17 +145,7 @@ export function useLibraryList({
       : boardQuery.length === 0
         ? boards
         : boards.filter((board) => board.title.toLowerCase().includes(boardQuery));
-  // A board nothing opens is reachable from this list alone, which is how a guide
-  // collects orphans. The hint is derived here, so it follows every portal edit.
-  const opened = useMemo(
-    () => openedBoardIds(boards, cards, workspace?.workspaceHomeBoardId() ?? null),
-    [boards, cards, workspace],
-  );
-  const visibleBoards = useMemo(
-    () =>
-      matchedBoards.map((board) => (opened.has(board.id) ? board : { ...board, unopened: true })),
-    [matchedBoards, opened],
-  );
+  const visibleBoards = matchedBoards;
   // The Templates group answers the same query as the list: a search narrows
   // both halves instead of leaving a gallery of things the reader did not ask for.
   const visibleTemplates =

@@ -182,25 +182,6 @@ function planSpokes(
 }
 
 /**
- * `branch`: a mindmap. Each card is a child of the one before it, alternating to
- * the right and the left and one row down, so a run draws a zig-zag of branches
- * rather than a straight chain — which is the reading a set of nested ideas has,
- * and the shape a reader recognises as "these hang off that".
- */
-function planBranches(
-  input: PlanPlacementInput,
-  options: PlacementOptions,
-): { x: number; y: number } {
-  const { index, anchor, start, size } = input;
-  if (!anchor) return start;
-  const right = index % 2 === 1;
-  return {
-    x: right ? anchor.x + anchor.width + options.gap : anchor.x - size.width - options.gap,
-    y: anchor.y + anchor.height + options.gap / 2,
-  };
-}
-
-/**
  * One step of a run: where the card goes, and whether it draws a line back.
  *
  * The first card never links: there is nothing to link to, and a run that opened
@@ -216,8 +197,6 @@ export function planPlacementStep(input: PlanPlacementInput): PlacementStep {
         return planChain(input, options);
       case "fan":
         return planSpokes(input, options);
-      case "branch":
-        return planBranches(input, options);
     }
   })();
 
@@ -228,9 +207,7 @@ export function planPlacementStep(input: PlanPlacementInput): PlacementStep {
   const link: PlacementLinkPlan | null =
     input.mode === "place" || input.index === 0
       ? null
-      : input.mode === "branch"
-        ? { from: "anchor", to: "top" }
-        : { from: input.mode === "fan" ? "origin" : "anchor", to: "left" };
+      : { from: input.mode === "fan" ? "origin" : "anchor", to: "left" };
 
   return { position, link };
 }

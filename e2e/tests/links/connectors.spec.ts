@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { settleViewport } from "../fixtures/marquee";
-import { createNote, newBoard } from "../fixtures/support";
+import { boardId, createNote, newBoard, openBoard } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -8,10 +8,6 @@ const workspaceUrl = (name: string) =>
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const portalNodes = (page: Page) => page.getByTestId("portal-node");
-const boardTabs = (page: Page) =>
-  // Only the board tabs: the strip also holds one close button per board, so counting
-  // its buttons would count twice.
-  page.locator('[data-testid^="board-tab"]');
 const edges = (page: Page) => page.locator(".react-flow__edge");
 
 /**
@@ -59,7 +55,6 @@ async function roomyPoint(page: Page): Promise<{ x: number; y: number }> {
 
 async function createBoard(page: Page): Promise<void> {
   await newBoard(page);
-  await expect(boardTabs(page)).toHaveCount(2);
 }
 
 async function createPortal(page: Page, target: string): Promise<void> {
@@ -93,14 +88,12 @@ async function dragLinkOnto(page: Page, card: Locator, target: Locator): Promise
   await page.mouse.up();
 }
 
-/** A second board plus a portal to it, on Board 1. */
+/** A second board plus a portal to it, on the first one. */
 async function boardWithPortal(page: Page): Promise<void> {
+  const firstBoard = boardId(page);
   await createBoard(page);
   await createNote(page, "Target Two");
-  await page
-    .getByRole("navigation", { name: "Boards" })
-    .getByRole("button", { name: "Board 1", exact: true })
-    .click();
+  await openBoard(page, firstBoard);
   await expect(cards(page)).toHaveCount(2);
   await createPortal(page, "Board 2");
 }
@@ -312,7 +305,6 @@ test("a portal's miniature draws the links on the board it opens", async ({ page
   // A portal to Board 1, sitting on the new Board 2, must paint that link inside
   // its picture — the same anchors the board uses, not a second set of rules.
   await newBoard(page);
-  await expect(boardTabs(page)).toHaveCount(2);
   await createPortal(page, "Board 1");
 
   await expect(page.getByTestId("portal-miniature")).toHaveCount(1);

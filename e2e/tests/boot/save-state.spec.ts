@@ -31,14 +31,14 @@ test("an anonymous workspace says where the work is, never that it is temporary"
   await status.click();
   await expect(page.getByTestId("sync-panel")).toBeVisible();
 
-  const copy = page.getByTestId("storage-status");
+  // The one sentence says what is happening, not that the work is at risk on a
+  // browser that has not promised to keep it.
+  await expect(page.getByTestId("sync-room")).not.toHaveText(/temporary/i);
+  await page.getByTestId("sync-details").click();
+  const copy = page.getByTestId("sync-save-state");
   await expect(copy).toBeVisible();
   await expect(copy).toHaveText(/^Saved on this device$/);
   await expect(copy).not.toHaveText(/temporary/i);
-  await expect(page.getByTestId("storage-headline")).toContainText(
-    "Sign in to keep this workspace anywhere",
-  );
-  await expect(page.getByTestId("storage-persist")).not.toBeEmpty();
 });
 
 test("an account keeps this browser quiet about its own copy", { tag: "@smoke" }, async ({
@@ -58,9 +58,10 @@ test("an account keeps this browser quiet about its own copy", { tag: "@smoke" }
     // promised nothing gives way to silence. "Saved here and synced" is the
     // no-account rung and needs an owner-key session this build no longer has.
     await me.getByTestId("sync-status").click();
-    await expect(me.getByTestId("storage-status")).toHaveText("Saved");
     await expect(me.getByTestId("storage-warning")).toHaveCount(0);
-    await expect(me.getByTestId("storage-sign-in")).toHaveCount(0);
+    await expect(me.getByTestId("sync-sign-in")).toHaveCount(0);
+    await me.getByTestId("sync-details").click();
+    await expect(me.getByTestId("sync-save-state")).toHaveText("Saved on this device");
   } finally {
     await context.close();
   }

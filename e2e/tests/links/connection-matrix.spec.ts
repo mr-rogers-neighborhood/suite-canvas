@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { settleViewport } from "../fixtures/marquee";
-import { cards, newBoard } from "../fixtures/support";
+import { boardId, cards, newBoard, openBoard } from "../fixtures/support";
 
 /**
  * Every kind of thing that can hold a connector, linked to every other kind, in
@@ -24,10 +24,6 @@ const workspaceUrl = (name: string) =>
   `/?workspace=e2e-matrix-${name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const dotSelector = '[data-testid="connector-dot"], [data-testid="section-connector-dot"]';
-const boardTabs = (page: Page) =>
-  // Only the board tabs: the strip also holds one close button per board, so counting
-  // its buttons would count twice.
-  page.locator('[data-testid^="board-tab"]');
 
 /** One connector-bearing entity: its dots and the face that owns them. */
 interface Entity {
@@ -151,12 +147,9 @@ async function createSketch(page: Page): Promise<void> {
 }
 
 async function createPortal(page: Page): Promise<void> {
+  const firstBoard = boardId(page);
   await newBoard(page);
-  await expect(boardTabs(page)).toHaveCount(2);
-  await page
-    .getByRole("navigation", { name: "Boards" })
-    .getByRole("button", { name: "Board 1", exact: true })
-    .click();
+  await openBoard(page, firstBoard);
   const point = await ensureRoom(page);
   await page.mouse.click(point.x, point.y, { button: "right" });
   await expect(page.getByTestId("context-menu")).toBeVisible();

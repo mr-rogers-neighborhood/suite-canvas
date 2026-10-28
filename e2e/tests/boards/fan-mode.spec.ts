@@ -178,18 +178,17 @@ test("Escape clears the armed origin", async ({ page }) => {
   await expect(edges(page)).toHaveCount(0);
 });
 
-test("the mode button walks all four readings and comes back", async ({ page }) => {
+test("the mode button walks every reading and comes back", async ({ page }) => {
   await page.goto(workspaceUrl("cycle"));
   await expect(cards(page)).toHaveCount(2);
 
+  // Three readings, so a reader can hold the shape in their head: one at a
+  // time, a chain, and a fan out of one card.
   const toggle = page.getByTestId("link-mode-toggle");
   await toggle.click();
   await expect(toggle).toHaveAttribute("data-mode", "thread");
   await toggle.click();
   await expect(toggle).toHaveAttribute("data-mode", "fan");
-  // Pattern is the fourth shape a run can draw (ADR-0063): a chain that branches.
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("data-mode", "branch");
   await toggle.click();
   await expect(toggle).toHaveAttribute("data-mode", "place");
   await expect(toggle).toHaveAttribute("aria-pressed", "false");

@@ -7,8 +7,9 @@ import { TAB_ID } from "../collab/tabId";
 import { markBoot, measureBoot } from "../dev/bootTiming";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { takeChosenTemplate } from "../launcher/starterTemplates";
+import { readLastBoard, rememberLastBoard } from "../session/lastBoard";
 import type { ShareSession } from "../session/session";
-import { friendlyWorkspaceName, readWorkspaceNames } from "../session/workspaceName";
+import { DEFAULT_WORKSPACE_NAME, readWorkspaceNames } from "../session/workspaceName";
 import { rememberWorkspace } from "../session/workspaceTransfer";
 import { resolveBoardId, useCanvasStore } from "../store/useCanvasStore";
 
@@ -30,8 +31,9 @@ export function useWorkspaceBoot(args: {
   synced: boolean;
   standalone: boolean;
   activeBoardId: string | null;
+  /** The placeholder tab is open: the reader asked for no board yet. */
+  newTab: boolean;
   setActiveBoardId: (id: string | null) => void;
-  homeBoardId: string | null;
   connect: () => void;
   provider: unknown;
   presence: unknown;
@@ -54,8 +56,8 @@ export function useWorkspaceBoot(args: {
     synced,
     standalone,
     activeBoardId,
+    newTab,
     setActiveBoardId,
-    homeBoardId,
     connect,
     provider,
     presence,
@@ -101,7 +103,7 @@ export function useWorkspaceBoot(args: {
       // A direct URL can create the first document without the launcher, so
       // the friendly default is applied here too; an existing name always wins.
       if (!workspace.hasWorkspaceName()) {
-        workspace.renameWorkspace(friendlyWorkspaceName());
+        workspace.renameWorkspace(DEFAULT_WORKSPACE_NAME);
         setWorkspaceName(workspace.workspaceName());
       }
       // A workspace created from the launcher starts blank; older workspaces
@@ -192,17 +194,21 @@ export function useWorkspaceBoot(args: {
       return;
     }
     if (activeBoardId && boards.some((board) => board.id === activeBoardId)) return;
+    // A new tab is an answer, not a gap: the reader asked for no board yet, so
+    // the start page stays until they pick one.
+    if (activeBoardId === null && newTab) return;
 
     // What the reader asked for, then the template they just chose, then the
-    // board they named as home, then the first board: closing every tab lands
-    // somewhere they chose (ADR-0040, A24).
+    // board they were last on in this workspace, then the first board. There is
+    // no home board to configure any more: "where I was" is the answer people
+    // gave to that question anyway (ADR-0064 amendment).
     const requested = resolveBoardId();
-    const home = homeBoardId;
     const template = templatedBoardId.current;
+    const last = readLastBoard(workspaceId);
     const next =
       boards.find((board) => board.id === requested)?.id ??
       (template === null ? undefined : boards.find((board) => board.id === template)?.id) ??
-      boards.find((board) => board.id === home)?.id ??
+      (last === null ? undefined : boards.find((board) => board.id === last)?.id) ??
       boards[0]?.id ??
       null;
     if (next && next !== activeBoardId) setActiveBoardId(next);
@@ -211,17 +217,30 @@ export function useWorkspaceBoot(args: {
     synced,
     snapshot.boards,
     activeBoardId,
+    newTab,
     setActiveBoardId,
     workspace,
+    workspaceId,
     readOnly,
     share,
-    homeBoardId,
   ]);
 
   // Keep the URL shareable without a reload. A share keeps its token and never
   // gains a workspace id: the link is the whole credential.
   useEffect(() => {
-    if (!activeBoardId) return;
+    if (!activeBoardId) {
+      // A placeholder tab is the workspace without a board, so the address stops
+      // naming the last one. Without this a reload would reopen it.
+      if (share || !newTab) return;
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has("board")) return;
+      url.searchParams.delete("board");
+      window.history.replaceState(null, "", url);
+      return;
+    }
+    // Remembering the board here is what replaced the home-board setting: the
+    // next open of this workspace lands where this one left off.
+    rememberLastBoard(workspaceId, activeBoardId);
     const url = new URL(window.location.href);
     if (share) {
       url.searchParams.set("share", share.token);
@@ -242,7 +261,7 @@ export function useWorkspaceBoot(args: {
       url.searchParams.delete("template");
     }
     window.history.replaceState(null, "", url);
-  }, [activeBoardId, workspaceId, share]);
+  }, [activeBoardId, workspaceId, share, newTab]);
 
   useEffect(() => {
     // A share is a visit, not a workspace to come back to from the launcher.

@@ -5,7 +5,6 @@ const VERB_LABELS: Record<CanvasMode, string> = {
   place: "Place",
   thread: "Thread",
   fan: "Fan",
-  branch: "Branch",
 };
 
 /** The selection bar: the four run verbs, one at a time, and clear/all. */
@@ -45,13 +44,13 @@ export function LibrarySelectionBar({
           Pick rows to act on them together
         </span>
       ) : null}
-      {(["place", "thread", "fan", "branch"] as const).map((verb) => (
+      {(["place", "thread", "fan"] as const).map((verb) => (
         <button
           key={verb}
           type="button"
           className="library-action"
           data-testid={`library-run-${verb}`}
-          // The same four values the widget bar and the connector menu use, so
+          // The same values the widget bar and the connector menu use, so
           // "fan is blue" holds here too (ADR-0064 fifth amendment).
           data-mode={verb}
           disabled={selected.length === 0}

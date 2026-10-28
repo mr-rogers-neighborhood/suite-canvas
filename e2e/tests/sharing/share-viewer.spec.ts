@@ -1,7 +1,7 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startBodyEdit as editBody } from "../../interactions";
 import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
-import { newBoard } from "../fixtures/support";
+import { newBoard, openBoard } from "../fixtures/support";
 
 // Building a link needs the account session: the relay authorises share creation
 // with the same JWT it accepts for sync (ADR-0074, ADR-0076). The people who open
@@ -14,7 +14,6 @@ const workspaceUrl = (name: string) =>
   hostedUrl(`/?workspace=e2e-share-viewer-${name}-${Date.now()}-${++sequence}`);
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
-const boardTabs = (page: Page) => page.locator('[data-testid^="board-tab"]');
 
 /** A point on the pane that no card or panel covers. */
 async function emptyCanvasPoint(page: Page, variant = 0): Promise<{ x: number; y: number }> {
@@ -99,7 +98,6 @@ test("board viewer sees one board, read-only, with no editor chrome", async ({ p
   await createNote(page, "Off board note");
 
   await newBoard(page);
-  await expect(boardTabs(page)).toHaveCount(2);
   await createNote(page, "Shared card");
   const shared = cards(page).filter({ hasText: "Shared card" });
   await editBody(page, shared);
@@ -126,8 +124,9 @@ test("board viewer sees one board, read-only, with no editor chrome", async ({ p
   await expect(viewer.getByTestId("workspace-menu")).toHaveCount(0);
   await expect(viewer.getByTestId("dock-library")).toHaveCount(0);
   await expect(viewer.getByTestId("library-drawer")).toHaveCount(0);
-  await expect(viewer.locator('[data-testid^="board-tab-"]')).toHaveCount(0);
-  await expect(viewer.getByTestId("board-create")).toHaveCount(0);
+  // The switcher shows where you are but offers no board of your own.
+  await expect(viewer.getByTestId("board-switcher")).toBeVisible();
+  await expect(viewer.getByTestId("board-switcher-new")).toHaveCount(0);
   await expect(viewer.getByTestId("card-menu")).toHaveCount(0);
   await expect(viewer.getByText("Board share")).toBeVisible();
 
@@ -158,7 +157,6 @@ test("card viewer opens its inspector and keeps out-of-share links inert", async
   await createNote(page, "Off board note");
 
   await newBoard(page);
-  await expect(boardTabs(page)).toHaveCount(2);
   await createNote(page, "Shared card");
   const shared = cards(page).filter({ hasText: "Shared card" });
   await editBody(page, shared);
@@ -227,7 +225,6 @@ test.fixme("workspace viewer reads every board and cannot manage", async ({ page
 
   // A second board: the viewer must reach it through the tabs.
   await newBoard(page);
-  await expect(boardTabs(page)).toHaveCount(2);
   await createNote(page, "Second board note");
   await expect(cards(page)).toHaveCount(1);
 
@@ -240,12 +237,11 @@ test.fixme("workspace viewer reads every board and cannot manage", async ({ page
   });
 
   // The viewer joins the real workspace room: every board is reachable.
-  await expect(boardTabs(viewer)).toHaveCount(2);
   await expect(cards(viewer)).toHaveCount(3, { timeout: 15_000 });
   await expect(viewer.getByText("First board note")).toBeVisible();
   await expect(viewer.getByText("Second board note")).toHaveCount(0);
 
-  await boardTabs(viewer).nth(1).click();
+  await openBoard(viewer, secondBoard);
   await expect(cards(viewer)).toHaveCount(1, { timeout: 15_000 });
   await expect(viewer.getByText("Second board note")).toBeVisible();
 
@@ -259,13 +255,18 @@ test.fixme("workspace viewer reads every board and cannot manage", async ({ page
   // No management or editing chrome.
   await expect(viewer.getByTestId("workspace-actions")).toHaveCount(0);
   await expect(viewer.getByTestId("workspace-menu")).toHaveCount(0);
-  await expect(viewer.getByTestId("board-create")).toHaveCount(0);
+  await expect(viewer.getByTestId("board-switcher-new")).toHaveCount(0);
   await expect(viewer.getByTestId("card-menu")).toHaveCount(0);
   await expect(viewer.getByTestId("dock-library")).toHaveCount(0);
 
-  // Board tabs cannot be renamed or deleted, and the body stays read-only.
-  await boardTabs(viewer).nth(0).dblclick();
-  await expect(viewer.getByLabel(/Rename /)).toHaveCount(0);
+  // A visitor cannot rename the board, and the body stays read-only.
+  await viewer.getByTestId("board-switcher").click();
+  await viewer
+    .getByTestId(/^board-switch-(?!peer)/)
+    .first()
+    .click({ button: "right" });
+  await expect(viewer.getByTestId("board-row-menu-rename")).toBeDisabled();
+  await viewer.keyboard.press("Escape");
   const body = cards(viewer).first().getByTestId("card-body");
   await body.dblclick();
   await expect(body.locator(".node-card-editor")).toHaveAttribute("contenteditable", "false");

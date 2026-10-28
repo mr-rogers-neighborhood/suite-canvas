@@ -53,6 +53,10 @@ export function useLibrarySelection({
     event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean },
   ) => {
     const gesture = gestureOf(event);
+    // A modifier is a request to select, so it turns selection mode on rather than
+    // being swallowed because the mode was off. A plain click still opens the card
+    // and still means "replace" — the drawer's dominant gesture is unchanged.
+    if (gesture !== "replace") setSelecting(true);
     setSelection((current) => applySelection(current, id, gesture, selectableOrder));
   };
 

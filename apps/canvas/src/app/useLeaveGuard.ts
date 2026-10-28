@@ -15,7 +15,8 @@ export interface LeaveGuard {
   leaving: boolean;
   leavingPrompt: boolean;
   inRoom: boolean;
-  requestLeave: () => void;
+  /** Leaves for the launcher, or for another workspace named by its URL. */
+  requestLeave: (destination?: string) => void;
   dismissLeavePrompt: () => void;
   leaveAnyway: () => void;
 }
@@ -46,34 +47,42 @@ export function useLeaveGuard(args: {
 
   useBeforeUnload(leavingAtOwnRisk && !leaving, () => !leavingStarted.current);
 
+  /** Where a confirmed leave goes; the launcher unless the reader named a workspace. */
+  const destination = useRef("/");
+
   const goHome = useCallback(() => {
     if (leaving) return;
     leavingStarted.current = true;
+    const url = destination.current;
     if (prefersReducedMotion()) {
-      window.location.assign("/");
+      window.location.assign(url);
       return;
     }
     setLeaving(true);
-    window.setTimeout(() => window.location.assign("/"), 180);
+    window.setTimeout(() => window.location.assign(url), 180);
   }, [leaving]);
 
   /** Every path back to the launcher comes through here, so no route skips the guard. */
-  const requestLeave = useCallback(() => {
-    if (leaving || leavingPrompt) return;
-    const version = documentVersion(workspace.doc);
-    if (
-      shouldWarnBeforeLeaving({
-        ladder,
-        guard: leavingGuard.current,
-        version,
-        applicable: share === null,
-      })
-    ) {
-      setLeavingPrompt(true);
-      return;
-    }
-    goHome();
-  }, [leaving, leavingPrompt, ladder, workspace, share, goHome]);
+  const requestLeave = useCallback(
+    (target = "/") => {
+      if (leaving || leavingPrompt) return;
+      destination.current = target;
+      const version = documentVersion(workspace.doc);
+      if (
+        shouldWarnBeforeLeaving({
+          ladder,
+          guard: leavingGuard.current,
+          version,
+          applicable: share === null,
+        })
+      ) {
+        setLeavingPrompt(true);
+        return;
+      }
+      goHome();
+    },
+    [leaving, leavingPrompt, ladder, workspace, share, goHome],
+  );
 
   // Being told is the point, so closing the dialog is an answer: the next leave
   // stays quiet until the work changes.

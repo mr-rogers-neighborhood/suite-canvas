@@ -1,12 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
-import { libraryRowAction, newBoard } from "../fixtures/support";
+import { boardId, libraryRowAction, newBoard, openBoard } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
   `/?workspace=e2e-templates-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
-const tabs = (page: Page) => page.locator('[data-testid^="board-tab"]');
 const sectionHeaders = (page: Page) => page.locator(".section-header");
 
 /**
@@ -21,19 +20,9 @@ async function openLibrary(page: Page, tab: "cards" | "boards"): Promise<void> {
   await expect(page.getByTestId("library-drawer")).toBeVisible();
 }
 
-async function selectedBoardId(page: Page): Promise<string> {
-  const testId = await page
-    .locator('[data-testid^="board-tab"][aria-current="page"]')
-    .getAttribute("data-testid");
-  if (!testId) throw new Error("no board tab is selected");
-  return testId.replace("board-tab-", "");
-}
-
 async function createBoard(page: Page): Promise<string> {
-  const before = await tabs(page).count();
   await newBoard(page);
-  await expect(tabs(page)).toHaveCount(before + 1);
-  return selectedBoardId(page);
+  return boardId(page);
 }
 
 /**
@@ -68,12 +57,10 @@ test("uses a saved board template as a new board and undoes it whole", async ({ 
   // Use closes the drawer and lands on the copy, whose name cannot collide.
   await page.getByTestId(`library-template-use-${boardId}`).click();
   await expect(page.getByTestId("library-drawer")).toHaveCount(0);
-  await expect(tabs(page)).toHaveCount(3);
-  await expect(
-    page
-      .getByRole("navigation", { name: "Boards" })
-      .getByRole("button", { name: "Board 2 2", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
+  await expect(page.getByTestId("board-switcher")).toHaveAttribute(
+    "aria-label",
+    "Board: Board 2 2",
+  );
   await expect(cards(page)).toHaveCount(1);
 
   // The card is a copy, not the same record.
@@ -82,7 +69,7 @@ test("uses a saved board template as a new board and undoes it whole", async ({ 
   expect(copyCardId).not.toBe(sourceCardId);
 
   // The source is untouched: same single card, same name, still a template.
-  await page.getByTestId(`board-tab-${boardId}`).click();
+  await openBoard(page, boardId);
   await expect(cards(page)).toHaveCount(1);
   await expect(cards(page).first()).toHaveAttribute("data-node-id", sourceCardId);
   await openLibrary(page, "boards");
@@ -94,11 +81,9 @@ test("uses a saved board template as a new board and undoes it whole", async ({ 
 
   // Duplication is one undoable batch, so the copy goes away in one step.
   await page.keyboard.press("Control+z");
-  await expect(tabs(page)).toHaveCount(2);
+  await page.getByTestId("board-switcher").click();
   await expect(
-    page
-      .getByRole("navigation", { name: "Boards" })
-      .getByRole("button", { name: "Board 2 2", exact: true }),
+    page.getByTestId("board-switcher-menu").getByRole("menuitem", { name: "Board 2 2" }),
   ).toHaveCount(0);
 });
 
@@ -117,11 +102,7 @@ test("generates a built-in starter board with its region", async ({ page }) => {
 
   await page.getByTestId("library-starter-use-notebook").click();
   await expect(page.getByTestId("library-drawer")).toHaveCount(0);
-  await expect(
-    page
-      .getByRole("navigation", { name: "Boards" })
-      .getByRole("button", { name: "Notebook", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
+  await expect(page.getByTestId("board-switcher")).toHaveAttribute("aria-label", "Board: Notebook");
 
   // One region, three titled cards: one of each built-in type.
   await expect(sectionHeaders(page)).toHaveCount(1);

@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { newBoard } from "../fixtures/support";
+import { boardId, boardIdOrNull, newBoard } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-escape-${name}-${Date.now()}-${++sequence}`;
@@ -114,39 +114,24 @@ test("the inspector fades while a link is drawn and comes back", async ({ page }
 });
 
 /**
- * Gate A24's navigation corner: the home board and the new-tab chooser are two
- * settings because they answer two questions — where do I land, and where does a
- * blank tab start.
+ * There is no home board and no new-tab board any more. The workspace remembers
+ * where you were, so reopening it — a reload, the launcher row, a second tab
+ * without `?board=` — lands on that board instead of on the first one
+ * (ADR-0064 amendment).
  */
-test("closing the last board lands on the home board", async ({ page }) => {
-  await page.goto(workspaceUrl("home"));
+test("reopens on the board you were last on", async ({ page }) => {
+  await page.goto(workspaceUrl("last-board"));
   await expect(cards(page)).toHaveCount(2);
-  const first = await page
-    .locator('[data-testid^="board-tab-"]')
-    .first()
-    .getAttribute("data-testid");
-  if (!first) throw new Error("no board tab");
-  const firstId = first.replace("board-tab-", "");
+  const first = boardId(page);
 
   await newBoard(page);
-  const tabs = page.locator('[data-testid^="board-tab-"]');
-  await expect(tabs).toHaveCount(2);
+  const second = boardId(page);
+  expect(second).not.toBe(first);
 
-  // Name the first board as home from the workspace menu.
-  await page.getByTestId(`board-tab-${firstId}`).click();
-  await page.getByTestId("workspace-menu").click();
-  await page.getByTestId("workspace-home-board").click();
-  // The home control appears because home is not the board on screen next time.
-  await expect(page.getByTestId("board-home")).toHaveCount(0);
-
-  const second = await tabs.nth(1).getAttribute("data-testid");
-  const secondId = second?.replace("board-tab-", "") ?? "";
-  await page.getByTestId(`board-tab-${secondId}`).click();
-  await expect(page.getByTestId("board-home")).toBeVisible();
-
-  // Closing the last tab lands on home rather than on whatever comes first.
-  await page.getByTestId(`board-close-${secondId}`).click();
-  await page.getByTestId(`board-close-${firstId}`).click();
-  await expect(page.getByTestId("board-home")).toHaveCount(0);
-  await expect(page.getByTestId(`board-tab-${firstId}`)).toBeVisible();
+  // A reload keeps the address bar's board, so the remembered one is the only
+  // thing that can be doing the work here.
+  const workspace = new URL(page.url()).searchParams.get("workspace") ?? "";
+  await page.goto(`/?workspace=${workspace}`);
+  await expect(cards(page)).toHaveCount(0);
+  await expect.poll(() => boardIdOrNull(page)).toBe(second);
 });

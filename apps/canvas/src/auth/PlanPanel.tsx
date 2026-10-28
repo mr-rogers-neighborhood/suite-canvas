@@ -119,17 +119,16 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
       <h3 className="text-[13px] font-semibold">Plan</h3>
       <p data-testid="plan-tier" className="mt-1 leading-5">
         {view === null
-          ? "The plan appears once this device holds a session credential."
+          ? "Your plan appears once you are signed in."
           : `You are on the ${view.tier} plan${view.role === null ? "" : ` as ${view.role}`}.`}
       </p>
 
       <h4 className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
-        What this plan allows
+        What you get
       </h4>
       {quota.length === 0 ? (
         <p data-testid="plan-no-limits" className="mt-1 leading-5 text-[var(--ink-muted)]">
-          This deployment publishes no limits, so nothing is capped here beyond the server's own
-          checks.
+          Nothing is limited on this server. Everything is available to you.
         </p>
       ) : (
         <dl data-testid="plan-quota" className="mt-1 divide-y divide-[var(--hairline)]">

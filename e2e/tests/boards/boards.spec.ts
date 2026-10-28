@@ -1,25 +1,14 @@
 import { expect, type Page, test } from "@playwright/test";
-import { libraryRowAction, newBoard } from "../fixtures/support";
+import { boardId, libraryRowAction, newBoard, openBoard } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-boards-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
-const tabs = (page: Page) => page.locator('[data-testid^="board-tab"]');
-
-async function selectedBoardId(page: Page): Promise<string> {
-  const testId = await page
-    .locator('[data-testid^="board-tab"][aria-current="page"]')
-    .getAttribute("data-testid");
-  if (!testId) throw new Error("no board tab is selected");
-  return testId.replace("board-tab-", "");
-}
 
 async function createBoard(page: Page): Promise<string> {
-  const before = await tabs(page).count();
   await newBoard(page);
-  await expect(tabs(page)).toHaveCount(before + 1);
-  return selectedBoardId(page);
+  return boardId(page);
 }
 
 async function openLibrary(page: Page, tab: "cards" | "boards"): Promise<void> {
@@ -31,17 +20,18 @@ async function openLibrary(page: Page, tab: "cards" | "boards"): Promise<void> {
 }
 
 /**
- * Gate A13: a tab is a view of a board, not a claim on it. Closing one asks
- * nothing and writes nothing, and the board — with its cards — is waiting in
- * the library.
+ * A board is not a claim and a tab is not a thing you can lose: leaving a board
+ * and coming back — through the switcher, the library or a reload — finds every
+ * card where it was (ADR-0064 amendment).
  */
-test("closes a board tab with no prompt and reopens it from the library", {
+test("keeps a board's cards when you leave it and come back", {
   tag: "@smoke",
 }, async ({ page }) => {
-  await page.goto(workspaceUrl("close"));
+  await page.goto(workspaceUrl("leave-and-return"));
   await expect(cards(page)).toHaveCount(2);
+  const firstBoardId = boardId(page);
 
-  const boardId = await createBoard(page);
+  const secondBoardId = await createBoard(page);
   await expect(cards(page)).toHaveCount(0);
 
   // Give the board a card of its own, so "intact" means something.
@@ -49,41 +39,41 @@ test("closes a board tab with no prompt and reopens it from the library", {
   await libraryRowAction(page.locator('[data-testid^="library-item-"]').first(), "Place on board");
   await expect(cards(page)).toHaveCount(1);
 
-  // Close: no dialog, one tab left, and the board's card is out of sight.
-  await page.getByTestId(`board-close-${boardId}`).click();
-  await expect(page.getByTestId("dialog")).toHaveCount(0);
-  await expect(tabs(page)).toHaveCount(1);
+  // Leave it: the board that comes back is the one already open, and this one's
+  // card is out of sight but never gone.
+  await openBoard(page, firstBoardId);
   await expect(cards(page)).toHaveCount(2);
 
-  // The library still lists it, marked closed.
+  // The library still lists it, and says it is not the board on screen.
   await page.getByTestId("library-tab-boards").click();
-  await expect(page.getByTestId(`library-board-state-${boardId}`)).toHaveText("Closed");
-  await expect(page.getByTestId(`library-item-${boardId}`)).toBeVisible();
+  await expect(page.getByTestId(`library-item-${secondBoardId}`)).toBeVisible();
+  await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toHaveText("Closed");
 
-  // Reopening gives it a tab again and its card is still there.
-  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Open");
-  await expect(tabs(page)).toHaveCount(2);
-  await expect(page.getByTestId(`library-board-state-${boardId}`)).toHaveText("Open");
+  // Coming back through the library finds the card exactly where it was.
+  await libraryRowAction(page.getByTestId(`library-item-${secondBoardId}`), "Open");
   await expect(cards(page)).toHaveCount(1);
+  await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toHaveText("Open");
 });
 
-test("reaches every board's close control from the keyboard", { tag: "@smoke" }, async ({
-  page,
-}) => {
+test("reaches every board from the keyboard", { tag: "@smoke" }, async ({ page }) => {
   await page.goto(workspaceUrl("keyboard"));
   await expect(cards(page)).toHaveCount(2);
+  const firstBoardId = boardId(page);
 
-  const boardId = await createBoard(page);
-  await expect(tabs(page)).toHaveCount(2);
+  const secondBoardId = await createBoard(page);
+  await expect(cards(page)).toHaveCount(0);
 
-  // The strip is a navigation of buttons, not a tablist, because a per-board close
-  // control cannot live inside a strict tablist (ADR-0064 amendment). Buttons are in
-  // the tab order, so closing is reachable without a pointer.
-  const close = page.getByTestId(`board-close-${boardId}`);
-  await close.focus();
-  await expect(close).toBeFocused();
+  // The switcher is a menu, so the keys that role promises work: Down moves
+  // between rows and Enter chooses one, without a pointer.
+  await page.getByTestId("board-switcher").focus();
   await page.keyboard.press("Enter");
-  await expect(tabs(page)).toHaveCount(1);
+  await expect(page.getByTestId("board-switcher-menu")).toBeVisible();
+  // The list opens on the board on screen, so Down is the first other board.
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => boardId(page)).not.toBe(secondBoardId);
+  await expect(cards(page)).toHaveCount(2);
+  expect(await boardId(page)).toBe(firstBoardId);
 });
 
 test("places a board as a portal without dropping it from the library", { tag: "@smoke" }, async ({
@@ -91,25 +81,27 @@ test("places a board as a portal without dropping it from the library", { tag: "
 }) => {
   await page.goto(workspaceUrl("place"));
   await expect(cards(page)).toHaveCount(2);
-  const firstBoardId = await selectedBoardId(page);
+  const firstBoardId = boardId(page);
 
-  const boardId = await createBoard(page);
+  const secondBoardId = await createBoard(page);
   await expect(cards(page)).toHaveCount(0);
 
   // Back to the first board, so placing the second one makes a portal there.
-  await page.getByTestId(`board-tab-${firstBoardId}`).click();
+  await openBoard(page, firstBoardId);
   await expect(cards(page)).toHaveCount(2);
 
   await openLibrary(page, "boards");
   const rowsBefore = await page
     .locator("li[data-row-id]")
     .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id")));
-  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Place on board");
+  await libraryRowAction(page.getByTestId(`library-item-${secondBoardId}`), "Place on board");
   await expect(page.getByTestId("portal-node")).toHaveCount(1);
 
-  // The board is still one row, in the same place: placing is not a move.
-  await expect(page.getByTestId(`library-item-${boardId}`)).toBeVisible();
-  await expect(page.getByTestId(`library-board-state-${boardId}`)).toHaveText("Open");
+  // The board is still one row, in the same place: placing is not a move. It
+  // reads "Closed" because the board on screen is still the first one — the
+  // state names where you are, not what you own.
+  await expect(page.getByTestId(`library-item-${secondBoardId}`)).toBeVisible();
+  await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toHaveText("Closed");
   const rowsAfter = await page
     .locator("li[data-row-id]")
     .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id")));
@@ -121,9 +113,9 @@ test("unplaces one board's cards and leaves a shared card on the other", { tag: 
 }) => {
   await page.goto(workspaceUrl("unplace"));
   await expect(cards(page)).toHaveCount(2);
-  const firstBoardId = await selectedBoardId(page);
+  const firstBoardId = boardId(page);
 
-  const boardId = await createBoard(page);
+  const secondBoardId = await createBoard(page);
   await expect(cards(page)).toHaveCount(0);
 
   // The same card now lives on both boards.
@@ -134,9 +126,9 @@ test("unplaces one board's cards and leaves a shared card on the other", { tag: 
   // The card also lives on the first board, so unplacing this board's copy
   // removes only this placement — the card stays where else it was.
   await page.getByTestId("library-tab-boards").click();
-  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Unplace its cards");
+  await libraryRowAction(page.getByTestId(`library-item-${secondBoardId}`), "Unplace its cards");
   await expect(cards(page)).toHaveCount(0);
-  await expect(page.getByTestId(`library-board-state-${boardId}`)).toHaveText("Open");
+  await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toHaveText("Open");
 
   await libraryRowAction(page.getByTestId(`library-item-${firstBoardId}`), "Open");
   await expect(cards(page)).toHaveCount(2);

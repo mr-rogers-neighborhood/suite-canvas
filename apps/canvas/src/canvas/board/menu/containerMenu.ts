@@ -31,9 +31,10 @@ export function canvasMenuBranch(ctx: BoardMenuContext): ContextMenuItem[] | nul
     ...(canCreateBoards
       ? [
           {
-            // The label says both because it does both: the board is created
-            // and this board opens it through a new portal card.
-            label: "New board and portal",
+            // The board is created and this board opens it through a portal
+            // card; the label says the part the reader asked for, because the
+            // portal is what a "New board" means on a canvas.
+            label: "New board",
             onSelect: () => createPortalToNewBoard(flowPosition),
           },
         ]

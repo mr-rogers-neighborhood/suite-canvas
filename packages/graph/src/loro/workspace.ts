@@ -51,48 +51,6 @@ export function workspaceMethods(ctx: DocContext) {
     },
 
     /**
-     * The board a workspace opens when nothing else is open — "home"
-     * (ADR-0040,
-     * gate A24). Stored as the board id rather than a flag on the board: a board can be
-     * deleted while a second one is home, and one key is one truth to clear.
-     */
-    workspaceHomeBoardId(): string | null {
-      return ctx.api.workspace.navigationBoard("homeBoardId");
-    },
-
-    /** Names the home board, or clears it when the id is null or no longer a board. */
-    setWorkspaceHomeBoardId(boardId: string | null): void {
-      ctx.api.workspace.setNavigationBoard("homeBoardId", boardId);
-    },
-
-    /**
-     * The board a new tab opens, when the reader has one they always want. Absent
-     * means a new tab asks which board instead of guessing.
-     */
-    newTabBoardId(): string | null {
-      return ctx.api.workspace.navigationBoard("newTabBoardId");
-    },
-
-    setNewTabBoardId(boardId: string | null): void {
-      ctx.api.workspace.setNavigationBoard("newTabBoardId", boardId);
-    },
-
-    /** A stored board reference, dropped if the board it names has since gone. */
-    navigationBoard(key: "homeBoardId" | "newTabBoardId"): string | null {
-      const stored = ctx.meta.get(key);
-      if (typeof stored !== "string" || stored.length === 0) return null;
-      return ctx.api.boards.getBoard(stored) ? stored : null;
-    },
-
-    setNavigationBoard(key: "homeBoardId" | "newTabBoardId", boardId: string | null): void {
-      const next = boardId !== null && ctx.api.boards.getBoard(boardId) ? boardId : null;
-      if (ctx.meta.get(key) === next) return;
-      if (next === null) ctx.meta.delete(key);
-      else ctx.meta.set(key, next);
-      ctx.commit(`${STRUCT_ORIGIN}set-${key}`);
-    },
-
-    /**
      * The workspace palette. Document data: a share renders the author's colours,
      * and every swatch carries both modes, so a visitor's light/dark choice still
      * works inside somebody else's colours.

@@ -19,7 +19,6 @@ export const GESTURE_GLYPHS: Record<CanvasMode, string> = {
   place: "\u2194",
   thread: "\u2933",
   fan: "\u273b",
-  branch: "\u22d4",
 };
 
 /**
@@ -29,10 +28,10 @@ export const GESTURE_GLYPHS: Record<CanvasMode, string> = {
 export const PURPOSE_GLYPHS: Record<CanvasPurpose, string | null> = {
   explore: null,
   // A queue, not a play triangle: `run` places a list, it does not play anything
-  // back, and beside `record` a triangle reads as media transport (ADR-0064 §11).
+  // back (ADR-0064 §11).
   run: "\u2261",
-  record: "\u25c9",
   explain: "\u25c8",
+  record: "\u25c9",
   present: "\u25a3",
 };
 
@@ -42,18 +41,18 @@ export type RingShape = "solid" | "double" | "dashed" | "halo";
 export const RING_SHAPES: Record<CanvasPurpose, RingShape> = {
   explore: "solid",
   run: "double",
-  record: "dashed",
   // Solid, like exploring: explain is a way of *looking*, and the ring's shape has to
   // stay free to mark the states that change what a click will write.
   explain: "solid",
+  record: "dashed",
   present: "halo",
 };
 
 const PURPOSE_LABELS: Record<CanvasPurpose, string> = {
   explore: "exploring",
   run: "running a sequence",
-  record: "recording a tour",
   explain: "gathering a context",
+  record: "recording a tour",
   present: "presenting",
 };
 

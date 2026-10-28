@@ -1,13 +1,14 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { selectCard } from "../../interactions";
-import { libraryRowAction, newBoard } from "../fixtures/support";
+import { boardId, libraryRowAction, newBoard, openBoard } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-refs-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const cardTitled = (page: Page, title: string) => cards(page).filter({ hasText: title });
-const activeTab = (page: Page) => page.locator('[data-testid^="board-tab"][aria-current="page"]');
+/** The board the switcher names, which is the board on screen. */
+const currentBoardName = (page: Page) => page.getByTestId("board-switcher").locator("span").first();
 
 /** Opens the inspector from the card header, away from the editors. */
 async function openInspector(page: Page, card = cards(page).first()): Promise<void> {
@@ -36,9 +37,7 @@ async function renameCard(page: Page, card: Locator, title: string): Promise<voi
 }
 
 async function createBoard(page: Page): Promise<void> {
-  const before = await page.locator('[data-testid^="board-tab"]').count();
   await newBoard(page);
-  await expect(page.locator('[data-testid^="board-tab"]')).toHaveCount(before + 1);
 }
 
 async function openLibrary(page: Page, tab: "cards" | "inbox"): Promise<void> {
@@ -121,7 +120,7 @@ test("links through a card property and navigates to the source", async ({ page 
   await expect(row).toContainText("Alpha");
 
   await row.click();
-  await expect(activeTab(page)).toHaveText("Board 1");
+  await expect(currentBoardName(page)).toHaveText("Board 1");
   await expect(cards(page)).toHaveCount(2);
 });
 
@@ -130,6 +129,7 @@ test("lists a drawn arrow with its board and switches board when clicked", async
   await expect(cards(page)).toHaveCount(2);
   await renameCard(page, cards(page).nth(0), "Alpha");
   await renameCard(page, cards(page).nth(1), "Beta");
+  const firstBoardId = boardId(page);
 
   // Draw on a second board: the arrow belongs to the board it was drawn on.
   await createBoard(page);
@@ -139,7 +139,7 @@ test("lists a drawn arrow with its board and switches board when clicked", async
   await connectCards(page);
 
   // Board 1 knows about the drawing without being where it lives.
-  await page.locator('[data-testid^="board-tab"]').first().click();
+  await openBoard(page, firstBoardId);
   await expect(cards(page)).toHaveCount(2);
 
   await openInspector(page, cardTitled(page, "Alpha"));
@@ -149,7 +149,7 @@ test("lists a drawn arrow with its board and switches board when clicked", async
   await expect(row).toContainText("Board 2");
 
   await row.click();
-  await expect(activeTab(page)).toHaveText("Board 2");
+  await expect(currentBoardName(page)).toHaveText("Board 2");
   await expect(cards(page)).toHaveCount(2);
 });
 

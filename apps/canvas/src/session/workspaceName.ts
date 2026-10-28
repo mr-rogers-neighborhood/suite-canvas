@@ -47,47 +47,6 @@ function writeWorkspaceNames(names: Record<string, string>): void {
   }
 }
 
-const WORKSPACE_ADJECTIVES = [
-  "Quiet",
-  "Amber",
-  "Bright",
-  "Patient",
-  "Curious",
-  "Open",
-  "Still",
-  "Warm",
-  "Clever",
-  "Gentle",
-  "Bold",
-  "Copper",
-] as const;
-
-const WORKSPACE_NOUNS = [
-  "Harbor",
-  "Atlas",
-  "Garden",
-  "Workshop",
-  "Library",
-  "Compass",
-  "Orchard",
-  "Studio",
-  "Archive",
-  "Beacon",
-  "Foundry",
-  "Terrace",
-] as const;
-
-/**
- * A human default for a new workspace. The id stays opaque; this name is only
- * a label, so a repeated adjective-noun pair is harmless and still friendlier
- * than "Untitled workspace".
- */
-export function friendlyWorkspaceName(): string {
-  const adjective = WORKSPACE_ADJECTIVES[Math.floor(Math.random() * WORKSPACE_ADJECTIVES.length)];
-  const noun = WORKSPACE_NOUNS[Math.floor(Math.random() * WORKSPACE_NOUNS.length)];
-  return `${adjective} ${noun}`;
-}
-
 /** An invalid name throws its readable reason, like the document does. */
 export function rememberWorkspaceName(id: string, name: string): void {
   writeWorkspaceNames({ ...readWorkspaceNames(), [id]: cleanWorkspaceName(name) });

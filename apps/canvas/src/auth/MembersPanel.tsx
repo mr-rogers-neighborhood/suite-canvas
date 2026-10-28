@@ -189,8 +189,8 @@ export function MembersPanel({ api = liveApi }: MembersPanelProps) {
         </button>
       </div>
       <p className="mt-1 text-[11px] leading-4 text-[var(--ink-muted)]">
-        An invitation adds someone to this workspace space. It is not how an account is created —
-        they can sign up on their own.
+        Inviting someone lets them open this workspace. They need their own account, which they can
+        create from the launcher.
       </p>
 
       {invitations.length > 0 ? (

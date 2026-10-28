@@ -29,7 +29,7 @@ export const PURPOSE_NAMES: Record<CanvasPurpose, string> = {
  * way to pick a tour. The axis still *carries* `present`, because the widget, the
  * cursor and presence all have to say it; it just cannot be walked into.
  */
-export const choosablePurposes = ["explore", "run", "record", "explain"] as const;
+export const choosablePurposes = ["explore", "run", "explain"] as const;
 
 /**
  * The values the modifier map can *preview* on the purpose axis.
@@ -43,32 +43,35 @@ export const choosablePurposes = ["explore", "run", "record", "explain"] as cons
 export const previewablePurposes = choosablePurposes;
 export type PreviewablePurpose = (typeof previewablePurposes)[number];
 
-/** The cycle the purpose control walks: explore → run → record → explain → explore. */
+/** The cycle the purpose control walks: explore → run → explain → explore. */
 export function nextPurpose(purpose: CanvasPurpose): CanvasPurpose {
-  // Leaving a presentation is the only move available from it, and it goes to the
-  // resting state rather than continuing a cycle the tour never started.
-  if (purpose === "present") return "explore";
+  // A tour's two states are not in the cycle, so a reader in one leaves by the
+  // state's own control rather than by clicking through it.
+  if (purpose === "present" || purpose === "record") return "explore";
   const index = choosablePurposes.indexOf(purpose);
   return choosablePurposes[(index + 1) % choosablePurposes.length] ?? "explore";
 }
 
 /**
- * True when the gesture axis is read by this purpose.
+ * Whether the gesture axis is read by this purpose.
  *
- * `present` ignores the gesture rather than resetting it, so leaving presentation
- * returns the reader to the tool they had. Every other purpose reads it — in
- * `record` the gesture is the step verb (ADR-0058 amendment).
+ * Every remaining purpose reads it, and several call sites still ask rather than
+ * assume: the gesture describes what a link would do, and `explain` leaves the
+ * stored tool alone while drawing nothing with it.
  */
 export function purposeReadsGesture(purpose: CanvasPurpose): boolean {
+  // `present` ignores the gesture rather than resetting it, so leaving a
+  // presentation returns the reader to the tool they had.
   return purpose !== "present";
 }
 
 /**
  * True when choosing this purpose consumes clicks for its own sake.
  *
- * A run places a queue and a record captures steps; neither can be on at the same
- * time, because both claim the next click. That is the one exclusivity rule the
- * two-axis model needs, and it is stated here rather than in a component.
+ * A run places a queue and an explanation gathers what is selected; neither can
+ * be on at the same time, because both claim the next click. That is the one
+ * exclusivity rule the two-axis model needs, and it is stated here rather than in
+ * a component.
  */
 export function purposeClaimsClicks(purpose: CanvasPurpose): boolean {
   // `explain` claims the click too: what it gathers is what the reader selected, and a
@@ -85,8 +88,8 @@ export function initialGestureFor(purpose: CanvasPurpose): CanvasMode | null {
     case "record":
       // Recording appends a step per click (ADR-0058 amendment).
       return "thread";
-    // `explain` reads the gesture axis and ignores it, the way `present` does: the
-    // gesture describes what a link would do, and explain draws nothing.
+    // `explain` reads the gesture axis and ignores it: the gesture describes what a
+    // link would do, and explain draws nothing.
     case "explain":
     case "explore":
     case "present":

@@ -33,10 +33,6 @@ export const MODES: Record<CanvasMode, { label: string; glyph: string }> = {
     label: "Fan mode: every click links from the same starting connector",
     glyph: "\u273b",
   },
-  branch: {
-    label: "Branch mode: each placement branches from the one before it",
-    glyph: "\u22d4",
-  },
 };
 
 /** "Switch to thread mode: click connector after connector to chain links". */
@@ -77,8 +73,7 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
   /**
    * The modifiers held right now, as one value both controls can read
    * (ADR-0066).
-   * Shift chains links without the thread tool, ctrl previews the fan, and alt
-   * previews the branch — the fourth mode, which had no key before.
+   * Shift chains links without the thread tool, ctrl previews the fan.
    *
    * A ref painted onto the DOM, never state: a re-render mid-gesture is exactly
    * what the hint must not cause.

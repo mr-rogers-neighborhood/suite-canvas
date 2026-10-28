@@ -9,8 +9,8 @@ import {
   syncStateOf,
 } from "../session/accountWorkspaces";
 import {
+  DEFAULT_WORKSPACE_NAME,
   forgetWorkspaceName,
-  friendlyWorkspaceName,
   readWorkspaceNames,
   refreshWorkspaceNames,
   rememberWorkspaceName,
@@ -215,7 +215,7 @@ export function WorkspaceLauncher() {
     // built with. The chosen template therefore travels as itself as well, which is
     // the only way a starter that came from the server can be applied at all.
     if (chosen !== undefined) rememberChosenTemplate(workspaceId, chosen);
-    rememberWorkspace({ id: workspaceId, title: friendlyWorkspaceName() });
+    rememberWorkspace({ id: workspaceId, title: DEFAULT_WORKSPACE_NAME });
     const url = new URL(workspaceUrl(workspaceId, null));
     url.searchParams.set("fresh", "1");
     if (chosen !== undefined) url.searchParams.set("template", chosen.id);
@@ -391,28 +391,6 @@ export function WorkspaceLauncher() {
                 event.target.value = "";
               }}
             />
-            {/* Notebook is the default rather than Blank: a new workspace should
-                open with somewhere to write, and an empty document is still one
-                choice away. The template is applied by the editor's boot, right
-                after the document exists, so it never has to be written twice. */}
-            <label className="ml-1 flex items-center gap-2 text-[12px] text-[var(--ink-muted)]">
-              <span>Start from</span>
-              <select
-                data-testid="launcher-template"
-                aria-label="Workspace template"
-                value={template}
-                onChange={(event) => setTemplate(event.target.value)}
-                disabled={busy}
-                className="rounded-lg border border-[var(--hairline)] bg-[var(--surface)] px-2 py-1 text-[12px] text-[var(--ink)]"
-              >
-                <option value="">Blank</option>
-                {templates.map((starter) => (
-                  <option key={starter.id} value={starter.id}>
-                    {starter.name} — {starter.description}
-                  </option>
-                ))}
-              </select>
-            </label>
             {/* Identity lives here as well as in the title bar: this is the first
                 screen someone sees, and an account is what keeps a workspace
                 across devices. The literal keeps every byte of `/api/auth` out of
@@ -424,6 +402,35 @@ export function WorkspaceLauncher() {
                 </Suspense>
               </span>
             ) : null}
+          </div>
+          {/* Notebook is the default rather than Blank: a new workspace should open
+              with somewhere to write, and an empty document is still one choice
+              away. It sits on its own line because it belongs to "New workspace",
+              not beside it, and the description follows the choice rather than
+              stretching the select until the name is cut off. */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-[var(--ink-muted)]">
+            <label className="flex items-center gap-2">
+              <span>Start from</span>
+              <select
+                data-testid="launcher-template"
+                aria-label="Workspace template"
+                value={template}
+                onChange={(event) => setTemplate(event.target.value)}
+                disabled={busy}
+                className="max-w-[220px] rounded-lg border border-[var(--hairline)] bg-[var(--surface)] px-2 py-1 text-[12px] text-[var(--ink)]"
+              >
+                <option value="">Blank</option>
+                {templates.map((starter) => (
+                  <option key={starter.id} value={starter.id}>
+                    {starter.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span data-testid="launcher-template-detail" className="text-[11px]">
+              {templates.find((starter) => starter.id === template)?.description ??
+                "An empty board."}
+            </span>
           </div>
           {error ? (
             <p

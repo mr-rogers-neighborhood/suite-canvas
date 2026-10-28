@@ -205,3 +205,56 @@ describe("TitleBar home gesture", () => {
     expect(onNavigateHome).not.toHaveBeenCalled();
   });
 });
+
+describe("TitleBar workspace menu", () => {
+  const rename = (name: string) => name;
+
+  it("should open from the workspace name rather than renaming on the spot", () => {
+    bar({
+      status: "connected",
+      workspaceName: "Untitled workspace",
+      canRenameWorkspace: true,
+      onRenameWorkspace: rename,
+    });
+
+    fireEvent.click(screen.getByTestId("workspace-name"));
+    expect(screen.getByTestId("workspace-switcher")).toBeInTheDocument();
+    expect(screen.queryByTestId("workspace-name-input")).toBeNull();
+  });
+
+  it("should reach rename through the menu", () => {
+    bar({
+      status: "connected",
+      workspaceName: "Untitled workspace",
+      canRenameWorkspace: true,
+      onRenameWorkspace: rename,
+    });
+
+    fireEvent.click(screen.getByTestId("workspace-name"));
+    fireEvent.click(screen.getByTestId("workspace-switcher-rename"));
+    expect(screen.getByTestId("workspace-name-input")).toHaveValue("Untitled workspace");
+  });
+
+  it("should list the other workspaces and open one", () => {
+    const onOpenWorkspace = vi.fn();
+    bar({
+      status: "connected",
+      workspaceName: "Untitled workspace",
+      otherWorkspaces: [{ id: "ws-2", title: "Reading" }],
+      onOpenWorkspace,
+    });
+
+    fireEvent.click(screen.getByTestId("workspace-name"));
+    fireEvent.click(screen.getByTestId("workspace-switcher-open-ws-2"));
+    expect(onOpenWorkspace).toHaveBeenCalledWith("ws-2");
+  });
+
+  it("should still offer a way back to the launcher", () => {
+    const onNavigateHome = vi.fn();
+    bar({ status: "connected", workspaceName: "Untitled workspace", onNavigateHome });
+
+    fireEvent.click(screen.getByTestId("workspace-name"));
+    fireEvent.click(screen.getByTestId("workspace-switcher-home"));
+    expect(onNavigateHome).toHaveBeenCalled();
+  });
+});

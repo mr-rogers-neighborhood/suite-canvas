@@ -18,14 +18,10 @@ test("opens the command palette from the app bar and jumps to an action", async 
   await expect(page.getByTestId("command-palette-row")).toHaveCount(1);
   await page.getByTestId("command-palette-row").first().click();
 
-  // "New board" runs and the palette closes; the new tab is proof it ran.
+  // "New board" runs and the palette closes; the bar naming the new board is
+  // proof it ran.
   await expect(palette).toHaveCount(0);
-  // Scoped and exact: "Close Board 2" is also a button whose name contains "Board 2".
-  await expect(
-    page
-      .getByRole("navigation", { name: "Boards" })
-      .getByRole("button", { name: "Board 2", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByTestId("board-switcher")).toHaveAttribute("aria-label", "Board: Board 2");
 });
 
 test("opens the palette with Cmd+K and closes it with Escape", async ({ page }) => {

@@ -276,6 +276,27 @@ describe("useUiStore board navigation", () => {
     expect(useUiStore.getState().portalEntry?.nodeId).toBe("n2");
   });
 
+  it("should open one placeholder tab and close it by choosing a board", () => {
+    useUiStore.getState().openNewTab();
+
+    expect(useUiStore.getState().newTab).toBe(true);
+    expect(useUiStore.getState().activeBoardId).toBeNull();
+    // The board that was on screen is still the most recent: leaving a tab is
+    // not a visit to a different board.
+    expect(useUiStore.getState().boardRecency[0]).toBe("board-a");
+
+    useUiStore.getState().activateBoard("board-b");
+    expect(useUiStore.getState().newTab).toBe(false);
+    expect(useUiStore.getState().activeBoardId).toBe("board-b");
+  });
+
+  it("should not stack a second placeholder on the first", () => {
+    useUiStore.getState().openNewTab();
+    const first = useUiStore.getState();
+    useUiStore.getState().openNewTab();
+    expect(useUiStore.getState()).toBe(first);
+  });
+
   it("should reset editing and focus when the board changes", () => {
     useUiStore.getState().startEditing("card-a", "body", "focus");
     useUiStore.getState().openCardFocus("card-a");

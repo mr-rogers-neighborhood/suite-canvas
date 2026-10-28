@@ -7,7 +7,8 @@ test("canvas app boots and renders the board", { tag: "@smoke" }, async ({ page 
   await expect(page.getByTestId("canvas-board")).toBeVisible();
   await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
   await expect(page.getByTestId("dock-library")).toBeVisible();
-  await expect(page.locator('[data-testid^="board-tab"]')).toHaveCount(1);
+  // One board on screen, named by the switcher: there is no tab set any more.
+  await expect(page.getByTestId("board-switcher")).toBeVisible();
 });
 
 test("shows render counters with ?perf=1", { tag: "@smoke" }, async ({ page }) => {

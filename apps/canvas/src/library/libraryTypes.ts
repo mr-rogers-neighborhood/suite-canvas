@@ -33,7 +33,6 @@ export interface LibraryBoard {
    * No portal names this board and it is not the entry board, so the list is the
    * only way in. Computed from the snapshot with the list, never stored.
    */
-  unopened?: boolean;
 }
 
 /** What a drawer row can be. Boards are global: they never leave this list. */
@@ -51,7 +50,9 @@ export interface LibraryDrawerProps {
   trash: LibraryItem[];
   /** Every board in the workspace, open or closed. */
   boards?: LibraryBoard[];
-  /** Switches to the board, giving it a tab. */
+  /** A new board, opened. Absent when this session may not create boards. */
+  onCreateBoard?: (() => void) | undefined;
+  /** Switches to the board. */
   onOpenBoard?: (boardId: string) => void;
   /** Creates a portal card to the board on the active board; the row stays put. */
   onPlaceBoard?: (boardId: string) => void;

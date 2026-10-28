@@ -8,11 +8,7 @@ import { useLeaveGuard } from "./app/useLeaveGuard";
 import { useWorkspaceBoot } from "./app/useWorkspaceBoot";
 import { useWorkspaceSyncFacts } from "./app/useWorkspaceSyncFacts";
 import { WorkspaceShellView } from "./app/WorkspaceShellView";
-import {
-  useSurfacePalette,
-  useWorkspaceNavigation,
-  useWorkspacePalette,
-} from "./app/workspacePaint";
+import { useSurfacePalette, useWorkspacePalette } from "./app/workspacePaint";
 import { signedIn as accountSignedIn, useAccountStore } from "./auth/useAccountStore";
 import type { CanvasMode } from "./canvas/links/linkGesture";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
@@ -23,7 +19,7 @@ import { useRecordEngine } from "./canvas/useRecordEngine";
 import { zoomBand } from "./canvas/zoomRange";
 import { ensureTutorialType, tutorialCardOnBoard } from "./cards/tour";
 import { ensureWhiteboardType } from "./cards/whiteboard";
-import type { BoardPresence } from "./chrome/BoardTabs";
+import type { BoardPresence } from "./chrome/BoardSwitcher";
 import { BootSkeleton } from "./chrome/BootSkeleton";
 import { useSavedViews } from "./chrome/ViewsBar";
 import { usePresenceStore } from "./collab/usePresenceStore";
@@ -73,7 +69,11 @@ function WorkspaceShell({
   const status = useCanvasStore((state) => state.status);
   const ready = useCanvasStore((state) => state.ready);
   const synced = useCanvasStore((state) => state.synced);
-  const boot = useBootGate(ready);
+  // The skeleton stays until the workspace has a first sync *or* this build will
+  // never sync. Seeding waits for that same moment, so a new workspace used to
+  // open on an empty canvas for the length of the grace period; holding the
+  // skeleton there is the honest picture of what is happening.
+  const boot = useBootGate(ready && (synced || isStandalone()));
   const { screenToFlowPosition } = useReactFlow();
   const snapshot = useWorkspaceSnapshot();
   countRender("shell");
@@ -82,7 +82,6 @@ function WorkspaceShell({
   // shell style, no palette and no rules.
   const shellRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLElement>(null);
-  const navigation = useWorkspaceNavigation(workspace);
   const workspacePalette = useWorkspacePalette(workspace);
   const themeMode = useThemeStore((state) => state.mode);
   // The resolved brightness, which is what a swatch resolves against.
@@ -104,8 +103,6 @@ function WorkspaceShell({
 
   const activeBoardId = useUiStore((state) => state.activeBoardId);
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
-  const stylesOpen = useUiStore((state) => state.stylesOpen);
-  const setStylesOpen = useUiStore((state) => state.setStylesOpen);
   const libraryOpen = useUiStore((state) => state.libraryOpen);
   const libraryTab = useUiStore((state) => state.libraryTab);
   const setLibraryOpen = useUiStore((state) => state.setLibraryOpen);
@@ -186,8 +183,9 @@ function WorkspaceShell({
     return map;
   }, [peers]);
   const activateBoard = useUiStore((state) => state.activateBoard);
-  const openBoardIds = useUiStore((state) => state.openBoardIds);
-  const closeBoardTab = useUiStore((state) => state.closeBoardTab);
+  const boardRecency = useUiStore((state) => state.boardRecency);
+  const newTab = useUiStore((state) => state.newTab);
+  const openNewTab = useUiStore((state) => state.openNewTab);
   const focusCard = useUiStore((state) => state.focusCard);
   const goBackBoard = useUiStore((state) => state.goBackBoard);
   const boardHistory = useUiStore((state) => state.boardHistory);
@@ -225,6 +223,7 @@ function WorkspaceShell({
     phase: accountPhase,
     status,
     workspaceName,
+    shared: share !== null,
   });
   const openSignIn = useAccountStore((state) => state.openSignIn);
   const { leaving, leavingPrompt, inRoom, requestLeave, dismissLeavePrompt, leaveAnyway } =
@@ -242,8 +241,8 @@ function WorkspaceShell({
     synced,
     standalone,
     activeBoardId,
+    newTab,
     setActiveBoardId,
-    homeBoardId: navigation.homeBoardId,
     connect,
     provider,
     presence,
@@ -590,12 +589,6 @@ function WorkspaceShell({
   const cardItems = allCards.map(toItem);
   const trashItems = trashed.map(toItem);
 
-  // The tab strip shows the open boards; the library shows every board.
-  const openBoards = useMemo(
-    () => snapshot.boards.filter((board) => openBoardIds.includes(board.id)),
-    [snapshot.boards, openBoardIds],
-  );
-
   /**
    * The library's Boards section. Placing a board adds a portal to the active
    * board and leaves this list alone: boards are global, so a placed board is
@@ -613,11 +606,11 @@ function WorkspaceShell({
     return snapshot.boards.map((board) => ({
       id: board.id,
       title: board.name,
-      open: openBoardIds.includes(board.id),
+      open: board.id === activeBoardId,
       cardCount: placed.get(board.id) ?? 0,
       template: board.template === true,
     }));
-  }, [snapshot.boards, snapshot.cards, snapshot.placements, openBoardIds]);
+  }, [snapshot.boards, snapshot.cards, snapshot.placements, activeBoardId]);
 
   /**
    * Locate pans to the object on the board in front of the reader. A card that
@@ -676,16 +669,16 @@ function WorkspaceShell({
   );
 
   /**
-   * Delete asks once, in the library, and then closes the tab: a deleted board
-   * must not leave a dangling id in the open set.
+   * Delete asks once, in the library. If the board on screen goes, the shell
+   * resolves the next one the same way it resolves a boot.
    */
   const deleteBoard = useCallback(
     (boardId: string, cards: "keep" | "trash") => {
       if (!canManageBoards) return;
       workspace.deleteBoard(boardId, { cards });
-      closeBoardTab(boardId);
+      if (useUiStore.getState().activeBoardId === boardId) setActiveBoardId(null);
     },
-    [canManageBoards, workspace, closeBoardTab],
+    [canManageBoards, workspace, setActiveBoardId],
   );
 
   /**
@@ -769,7 +762,6 @@ function WorkspaceShell({
       inRoom={inRoom}
       openSignIn={openSignIn}
       readOnly={readOnly}
-      setStylesOpen={setStylesOpen}
       activeBoardId={activeBoardId}
       activeBoardName={activeBoardName}
       canManageSchema={canManageSchema}
@@ -787,14 +779,17 @@ function WorkspaceShell({
       toggleOutline={toggleOutline}
       libraryTab={libraryTab}
       snapshot={snapshot}
-      openBoards={openBoards}
-      openBoardIds={openBoardIds}
+      boardRecency={boardRecency}
+      newTab={newTab}
+      openNewTab={openNewTab}
       boardHistory={boardHistory}
       goBackBoard={goBackBoard}
-      navigation={navigation}
       peersByBoard={peersByBoard}
+      createBoard={() => {
+        const board = workspace.createBoard();
+        activateBoard(board.id);
+      }}
       activateBoard={activateBoard}
-      closeBoardTab={closeBoardTab}
       runCards={runCards}
       boardPainted={boardPainted}
       boardPaint={boardPaint}
@@ -807,7 +802,6 @@ function WorkspaceShell({
       createSection={createSection}
       createBoardPortal={createBoardPortal}
       openTypeSettings={openTypeSettings}
-      stylesOpen={stylesOpen}
       paletteItems={paletteItems}
       unplaced={unplaced}
       trashed={trashed}

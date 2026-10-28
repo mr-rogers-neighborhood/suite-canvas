@@ -69,9 +69,9 @@ export function PaletteEditor({ workspace }: { workspace: WorkspaceDocument }) {
     <div data-testid="palette-editor">
       <h4 className="mt-3 text-[12px] font-semibold">Palette</h4>
 
-      <ul className="mt-2 space-y-2">
+      <ul className="mt-1 space-y-0">
         {palette.map((swatch, index) => (
-          <li key={swatch.id} className="rounded-lg border border-[var(--hairline)] p-2">
+          <li key={swatch.id} className="border-b border-[var(--hairline)] py-1.5 last:border-b-0">
             <div className="flex items-center gap-1.5">
               <input
                 aria-label={`${swatch.name} name`}
@@ -111,7 +111,7 @@ export function PaletteEditor({ workspace }: { workspace: WorkspaceDocument }) {
               </button>
             </div>
 
-            <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+            <div className="mt-1 grid grid-cols-2 gap-1.5">
               <ModeRow
                 mode="light"
                 swatch={swatch}

@@ -214,11 +214,6 @@ export function boardsMethods(ctx: DocContext) {
         if (isMap(fields) && readString(fields, "boardId") === id) ctx.sections.delete(sectionId);
       }
       ctx.boards.delete(id);
-      // A reference to a board that no longer exists would read as a home that opens
-      // nothing; the delete clears it instead of leaving a dangling id on screen.
-      for (const key of ["homeBoardId", "newTabBoardId"] as const) {
-        if (ctx.meta.get(key) === id) ctx.meta.delete(key);
-      }
       // A portal naming this board would draw an empty frame that opens nothing, so
       // the property is cleared in the same commit: one undo puts the board and its
       // portals back together, and the card survives as a plain card where it sits.

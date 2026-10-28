@@ -159,7 +159,7 @@ describe("CanvasBoard portals", () => {
       clientY: 90,
     });
     fireEvent.click(await screen.findByRole("menuitem", { name: "New portal" }));
-    expect(screen.getByRole("menuitem", { name: "New board and portal" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "New board" })).toBeInTheDocument();
   });
 
   it("should not offer a board the session cannot create", async () => {
@@ -171,7 +171,7 @@ describe("CanvasBoard portals", () => {
       clientY: 90,
     });
     fireEvent.click(await screen.findByRole("menuitem", { name: "New portal" }));
-    expect(screen.queryByRole("menuitem", { name: "New board and portal" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "New board" })).toBeNull();
   });
 
   it("should render no canvas menu for a session that cannot create content", async () => {

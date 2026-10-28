@@ -83,15 +83,14 @@ export function DevicesPanel({ api = liveApi }: DevicesPanelProps) {
 
   return (
     <div data-testid="devices-panel" className="text-[12px]">
-      <h3 className="text-[13px] font-semibold">Devices and sessions</h3>
+      <h3 className="text-[13px] font-semibold">Where you are signed in</h3>
       <p className="mt-1 leading-5 text-[var(--ink-muted)]">
-        One row per signed-in browser. Revoking ends the session; a socket already open drops when
-        its five-minute credential expires.
+        Every browser signed in to your account. Removing one signs it out within a few minutes.
       </p>
 
       <ul data-testid="devices-list" className="mt-2 divide-y divide-[var(--hairline)]">
         {sessions.length === 0 ? (
-          <li className="py-2 text-[var(--ink-muted)]">No sessions were listed.</li>
+          <li className="py-2 text-[var(--ink-muted)]">Nowhere else. This is the only browser.</li>
         ) : (
           sessions.map((session) => (
             <li key={session.id} className="flex items-center gap-2 py-1.5">

@@ -562,46 +562,6 @@ describe("LibraryDrawer boards", () => {
   });
 
   /** The drawer's `cards` prop is the workspace's live cards, as the shell builds it. */
-  const cardItems = (workspace: WorkspaceDocument): LibraryItem[] =>
-    workspace
-      .listCards()
-      .filter((card) => !card.deletedAt)
-      .map((card) => ({
-        id: card.id,
-        title: workspace.displayTitle(card.id),
-        boards: [],
-        typeIds: card.typeIds,
-        tagIds: card.tags,
-        sectionIds: [],
-        properties: card.properties,
-      }));
-
-  it("should say when nothing opens a board", () => {
-    const { workspace, first, second, entries } = boardFixture();
-    workspace.setWorkspaceHomeBoardId(first.id);
-    renderDrawer(workspace, [], { tab: "boards", boards: entries() });
-
-    // Research is the home board, so it needs no portal; Drafts has nothing
-    // pointing at it and is only reachable from this list.
-    expect(screen.queryByTestId(`library-board-unopened-${first.id}`)).toBeNull();
-    expect(screen.getByTestId(`library-board-unopened-${second.id}`)).toHaveTextContent(
-      "Nothing opens this",
-    );
-  });
-
-  it("should stop saying a board is unopened once a portal names it", () => {
-    const { workspace, first, second, entries } = boardFixture();
-    workspace.setWorkspaceHomeBoardId(first.id);
-    workspace.createPortalCard({
-      boardId: first.id,
-      targetBoardId: second.id,
-      position: { x: 0, y: 0 },
-    });
-    renderDrawer(workspace, cardItems(workspace), { tab: "boards", boards: entries() });
-
-    expect(screen.queryByTestId(`library-board-unopened-${second.id}`)).toBeNull();
-  });
-
   it("should place a board without moving or removing its row", () => {
     const { workspace, first, second, entries } = boardFixture();
     const view = renderDrawer(workspace, [], {
@@ -868,7 +828,7 @@ describe("LibraryDrawer board blueprints", () => {
 
   it("should copy a template into a new board and activate it", () => {
     const { workspace, template, entries } = templateFixture();
-    useUiStore.setState({ activeBoardId: null, openBoardIds: [] });
+    useUiStore.setState({ activeBoardId: null });
     workspace.setBoardTemplate(template.id, true);
 
     renderDrawer(workspace, [], {
@@ -905,7 +865,7 @@ describe("LibraryDrawer board blueprints", () => {
 
   it("should generate a starter board with its sections and cards", () => {
     const { workspace, entries } = templateFixture();
-    useUiStore.setState({ activeBoardId: null, openBoardIds: [] });
+    useUiStore.setState({ activeBoardId: null });
 
     renderDrawer(workspace, [], {
       tab: "boards",

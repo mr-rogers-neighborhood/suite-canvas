@@ -44,6 +44,8 @@ export function LibraryDrawer({
   cards,
   trash,
   boards = [],
+  /** Absent when this session may not create boards. */
+  onCreateBoard,
   onOpenBoard = () => {},
   onPlaceBoard = () => {},
   onUnplaceBoardCards = () => {},
@@ -356,9 +358,10 @@ export function LibraryDrawer({
     if (target.closest("button:not([data-row-open])")) return;
     // Keep the gesture from selecting text across the board.
     event.preventDefault();
-    if (selecting) {
-      // Selection mode claims the press: a drag-to-place here would be a second
-      // meaning for the same gesture (ADR-0011 amendment).
+    // Selection mode claims the press, and so does a modifier: shift or ctrl/cmd
+    // is unambiguously "pick rows", which is how every list on the desktop works.
+    // A drag-to-place here would be a second meaning for the same gesture.
+    if (selecting || event.shiftKey || event.metaKey || event.ctrlKey) {
       selectRow(item.id, event);
       return;
     }
@@ -497,6 +500,7 @@ export function LibraryDrawer({
         onUseTemplate={onUseBoardTemplate}
         onUseStarter={onUseStarter}
         onEditTemplate={onOpenBoard}
+        onCreateBoard={onCreateBoard}
       />
 
       <LibraryOverlays

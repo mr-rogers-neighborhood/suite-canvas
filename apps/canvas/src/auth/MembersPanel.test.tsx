@@ -118,10 +118,10 @@ describe("members and invitations", () => {
     await waitFor(() => expect(client.removeMember).toHaveBeenCalledWith(MEMBER.id));
   });
 
-  it("says invitations are not how an account is created", async () => {
+  it("says an invite needs its own account, without the plumbing", async () => {
     render(<MembersPanel api={api()} />);
     expect(await screen.findByTestId("members-panel")).toHaveTextContent(
-      "not how an account is created",
+      "They need their own account",
     );
   });
 });

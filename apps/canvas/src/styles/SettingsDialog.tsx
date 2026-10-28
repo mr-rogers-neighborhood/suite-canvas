@@ -37,7 +37,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         aria-label="Settings"
         tabIndex={-1}
         data-testid="settings-dialog"
-        className="relative w-[min(440px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl"
+        className="relative flex max-h-[min(80vh,720px)] w-[min(440px,calc(100vw-2rem))] flex-col rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl"
       >
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -57,7 +57,10 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div className="mt-3">
+        {/* One scrolling body: the palette editor is taller than a laptop
+            screen, and a panel that overflows the viewport puts its own last
+            row out of reach. */}
+        <div className="mt-3 -mr-1 min-h-0 flex-1 overflow-y-auto pr-1">
           <AppearanceSection />
         </div>
       </div>

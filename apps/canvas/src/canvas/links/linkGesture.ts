@@ -22,7 +22,7 @@ export interface LinkEndpointRef {
  * same four make a single drop, a chain, spokes and a tree. `branch` is the
  * fourth shape — a chain that branches — and is placement-only today.
  */
-export const canvasModes = ["place", "thread", "fan", "branch"] as const;
+export const canvasModes = ["place", "thread", "fan"] as const;
 export type CanvasMode = (typeof canvasModes)[number];
 
 /** Human name of each mode, for menus and labels. */
@@ -30,7 +30,6 @@ export const MODE_NAMES: Record<CanvasMode, string> = {
   place: "place",
   thread: "thread",
   fan: "fan",
-  branch: "branch",
 };
 
 /**

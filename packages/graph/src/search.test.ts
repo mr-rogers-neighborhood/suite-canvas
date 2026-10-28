@@ -112,8 +112,10 @@ describe("buildSearchText", () => {
     workspace.createCard({ id: "body-only" });
     addParagraphs(workspace.getContent("body-only"), "Kept body");
 
-    expect(cardSearchText(workspace, "empty")).toBe("");
-    expect(cardSearchText(workspace, "body-only")).toBe("kept body");
+    // The separator stays even when a half is empty, so the other half keeps its
+    // side of the split.
+    expect(cardSearchText(workspace, "empty")).toBe("\n");
+    expect(cardSearchText(workspace, "body-only")).toBe("\nkept body");
   });
 });
 
@@ -194,6 +196,77 @@ describe("searchCards", () => {
   it("should honour the limit", () => {
     const { workspace } = fixture();
     expect(searchCards(buildSearchText(workspace), "timeline", { limit: 1 })).toHaveLength(1);
+  });
+});
+
+/**
+ * Title-only cards used to index as a bare title with no separator, so
+ * `searchCards` read that title as the body: wrong field, body-shaped snippet,
+ * empty sort key.
+ */
+function titleOnlyWorkspace(): WorkspaceDocument {
+  const workspace = new WorkspaceDocument();
+  workspace.ensureDefaultTypes();
+  const board = workspace.ensureBoard();
+  for (const [id, title] of [
+    ["a-zebra", "Chart zebra"],
+    ["b-anchor", "Chart anchor"],
+  ] as const) {
+    workspace.createCard({ id, boardId: board.id, position: { x: 0, y: 0 } });
+    addText(workspace.getTitle(id), title);
+  }
+  workspace.createCard({ id: "body-only", boardId: board.id, position: { x: 0, y: 0 } });
+  addParagraphs(workspace.getContent("body-only"), "Kept body");
+  workspace.createCard({ id: "blank", boardId: board.id, position: { x: 0, y: 0 } });
+  workspace.doc.commit({ origin: "test" });
+  return workspace;
+}
+
+describe("a card without a body", () => {
+  it("should report a title match as a title hit", () => {
+    const hit = searchCards(buildSearchText(titleOnlyWorkspace()), "chart")[0];
+
+    expect(hit?.id).toBe("b-anchor");
+    expect(hit?.field).toBe("title");
+    expect(hit?.position).toBe(0);
+  });
+
+  it("should use the title as the snippet", () => {
+    const hit = searchCards(buildSearchText(titleOnlyWorkspace()), "zebra")[0];
+
+    expect(hit?.field).toBe("title");
+    expect(hit?.snippet).toBe("chart zebra");
+    expect(hit?.highlights).toEqual([{ start: 6, end: 6 + "zebra".length }]);
+  });
+
+  it("should sort title-only cards by title, not by an empty key", () => {
+    const index = buildSearchText(titleOnlyWorkspace());
+
+    // The ids sort the other way round, so an empty sort key would flip these.
+    expect(searchCards(index, "chart").map((hit) => hit.id)).toEqual(["b-anchor", "a-zebra"]);
+  });
+
+  it("should keep the empty body beside the separator", () => {
+    expect(cardSearchText(titleOnlyWorkspace(), "a-zebra")).toBe("chart zebra\n");
+  });
+});
+
+describe("a card without a title", () => {
+  it("should still report a body match as a body hit", () => {
+    const hit = searchCards(buildSearchText(titleOnlyWorkspace()), "kept")[0];
+
+    expect(hit?.id).toBe("body-only");
+    expect(hit?.field).toBe("body");
+    expect(hit?.snippet).toBe("kept body");
+  });
+
+  it("should not surface a card with neither title nor body", () => {
+    const index = buildSearchText(titleOnlyWorkspace());
+
+    expect(index.has("blank")).toBe(true);
+    for (const term of ["chart", "kept", "blank"]) {
+      expect(searchCards(index, term).map((hit) => hit.id)).not.toContain("blank");
+    }
   });
 });
 

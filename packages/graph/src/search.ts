@@ -79,8 +79,8 @@ export function cardSearchText(workspace: WorkspaceDocument, cardId: string): st
   const body = normalizeSearchText(
     `${workspace.cardText(cardId)} ${imageText(loroTreeToJson(workspace.peekContent(cardId)))}`,
   );
-  if (title.length === 0) return body;
-  if (body.length === 0) return title;
+  // Both halves are always emitted, even when empty: `searchCards` reads what
+  // precedes the separator as the title, so a bare title would rank as a body hit.
   return `${title}${FIELD_SEPARATOR}${body}`;
 }
 

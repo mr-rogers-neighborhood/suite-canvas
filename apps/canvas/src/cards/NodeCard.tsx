@@ -8,6 +8,7 @@ import { paintSurface, useSurfacePaint } from "../canvas/surfaceContext";
 import type { PresenceUser } from "../collab/presence";
 import { countRender } from "../dev/perf";
 import { ContextMenu, type ContextMenuItem } from "../dialogs/ContextMenu";
+import { IconGlyph } from "../icons/IconGlyph";
 import { PeerNameTag } from "../presence/PeerNameTag";
 import { PresenceAvatars } from "../presence/PresenceAvatars";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
@@ -38,6 +39,14 @@ export interface NodeCardProps {
   onToggleCollapsed?: (() => void) | undefined;
   /** Toggles the frontmatter area. */
   onToggleMeta?: () => void;
+  /**
+   * The icon this card draws: its own, else its type's, else nothing. `null`
+   * means "draw none" — the card hid it — and `undefined` with no type icon means
+   * fall back to the glyph.
+   */
+  cardIcon?: string | null;
+  /** Opens the type menu under the glyph, which is how a card changes type. */
+  onOpenTypeMenu?: ((anchor: DOMRect) => void) | undefined;
   /** Card document that owns the title and body rich text. */
   cardDoc: LoroDoc;
   /** Body rich-text container. */
@@ -131,6 +140,7 @@ export function NodeCard({
   card,
   type,
   meta,
+  onOpenTypeMenu,
   metaExpanded = false,
   collapsed = false,
   onToggleCollapsed,
@@ -180,6 +190,14 @@ export function NodeCard({
   armedConnectorId = null,
   draftActive = false,
 }: NodeCardProps) {
+  // One decision, in one place: hidden draws nothing, the card's own icon beats
+  // the type's, and a type with no icon keeps the glyph it has always had.
+  const cardIcon: string | null | undefined =
+    card?.iconHidden === true
+      ? null
+      : (card?.icon ?? type.icon)
+        ? (card?.icon ?? type.icon)
+        : undefined;
   const editContent = canEditContent ?? !readOnly;
   const editLayout = canEditLayout ?? !readOnly;
   const canTrash = canManageTrash ?? !readOnly;
@@ -390,19 +408,26 @@ export function NodeCard({
           </button>
         ) : null}
 
-        <button
-          type="button"
-          aria-label={`Card type: ${type.name}`}
-          title={type.name}
-          data-testid="card-type"
-          className="card-type-glyph nodrag shrink-0 rounded px-0.5 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenInfo?.();
-          }}
-        >
-          {type.glyph}
-        </button>
+        {cardIcon === null ? null : (
+          <button
+            type="button"
+            aria-label={`Card type: ${type.name}`}
+            title={cardIcon === undefined ? type.name : `${type.name} · change type`}
+            aria-haspopup="menu"
+            data-testid="card-type"
+            className="card-type-glyph nodrag shrink-0 rounded px-0.5 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenTypeMenu?.(event.currentTarget.getBoundingClientRect());
+            }}
+          >
+            {cardIcon === undefined ? (
+              type.glyph
+            ) : (
+              <IconGlyph icon={cardIcon} size={13} className="inline-block" />
+            )}
+          </button>
+        )}
 
         <div className="card-title relative min-w-0 flex-1">
           {editing === "title" || !editContent ? null : (

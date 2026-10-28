@@ -105,7 +105,8 @@ const templateBoardSchema = z.object({
   /** Stable key, unique in the template, so a portal can name this board. */
   key: z.string().min(1).optional(),
   name: z.string().min(1),
-  color: sectionColorSchema.optional(),
+  /** A palette swatch id. Templates carry the id, so a restore reads the palette. */
+  color: z.string().min(1).max(64).optional(),
   tags: z.array(z.string().min(1)).optional(),
   sections: z.array(templateSectionSchema),
   /** Cards placed on the board but outside any region. */

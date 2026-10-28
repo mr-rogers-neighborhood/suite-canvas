@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { iconRefSchema } from "./icons.js";
 import { surfaceStyleSchema } from "./style.js";
 
 export const edgeKinds = ["references", "relates-to", "tagged"] as const;
@@ -54,7 +55,10 @@ export const connectorSchema = z.object({
 export const boardSchema = z.object({
   id: entityIdSchema,
   name: z.string().min(1),
-  color: sectionColorSchema.optional(),
+  /** Any palette swatch id; the six section colours are the defaults. */
+  color: z.string().min(1).max(64).optional(),
+  /** An icon reference, painted in the board's colour. */
+  icon: iconRefSchema.optional(),
   /** Replaces the live miniature inside a portal card when set. */
   coverAttachmentId: entityIdSchema.optional(),
   /**
@@ -152,7 +156,10 @@ export const cardTypeSchema = z.object({
   name: z.string().min(1),
   /** Collection label ("Characters"); derived from the name when absent. */
   pluralName: z.string().min(1).optional(),
+  /** A character, drawn when the type has no icon (or the set is missing). */
   glyph: z.string().min(1),
+  /** An icon reference ("lucide:book"); the glyph is the fallback. */
+  icon: iconRefSchema.optional(),
   color: z.string().optional(),
   /**
    * The default paint for every card of this type. A card's own style wins over
@@ -252,6 +259,13 @@ export const cardSchema = z.object({
   properties: z.record(z.string(), propertyValueSchema),
   /** Paint for the card on the canvas (ADR-0051). */
   style: surfaceStyleSchema.optional(),
+  /**
+   * This card's own icon, overriding its type's. Absent means "inherit"; the
+   * two are the only levels, so there is no cascade to reason about.
+   */
+  icon: iconRefSchema.optional(),
+  /** Draw no icon at all, even though the type has one. */
+  iconHidden: z.boolean().optional(),
 });
 
 /** Where a card sits on a board. One placement per (board, card) pair. */

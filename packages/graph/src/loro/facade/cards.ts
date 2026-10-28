@@ -170,6 +170,10 @@ export class CardsFacade {
     this.cardsApi.setCardStyle(cardId, style);
   }
 
+  setCardIcon(cardId: string, icon: string | null, options: { hidden?: boolean } = {}): void {
+    this.cardsApi.setCardIcon(cardId, icon, options);
+  }
+
   setCardTypes(cardId: string, typeIds: string[], primaryTypeId?: string): void {
     this.cardsApi.setCardTypes(cardId, typeIds, primaryTypeId);
   }

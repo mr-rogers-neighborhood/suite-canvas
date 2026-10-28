@@ -76,6 +76,8 @@ export function cardFromMap(id: string, fields: LoroMap): Card {
   }
 
   const style = readSurfaceStyle(fields);
+  const icon = readString(fields, "icon")?.trim();
+  const iconHidden = fields.get("iconHidden");
 
   return cardSchema.parse({
     id,
@@ -88,5 +90,7 @@ export function cardFromMap(id: string, fields: LoroMap): Card {
     tags,
     properties,
     ...(style ? { style } : {}),
+    ...(icon ? { icon } : {}),
+    ...(iconHidden === true ? { iconHidden } : {}),
   });
 }

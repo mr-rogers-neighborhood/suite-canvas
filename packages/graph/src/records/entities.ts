@@ -147,6 +147,7 @@ export function cardTypeFromMap(id: string, fields: LoroMap): CardType {
   definitions.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 
   const color = readString(fields, "color");
+  const icon = readString(fields, "icon")?.trim();
   const pluralName = readString(fields, "pluralName")?.trim();
   const templateCardId = readString(fields, "templateCardId")?.trim();
   const style = readSurfaceStyleValue(fields.get("style"));
@@ -159,6 +160,7 @@ export function cardTypeFromMap(id: string, fields: LoroMap): CardType {
     fields: definitions,
     ...(templateCardId ? { templateCardId } : {}),
     ...(color ? { color } : {}),
+    ...(icon ? { icon } : {}),
     ...(pluralName ? { pluralName } : {}),
     ...(style ? { style } : {}),
   });

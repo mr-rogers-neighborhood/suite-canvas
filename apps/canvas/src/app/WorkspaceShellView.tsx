@@ -13,6 +13,7 @@ import { SurfacePaintProvider } from "../canvas/surfaceContext";
 import { CardFocusHost } from "../cards/CardFocusHost";
 import { CardInspectorHost } from "../cards/CardInspectorHost";
 import { TourOverlayHost } from "../cards/TourOverlayHost";
+import { TypeMenuHost } from "../cards/TypeMenuHost";
 import { BoardGlyph } from "../chrome/BoardGlyph";
 import type { BoardPresence } from "../chrome/BoardSwitcher";
 import { BoardSwitcher } from "../chrome/BoardSwitcher";
@@ -596,6 +597,7 @@ export function WorkspaceShellView({
           ) : null}
           <BoardOutlineHost />
           <CardInspectorHost />
+          <TypeMenuHost />
           <AppearanceHost />
           <CardFocusHost />
           <TourOverlayHost />

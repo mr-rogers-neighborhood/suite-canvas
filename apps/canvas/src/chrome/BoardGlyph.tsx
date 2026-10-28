@@ -1,4 +1,5 @@
 import type { Board, SectionColor } from "@suite/graph";
+import { IconGlyph } from "../icons/IconGlyph";
 
 /**
  * A board's mark, in the bar and in the list: its icon when it has one, its
@@ -17,13 +18,32 @@ const SWATCH: Record<SectionColor, string> = {
   violet: "bg-[var(--section-violet)]",
 };
 
+/** A palette swatch's background class, or null for a swatch this build lacks. */
+function swatchClass(color: string | undefined): string | null {
+  return color !== undefined && color in SWATCH ? SWATCH[color as SectionColor] : null;
+}
+
 export function BoardGlyph({ board }: { board: Board }) {
-  if (board.color) {
+  // An icon is the board's mark when it has one; the colour becomes the ink it
+  // is drawn in, so "the icon is the colour they pick" holds for both.
+  if (board.icon) {
+    return (
+      <span
+        data-testid={`board-glyph-${board.id}`}
+        className="flex h-3 w-3 shrink-0 items-center justify-center"
+        style={{ color: board.color ? `var(--section-${board.color})` : "var(--ink-muted)" }}
+      >
+        <IconGlyph icon={board.icon} size={12} />
+      </span>
+    );
+  }
+  const className = swatchClass(board.color);
+  if (className !== null) {
     return (
       <span
         aria-hidden="true"
         data-testid={`board-glyph-${board.id}`}
-        className={`h-1.5 w-1.5 shrink-0 rounded-full ${SWATCH[board.color]}`}
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${className}`}
       />
     );
   }

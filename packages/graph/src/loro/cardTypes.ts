@@ -83,6 +83,8 @@ export function cardTypesMethods(ctx: DocContext) {
       fields.set("glyph", type.glyph);
       if (type.pluralName) fields.set("pluralName", type.pluralName);
       else if (fields.get("pluralName") !== undefined) fields.delete("pluralName");
+      if (type.icon) fields.set("icon", type.icon);
+      else if (fields.get("icon") !== undefined) fields.delete("icon");
       if (type.color) fields.set("color", type.color);
       else if (fields.get("color") !== undefined) fields.delete("color");
       if (type.templateCardId) fields.set("templateCardId", type.templateCardId);
@@ -103,6 +105,7 @@ export function cardTypesMethods(ctx: DocContext) {
         id: input.id ?? crypto.randomUUID(),
         name: input.name.trim() || "Type",
         glyph: input.glyph ?? "\u25c7",
+        ...(input.icon === undefined ? {} : { icon: input.icon }),
         createdAt: now,
         updatedAt: now,
         fields: [],
@@ -120,6 +123,8 @@ export function cardTypesMethods(ctx: DocContext) {
         name?: string;
         pluralName?: string | null;
         glyph?: string;
+        /** An icon reference; `null` clears it and the glyph draws instead. */
+        icon?: string | null;
         color?: string | null;
         /** `null` clears the type's paint, so its cards read the theme. */
         style?: SurfaceStyle | null;
@@ -148,6 +153,11 @@ export function cardTypesMethods(ctx: DocContext) {
         else if (fields.get("pluralName") !== undefined) fields.delete("pluralName");
       }
       if (patch.glyph !== undefined) fields.set("glyph", patch.glyph || type.glyph);
+      if (patch.icon !== undefined) {
+        const icon = patch.icon?.trim();
+        if (icon) fields.set("icon", icon);
+        else if (fields.get("icon") !== undefined) fields.delete("icon");
+      }
       if (patch.color !== undefined) {
         if (patch.color) fields.set("color", patch.color);
         else if (fields.get("color") !== undefined) fields.delete("color");

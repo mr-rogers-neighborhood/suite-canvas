@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { Dialog } from "../dialogs/Dialog";
 import { DisplayStyleDialog } from "../dialogs/DisplayStyleDialog";
 import { useFocusTrap } from "../dialogs/useFocusTrap";
+import { IconGlyph } from "../icons/IconGlyph";
+import { IconPicker } from "../icons/IconPicker";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCards } from "../store/workspaceStore";
 import { StyleTab } from "../styles/surface/StyleTab";
@@ -19,6 +21,8 @@ export interface TypeSettingsDialogProps {
       name?: string;
       pluralName?: string | null;
       glyph?: string;
+      /** An icon reference; `null` clears it and the glyph draws instead. */
+      icon?: string | null;
       templateCardId?: string | null;
     },
   ) => void;
@@ -245,7 +249,11 @@ export function TypeSettingsDialog({
                   }`}
                   onClick={() => setSelectedId(type.id)}
                 >
-                  <span aria-hidden="true">{type.glyph}</span>
+                  {type.icon ? (
+                    <IconGlyph icon={type.icon} size={13} />
+                  ) : (
+                    <span aria-hidden="true">{type.glyph}</span>
+                  )}
                   <span className="min-w-0 flex-1 truncate">{type.name}</span>
                   <span className="text-[10px] opacity-60">{type.fields.length}</span>
                 </button>
@@ -298,6 +306,7 @@ export function TypeSettingsDialog({
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="border-b border-[var(--hairline)] px-3 py-2">
             <div className="flex items-center gap-2">
+              {selected ? <TypeIconButton type={selected} onUpdate={onUpdateType} /> : null}
               <input
                 key={`${selected?.id}-name`}
                 type="text"
@@ -726,5 +735,52 @@ export function TypeSettingsDialog({
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * The selected type's icon, and the way to change it.
+ *
+ * The glyph stays as the fallback for a type with no icon and for a document
+ * written before icons existed, so nothing is migrated and nothing disappears.
+ */
+function TypeIconButton({
+  type,
+  onUpdate,
+}: {
+  type: CardType;
+  onUpdate: (id: string, patch: { icon?: string | null }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        aria-label={`Icon for ${type.name}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        data-testid="type-icon"
+        className="flex h-6 w-6 items-center justify-center rounded border border-[var(--hairline)] text-[13px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+        onClick={() => setOpen((value) => !value)}
+      >
+        {type.icon ? (
+          <IconGlyph icon={type.icon} size={15} />
+        ) : (
+          <span aria-hidden="true">{type.glyph}</span>
+        )}
+      </button>
+      {open ? (
+        <div className="absolute left-0 top-full z-50 mt-1">
+          <IconPicker
+            value={type.icon}
+            onClose={() => setOpen(false)}
+            onPick={(icon) => {
+              onUpdate(type.id, { icon });
+              setOpen(false);
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }

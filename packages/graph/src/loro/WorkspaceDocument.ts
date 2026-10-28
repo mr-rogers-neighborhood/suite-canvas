@@ -363,6 +363,8 @@ export class WorkspaceDocument extends CardsFacade {
       name?: string;
       pluralName?: string | null;
       glyph?: string;
+      /** An icon reference; `null` clears it and the glyph draws instead. */
+      icon?: string | null;
       color?: string | null;
       /** The default paint for every card of this type; `null` clears it. */
       style?: SurfaceStyle | null;

@@ -41,6 +41,8 @@ export {
   historyRestoreSummary,
   RESTORE_ORIGIN,
 } from "./history.js";
+export type { IconRef } from "./icons.js";
+export { iconPrefix, iconRefSchema, isIconRef } from "./icons.js";
 export type {
   ApplyLayoutPlanOptions,
   LayoutPlan,

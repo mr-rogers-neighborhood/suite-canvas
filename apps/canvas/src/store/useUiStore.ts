@@ -164,6 +164,14 @@ interface UiState extends SessionCapabilities {
    * null means "fit the board's content".
    */
   viewportRequest: { boardId: string; viewport: ViewportState | null; nonce: number } | null;
+  /**
+   * The card whose type menu is open, and where under its glyph it sits. The
+   * glyph is the card's own type control, so the menu is anchored to the card
+   * rather than to a corner of the drawer.
+   */
+  typeMenu: { cardId: string; anchor: DOMRect } | null;
+  openTypeMenu: (cardId: string, anchor: DOMRect) => void;
+  closeTypeMenu: () => void;
   /** A portal entry waiting for the camera transition to play. */
   portalEntry: PortalEntryRequest | null;
   /** Card shown on the full-canvas focus surface, if any. */
@@ -438,6 +446,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   newTab: false,
   boardRecency: [],
   boardViewports: {},
+  typeMenu: null,
   boardHistory: [],
   viewportRequest: null,
   portalEntry: null,
@@ -596,6 +605,8 @@ export const useUiStore = create<UiState>((set, get) => ({
     // stack overlays and write a second board switch.
     set((state) => (state.portalEntry ? state : { portalEntry: request })),
   clearPortalEntry: () => set({ portalEntry: null }),
+  openTypeMenu: (cardId, anchor) => set({ typeMenu: { cardId, anchor } }),
+  closeTypeMenu: () => set({ typeMenu: null }),
   openCardFocus: (cardFocusId) =>
     // Focus owns the canvas: the drawer would duplicate the same card and
     // reserve a strip of the focus surface.

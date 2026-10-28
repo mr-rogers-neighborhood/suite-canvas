@@ -50,6 +50,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const startEditing = useUiStore((state) => state.startEditing);
   const stopEditing = useUiStore((state) => state.stopEditing);
   const openInspector = useUiStore((state) => state.openInspector);
+  const openTypeMenu = useUiStore((state) => state.openTypeMenu);
   const canCreateContent = useUiStore((state) => state.canCreateContent);
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
@@ -241,6 +242,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
           : {})}
         linkCount={linkCount}
         onOpenInfo={() => openInspector(id)}
+        onOpenTypeMenu={(anchor) => openTypeMenu(id, anchor)}
         // A tour is the way into a presentation: double-click it to play it
         // (ADR-0064 §11). Reading the store here matches `openCardFocus` beside it.
         onDoubleClickPresent={() => {

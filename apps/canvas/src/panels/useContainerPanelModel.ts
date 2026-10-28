@@ -56,7 +56,11 @@ export interface ContainerPanelModel {
   board: Board | null;
   /** A section's record; null for a portal. */
   section: Section | null;
-  color: Section["color"] | null;
+  /**
+   * The container's palette swatch id. A section names one of the six section
+   * colours; a board may name any swatch, so the field is the wider string.
+   */
+  color: string | null;
   /** Cards whose placement sits inside this section. */
   members: ContainerCardRow[];
   links: ContainerLinkRow[];

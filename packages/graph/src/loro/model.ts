@@ -108,6 +108,8 @@ export interface CreateTypeInput {
   name: string;
   pluralName?: string;
   glyph?: string;
+  /** An icon reference ("lucide:book"); the glyph is the fallback. */
+  icon?: string;
   color?: string;
 }
 

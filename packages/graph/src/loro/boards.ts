@@ -57,6 +57,7 @@ export function boardsMethods(ctx: DocContext) {
       const value = ctx.boards.get(id);
       if (!isMap(value)) return undefined;
       const color = readString(value, "color");
+      const icon = readString(value, "icon")?.trim();
       const coverAttachmentId = readString(value, "coverAttachmentId");
       const template = value.get("template");
       const style = readSurfaceStyle(value);
@@ -70,6 +71,7 @@ export function boardsMethods(ctx: DocContext) {
         // Both have been in the schema since boards became identities; nothing read
         // them back, so a colour write was invisible after the next cache fill.
         ...(color ? { color } : {}),
+        ...(icon ? { icon } : {}),
         ...(coverAttachmentId ? { coverAttachmentId } : {}),
         ...(template === true ? { template } : {}),
         ...(style ? { style } : {}),
@@ -120,6 +122,16 @@ export function boardsMethods(ctx: DocContext) {
     },
 
     /** A board's colour, or null to go back to the default. Boards are identities. */
+    /** An icon reference painted in the board's colour; `null` clears it. */
+    setBoardIcon(id: string, icon: string | null): void {
+      const fields = ctx.boards.get(id);
+      if (!isMap(fields)) return;
+      if (icon) fields.set("icon", icon);
+      else fields.delete("icon");
+      fields.set("updatedAt", Date.now());
+      ctx.commit(`${STRUCT_ORIGIN}board-icon`);
+    },
+
     setBoardColor(id: string, color: Board["color"] | null): void {
       const fields = ctx.boards.get(id);
       if (!isMap(fields)) return;

@@ -391,6 +391,20 @@ export function cardMethods(ctx: DocContext) {
       ctx.api.cards.mutateCard(cardId, (fields) => writeSurfaceStyle(fields, style));
     },
 
+    /**
+     * The card's own icon, which beats its type's. `null` clears it back to
+     * inheriting, and `hidden` replaces both with nothing at all — the two
+     * decisions a card can make about the icon it was given.
+     */
+    setCardIcon(cardId: string, icon: string | null, options: { hidden?: boolean } = {}): void {
+      ctx.api.cards.mutateCard(cardId, (fields) => {
+        if (icon) fields.set("icon", icon);
+        else if (fields.get("icon") !== undefined) fields.delete("icon");
+        if (options.hidden === true) fields.set("iconHidden", true);
+        else if (fields.get("iconHidden") !== undefined) fields.delete("iconHidden");
+      });
+    },
+
     setCardTypes(cardId: string, typeIds: string[], primaryTypeId?: string): void {
       const merged = unique(typeIds);
       if (merged.length === 0) {

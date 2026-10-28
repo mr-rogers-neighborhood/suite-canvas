@@ -96,6 +96,11 @@ while [ $# -gt 0 ]; do
       AS_JSON=1
       shift
       ;;
+    # Already read by the loop above, which runs before `CLOUDWATCH` is initialised, so it
+    # has to be accepted here too or the flag this script documents is rejected as unknown.
+    --cloudwatch)
+      shift
+      ;;
     *)
       echo "unknown argument: $1" >&2
       usage >&2

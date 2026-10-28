@@ -550,3 +550,47 @@ export async function confirmTotp(code: string): Promise<void> {
     throw new AdminApiError(response.status, message, failureCode);
   }
 }
+
+/**
+ * The trail of what operators did, newest first.
+ *
+ * `before` is the `(at, id)` watermark a page ended on, so paging continues exactly where
+ * the last page stopped even when two acts share a millisecond.
+ */
+const ACTIVITY_BASE = `${authServiceBase()}/admin/activity`;
+
+export interface ActivityEntry {
+  id: number;
+  at: number;
+  actor: string;
+  action: string;
+  target: string;
+  outcome: string;
+  details: Record<string, unknown>;
+}
+
+export interface ActivityPage {
+  ok: boolean;
+  entries: ActivityEntry[];
+  next: { beforeAt: number; beforeId: number } | null;
+}
+
+export function listActivity(options: {
+  limit?: number;
+  before?: { beforeAt: number; beforeId: number } | null;
+  actor?: string;
+  action?: string;
+}): Promise<ActivityPage> {
+  const query = new URLSearchParams();
+  if (options.limit !== undefined) query.set("limit", String(options.limit));
+  if (options.before) {
+    query.set("beforeAt", String(options.before.beforeAt));
+    query.set("beforeId", String(options.before.beforeId));
+  }
+  if (options.actor !== undefined && options.actor.length > 0) query.set("actor", options.actor);
+  if (options.action !== undefined && options.action.length > 0) {
+    query.set("action", options.action);
+  }
+  const suffix = query.toString();
+  return requestUrl(`${ACTIVITY_BASE}${suffix.length === 0 ? "" : `?${suffix}`}`);
+}

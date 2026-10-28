@@ -643,3 +643,16 @@ code {
   margin-left: 10px;
   vertical-align: middle;
 }
+
+/* One act per card, with its facts on the left and its outcome on the right. */
+.admin-activity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-activity-row[data-action="settings.write"] .admin-settings-source,
+.admin-activity-row[data-action="impersonate"] .admin-settings-source {
+  font-variant-numeric: tabular-nums;
+}

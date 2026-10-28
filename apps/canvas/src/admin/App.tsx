@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { signOut } from "../auth/client";
 import { errorText, getStatus } from "./api";
 import { AccountsPanel } from "./panels/AccountsPanel";
+import { ActivityPanel } from "./panels/ActivityPanel";
 import { FixturesPanel } from "./panels/FixturesPanel";
 import { RoomsPanel } from "./panels/RoomsPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
@@ -14,6 +15,7 @@ import { WorkspacesPanel } from "./panels/WorkspacesPanel";
 type View =
   | "status"
   | "accounts"
+  | "activity"
   | "workspaces"
   | "rooms"
   | "shares"
@@ -25,6 +27,7 @@ type View =
 const VIEWS: { id: View; label: string }[] = [
   { id: "status", label: "Status" },
   { id: "accounts", label: "Accounts" },
+  { id: "activity", label: "Activity" },
   { id: "workspaces", label: "Workspaces" },
   { id: "rooms", label: "Rooms" },
   { id: "shares", label: "Shares" },
@@ -148,6 +151,7 @@ export function App() {
       <main className="admin-main">
         {view === "status" ? <StatusPanel /> : null}
         {view === "accounts" ? <AccountsPanel /> : null}
+        {view === "activity" ? <ActivityPanel /> : null}
         {view === "workspaces" ? <WorkspacesPanel /> : null}
         {view === "rooms" ? <RoomsPanel /> : null}
         {view === "shares" ? <SharesPanel /> : null}

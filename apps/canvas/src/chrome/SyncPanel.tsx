@@ -33,6 +33,12 @@ export interface SyncPanelProps {
   storage?: React.ReactNode;
   onSignIn?: (() => void) | undefined;
   onSeePlans?: (() => void) | undefined;
+  /**
+   * Ask the control plane about this workspace again. Offered beside *See plans*,
+   * because the person who just paid is the one reader with a reason to press it and
+   * pressing it is cheaper than the reload they were never told about.
+   */
+  onReclaim?: (() => void) | undefined;
 }
 
 const ACTION_LABEL: Record<"retry" | "signIn" | "seePlans", string> = {
@@ -52,6 +58,7 @@ export function SyncPanel({
   storage,
   onSignIn,
   onSeePlans,
+  onReclaim,
 }: SyncPanelProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const presentation = syncPresentation({ phase, status, peerCount, role, claim, reason });
@@ -84,20 +91,34 @@ export function SyncPanel({
       </p>
 
       {presentation.action === null ? null : (
-        <button
-          type="button"
-          data-testid={
-            presentation.action === "retry"
-              ? "connection-retry"
-              : presentation.action === "seePlans"
-                ? "sync-see-plans"
-                : "sync-sign-in"
-          }
-          onClick={() => run(presentation.action as "retry" | "signIn" | "seePlans")}
-          className="mt-2.5 rounded-md border border-[var(--hairline)] px-2.5 py-1 text-[11px] font-medium text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
-        >
-          {ACTION_LABEL[presentation.action]}
-        </button>
+        <div className="mt-2.5 flex items-center gap-1.5">
+          <button
+            type="button"
+            data-testid={
+              presentation.action === "retry"
+                ? "connection-retry"
+                : presentation.action === "seePlans"
+                  ? "sync-see-plans"
+                  : "sync-sign-in"
+            }
+            onClick={() => run(presentation.action as "retry" | "signIn" | "seePlans")}
+            className="rounded-md border border-[var(--hairline)] px-2.5 py-1 text-[11px] font-medium text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+          >
+            {ACTION_LABEL[presentation.action]}
+          </button>
+          {/* Only beside the plan wall: every other situation has an answer that is not
+              "ask again". */}
+          {presentation.action === "seePlans" && onReclaim !== undefined ? (
+            <button
+              type="button"
+              data-testid="sync-reclaim"
+              onClick={onReclaim}
+              className="rounded-md px-2.5 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            >
+              I have paid — retry
+            </button>
+          ) : null}
+        </div>
       )}
 
       {warning.visible && warning.message !== null ? (

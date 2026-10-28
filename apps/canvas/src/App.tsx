@@ -234,6 +234,17 @@ function WorkspaceShell({
   const openSignIn = useAccountStore((state) => state.openSignIn);
   const { leaving, inRoom, requestLeave } = useLeaveTransition({ standalone, peerCount });
 
+  // Closing the plan panel is the end of a checkout or a portal round trip that happened
+  // without leaving the app: the browser tab came back to a page that never re-mounted, so
+  // nothing has asked the control plane about this workspace since before the payment.
+  const panelOpen = useAccountStore((state) => state.panelOpen);
+  const wasPanelOpen = useRef(panelOpen);
+  useEffect(() => {
+    const closed = wasPanelOpen.current && !panelOpen;
+    wasPanelOpen.current = panelOpen;
+    if (closed && syncFacts.claim === "capped") syncFacts.reclaim();
+  }, [panelOpen, syncFacts.claim, syncFacts.reclaim]);
+
   useWorkspaceBoot({
     workspace,
     workspaceId,
@@ -784,6 +795,7 @@ function WorkspaceShell({
       claim={syncFacts.claim}
       reason={syncFacts.reason}
       onSeePlans={() => openPanel("plan")}
+      onReclaim={syncFacts.reclaim}
       inRoom={inRoom}
       openSignIn={openSignIn}
       readOnly={readOnly}

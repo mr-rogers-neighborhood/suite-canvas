@@ -104,6 +104,8 @@ export interface WorkspaceShellViewProps {
   reason?: SyncRefusal | null;
   /** Opens the plan surface from a workspace the plan does not cover. */
   onSeePlans?: (() => void) | undefined;
+  /** Asks the control plane about this workspace again, after a payment or a fix. */
+  onReclaim?: (() => void) | undefined;
   inRoom: boolean;
   openSignIn: () => void;
   readOnly: boolean;
@@ -209,6 +211,7 @@ export function WorkspaceShellView({
   claim,
   reason,
   onSeePlans,
+  onReclaim,
   inRoom,
   openSignIn,
   readOnly,
@@ -367,6 +370,7 @@ export function WorkspaceShellView({
           workspaceId={workspaceId}
           onSignIn={openSignIn}
           {...(onSeePlans === undefined ? {} : { onSeePlans })}
+          {...(onReclaim === undefined ? {} : { onReclaim })}
           // Everything about *this* device's copy lives under the same control that
           // says who else is here (ADR-0064 amendment): one status, one press.
           storage={

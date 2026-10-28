@@ -43,6 +43,32 @@ describe("the one status reading", () => {
     expect(reading.action).toBe("seePlans");
   });
 
+  it("believes a live room over a claim the account does not cover", () => {
+    // A member invited into somebody else's organization: their own account holds no
+    // plan, so the claim comes back capped, while they sit in the room with the owner.
+    // "2 here, including you" and "Local" in the same breath is a badge arguing with
+    // its own sentence.
+    const reading = syncPresentation({
+      ...base,
+      claim: "capped",
+      status: "connected",
+      peerCount: 1,
+    });
+    expect(reading.situation).toBe("synced");
+    expect(reading.label).toBe("Synced");
+    expect(reading.sentence).toContain("including you");
+  });
+
+  it("still reads as capped when the relay actually refused", () => {
+    const reading = syncPresentation({ ...base, claim: "capped", status: "unauthorized" });
+    expect(reading.situation).toBe("capped");
+  });
+
+  it("still reads as capped while the connect is in progress and nothing has arrived", () => {
+    const reading = syncPresentation({ ...base, claim: "capped", status: "disconnected" });
+    expect(reading.situation).toBe("capped");
+  });
+
   it("sends an ended session to sign in rather than calling it a refusal", () => {
     const reading = syncPresentation({ ...base, reason: "session", status: "unauthorized" });
     expect(reading.situation).toBe("expired");

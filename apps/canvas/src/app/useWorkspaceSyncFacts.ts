@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AccountPhase } from "../auth/useAccountStore";
 import type { SyncClaim, SyncRefusal } from "../feedback/syncState";
 import { readSyncRefusal } from "../session/syncAccess";
@@ -21,6 +21,17 @@ import type { ConnectionStatus } from "../store/useCanvasStore";
 export interface WorkspaceSyncFacts {
   claim: SyncClaim;
   reason: SyncRefusal | null;
+  /**
+   * Asks the control plane again, and rejoins the room if it says yes.
+   *
+   * The claim settles once per page, which is right for a workspace that will not change
+   * hands. It is wrong for the one moment a person can change the answer themselves: they
+   * paid. Checkout returns to this URL as a full load, so the common path re-mounts and
+   * re-claims for free. Paying in a second tab, or coming back to a tab that was already
+   * open, has no such moment, and without this the badge keeps offering plans to somebody
+   * who has just bought one.
+   */
+  reclaim: () => void;
 }
 
 export interface SyncFactsInput {
@@ -47,23 +58,44 @@ export function useWorkspaceSyncFacts(input: SyncFactsInput): WorkspaceSyncFacts
     if (phase === "signed-out") setClaim("local");
   }, [phase]);
 
-  useEffect(() => {
-    if (!claimable || settled.current) return;
-    let live = true;
-    void claimWorkspaceForAccount({
+  // The claim itself, callable from an effect and from a person pressing a button. It
+  // returns whether the workspace is now in the account, which is the only answer worth
+  // handing back: every other outcome leaves the local copy exactly where it was.
+  const runClaim = useCallback(async (): Promise<void> => {
+    if (!claimable) return;
+    const outcome = await claimWorkspaceForAccount({
       workspaceId,
       ...(workspaceName === undefined ? {} : { name: workspaceName }),
-    }).then((outcome) => {
-      if (!live) return;
-      if (outcome === "unavailable") return;
-      settled.current = true;
-      setClaim(outcome === "capped" ? "capped" : outcome === "elsewhere" ? "elsewhere" : "claimed");
     });
-    return () => {
-      live = false;
-    };
-    // `attempt` is the retry counter: bumping it is what re-runs this effect.
+    if (outcome === "unavailable") return;
+    settled.current = true;
+    setClaim(outcome === "capped" ? "capped" : outcome === "elsewhere" ? "elsewhere" : "claimed");
+    if (outcome !== "claimed") return;
+    // The relay refused this room when there was no licence behind it. Now there is one,
+    // so the join that was refused has to be attempted again, or the badge says Synced
+    // over a socket that is still closed. Loaded on demand: the account store must not
+    // pull the document store in at import time.
+    const { useCanvasStore } = await import("../store/useCanvasStore");
+    useCanvasStore.getState().rejoin();
   }, [claimable, workspaceId, workspaceName]);
+
+  // `_attempt` is the retry counter and the trigger, not an input the claim reads: bumping
+  // it is what makes this effect ask again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the counter is the trigger
+  useEffect(() => {
+    if (!claimable || settled.current) return;
+    void runClaim();
+  }, [claimable, runClaim, _attempt]);
+
+  // Bumping the counter is the whole of it: the effect above owns running the claim, so
+  // there is exactly one path to the control plane rather than two racing ones.
+  const reclaim = useCallback(() => {
+    if (!claimable) return;
+    settled.current = false;
+    askedWhy.current = false;
+    setReason(null);
+    setAttempt((count) => count + 1);
+  }, [claimable]);
 
   // A first claim made while offline is worth one more try once there is a
   // connection, which is the moment it can succeed.
@@ -71,6 +103,18 @@ export function useWorkspaceSyncFacts(input: SyncFactsInput): WorkspaceSyncFacts
     if (!claimable || settled.current || status !== "connected") return;
     setAttempt((count) => count + 1);
   }, [claimable, status]);
+
+  // Coming back to the tab is the moment a payment made elsewhere becomes visible, and
+  // it is the only signal this page gets: Checkout in a second tab lands there, not here.
+  useEffect(() => {
+    if (!claimable) return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      reclaim();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [claimable, reclaim]);
 
   useEffect(() => {
     if (phase !== "signed-in" || shared || status !== "unauthorized" || askedWhy.current) return;
@@ -84,5 +128,5 @@ export function useWorkspaceSyncFacts(input: SyncFactsInput): WorkspaceSyncFacts
     };
   }, [phase, shared, status, workspaceId]);
 
-  return { claim, reason };
+  return { claim, reason, reclaim };
 }

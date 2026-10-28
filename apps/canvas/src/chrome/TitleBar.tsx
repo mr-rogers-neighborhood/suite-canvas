@@ -32,6 +32,16 @@ export interface TitleBarProps {
   /** Opens the sign-in dialog from the status panel's local reading. */
   onSignIn?: (() => void) | undefined;
   /**
+   * Opens the plan tab from the status panel's capped reading.
+   *
+   * This was passed into this component by the shell and never declared here, and a JSX
+   * spread is not excess-checked, so it was silently dropped: the panel's "See plans"
+   * button rendered and did nothing. Declaring it is the whole fix.
+   */
+  onSeePlans?: (() => void) | undefined;
+  /** Asks the control plane about this workspace again, for the reader who just paid. */
+  onReclaim?: (() => void) | undefined;
+  /**
    * What this device can say about its own copy, shown under the sync indicator.
    * Absent when the host has no storage surface to offer.
    */
@@ -81,6 +91,8 @@ export function TitleBar({
   reason = null,
   workspaceId,
   onSignIn,
+  onSeePlans,
+  onReclaim,
   storage,
   workspaceName,
   canRenameWorkspace = false,
@@ -401,6 +413,8 @@ export function TitleBar({
               {...(workspaceId === undefined ? {} : { workspaceId })}
               {...(storage === undefined ? {} : { storage })}
               {...(onSignIn === undefined ? {} : { onSignIn })}
+              {...(onSeePlans === undefined ? {} : { onSeePlans })}
+              {...(onReclaim === undefined ? {} : { onReclaim })}
             />
           ) : null}
         </div>

@@ -130,14 +130,24 @@ function situationOf(facts: SyncFacts): SyncSituation {
     return "problem";
   }
   if (facts.phase !== "signed-in") return "local";
-  if (facts.claim === "capped") return "capped";
-  if (facts.claim === "elsewhere") return "problem";
+  // A live room outranks the claim, and it has to come first.
+  //
+  // The claim answers "does the account hold this workspace", and the room answers "is
+  // this page syncing right now". They disagree in the one case that matters: a member
+  // invited into somebody else's organization is in the room with two peers while their
+  // own account holds no plan, so the claim comes back `plan-required` and the panel used
+  // to read that as Local beside "2 here, including you". Two connected peers is proof,
+  // and a badge that argues with its own sentence is worse than either answer.
   switch (facts.status) {
     case "connected":
       return "synced";
     case "connecting":
     case "rejoining":
       return "syncing";
+  }
+  if (facts.claim === "capped") return "capped";
+  if (facts.claim === "elsewhere") return "problem";
+  switch (facts.status) {
     case "disconnected":
       return "offline";
     case "unauthorized":

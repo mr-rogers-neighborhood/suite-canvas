@@ -73,13 +73,27 @@ export interface BoardSwitcherProps {
   pinned: readonly string[];
   onSelect: (boardId: string) => void;
   onCreate: () => void;
-  /** Opens the library's Boards tab, where boards are managed in bulk. */
-  onOpenLibrary: () => void;
+  /**
+   * Opens the library, optionally on the boards themselves.
+   *
+   * "All boards…" is a request about boards, so it lands on the boards; every other way
+   * in leaves the reader's own filters alone, because filters are a choice they already
+   * made and a menu item is not the place to undo it.
+   */
+  onOpenLibrary: (facet?: "board") => void;
   onRename: (boardId: string, name: string) => void;
   onSetColor: (boardId: string, color: Board["color"] | null) => void;
   /** An icon reference painted in the board's colour; `null` clears it. */
   onSetIcon?: ((boardId: string, icon: string | null) => void) | undefined;
   onTogglePin: (boardId: string) => void;
+  /**
+   * A row menu another surface asked for — the pinned tabs, which are drawn in the bar
+   * rather than here.
+   *
+   * The switcher owns the menu, so rename, icon, colour and pin have one implementation
+   * whichever part of the bar the reader right-clicked.
+   */
+  rowMenuRequest?: { boardId: string; x: number; y: number } | null;
   /** Viewers and shares may switch boards but not rename or recolour one. */
   canManage?: boolean;
   peersByBoard?: Record<string, BoardPresence>;
@@ -107,6 +121,7 @@ export function BoardSwitcher({
   onSetColor,
   onSetIcon,
   onTogglePin,
+  rowMenuRequest = null,
   canManage = true,
   peersByBoard,
 }: BoardSwitcherProps) {
@@ -119,6 +134,14 @@ export function BoardSwitcher({
   const root = useRef<HTMLDivElement | null>(null);
   useEscapeLayer(() => setRowMenu(null), rowMenu !== null);
   useEscapeLayer(() => setOpen(false), open && rowMenu === null);
+
+  // A request from the bar: the list closes, because the menu it opened is about one
+  // board and the list is about all of them.
+  useEffect(() => {
+    if (!rowMenuRequest) return;
+    setOpen(false);
+    setRowMenu(rowMenuRequest);
+  }, [rowMenuRequest]);
 
   const active = boards.find((board) => board.id === activeBoardId) ?? null;
   const groups = useMemo(() => groupBoards(boards, recency, pinned), [boards, recency, pinned]);
@@ -146,6 +169,11 @@ export function BoardSwitcher({
         <input
           // biome-ignore lint/a11y/noAutofocus: renaming a row is an explicit gesture
           autoFocus
+          // The list can be longer than the panel: a rename from a pinned tab has to
+          // bring its row into view, or the caret is focused somewhere the reader cannot
+          // see.
+          // Optional call: a test environment lays nothing out and has no such method.
+          ref={(node) => node?.scrollIntoView?.({ block: "nearest" })}
           value={draft}
           aria-label={`Rename ${board.name}`}
           data-testid={`board-switch-rename-${board.id}`}
@@ -211,6 +239,14 @@ export function BoardSwitcher({
         title="Switch board"
         className="inline-flex max-w-[220px] min-w-0 items-center gap-1.5 rounded px-2 py-1 text-[12px] font-medium text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
         onClick={() => setOpen((value) => !value)}
+        // The switcher *is* the current board, so a right-click on it is a right-click on
+        // that board: a second way to reach the same menu, not a second menu.
+        onContextMenu={(event) => {
+          if (!active) return;
+          event.preventDefault();
+          setOpen(false);
+          setRowMenu({ boardId: active.id, x: event.clientX, y: event.clientY });
+        }}
       >
         {active ? <BoardGlyph board={active} /> : null}
         <span className="min-w-0 truncate">{active?.name ?? "No board"}</span>
@@ -223,7 +259,10 @@ export function BoardSwitcher({
           role="menu"
           aria-label="Boards"
           data-testid="board-switcher-menu"
-          ref={focusFirstMenuItem}
+          /* Not while a row is being renamed: the input inside it owns focus, and
+             focusing the first item would blur it, which commits the draft and closes
+             the rename the menu was opened for. */
+          ref={renamingId === null ? focusFirstMenuItem : undefined}
           onKeyDown={menuKeyDown}
           className="absolute left-0 top-full z-50 mt-1 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
         >
@@ -269,7 +308,7 @@ export function BoardSwitcher({
             className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
             onClick={() => {
               setOpen(false);
-              onOpenLibrary();
+              onOpenLibrary("board");
             }}
           >
             All boards…
@@ -303,7 +342,12 @@ export function BoardSwitcher({
           canManage={canManage}
           onDismiss={() => setRowMenu(null)}
           onRename={(board) => {
+            // Renaming never navigates. The row menu can be opened from a pinned tab or
+            // from the switcher itself, so the list is opened and *scrolled to that row*
+            // with its input focused: the reader edits the name where names live, and the
+            // board they are looking at stays the board they are looking at.
             setRowMenu(null);
+            setOpen(true);
             setRenamingId(board.id);
             setDraft(board.name);
           }}

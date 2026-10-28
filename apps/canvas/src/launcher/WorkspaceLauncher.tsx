@@ -18,6 +18,7 @@ import {
   resolveWorkspaceName,
   workspaceNameProblem,
 } from "../session/workspaceName";
+import { pinnedWorkspaceOrder, readWorkspacePins } from "../session/workspacePins";
 import {
   downloadWorkspaceById,
   forgetWorkspace,
@@ -168,7 +169,10 @@ export function WorkspaceLauncher() {
   }, []);
 
   useEffect(() => {
-    const entries = readRecentWorkspaces();
+    // Pinned first, then recency: the same order the workspace menu uses, so a pin means
+    // one thing in both places. A launcher is where a pinned workspace is most useful —
+    // it is the page a new tab lands on.
+    const entries = pinnedWorkspaceOrder(readRecentWorkspaces(), readWorkspacePins());
     const names = readWorkspaceNames();
     setRecents(entries.map((entry) => labelRecent(entry, names)));
     // A cached replica carries the newest name — including a rename made on

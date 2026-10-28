@@ -49,6 +49,15 @@ export interface TitleBarProps {
   otherWorkspaces?: readonly { id: string; title: string }[];
   /** Leaves this workspace for another one; the leave guard decides if it asks. */
   onOpenWorkspace?: (id: string) => void;
+  /**
+   * Whether this workspace is pinned in this browser, and the one action that changes it.
+   *
+   * A workspace pin is the same gesture as a board pin with a smaller promise: it lifts
+   * the workspace to the top of this list and the launcher, and it earns no tab, because
+   * the tab strip belongs to the board you are on.
+   */
+  workspacePinned?: boolean;
+  onToggleWorkspacePin?: ((workspaceId: string) => void) | undefined;
   /** Board switcher and saved views, rendered after the workspace name. */
   children?: React.ReactNode;
   /** Workspace-level actions (share, export), rendered before the theme. */
@@ -78,6 +87,8 @@ export function TitleBar({
   onRenameWorkspace,
   otherWorkspaces = [],
   onOpenWorkspace,
+  workspacePinned = false,
+  onToggleWorkspacePin,
   children,
   actions,
   onNavigateHome,
@@ -88,6 +99,8 @@ export function TitleBar({
   const [error, setError] = useState<string | null>(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const [nameMenuOpen, setNameMenuOpen] = useState(false);
+  /** Where a right click on the name opened its menu, if it did. */
+  const [nameMenuAt, setNameMenuAt] = useState<{ x: number; y: number } | null>(null);
   const statusRef = useRef<HTMLDivElement | null>(null);
   const nameRef = useRef<HTMLDivElement | null>(null);
 
@@ -104,6 +117,7 @@ export function TitleBar({
 
   useEscapeLayer(() => setStatusOpen(false), statusOpen);
   useEscapeLayer(() => setNameMenuOpen(false), nameMenuOpen && !renaming);
+  useEscapeLayer(() => setNameMenuAt(null), nameMenuAt !== null);
 
   useEffect(() => {
     if (!nameMenuOpen) return;
@@ -184,6 +198,13 @@ export function TitleBar({
               title={`${workspaceName} — switch workspace`}
               className="workspace-name inline-flex max-w-[200px] items-center gap-1"
               onClick={() => setNameMenuOpen((open) => !open)}
+              // The same menu the board name has: a right click is a shortcut to the
+              // two things worth doing to a workspace without leaving the page.
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setNameMenuOpen(false);
+                setNameMenuAt({ x: event.clientX, y: event.clientY });
+              }}
             >
               <span className="min-w-0 truncate">{workspaceName}</span>
               <span aria-hidden="true" className="shrink-0 opacity-60">
@@ -214,6 +235,20 @@ export function TitleBar({
                 >
                   Rename workspace
                 </button>
+                {workspaceId && onToggleWorkspacePin ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-testid="workspace-switcher-pin"
+                    className="flex w-full items-center rounded-lg px-2 py-1.5 text-left hover:bg-black/5 dark:hover:bg-white/10"
+                    onClick={() => {
+                      setNameMenuOpen(false);
+                      onToggleWorkspacePin(workspaceId);
+                    }}
+                  >
+                    {workspacePinned ? "Unpin workspace" : "Pin workspace to top"}
+                  </button>
+                ) : null}
                 {otherWorkspaces.length > 0 && onOpenWorkspace ? (
                   <>
                     <hr className="my-1 border-[var(--hairline)]" />
@@ -252,6 +287,54 @@ export function TitleBar({
                 </button>
               </div>
             ) : null}
+            {nameMenuAt === null ? null : (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onPointerDown={() => setNameMenuAt(null)}
+                  aria-hidden="true"
+                />
+                <div
+                  role="menu"
+                  aria-label="Workspace"
+                  data-testid="workspace-name-menu"
+                  ref={focusFirstMenuItem}
+                  onKeyDown={menuKeyDown}
+                  style={{ left: nameMenuAt.x, top: nameMenuAt.y }}
+                  className="fixed z-50 w-48 overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 text-[12px] shadow-xl"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-testid="workspace-name-menu-rename"
+                    disabled={!canRenameWorkspace}
+                    className="flex w-full items-center rounded-lg px-2 py-1.5 text-left hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"
+                    onClick={() => {
+                      setNameMenuAt(null);
+                      setDraft(workspaceName);
+                      setError(null);
+                      setRenaming(true);
+                    }}
+                  >
+                    Rename workspace
+                  </button>
+                  {workspaceId && onToggleWorkspacePin ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-testid="workspace-name-menu-pin"
+                      className="flex w-full items-center rounded-lg px-2 py-1.5 text-left hover:bg-black/5 dark:hover:bg-white/10"
+                      onClick={() => {
+                        setNameMenuAt(null);
+                        onToggleWorkspacePin(workspaceId);
+                      }}
+                    >
+                      {workspacePinned ? "Unpin workspace" : "Pin workspace to top"}
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            )}
           </div>
         )
       ) : null}

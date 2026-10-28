@@ -1,6 +1,6 @@
 import type { PaletteSwatch, WorkspaceDocument } from "@suite/graph";
 import type { CSSProperties, Dispatch, RefObject, SetStateAction } from "react";
-import { lazy, Suspense, useMemo } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { SignInEntry } from "../auth/SignInEntry";
 import type { AccountPhase } from "../auth/useAccountStore";
 import { BoardOutlineHost } from "../canvas/BoardOutline";
@@ -31,6 +31,7 @@ import type { SyncClaim, SyncRefusal } from "../feedback/syncState";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { LibraryDrawer, type LibraryItem } from "../library/LibraryDrawer";
 import { openedByPortal } from "../library/libraryBoards";
+import { BOARD_TYPE_FACET } from "../library/libraryTypes";
 import { BOARD_STARTERS } from "../library/TemplateGallery";
 import { TypeSettingsHost } from "../panels/TypeSettingsHost";
 import { pinnedOrder, useBoardPins } from "../session/boardPins";
@@ -40,6 +41,7 @@ import {
   rememberWorkspaceName,
   resolveWorkspaceName,
 } from "../session/workspaceName";
+import { pinnedWorkspaceOrder, useWorkspacePins } from "../session/workspacePins";
 import { readRecentWorkspaces, workspaceUrl } from "../session/workspaceTransfer";
 import { SharePublishButton } from "../sharing/SharePublishButton";
 import { StoragePanel } from "../sharing/StoragePanel";
@@ -294,6 +296,19 @@ export function WorkspaceShellView({
   dismissLeavePrompt,
 }: WorkspaceShellViewProps) {
   const pins = useBoardPins();
+  const workspacePins = useWorkspacePins();
+  /**
+   * A right-click on a pinned tab, forwarded to the switcher.
+   *
+   * The tabs live in the bar and the menu lives in the switcher, which is what keeps one
+   * implementation of rename, icon, colour and pin whichever of the two the reader used.
+   * A fresh object per request is what tells the switcher "open it again".
+   */
+  const [rowMenuRequest, setRowMenuRequest] = useState<{
+    boardId: string;
+    x: number;
+    y: number;
+  } | null>(null);
   /** Boards nothing opens: they wait in the inbox with the loose cards. */
   const inboxBoards = useMemo(
     () => snapshot.boards.filter((board) => !openedByPortal(snapshot, board.id)).length,
@@ -316,16 +331,16 @@ export function WorkspaceShellView({
     // been a board's name since the launcher fell back to one. Only a name the
     // document holds is a workspace name; everything else is Untitled.
     const names = readWorkspaceNames();
-    return readRecentWorkspaces()
-      .filter((entry) => entry.id !== workspaceId)
-      .slice(0, 5)
-      .map((entry) => ({
-        id: entry.id,
-        // `resolveWorkspaceName` takes the mirror's title as a last resort, so pass
-        // nothing else: a stored board name must never become a workspace label.
-        title: resolveWorkspaceName(names[entry.id], undefined),
-      }));
-  }, [workspaceId]);
+    const entries = pinnedWorkspaceOrder(readRecentWorkspaces(), workspacePins.pinned).filter(
+      (entry) => entry.id !== workspaceId,
+    );
+    return entries.slice(0, 5).map((entry) => ({
+      id: entry.id,
+      // `resolveWorkspaceName` takes the mirror's title as a last resort, so pass
+      // nothing else: a stored board name must never become a workspace label.
+      title: resolveWorkspaceName(names[entry.id], undefined),
+    }));
+  }, [workspaceId, workspacePins.pinned]);
   // A workspace with no board at all: nothing to open, nothing to switch to. The
   // start page is the only surface here that still makes sense.
   const startPage =
@@ -373,6 +388,8 @@ export function WorkspaceShellView({
             />
           }
           workspaceName={share ? documentLabel(share, workspaceId) : workspaceName}
+          workspacePinned={workspacePins.isPinned(workspaceId)}
+          onToggleWorkspacePin={workspacePins.togglePin}
           otherWorkspaces={otherWorkspaces}
           onOpenWorkspace={(id) => requestLeave(workspaceUrl(id, null))}
           canRenameWorkspace={!share && !readOnly}
@@ -459,7 +476,15 @@ export function WorkspaceShellView({
                 peersByBoard={peersByBoard}
                 canManage={canManageBoards}
                 onCreate={createBoard}
-                onOpenLibrary={() => {
+                rowMenuRequest={rowMenuRequest}
+                onOpenLibrary={(facet) => {
+                  // "All boards…" is a question about boards, so it is answered with
+                  // boards — the other entry points leave whatever the reader filtered
+                  // to alone.
+                  if (facet === "board") {
+                    clearLibraryFilters();
+                    toggleLibraryType(BOARD_TYPE_FACET);
+                  }
                   setLibraryTab("cards");
                   setLibraryOpen(true);
                 }}
@@ -468,28 +493,41 @@ export function WorkspaceShellView({
                 onSetIcon={(boardId, icon) => workspace.setBoardIcon(boardId, icon)}
                 onTogglePin={pins.togglePin}
               />
-              {pinnedBoards.map((board) => {
-                const current = board.id === activeBoardId;
-                return (
-                  <button
-                    key={board.id}
-                    type="button"
-                    data-testid={`board-pinned-tab-${board.id}`}
-                    data-active={current ? "true" : undefined}
-                    aria-current={current ? "page" : undefined}
-                    aria-label={board.name}
-                    title={board.name}
-                    className={`inline-flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-[12px] transition-colors ${
-                      current
-                        ? "bg-black/[0.07] font-medium text-[var(--ink)] dark:bg-white/15"
-                        : "text-[var(--ink-muted)] hover:bg-black/[0.04] dark:hover:bg-white/10"
-                    }`}
-                    onClick={() => activateBoard(board.id)}
-                  >
-                    <BoardGlyph board={board} />
-                  </button>
-                );
-              })}
+              {pinnedBoards.length === 0 ? null : (
+                /* A gap, because a tab touching the switcher reads as part of it. */
+                <span className="ml-1 flex shrink-0 items-center gap-0.5">
+                  {pinnedBoards.map((board) => {
+                    const current = board.id === activeBoardId;
+                    return (
+                      <button
+                        key={board.id}
+                        type="button"
+                        data-testid={`board-pinned-tab-${board.id}`}
+                        data-active={current ? "true" : undefined}
+                        aria-current={current ? "page" : undefined}
+                        aria-label={board.name}
+                        title={board.name}
+                        className={`inline-flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-[12px] transition-colors ${
+                          current
+                            ? "bg-black/[0.07] font-medium text-[var(--ink)] dark:bg-white/15"
+                            : "text-[var(--ink-muted)] hover:bg-black/[0.04] dark:hover:bg-white/10"
+                        }`}
+                        onClick={() => activateBoard(board.id)}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          setRowMenuRequest({
+                            boardId: board.id,
+                            x: event.clientX,
+                            y: event.clientY,
+                          });
+                        }}
+                      >
+                        <BoardGlyph board={board} />
+                      </button>
+                    );
+                  })}
+                </span>
+              )}
               {canCreateBoards ? (
                 <button
                   type="button"

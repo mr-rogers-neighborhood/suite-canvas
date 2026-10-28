@@ -36,7 +36,13 @@ export type LibraryTab = "inbox" | "cards" | "trash";
  * point, so leaving that mode closes it again; `reader` is a drawer the person
  * opened and only the person closes.
  */
-export type LibraryReason = "reader" | "mode";
+/**
+ * Who put the drawer away, so the same party can bring it back.
+ *
+ * `mode` was the purpose control's, and it is gone with that control's cycling: a run now
+ * starts *from* the drawer, so the drawer is `run`'s to restore when the hand is empty.
+ */
+export type LibraryReason = "reader" | "mode" | "run";
 
 /**
  * Puts a board at the front of the session's recency list, once.

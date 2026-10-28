@@ -39,7 +39,7 @@ aws cloudwatch describe-alarms --profile suite --region us-east-2 \
   --query 'MetricAlarms[].[AlarmName,StateValue]' --output text
 ```
 
-Five alarms, and what each one means in practice:
+Six alarms, and what each one means in practice:
 
 | Alarm | Fires when | Usual cause |
 | --- | --- | --- |
@@ -47,6 +47,11 @@ Five alarms, and what each one means in practice:
 | `suite-missing` | the health metric has not reported | the probe is not running, or it cannot publish |
 | `ec2-cpu`, `ec2-status` | the instance is saturated or failing its own checks | a build on the box, or a host fault |
 | `rds-storage` | Postgres is short of free space | attachments or the update log growing |
+| `suite-certificate` | `CertificateDays` is under 14, or was never published | the certificate was not renewed, or the origin serves none |
+
+The last one treats missing data as breaching, on purpose: "no certificate" is exactly the
+state that took the site down for an afternoon, and it arrives as an absence rather than as a
+failure.
 
 `CertificateDays` in the `Suite` namespace is the sixth, and the one that was added after an
 outage taught us why: `deploy/cloudwatch/probe.sh` reads `notAfter` from the certificate the

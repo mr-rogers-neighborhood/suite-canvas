@@ -152,6 +152,65 @@ test("holding Control fans out without switching the stored mode", async ({ page
   await expect(toggle).toHaveAttribute("data-mode", "place");
 });
 
+/**
+ * A fan started by *holding* Control used to end the moment the key came up, and
+ * the next click then re-armed at whatever it landed on: the spokes became a chain
+ * from the second card, which is the spaghetti a fan exists to avoid. An origin is
+ * a choice already made, so it outlives the key (ADR-0061 amendment).
+ */
+test("a fan tapped out with Control keeps its origin after the key comes up", async ({ page }) => {
+  await page.goto(workspaceUrl("tap-ctrl"));
+  await expect(cards(page)).toHaveCount(2);
+  await createCard(page);
+
+  const toggle = page.getByTestId("link-mode-toggle");
+  await expect(toggle).toHaveAttribute("data-mode", "place");
+  await selectCard(page, cards(page).first());
+
+  // One tap of Control to name the origin, then plain clicks: the reader is not
+  // holding anything by the second spoke.
+  await page.keyboard.down("Control");
+  await clickDot(page, 0, 1);
+  await page.keyboard.up("Control");
+  await expect(edges(page)).toHaveCount(0);
+
+  const origin = await dotCentre(page, 0, 1);
+  await clickDot(page, 1, 3);
+  await expect(edges(page)).toHaveCount(1);
+  await clickDot(page, 2, 3);
+  await expect(edges(page)).toHaveCount(2);
+
+  // Both links leave the origin, not the card clicked second.
+  for (const start of await linkStarts(page)) {
+    expect(Math.hypot(start.x - origin.x, start.y - origin.y)).toBeLessThan(24);
+  }
+  await expect(armedDots(page)).toHaveCount(1);
+  // Still not a mode: the gesture named the shape, and the shape is remembered.
+  await expect(toggle).toHaveAttribute("data-mode", "place");
+});
+
+test("a fan lands its rubber band on the dot under the pointer", async ({ page }) => {
+  await page.goto(workspaceUrl("preview"));
+  await expect(cards(page)).toHaveCount(2);
+
+  const toggle = page.getByTestId("link-mode-toggle");
+  await toggle.click();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("data-mode", "fan");
+  await clickDot(page, 0, 1);
+
+  const preview = page.getByTestId("thread-link-preview");
+  const target = await dotCentre(page, 1, 3);
+  await page.mouse.move(target.x, target.y, { steps: 8 });
+  await expect(preview).toHaveAttribute("data-snapped", "true");
+
+  // Away from every dot the band follows the bare pointer again.
+  const away = await page.getByTestId("canvas-board").boundingBox();
+  if (!away) throw new Error("board not visible");
+  await page.mouse.move(away.x + 40, away.y + away.height - 40, { steps: 8 });
+  await expect(preview).toHaveAttribute("data-snapped", "false");
+});
+
 test("Escape clears the armed origin", async ({ page }) => {
   await page.goto(workspaceUrl("escape"));
   await expect(cards(page)).toHaveCount(2);

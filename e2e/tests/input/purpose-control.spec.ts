@@ -56,65 +56,51 @@ async function authorStep(page: Page, tourCard: Locator, targetTitle: string): P
   await page.keyboard.press("Escape");
 }
 
-test("walks explore → run → record → explain → explore, and never into present", async ({
-  page,
-}) => {
-  await page.goto(workspaceUrl("cycle"));
+/**
+ * The control is one button with one choice (ADR-0064 amendment).
+ *
+ * It used to cycle explore → run → explain, and the modifier map pointed Shift at "run".
+ * Both went: a run needs a queue, and only the library has one to give, so offering it
+ * here was a mode that sent the reader elsewhere to finish choosing — and a purpose
+ * preview on Shift meant holding Shift to *thread* was read as "run". What is left is
+ * `explain`, which a reader can choose on its own.
+ */
+test("turns explain on and off, and offers nothing else", async ({ page }) => {
+  await page.goto(workspaceUrl("toggle"));
   await expect(cards(page)).toHaveCount(2);
 
-  const tourCardId = await cards(page).nth(1).getAttribute("data-node-id");
-  const tourCard = page.locator(`[data-testid="node-card"][data-node-id="${tourCardId}"]`);
-  await createNote(page, "Anchor card");
-  await authorStep(page, tourCard, "Anchor card");
-
-  // Explore is the resting state: the canvas is the canvas.
   await expect(purpose(page)).toHaveAttribute("data-purpose", "explore");
-
-  // Run means "I am about to place a set", and the set comes from the library.
-  await purpose(page).click();
-  await expect(purpose(page)).toHaveAttribute("data-purpose", "run");
-  await expect(library(page)).toBeVisible();
-  await expect(page.getByTestId("library-selection")).toBeVisible();
-
-  // Out of the drawer's way before the next purpose needs the canvas.
-  await page.getByTestId("dock-library").click();
   await expect(library(page)).toHaveCount(0);
 
-  // Record drops the tour it is about to capture.
-  await purpose(page).click();
-  await expect(purpose(page)).toHaveAttribute("data-purpose", "record");
-  await expect(page.getByRole("button", { name: "Card type: Tutorial" })).toHaveCount(1);
-
-  // Explain gathers the selection into a context instead of writing anything.
   await purpose(page).click();
   await expect(purpose(page)).toHaveAttribute("data-purpose", "explain");
   await expect(page.getByTestId("explain-panel")).toBeVisible();
+  // Explain is a reading, not a queue: nothing opened a drawer to feed it.
+  await expect(library(page)).toHaveCount(0);
 
-  // A tour now exists and is open, and the widget still refuses to be the way in:
-  // a presentation belongs to the tour (ADR-0064 §11), so the lap ends at explore.
   await purpose(page).click();
   await expect(purpose(page)).toHaveAttribute("data-purpose", "explore");
   await expect(page.getByTestId("explain-panel")).toHaveCount(0);
 });
 
-test("dismisses the drawer a mode opened without acting on the board behind it", async ({
-  page,
-}) => {
-  await page.goto(workspaceUrl("drawer-dismiss"));
+test("a held modifier previews the gesture tool and nothing else", async ({ page }) => {
+  await page.goto(workspaceUrl("modifiers"));
   await expect(cards(page)).toHaveCount(2);
+  const mode = page.getByTestId("link-mode-toggle");
 
-  // Run opens the drawer because the set it places comes from there.
-  await purpose(page).click();
-  await expect(purpose(page)).toHaveAttribute("data-purpose", "run");
-  await expect(library(page)).toBeVisible();
+  // Shift, Control and Alt belong to the relationship axis now. Holding one must not
+  // open the library or repaint the purpose button: that collision is what made a
+  // threaded link impossible while Shift meant "run".
+  for (const key of ["Shift", "Control", "Alt"]) {
+    await page.keyboard.down(key);
+    await expect(purpose(page)).toHaveAttribute("data-purpose", "explore");
+    await expect(library(page)).toHaveCount(0);
+    await page.keyboard.up(key);
+  }
 
-  const board = await page.getByTestId("canvas-board").boundingBox();
-  if (!board) throw new Error("board not visible");
-  // A corner with no card in it: the press is the dismissal, not a placement.
-  await page.mouse.click(board.x + 80, board.y + 80);
-
-  await expect(library(page)).toHaveCount(0);
-  await expect(cards(page)).toHaveCount(2);
+  await page.keyboard.down("Shift");
+  await expect(mode).toHaveAttribute("data-hint-mode", "thread");
+  await page.keyboard.up("Shift");
 });
 
 test("presents from the tour card, and the widget is only the exit", async ({ page }) => {

@@ -1,0 +1,50 @@
+# The deployed host's override: CloudWatch Logs for the services that have something to say.
+#
+#   docker compose -f compose.yaml -f deploy/compose.aws.yaml up -d
+#
+# This replaces the default `json-file` driver with `awslogs`, so stdout and stderr land in
+# CloudWatch without an agent, a sidecar or a file to rotate. On a workstation the driver
+# needs AWS credentials it does not have, which is why this is an override and not the base
+# file.
+#
+# The instance role supplies the permission. The log group is created once by
+# `deploy/cloudwatch/logs.sh` rather than by `awslogs-create-group`, because a container
+# that can create log groups can create them anywhere.
+#
+# `mode: non-blocking` is the line that protects saves: a log write that blocks must not
+# stall a document write. The buffer is bounded, and what does not fit is dropped with a
+# message in the driver's own log rather than held forever.
+#
+# One group, one stream per service, so `aws logs tail` follows a process and a query across
+# the group follows all three.
+
+services:
+  app:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:-us-east-2}
+        awslogs-group: ${SUITE_LOG_GROUP:-suite-app}
+        awslogs-stream: app
+        awslogs-mode: non-blocking
+        awslogs-max-buffered-events: "8192"
+
+  control-plane:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:-us-east-2}
+        awslogs-group: ${SUITE_LOG_GROUP:-suite-app}
+        awslogs-stream: control-plane
+        awslogs-mode: non-blocking
+        awslogs-max-buffered-events: "8192"
+
+  caddy:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:-us-east-2}
+        awslogs-group: ${SUITE_LOG_GROUP:-suite-app}
+        awslogs-stream: caddy
+        awslogs-mode: non-blocking
+        awslogs-max-buffered-events: "8192"

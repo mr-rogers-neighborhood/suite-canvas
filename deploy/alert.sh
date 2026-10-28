@@ -11,32 +11,68 @@
 # alerting path that silently passes is worse than one that wakes you up.
 #
 # Usage:
-#   deploy/alert.sh [--url URL] [--token TOKEN] [--rss-limit-mb MB] [--json]
+#   deploy/alert.sh [--url URL] [--token TOKEN] [--rss-limit-mb MB] [--json] [--cloudwatch]
 #
 # Environment:
 #   SUITE_ALERT_URL          base URL of the API port (default http://127.0.0.1:1235)
 #   SUITE_ADMIN_TOKEN        optional session token, for a scrape that is not local
 #   SUITE_ALERT_RSS_LIMIT_MB resident-memory threshold in MiB (default 1024)
 #   SUITE_ALERT_TIMEOUT      curl timeout in seconds (default 5)
+#   SUITE_ALERT_CLOUDWATCH   1 (or --cloudwatch) publishes a `Health` metric to
+#                            CloudWatch, so an alarm can page instead of cron
+#                            mailing a log nobody reads
+#   SUITE_ALERT_DEPLOYMENT   dimension value for that metric (default: hostname)
+#   AWS_REGION               region the metric goes to (the instance role's default)
 #
 # `/metrics` is gated by an operator session. A cron timer has no browser and cannot
 # hold one, so the relay allows an unauthenticated read from a loopback address when
 # `SUITE_METRICS_LOCAL=1`. That is the intended cron setup; `SUITE_ADMIN_TOKEN` exists
 # only for a probe that runs on another machine and can present a session token.
 #
-# Cron example (every five minutes, mail on failure):
-#   */5 * * * * /srv/suite/deploy/alert.sh >/dev/null
+# Cron example, on a host whose alarms are in CloudWatch rather than in local mail:
+#   */5 * * * * SUITE_METRICS_LOCAL=1 /srv/suite/deploy/alert.sh --cloudwatch
 set -euo pipefail
 
 usage() {
   sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
+for arg in "$@"; do
+  case "$arg" in
+    --cloudwatch) SUITE_ALERT_CLOUDWATCH=1 ;;
+  esac
+done
+
 BASE_URL="${SUITE_ALERT_URL:-http://127.0.0.1:1235}"
 TOKEN="${SUITE_ADMIN_TOKEN:-}"
 RSS_LIMIT_MB="${SUITE_ALERT_RSS_LIMIT_MB:-1024}"
 TIMEOUT="${SUITE_ALERT_TIMEOUT:-5}"
 AS_JSON=0
+CLOUDWATCH="${SUITE_ALERT_CLOUDWATCH:-0}"
+DEPLOYMENT="${SUITE_ALERT_DEPLOYMENT:-$(hostname 2>/dev/null || printf 'suite')}"
+
+# One metric per run, published on the way out so a failure is a datapoint rather than a
+# log line: `Health` is 1 when every check passed and 0 when one did not, and the alarm on
+# it is what actually pages. A refused publish is reported and never changes the exit code,
+# because the exit code is the other half of this script's contract.
+publish_health() {
+  local status=$?
+  [ "$CLOUDWATCH" = "1" ] || return 0
+  if ! command -v aws >/dev/null 2>&1; then
+    printf 'CANNOT PUBLISH: the aws CLI is not installed\n' >&2
+    return 0
+  fi
+  local value=0
+  [ "$status" -eq 0 ] && value=1
+  if ! aws cloudwatch put-metric-data \
+    --namespace Suite --metric-name Health --value "$value" --unit None \
+    --dimensions "Deployment=$DEPLOYMENT" >/dev/null 2>&1; then
+    printf 'CANNOT PUBLISH: CloudWatch refused the Health metric\n' >&2
+  fi
+  return 0
+}
+
+trap publish_health EXIT
 
 while [ $# -gt 0 ]; do
   case "$1" in

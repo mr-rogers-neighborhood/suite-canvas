@@ -557,6 +557,42 @@ possible:
 - **Both webhook secrets.** The pinning step needs the set the mode is *not* using; without
   it there is nothing to refuse and the step says so.
 
+## Alerts and logs
+
+A deployment's alarms live in CloudWatch, and the stack's logs go there with them. Three pieces:
+
+| Piece | What it does |
+| --- | --- |
+| `deploy/alert.sh --cloudwatch` | publishes `Suite/Health` = 1 or 0 on every cron run |
+| `deploy/cloudwatch/setup.sh --email …` | one SNS topic, five alarms, the address subscribed |
+| `deploy/compose.aws.yaml` | sends the three services' stdout to one log group |
+
+```sh
+# on a workstation, with the operator profile
+deploy/cloudwatch/logs.sh                      # the group, 30-day retention
+deploy/cloudwatch/setup.sh --email you@example.com
+```
+
+The five alarms: `suite-health` (the probe failed), `suite-missing` (the probe stopped
+reporting, which is the failure a probe-only alarm cannot see), `ec2-status`,
+`ec2-cpu` above 80% for fifteen minutes, and `rds-storage` under 2 GiB.
+
+The stack is started with the override on a deployed host, and without it on a workstation:
+
+```sh
+docker compose -f compose.yaml -f deploy/compose.aws.yaml up -d
+aws logs tail "${SUITE_LOG_GROUP:-suite-app}" --follow
+```
+
+Cron is the half that has to exist for any of it to mean anything:
+
+```cron
+*/5 * * * * root cd /srv/suite && SUITE_METRICS_LOCAL=1 deploy/alert.sh --cloudwatch >/dev/null
+```
+
+`SUITE_METRICS_LOCAL=1` lets a loopback scrape read `/metrics` without a session, which is
+what a cron timer can do. The panel and a non-local scrape stay gated.
+
 ## What is audited
 
 Every control-plane act an operator takes writes a row to `operator_audit`: impersonation

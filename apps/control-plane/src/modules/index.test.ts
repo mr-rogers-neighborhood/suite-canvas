@@ -19,16 +19,17 @@ describe("route module loading", () => {
 
     const loaded = await loadModules({ logger, directory: FIXTURES });
 
-    expect(MODULE_NAMES).toEqual(["auth", "billing", "admin", "feedback"]);
+    expect(MODULE_NAMES).toEqual(["auth", "billing", "admin", "feedback", "settings"]);
     expect(loaded.modules).toEqual([]);
     expect(loaded.status).toEqual([
       { name: "auth", state: "absent" },
       { name: "billing", state: "absent" },
       { name: "admin", state: "absent" },
       { name: "feedback", state: "absent" },
+      { name: "settings", state: "absent" },
     ]);
     const absent = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(absent.filter((line) => line.msg === "route module absent")).toHaveLength(4);
+    expect(absent.filter((line) => line.msg === "route module absent")).toHaveLength(5);
   });
 
   it("should mount a module file that exports the contract", async () => {
@@ -42,6 +43,7 @@ describe("route module loading", () => {
       { name: "billing", state: "absent" },
       { name: "admin", state: "absent" },
       { name: "feedback", state: "absent" },
+      { name: "settings", state: "absent" },
     ]);
     expect(loaded.modules.map((module) => module.name)).toEqual(["auth"]);
     expect(typeof loaded.modules[0]?.handle).toBe("function");

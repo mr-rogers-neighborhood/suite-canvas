@@ -1,0 +1,29 @@
+{
+  "name": "@suite/settings",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The settings registry: every runtime value the app can read per request, with its kind, whether an organization may override it, and where its value came from. Shared by the control plane, the relay and the admin panel so one file defines what is configurable.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "development": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.5"
+  }
+}

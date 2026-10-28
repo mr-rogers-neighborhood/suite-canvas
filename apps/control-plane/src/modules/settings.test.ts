@@ -1,0 +1,240 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { encryptSetting, isEncryptedSetting } from "@suite/settings";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createLogger } from "../logging.js";
+import { publishSessionReader } from "./context.js";
+import { createSettingsModule, SETTINGS_PATH, settingsBody } from "./settings.js";
+
+/**
+ * The settings surface: precedence, provenance and the two things that must not leak.
+ *
+ * The SQL is a stub of two statements, which is enough to pin what the handler decides —
+ * that the panel's row wins over the environment, that a secret is stored encrypted and
+ * read as a mask, and that a key nobody declared cannot be created by asking for it.
+ */
+const SETTINGS_KEY = "a-settings-key-long-enough";
+
+interface Row {
+  scope: string;
+  key: string;
+  value: string;
+}
+
+/** A pool double: the two reads the module makes, and the two writes. */
+function poolDouble(rows: Row[]) {
+  return {
+    async query(sql: string, params?: unknown[]) {
+      const text = sql.replace(/\s+/g, " ").trim();
+      if (text.startsWith("SELECT scope, key, value")) return { rows: [...rows] };
+      if (text.startsWith("INSERT INTO suite_settings")) {
+        const [scope, key, value] = params as [string, string, string];
+        const at = rows.findIndex((row) => row.scope === scope && row.key === key);
+        const next = { scope, key, value };
+        if (at >= 0) rows[at] = next;
+        else rows.push(next);
+        return { rows: [] };
+      }
+      if (text.startsWith("DELETE FROM suite_settings")) {
+        const [scope, key] = params as [string, string];
+        const at = rows.findIndex((row) => row.scope === scope && row.key === key);
+        if (at >= 0) rows.splice(at, 1);
+        return { rows: [] };
+      }
+      return { rows: [] };
+    },
+  };
+}
+
+let directory = "";
+let server: Server | null = null;
+let baseUrl = "";
+let rows: Row[] = [];
+
+beforeEach(() => {
+  process.env.SUITE_SETTINGS_KEY = SETTINGS_KEY;
+  directory = mkdtempSync(join(tmpdir(), "suite-settings-"));
+  rows = [];
+  publishSessionReader(async (headers) => {
+    const token = headers.authorization?.replace(/^Bearer /, "");
+    if (token !== "operator") return null;
+    return {
+      userId: "user-operator",
+      organizationId: null,
+      role: null,
+      admittedAt: 0,
+      operator: true,
+    };
+  });
+});
+
+afterEach(async () => {
+  const closing = server;
+  if (closing) await new Promise<void>((resolve) => closing.close(() => resolve()));
+  server = null;
+  delete process.env.SUITE_SETTINGS_KEY;
+  publishSessionReader(async () => null);
+  rmSync(directory, { recursive: true, force: true });
+});
+
+async function start(): Promise<void> {
+  const module = createSettingsModule({
+    env: { SUITE_CONTROL_PLANE_DATABASE_URL: "postgres://stub/suite" } as never,
+    logger: createLogger(),
+    pool: poolDouble(rows) as never,
+  });
+  const listening = createServer((request: IncomingMessage, response: ServerResponse) => {
+    void Promise.resolve(module.handle(request, response))
+      .then((handled: boolean) => {
+        if (handled || response.writableEnded) return;
+        response.writeHead(404).end("not found");
+      })
+      .catch((error: unknown) => {
+        response.writeHead(500).end(String(error));
+      });
+  });
+  server = listening;
+  await new Promise<void>((resolve) => {
+    listening.listen(0, "127.0.0.1", resolve);
+  });
+  const address = listening.address();
+  if (!address || typeof address === "string") throw new Error("expected a TCP address");
+  baseUrl = `http://127.0.0.1:${address.port}`;
+}
+
+function call(method: "GET" | "PUT" | "DELETE", path: string, body?: unknown, token = "operator") {
+  return fetch(`${baseUrl}${path}`, {
+    method,
+    headers: {
+      authorization: ["Bearer", token].join(" "),
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+
+describe("the settings module", () => {
+  it("lists every declared key with its value and the level that supplied it", async () => {
+    await start();
+    rows.push({ scope: "global", key: "mail.smtp.port", value: "2525" });
+
+    const response = await call("GET", SETTINGS_PATH);
+    const body = (await response.json()) as {
+      settings: { key: string; value: unknown; source: string }[];
+    };
+
+    expect(response.status).toBe(200);
+    const port = body.settings.find((entry) => entry.key === "mail.smtp.port");
+    // A saved row is the panel's, so it outranks the environment default.
+    expect(port).toMatchObject({ value: 2525, source: "global" });
+    const mode = body.settings.find((entry) => entry.key === "billing.mode");
+    expect(mode?.source).toBe("default");
+  });
+
+  it("stores a secret encrypted and reads it back as a mask", async () => {
+    await start();
+
+    const write = await call("PUT", `${SETTINGS_PATH}/billing.stripe.secretKey.test`, {
+      value: "sk_test_123",
+    });
+    expect(write.status).toBe(200);
+
+    const stored = rows.find((row) => row.key === "billing.stripe.secretKey.test")?.value ?? "";
+    expect(stored).not.toContain("sk_test_123");
+    expect(isEncryptedSetting(stored)).toBe(true);
+    // Two writes of the same value differ: the IV is fresh each time.
+    expect(stored).not.toBe(encryptSetting(SETTINGS_KEY, "sk_test_123"));
+
+    const read = await call("GET", SETTINGS_PATH);
+    const body = (await read.json()) as { settings: { key: string; value: unknown }[] };
+    const secret = body.settings.find((entry) => entry.key === "billing.stripe.secretKey.test");
+    expect(secret?.value).not.toBe("sk_test_123");
+    expect(String(secret?.value)).toMatch(/•/);
+
+    // The same key is still decryptable in-process, which is what a sender needs.
+    const { decryptSetting } = await import("@suite/settings");
+    expect(decryptSetting(SETTINGS_KEY, stored)).toBe("sk_test_123");
+  });
+
+  it("refuses a secret when the deployment holds no settings key", async () => {
+    await start();
+    delete process.env.SUITE_SETTINGS_KEY;
+
+    const response = await call("PUT", `${SETTINGS_PATH}/mail.smtp.password`, { value: "hunter2" });
+
+    expect(response.status).toBe(503);
+    expect(rows).toHaveLength(0);
+  });
+
+  it("accepts only the values an enum declares", async () => {
+    await start();
+
+    const refused = await call("PUT", `${SETTINGS_PATH}/billing.mode`, { value: "sandbox" });
+    expect(refused.status, await refused.clone().text()).toBe(400);
+    expect(rows).toHaveLength(0);
+
+    const accepted = await call("PUT", `${SETTINGS_PATH}/billing.mode`, { value: "live" });
+    expect(accepted.status).toBe(200);
+    expect(rows[0]).toMatchObject({ key: "billing.mode", value: "live" });
+  });
+
+  it("refuses an organization override for a deployment-wide key", async () => {
+    await start();
+
+    const response = await call("PUT", `${SETTINGS_PATH}/billing.mode?organization=org-1`, {
+      value: "live",
+    });
+
+    expect(response.status).toBe(400);
+    expect(rows).toHaveLength(0);
+  });
+
+  it("writes an organization override for a key that declares itself overridable", async () => {
+    await start();
+
+    const response = await call("PUT", `${SETTINGS_PATH}/mail.from?organization=org-1`, {
+      value: "Suite <org@example.test>",
+    });
+
+    expect(response.status).toBe(200);
+    expect(rows[0]).toMatchObject({ scope: "org:org-1", key: "mail.from" });
+  });
+
+  it("resets a key back to the level below it", async () => {
+    await start();
+    await call("PUT", `${SETTINGS_PATH}/mail.smtp.port`, { value: "2525" });
+
+    const response = await call("DELETE", `${SETTINGS_PATH}/mail.smtp.port`);
+
+    expect(response.status).toBe(200);
+    expect(rows).toHaveLength(0);
+  });
+
+  it("refuses a key nobody declared", async () => {
+    await start();
+
+    const response = await call("PUT", `${SETTINGS_PATH}/not.a.setting`, { value: "x" });
+
+    expect(response.status).toBe(404);
+    expect(rows).toHaveLength(0);
+  });
+
+  it("needs an operator, and says which refusal it is", async () => {
+    await start();
+
+    const anonymous = await call("GET", SETTINGS_PATH, undefined, "nobody");
+    expect(anonymous.status).toBe(401);
+  });
+
+  it("reports provenance in the body the panel reads", () => {
+    const body = settingsBody([{ scope: "global", key: "billing.mode", value: "live" }], null);
+    const mode = body.settings.find((entry) => entry.key === "billing.mode");
+
+    expect(mode?.source).toBe("global");
+    expect(mode?.value).toBe("live");
+    // Every row carries where a boot value would come from, so the panel can explain it.
+    expect(mode?.env).toBe("SUITE_BILLING_MODE");
+  });
+});

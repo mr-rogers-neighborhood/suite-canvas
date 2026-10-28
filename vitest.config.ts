@@ -74,6 +74,15 @@ export default defineConfig({
         },
       },
       {
+        // The settings registry and its precedence rules, shared by the control
+        // plane, the relay and the panel: pure functions, so its own project.
+        test: {
+          name: "settings",
+          environment: "node",
+          include: ["packages/settings/src/**/*.test.ts"],
+        },
+      },
+      {
         test: {
           name: "server",
           environment: "node",

@@ -475,6 +475,10 @@ const health = createServer((request, response) => {
         limits: currentLimits,
         settings,
         quotas,
+        // The licence rows, writable so the gate is testable from the panel: a past-due
+        // plan is an expired row and a cancelled one is no row, so no payment provider has
+        // to be involved to see what either does.
+        licences: licenceClaims,
         metrics: processMetrics,
         diskBytes: () => quotas.disk(),
         projectionRooms: () => worker.projectionRooms(),

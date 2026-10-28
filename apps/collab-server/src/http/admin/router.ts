@@ -15,6 +15,7 @@ import {
   writeAudit,
 } from "./deps.js";
 import { createFixtures, exportWorkspace } from "./fixtures.js";
+import { deleteLicence, putLicence } from "./licence.js";
 import { disconnectRoomSessions, roomsBody, sweepProjectionRooms } from "./rooms.js";
 import { listWorkspaceShares, revokeOneShare, revokeWorkspaceShares } from "./shares.js";
 import { limitsBody, sendLimits, sendMetrics, statusBody, updateLimits } from "./status.js";
@@ -281,6 +282,14 @@ export async function handleAdminRequest(
       if (parts.length === 3 && second?.length && third === "export") {
         requireMethod(response, method, "GET");
         exportWorkspace(response, scopedDeps, second);
+        return true;
+      }
+      // The licence row the quota gate reads, writable so a plan state is testable without
+      // a payment provider.
+      if (parts.length === 3 && second?.length && third === "licence") {
+        requireMethod(response, method, "PUT", "DELETE");
+        if (method === "DELETE") deleteLicence(response, scopedDeps, second);
+        else await putLicence(request, response, scopedDeps, second);
         return true;
       }
       throw HttpError.notFound("Not found.");

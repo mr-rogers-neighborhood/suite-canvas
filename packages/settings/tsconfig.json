@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // `node:crypto` and `process.env` are the whole point of this package; the
+    // types come from its own dev dependency, since pnpm does not hoist them.
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

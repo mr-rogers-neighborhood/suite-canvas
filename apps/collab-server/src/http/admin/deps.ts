@@ -12,6 +12,7 @@ import type {
   RoomSweepReport,
 } from "../../projection/index.js";
 import type { AttachmentStore } from "../../store/attachments.js";
+import type { LicenceClaimStore } from "../../store/licenceClaims.js";
 import type { DocumentInventory, DocumentStore } from "../../store/persistence.js";
 import type { SettingsStore } from "../../store/settings.js";
 import type { Share, ShareStore } from "../../store/shares.js";
@@ -121,6 +122,14 @@ export interface AdminRequestDeps {
   settings?: SettingsStore;
   /** Per-workspace budgets, including a hosted licence's cap. */
   quotas?: QuotaService;
+  /**
+   * The workspace licence rows the quota service reads.
+   *
+   * Writable here so the gate can be driven from the admin panel: a past-due licence is an
+   * expired row, and a cancelled one is no row at all, so testing a plan state needs no
+   * payment provider.
+   */
+  licences?: Pick<LicenceClaimStore, "get" | "record" | "remove"> | null;
   /** Current document-store bytes, shared with the quota service's cache. */
   diskBytes?: () => number;
   /** Collector rendered by `GET /metrics`; defaults to the process-wide one. */

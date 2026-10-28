@@ -6,6 +6,7 @@ import type { FocusState } from "../collab/presence";
 import { TAB_ID } from "../collab/tabId";
 import { markBoot, measureBoot } from "../dev/bootTiming";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
+import { preloadIconRefs } from "../icons/iconSets";
 import { takeChosenTemplate } from "../launcher/starterTemplates";
 import { readLastBoard, rememberLastBoard } from "../session/lastBoard";
 import type { ShareSession } from "../session/session";
@@ -182,6 +183,19 @@ export function useWorkspaceBoot(args: {
       // its derived label rather than failing the boot.
     }
   }, [ready, synced, share, readOnly, workspace, workspaceId, setWorkspaceName]);
+
+  // Every icon the document names, asked for once, so the first paint after a reload
+  // already has them. A glyph asks for its own set on mount too; this only removes the
+  // one empty frame that costs.
+  useEffect(() => {
+    preloadIconRefs([
+      ...snapshot.cards.map((card) => card.style?.icon),
+      ...snapshot.cards.map((card) => card.icon),
+      ...snapshot.types.map((type) => type.icon),
+      ...snapshot.boards.map((board) => board.icon),
+      ...snapshot.sections.map((section) => section.icon),
+    ]);
+  }, [snapshot.cards, snapshot.types, snapshot.boards, snapshot.sections]);
 
   // Resolve the board from the URL, falling back to the first one.
   useEffect(() => {

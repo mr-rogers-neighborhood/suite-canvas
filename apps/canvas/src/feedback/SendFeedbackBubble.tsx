@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { captchaSiteKey } from "../auth/captchaKey";
 import { TurnstileWidget } from "../auth/TurnstileWidget";
 import { type FeedbackCapability, feedbackCapability, sendFeedback } from "./feedbackClient";
@@ -39,6 +39,9 @@ export function SendFeedbackBubble({
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLTextAreaElement | null>(null);
+  // Stable across renders: the challenge must not be torn down because the words in the
+  // box changed, which is what an inline arrow on `onToken` would do.
+  const acceptToken = useCallback((next: string | null) => setToken(next ?? ""), []);
 
   useEffect(() => {
     let live = true;
@@ -126,7 +129,7 @@ export function SendFeedbackBubble({
           />
           {challengeNeeded ? (
             <div className="mt-2" data-testid="feedback-captcha">
-              <TurnstileWidget siteKey={siteKey} onToken={(next) => setToken(next ?? "")} />
+              <TurnstileWidget siteKey={siteKey} onToken={acceptToken} />
             </div>
           ) : null}
           <div className="mt-2 flex items-center justify-between">

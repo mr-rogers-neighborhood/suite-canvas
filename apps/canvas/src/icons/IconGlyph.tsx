@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { iconBody } from "./iconSets";
+import { useIconBody } from "./iconSets";
 
 export interface IconGlyphProps {
   /** An icon reference ("lucide:check"), or nothing. */
@@ -21,7 +21,9 @@ export interface IconGlyphProps {
  * that have a glyph to fall back to pass it themselves.
  */
 export function IconGlyph({ icon, size = 14, color, title, className }: IconGlyphProps) {
-  const body = iconBody(icon);
+  // Reactive rather than a bare read: the set arrives asynchronously, and a glyph that
+  // only read the cache drew nothing on the load after the one that picked the icon.
+  const body = useIconBody(icon);
   if (body === null) return null;
 
   const style: CSSProperties = {

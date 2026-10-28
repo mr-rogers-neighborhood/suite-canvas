@@ -73,6 +73,14 @@ export interface TurnstileWidgetProps {
 export function TurnstileWidget({ siteKey, onToken }: TurnstileWidgetProps) {
   const container = useRef<HTMLDivElement | null>(null);
   const widget = useRef<string | null>(null);
+  // The callback is read through a ref so the widget's lifetime depends on the site key
+  // and nothing else. With `onToken` in the dependency list, a parent that passes an
+  // inline arrow gets a fresh identity on every render, which removed the widget and
+  // rendered a new one on each verification: "verifying", then it disappears, forever.
+  const report = useRef(onToken);
+  useEffect(() => {
+    report.current = onToken;
+  }, [onToken]);
 
   useEffect(() => {
     let live = true;
@@ -82,19 +90,19 @@ export function TurnstileWidget({ siteKey, onToken }: TurnstileWidgetProps) {
         widget.current = window.turnstile.render(container.current, {
           sitekey: siteKey,
           theme: "auto",
-          callback: (token) => onToken(token),
-          "expired-callback": () => onToken(null),
-          "error-callback": () => onToken(null),
+          callback: (token) => report.current(token),
+          "expired-callback": () => report.current(null),
+          "error-callback": () => report.current(null),
         });
       })
-      .catch(() => onToken(null));
+      .catch(() => report.current(null));
     return () => {
       live = false;
       const id = widget.current;
       widget.current = null;
       if (id !== null) window.turnstile?.remove(id);
     };
-  }, [siteKey, onToken]);
+  }, [siteKey]);
 
   return <div ref={container} data-testid="turnstile" className="mt-1 min-h-[65px]" />;
 }

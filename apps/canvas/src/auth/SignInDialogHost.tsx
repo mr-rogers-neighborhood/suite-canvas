@@ -37,6 +37,22 @@ export function SignInDialogHost({ initialMode = "sign-in" }: SignInDialogHostPr
     void bootstrapAccount();
   }, []);
 
+  // `?signin=1` opens the dialog on arrival. The operator panel is a separate entry point
+  // with no session of its own, so it links here when it finds nobody signed in, and the
+  // link has to do what it says or the panel is a dead end. The parameter is dropped
+  // afterwards so a later reload does not reopen a dialog the reader closed.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("signin") !== "1") return;
+    useAccountStore.getState().openSignIn("sign-in");
+    url.searchParams.delete("signin");
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, []);
+
   // The last-used method is a cookie the server set; read it when the dialog
   // opens so a sign-in from a moment ago is already reflected.
   const [last, setLast] = useState<SignInMethod | null>(null);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 /**
  * The bundled icon sets, resolved from a reference like `lucide:check`.
@@ -32,6 +32,33 @@ export const bundledPrefixes = Object.keys(BUNDLED);
 
 const cache = new Map<string, IconifySet>();
 
+/**
+ * A counter rather than a store of icons: a glyph only needs to know that the cache
+ * moved, and asking `iconBody` again is cheaper than diffing what arrived.
+ *
+ * Without this a card drew its icon on the visit that picked it and lost it on the next
+ * load: the reference was in the document, the set was not in memory yet, and nothing
+ * told the glyph to draw again once it was.
+ */
+let generation = 0;
+const listeners = new Set<() => void>();
+
+function announce(): void {
+  generation += 1;
+  for (const listener of listeners) listener();
+}
+
+function subscribeToIconSets(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function iconSetGeneration(): number {
+  return generation;
+}
+
 async function loadSet(prefix: string): Promise<IconifySet | null> {
   const cached = cache.get(prefix);
   if (cached) return cached;
@@ -40,6 +67,7 @@ async function loadSet(prefix: string): Promise<IconifySet | null> {
   try {
     const set = await load();
     cache.set(prefix, set);
+    announce();
     return set;
   } catch {
     // A set that cannot be read is a missing icon, not a failed render.
@@ -87,6 +115,47 @@ export function iconBody(ref: string | null | undefined): IconBody | null {
     width: icon.width ?? set?.width ?? 24,
     height: icon.height ?? set?.height ?? 24,
   };
+}
+
+/** The prefix a reference names, or null when it is not one (`"check"`, `""`). */
+function prefixOf(ref: string | null | undefined): string | null {
+  if (!ref) return null;
+  const at = ref.indexOf(":");
+  return at > 0 ? ref.slice(0, at) : null;
+}
+
+/**
+ * One icon, and a repaint when its set arrives.
+ *
+ * `iconBody` is synchronous and reads what is in memory, so on a cold page load it
+ * answers null for a reference the document really has. This asks for the set when the
+ * glyph mounts and re-renders when it lands, which is what makes an icon survive a
+ * reload without anyone reopening the picker.
+ */
+export function useIconBody(ref: string | null | undefined): IconBody | null {
+  // Subscribing to the counter is the whole point: it is the only thing that changes
+  // when a set arrives, and `getSnapshot` above it is the cache read.
+  useSyncExternalStore(subscribeToIconSets, iconSetGeneration, () => 0);
+  const prefix = prefixOf(ref);
+  useEffect(() => {
+    if (prefix !== null && !cache.has(prefix)) void loadSet(prefix);
+  }, [prefix]);
+  return iconBody(ref);
+}
+
+/**
+ * Loads every set a document needs, ahead of the glyphs.
+ *
+ * A glyph asks for its own set on mount, which costs one frame of empty header. Asking
+ * up front means the first paint after a reload already has the icons on the board.
+ */
+export function preloadIconRefs(refs: readonly (string | null | undefined)[]): void {
+  const wanted = new Set<string>();
+  for (const ref of refs) {
+    const prefix = prefixOf(ref);
+    if (prefix !== null && !cache.has(prefix)) wanted.add(prefix);
+  }
+  for (const prefix of wanted) void loadSet(prefix);
 }
 
 /**

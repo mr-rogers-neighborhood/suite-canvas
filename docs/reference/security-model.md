@@ -213,9 +213,15 @@ store, so ship these lines somewhere that keeps them: a log line that scrolls aw
 
 ## Recovery and device hygiene
 
-There is no owner key to lose. Recovering access is the account's job in the control plane: magic link,
-passkey or a provider login. An account with no organization can sign in and read its own settings, and it
-cannot sync a workspace, because a session with no `org` has no tenant to be licensed under.
+There is no owner key to lose. Recovering access is the account's job in the control plane, and this build
+offers two doors: a magic link and a passkey. Both need nothing the reader has to remember, which is why
+the sign-in screen leads with them; a password is one press away behind a disclosure for a reader who wants
+one. Google is not offered — an OAuth client is one more thing an operator has to provision before the
+first sign-in, and a deployment that has one can add it back without changing anything else. Creating an
+account works the same way: an address, a link, and the link is the proof.
+
+An account with no organization can sign in and read its own settings, and it cannot sync a workspace,
+because a session with no `org` has no tenant to be licensed under.
 
 Forget this browser clears the cached document, the recent-workspace entry and any local editor state on
 that browser only. It does not end the session; sign out in the app for that.

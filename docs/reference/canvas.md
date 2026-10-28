@@ -134,6 +134,27 @@ own chain only sees Escape when the stack is empty. A text field inside a layer 
 that layer is a dialog. The board's own layers are the armed link thread (`board/useBoardLinks.ts`) and
 a held placement run (`board/BoardView.tsx`).
 
+With the stack empty, the ladder climbs from the most specific thing on the board to the plainest:
+section edit → selected section → container inspector → card focus → card edit → focus target → a portal
+back → the selection → `mode` → `purpose`. The last two are the only rungs that reset a choice rather
+than clear a surface, so pressing Escape with nothing left to close always ends with the reader placing
+on an exploration, whatever they had armed an hour ago.
+
+## Two axes, one of which is mostly implicit
+
+`mode` says what the next click does (`place`, `thread`, `fan`) and is the axis a reader changes: the
+widget bar's link tool cycles it and a held key previews it. `purpose` says what the canvas is *for*, and
+it is deliberately small — `explore` is the resting state and needs no button, and `explain` is the only
+other value a reader chooses from the canvas itself.
+
+A **run** is a state rather than a choice. It is a queue of cards being placed, and only the library has
+the cards to make one, so `library-run-place|thread|fan` starts it: the verb *is* the mode, the drawer
+steps aside so the next click is the placement, and when the hand is empty the drawer comes back. That is
+why `run` left the purpose control and the modifier map — a purpose preview on Shift meant holding Shift
+to thread read as "run", and a menu that offers to start something it cannot supply is a menu that sends
+the reader somewhere else to finish choosing. `record` and `present` remain states only a tour can enter,
+and the purpose control shows them purely as the way out (ADR-0064 amendment).
+
 ## Camera and viewport
 
 `board/useBoardCamera.ts` owns the camera. Viewports are UI state, not document data: `boardViewports` in

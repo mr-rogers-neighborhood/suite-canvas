@@ -498,7 +498,10 @@ Admitting the first users, once mail and the queue are live: sign in at
 `https://app.suite.run/admin.html` with an address from `SUITE_ADMIN_EMAILS` and use the
 Admissions tab. The same list opens `/admin/templates` for writing and the relay's
 `/api/admin/*`. The account API needs the queue and starter list, which
-`deploy/Caddyfile` already routes to the control plane on the app origin.
+`deploy/Caddyfile` already routes to the control plane on the app origin, and it routes
+`/admin/settings`, `/admin/accounts`, `/api/account*` and `/api/invites/*` the same way:
+those are control-plane paths that the `/admin` panel rewrite and the `/api/*` relay
+default would otherwise answer with a page or a 404.
 
 An address that is not on the list gets `403 forbidden` and a sentence saying so, which
 is the honest answer rather than a lockout: the panel tells the reader their address

@@ -191,6 +191,23 @@
 		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
 	}
 
+	# The people list and the support-access routes. Same reason: `/admin/accounts` is an
+	# API path that the panel rewrite below would otherwise answer with a page.
+	handle /admin/accounts* {
+		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
+	}
+
+	# The account's own routes — its summary, its export, its support consent — and the
+	# invitation redemption. All of them are the account service's, and the `/api/*` catch
+	# below is the relay.
+	handle /api/account* {
+		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
+	}
+
+	handle /api/invites/* {
+		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
+	}
+
 	handle /api/workspaces/claim {
 		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
 	}

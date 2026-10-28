@@ -286,12 +286,16 @@ export function WorkspaceShellView({
   dismissLeavePrompt,
 }: WorkspaceShellViewProps) {
   const pins = useBoardPins();
+  // Read from the document rather than the projection. A board created through
+  // the portal flow reached the document (the portal rendered it) but never
+  // reached `snapshot.boards`, so the switcher offered one board and the other
+  // was unreachable. Every render here follows a document change, so reading the
+  // document cannot be out of date.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `snapshot` is the trigger; the list is read back from the document it was derived from.
+  const boards = useMemo(() => workspace.listBoards(), [workspace, snapshot]);
   // Only a pin earns a tab: an unpinned board is one click away in the switcher,
   // and a bar that grows with every board is the strip we just removed.
-  const pinnedBoards = useMemo(
-    () => pinnedOrder(snapshot.boards, pins.pinned),
-    [snapshot.boards, pins.pinned],
-  );
+  const pinnedBoards = useMemo(() => pinnedOrder(boards, pins.pinned), [boards, pins.pinned]);
   // The launcher's recents, minus this workspace: the title menu is the second
   // half of "where can I go", and it should not offer where you already are.
   const otherWorkspaces = useMemo(
@@ -427,7 +431,7 @@ export function WorkspaceShellView({
                 </button>
               ) : null}
               <BoardSwitcher
-                boards={snapshot.boards}
+                boards={boards}
                 activeBoardId={activeBoardId}
                 recency={boardRecency}
                 pinned={pins.pinned}
@@ -530,7 +534,7 @@ export function WorkspaceShellView({
               data-testid="start-surface"
             >
               <StartPage
-                boards={snapshot.boards}
+                boards={boards}
                 cardCounts={boardCardCounts}
                 canCreate={canCreateBoards}
                 onOpen={activateBoard}

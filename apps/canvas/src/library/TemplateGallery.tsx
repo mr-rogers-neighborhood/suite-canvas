@@ -83,7 +83,7 @@ export function TemplateGallery({
       data-testid="library-templates"
     >
       <h3 id="library-templates-heading" className="library-group-heading px-1">
-        <span className="min-w-0 truncate">Blueprints</span>
+        <span className="min-w-0 truncate">Start from</span>
         <span className="tabular-nums">{templates.length + starters.length}</span>
       </h3>
 
@@ -108,7 +108,7 @@ export function TemplateGallery({
                   <button
                     type="button"
                     className="library-action"
-                    aria-label={`Use blueprint ${template.title}`}
+                    aria-label={`Use ${template.title}`}
                     data-testid={`library-template-use-${template.id}`}
                     onClick={() => onUseTemplate(template.id)}
                   >
@@ -117,7 +117,7 @@ export function TemplateGallery({
                   <button
                     type="button"
                     className="library-action"
-                    aria-label={`Edit blueprint ${template.title}`}
+                    aria-label={`Edit ${template.title}`}
                     data-testid={`library-template-edit-${template.id}`}
                     onClick={() => onEditTemplate(template.id)}
                   >

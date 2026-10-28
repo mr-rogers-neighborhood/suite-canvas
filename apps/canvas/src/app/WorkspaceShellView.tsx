@@ -33,7 +33,11 @@ import { BOARD_STARTERS } from "../library/TemplateGallery";
 import { TypeSettingsHost } from "../panels/TypeSettingsHost";
 import { pinnedOrder, useBoardPins } from "../session/boardPins";
 import type { ShareSession } from "../session/session";
-import { rememberWorkspaceName } from "../session/workspaceName";
+import {
+  readWorkspaceNames,
+  rememberWorkspaceName,
+  resolveWorkspaceName,
+} from "../session/workspaceName";
 import { readRecentWorkspaces, workspaceUrl } from "../session/workspaceTransfer";
 import { SharePublishButton } from "../sharing/SharePublishButton";
 import { StoragePanel } from "../sharing/StoragePanel";
@@ -298,14 +302,21 @@ export function WorkspaceShellView({
   const pinnedBoards = useMemo(() => pinnedOrder(boards, pins.pinned), [boards, pins.pinned]);
   // The launcher's recents, minus this workspace: the title menu is the second
   // half of "where can I go", and it should not offer where you already are.
-  const otherWorkspaces = useMemo(
-    () =>
-      readRecentWorkspaces()
-        .filter((entry) => entry.id !== workspaceId)
-        .slice(0, 5)
-        .map((entry) => ({ id: entry.id, title: entry.title })),
-    [workspaceId],
-  );
+  const otherWorkspaces = useMemo(() => {
+    // The recents mirror stores whatever title it was given, and that title has
+    // been a board's name since the launcher fell back to one. Only a name the
+    // document holds is a workspace name; everything else is Untitled.
+    const names = readWorkspaceNames();
+    return readRecentWorkspaces()
+      .filter((entry) => entry.id !== workspaceId)
+      .slice(0, 5)
+      .map((entry) => ({
+        id: entry.id,
+        // `resolveWorkspaceName` takes the mirror's title as a last resort, so pass
+        // nothing else: a stored board name must never become a workspace label.
+        title: resolveWorkspaceName(names[entry.id], undefined),
+      }));
+  }, [workspaceId]);
   // A workspace with no board at all: nothing to open, nothing to switch to. The
   // start page is the only surface here that still makes sense.
   const startPage =

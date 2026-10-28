@@ -6,11 +6,11 @@ Facts to look up: the data model, the commands, the quotas, the security boundar
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
+| [Billing and licences](billing.md) | Billing is @better-auth/stripe registered on the auth instance (ADR-0078). The plugin owns the Stripe customer, Checkout, the billing portal, the webh… | 2026-10-28 |
+| [Canvas](canvas.md) | apps/canvas/src/canvas turns the workspace document into a board you can point at: placements become nodes, edges become routes, and every gesture end… | 2026-10-28 |
 | [Interface](ui.md) | How the shell, the library, the panels, the styling surfaces and the command palette are assembled, and the focus, keyboard and theme rules they share… | 2026-10-28 |
 | [Environment](environment.md) | Every variable the relay reads, its default, and what it changes. apps/collab-server/src/config/config.ts parses them once at boot and refuses to star… | 2026-10-28 |
-| [Billing and licences](billing.md) | Billing is @better-auth/stripe registered on the auth instance (ADR-0078). The plugin owns the Stripe customer, Checkout, the billing portal, the webh… | 2026-10-28 |
 | [Limits](limits.md) | What one Suite instance accepts, and what happens at the boundary. The numbers below are read from the code that enforces them, so they cannot drift f… | 2026-10-28 |
-| [Canvas](canvas.md) | apps/canvas/src/canvas turns the workspace document into a board you can point at: placements become nodes, edges become routes, and every gesture end… | 2026-10-28 |
 | [Security model](security-model.md) | Two credentials open a room: a session JWT for an account and a share token for a link. The owner key that used to be the third was deleted (ADR-0076)… | 2026-10-28 |
 | [Runtime](runtime.md) | The browser process: boot order, persistence, the relay, sharing, and the diagnostics an operator can read. It does not cover the document model (data… | 2026-10-28 |
 | [Capacity](capacity.md) | What one relay holds, what one more open room costs, and where the CPU stops keeping up. The numbers on this page are measured on this checkout by app… | 2026-10-27 |

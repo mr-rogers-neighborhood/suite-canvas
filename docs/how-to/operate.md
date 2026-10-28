@@ -235,6 +235,13 @@ holds, and writes the control plane's `templates` rows through `/admin/templates
 renamed, re-described, downloaded as JSON and deleted, and a downloaded file pastes back into the
 panel's "New template…" form.
 
+Two views answer questions the rest of the panel cannot. **Accounts** lists everyone, offers a support
+session and the one thing an operator may take away, the grant the account itself gave. **Subscriptions**
+lists one row per organization with plan, status, seats and period end, so "is anyone paying?" is a press
+rather than an SSH session; it is read-only, because a plan is changed by the organization itself through
+the billing portal on its Plan tab, and ending somebody's subscription from an operator surface is a
+write with their money behind it.
+
 ### Logs and alerts
 
 Every line on stdout is one JSON object:

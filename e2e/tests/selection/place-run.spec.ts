@@ -178,6 +178,53 @@ test("a fan is held too, and every spoke links to the first card", async ({ page
   expect(new Set(starts).size).toBe(1);
 });
 
+/**
+ * A fan turned into a web because a click near a placed card's dot was still a link
+ * gesture: the press meant for the next card armed a spoke from the card just put down,
+ * and the press after it linked the two together.
+ *
+ * While a run holds cards, every click is a placement. The dots stay visible — they are
+ * how a reader sees the shape they are making — but they are not a way to draw.
+ */
+test("a click on a dot while a run is live places, and draws nothing", async ({ page }) => {
+  await page.goto(workspaceUrl("run-dot"));
+  await expect(cards(page)).toHaveCount(2);
+  await unplaceEverything(page, 2);
+  await openSelection(page, "inbox");
+
+  await page.getByTestId("library-selection-all").click();
+  await page.getByTestId("library-run-fan").click();
+  await expect(page.getByTestId("held-stack")).toBeVisible();
+
+  await placeHeld(page, { dx: -220, dy: -60 });
+  await expect(cards(page)).toHaveCount(1);
+
+  // The one card on the board, by its dot, while two are still in hand.
+  const placed = await page.evaluate(() =>
+    document
+      .querySelector<HTMLElement>('[data-testid="node-card"]')
+      ?.closest(".react-flow__node")
+      ?.getAttribute("data-id"),
+  );
+  if (!placed) throw new Error("no card was placed");
+  const dot = page.locator(
+    `.react-flow__node[data-id="${placed}"] [data-testid="connector"][data-side="right"] [data-testid="connector-dot"]`,
+  );
+  const box = await dot.boundingBox();
+  if (!box) throw new Error("the placed card has no right dot");
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+  // Nothing armed, nothing drawn: the hand is full.
+  await expect(page.locator('[data-testid="connector"][data-armed="true"]')).toHaveCount(0);
+  await expect(edges(page)).toHaveCount(0);
+
+  await placeHeld(page, { dx: 220, dy: -60 });
+  await fitBoard(page);
+  await expect(cards(page)).toHaveCount(2);
+  // Two cards placed, one spoke: the run's own link, and no second one from the dot.
+  await expect(edges(page)).toHaveCount(1);
+});
+
 test("a branch is held until it is placed, not arranged for the user", async ({ page }) => {
   await page.goto(workspaceUrl("branch"));
   await expect(cards(page)).toHaveCount(2);

@@ -12,6 +12,7 @@ import { PeerNameTag } from "../../presence/PeerNameTag";
 import { useUiStore } from "../../store/useUiStore";
 import { isChaining, stepLink, stepShape, useLinkThreadStore } from "../links/linkThread";
 import { revealConnectors } from "../NodeConnectors";
+import { usePlacementRunStore } from "../placementRun";
 import { useLinkDraftStore } from "../useNodeConnectorWiring";
 import type { SectionOffset } from "./sectionLayout";
 import { SECTION_FILL, SECTION_STROKE } from "./sectionPalette";
@@ -384,6 +385,9 @@ export function SectionLayer({
         if (!isChaining({ shiftKey: pointer.shiftKey, ctrlKey: pointer.ctrlKey, mode })) {
           return;
         }
+        // A live run owns the click: the reader is placing a card, and a section's dot
+        // under the pointer must not also start a link.
+        if (usePlacementRunStore.getState().run !== null) return;
         const clicked = { kind: "section" as const, id: section.id, connectorId: connector.id };
         // A fan keeps its origin, a thread moves to the connector just clicked —
         // and an arm already in hand outranks the stored mode, so a fan started

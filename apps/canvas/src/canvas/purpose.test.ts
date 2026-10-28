@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  type CanvasPurpose,
   canvasPurposes,
   choosablePurposes,
   initialGestureFor,
-  nextPurpose,
+  isChosenPurpose,
   PURPOSE_NAMES,
   purposeClaimsClicks,
   purposeReadsGesture,
+  RESTING_PURPOSE,
 } from "./purpose";
 
 /**
@@ -17,39 +17,16 @@ import {
  * to arm a run while recording, instead of guessing.
  */
 
-describe("the purpose cycle", () => {
-  it("walks explore → run → explain → explore", () => {
-    const walked: string[] = [];
-    let purpose: CanvasPurpose = choosablePurposes[0];
-    for (let index = 0; index < choosablePurposes.length; index += 1) {
-      walked.push(purpose);
-      purpose = nextPurpose(purpose);
+describe("the purpose control", () => {
+  it("offers one choice, and off", () => {
+    // A toggle, not a cycle: `explore` is the canvas as usual, so it is the resting
+    // state a control returns to rather than a value it walks through.
+    expect(choosablePurposes).toEqual(["explain"]);
+    expect(RESTING_PURPOSE).toBe("explore");
+    expect(isChosenPurpose("explain")).toBe(true);
+    for (const purpose of canvasPurposes.filter((value) => value !== "explain")) {
+      expect(isChosenPurpose(purpose)).toBe(false);
     }
-
-    expect(walked).toEqual(["explore", "run", "explain"]);
-    // One full cycle returns to the start.
-    expect(purpose).toBe("explore");
-  });
-
-  it("cannot be walked into present, because a presentation belongs to a tour", () => {
-    // Every value a reader can reach by clicking, reached by clicking.
-    const reachable = new Set<string>();
-    let purpose: CanvasPurpose = "explore";
-    for (let step = 0; step < 9; step += 1) {
-      purpose = nextPurpose(purpose);
-      reachable.add(purpose);
-    }
-
-    // `record` and `present` are tour states, not modes a reader picks.
-    expect(reachable.has("present")).toBe(false);
-    expect(reachable.has("record")).toBe(false);
-    expect([...reachable].sort()).toEqual(["explain", "explore", "run"]);
-  });
-
-  it("leaves present for the resting state, the one move a tour allows", () => {
-    // Not a continuation of a cycle the tour never started: the tour put the
-    // reader here, and the widget is only the exit (§11).
-    expect(nextPurpose("present")).toBe("explore");
   });
 
   it("names every purpose, so a label can never be missing", () => {

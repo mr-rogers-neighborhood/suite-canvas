@@ -214,6 +214,13 @@ export function LibraryDrawer({
     canPlace,
   });
 
+  /**
+   * A drag in flight, read from the store rather than from this component: the canvas is
+   * what publishes it (it owns the camera, so a screen point has to be converted before
+   * presence sees one), and it is cleared on release wherever the release lands.
+   */
+  const dragging = useUiStore((state) => state.libraryDrag !== null);
+
   const updateQuery = useCallback(
     (next: string) => {
       setQuery(next);
@@ -363,6 +370,7 @@ export function LibraryDrawer({
     selectAll: selectAllRows,
     runVerb,
     runLoop: runSelectionLoop,
+    runnableCount,
   } = useLibrarySelection({
     tab,
     ordered,
@@ -461,6 +469,16 @@ export function LibraryDrawer({
       data-testid="library-drawer"
       data-wide={boardScope ? "true" : undefined}
       data-full={full ? "true" : undefined}
+      /**
+       * A row being dragged out of the drawer takes the drawer with it.
+       *
+       * The ghost follows the pointer to the board, and the drawer is exactly what it
+       * would be dropped on: a panel floating under the cursor turns every drop into a
+       * miss. So it steps aside while a drag is in flight and comes back on release —
+       * including a release that placed nothing, which is the same "nothing happened"
+       * the reader expects.
+       */
+      data-dragging={dragging ? "true" : undefined}
       className="library-drawer"
     >
       <LibraryHeader
@@ -490,6 +508,7 @@ export function LibraryDrawer({
       {selecting || selection.ids.length > 0 ? (
         <LibrarySelectionBar
           selected={selected}
+          runnable={runnableCount}
           canManageTrash={canManageTrash}
           onRun={runVerb}
           onRunLoop={runSelectionLoop}

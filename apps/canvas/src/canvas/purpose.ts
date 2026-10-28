@@ -21,35 +21,31 @@ export const PURPOSE_NAMES: Record<CanvasPurpose, string> = {
 };
 
 /**
- * The purposes a reader *chooses*, in the order the control walks them.
+ * The one purpose a reader *chooses* from the canvas.
  *
- * `present` is deliberately missing. A presentation is scoped to a tour: the tour
- * puts the reader in it, and only a tour can, because a mode button that offered
- * "present" would be offering to present nothing — and would be a second, worse
- * way to pick a tour. The axis still *carries* `present`, because the widget, the
- * cursor and presence all have to say it; it just cannot be walked into.
- */
-export const choosablePurposes = ["explore", "run", "explain"] as const;
-
-/**
- * The values the modifier map can *preview* on the purpose axis.
+ * `explore` is the resting state and needs no button, so the control is a toggle rather
+ * than a cycle: it is on when the reader is explaining, off when they are not.
  *
- * The same list as `choosablePurposes`, and it stays a separate name because the two
- * answer different questions: one is what the control cycles, the other is what a key
- * can point at. They were different while `explain` was preview-only; the author asked
- * for it to be cycled, so they are the same list and the gate that kept them apart is
- * closed (ADR-0066 amendment).
+ * `run` is not here either, and that is the point of this revision. A run is a queue of
+ * cards being placed, and only the library can start one — it is the only surface that
+ * *has* the cards to queue. Offering it as a mode meant a reader chose "place a
+ * sequence" and was then sent to the library to find one, and it also put a run on the
+ * modifier map, where holding Shift to start a thread was read as "run" instead
+ * (ADR-0064 amendment). The axis still carries `run`, because the run engine, the
+ * cursor and presence all say it; it is simply entered by placing a set, not by
+ * choosing a mode.
+ *
+ * `present` is missing for its own reason: a presentation is scoped to a tour, and only
+ * a tour can put the reader in one.
  */
-export const previewablePurposes = choosablePurposes;
-export type PreviewablePurpose = (typeof previewablePurposes)[number];
+export const choosablePurposes = ["explain"] as const;
 
-/** The cycle the purpose control walks: explore → run → explain → explore. */
-export function nextPurpose(purpose: CanvasPurpose): CanvasPurpose {
-  // A tour's two states are not in the cycle, so a reader in one leaves by the
-  // state's own control rather than by clicking through it.
-  if (purpose === "present" || purpose === "record") return "explore";
-  const index = choosablePurposes.indexOf(purpose);
-  return choosablePurposes[(index + 1) % choosablePurposes.length] ?? "explore";
+/** The other value the control offers, and the one it returns to. */
+export const RESTING_PURPOSE: CanvasPurpose = "explore";
+
+/** Whether the canvas is in a state the purpose control put it in. */
+export function isChosenPurpose(purpose: CanvasPurpose): boolean {
+  return purpose === "explain";
 }
 
 /**

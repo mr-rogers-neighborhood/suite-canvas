@@ -10,6 +10,8 @@ const VERB_LABELS: Record<CanvasMode, string> = {
 /** The selection bar: the four run verbs, one at a time, and clear/all. */
 export function LibrarySelectionBar({
   selected,
+  /** The selected rows a run can place: a board is a row, but there is nothing to place. */
+  runnable,
   canManageTrash,
   onRun,
   onRunLoop,
@@ -19,6 +21,7 @@ export function LibrarySelectionBar({
 }: {
   /** Selected card ids, in the order they appear on screen. */
   selected: readonly string[];
+  runnable: number;
   canManageTrash: boolean;
   onRun: (mode: CanvasMode) => void;
   onRunLoop: (ids: readonly string[]) => void;
@@ -53,7 +56,9 @@ export function LibrarySelectionBar({
           // The same values the widget bar and the connector menu use, so
           // "fan is blue" holds here too (ADR-0064 fifth amendment).
           data-mode={verb}
-          disabled={selected.length === 0}
+          // A selection of boards is a selection with nothing to place; the verb says so
+          // instead of starting a run that would immediately end.
+          disabled={runnable === 0}
           // The verb is the mode: "Thread cards" is thread mode plus a queue.
           onClick={() => onRun(verb)}
         >
@@ -64,7 +69,7 @@ export function LibrarySelectionBar({
         type="button"
         className="library-action"
         data-testid="library-run-loop"
-        disabled={selected.length === 0}
+        disabled={runnable === 0}
         title="Place these one at a time, coming back here for the next"
         onClick={() => {
           // The loop places one and stays live, so the next pick joins the same

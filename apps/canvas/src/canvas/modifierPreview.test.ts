@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type CanvasMode, canvasModes } from "./links/linkGesture";
 import { modifierOffset, NO_MODIFIERS, previewedValue } from "./modifierPreview";
-import { choosablePurposes, type PreviewablePurpose, previewablePurposes } from "./purpose";
 
 /**
  * The one modifier map (ADR-0066).
@@ -30,16 +29,11 @@ describe("the modifier map", () => {
     expect(previewedValue(canvasModes, NO_MODIFIERS)).toBeNull();
   });
 
-  it("reads both families with one rule", () => {
+  it("reads the gesture family", () => {
     expect(previewedValue(canvasModes, { shift: true, ctrl: false, alt: false })).toBe("thread");
     expect(previewedValue(canvasModes, { shift: false, ctrl: true, alt: false })).toBe("fan");
     // Three values fill three slots, so alt points at nothing.
     expect(previewedValue(canvasModes, { shift: false, ctrl: false, alt: true })).toBeNull();
-
-    expect(previewedValue(choosablePurposes, { shift: true, ctrl: false, alt: false })).toBe("run");
-    expect(previewedValue(choosablePurposes, { shift: false, ctrl: true, alt: false })).toBe(
-      "explain",
-    );
   });
 
   it("hands back the value the map would otherwise leave out", () => {
@@ -57,14 +51,6 @@ describe("the modifier map", () => {
       "place",
     );
     expect(previewedValue(canvasModes, { shift: false, ctrl: false, alt: true }, "fan")).toBeNull();
-
-    expect(previewedValue(choosablePurposes, { shift: true, ctrl: false, alt: false }, "run")).toBe(
-      "explore",
-    );
-    // Alt has no slot in a three-value family, so it points at nothing.
-    expect(
-      previewedValue(previewablePurposes, { shift: false, ctrl: false, alt: true }, "run"),
-    ).toBeNull();
   });
 
   it("keeps a key pointing at its own slot when the stored value is elsewhere", () => {
@@ -102,22 +88,6 @@ describe("the modifier map", () => {
       expect(reached.size, `${stored}: ${[...reached].join(", ")}`).toBe(canvasModes.length);
       expect([...reached].sort(), `${stored}: ${[...reached].join(", ")}`).toEqual(
         [...canvasModes].sort(),
-      );
-    }
-  });
-
-  it("shows every purpose exactly once across the stored one and the two keys", () => {
-    for (const stored of choosablePurposes) {
-      const shown = KEYS.map((state) => previewedValue(previewablePurposes, state, stored)).filter(
-        (value): value is PreviewablePurpose => value !== null && value !== undefined,
-      );
-      const reached = new Set([stored, ...shown]);
-
-      expect(reached.size, `${stored}: ${[...reached].join(", ")}`).toBe(
-        previewablePurposes.length,
-      );
-      expect([...reached].sort(), `${stored}: ${[...reached].join(", ")}`).toEqual(
-        [...previewablePurposes].sort(),
       );
     }
   });

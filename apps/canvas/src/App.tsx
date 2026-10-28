@@ -132,6 +132,7 @@ function WorkspaceShell({
   const clearLibraryFilters = useUiStore((state) => state.clearLibraryFilters);
   const setLibraryScope = useUiStore((state) => state.setLibraryScope);
   const setMode = useUiStore((state) => state.setMode);
+  const setPurpose = useUiStore((state) => state.setPurpose);
   /** What the canvas is for (ADR-0064); the control owns the click, this owns the effect. */
   const purpose = useUiStore((state) => state.purpose);
   const libraryFull = useUiStore((state) => state.libraryFull);
@@ -334,30 +335,39 @@ function WorkspaceShell({
   ]);
 
   /**
-   * What a purpose opens when it is entered: a run starts from a selection made in
-   * the library (ADR-0064 §8), a record starts from its tutorial card. The
-   * previous value is a ref so a callback that changes identity cannot hand the
-   * reader a second library or a second card; the purpose itself is the trigger.
+   * What a purpose starts. A record begins with its tutorial card; a run does not begin
+   * here at all, because a run needs a queue and only the library has one to give.
    *
-   * Leaving the mode puts back what entering it added, and only if the mode added
-   * it: a drawer opened by hand is the reader's, so a mode change must not close it.
+   * The previous value is a ref so a callback that changes identity cannot start a
+   * second recording; the purpose itself is the trigger.
    */
   const previousPurpose = useRef<CanvasPurpose>(purpose);
   useEffect(() => {
     if (previousPurpose.current === purpose) return;
-    const left = previousPurpose.current;
     previousPurpose.current = purpose;
-    // Only when the drawer was not already there: a library the reader had open is
-    // the reader's, not the new mode's.
-    if (purpose === "run" && !useUiStore.getState().libraryOpen) setLibraryOpen(true, "mode");
     if (purpose === "record") startRecording();
-    if (left === "run" && useUiStore.getState().libraryReason === "mode") setLibraryOpen(false);
-  }, [purpose, setLibraryOpen, startRecording]);
+  }, [purpose, startRecording]);
 
   /** A run is carried out by one engine, shared with the canvas and the library. */
   const placementRun = usePlacementEngine();
   // Subscribed, not read at render time: a row's Place verb changes with it.
   const placementRunActive = usePlacementRunStore((state) => state.run !== null);
+
+  /**
+   * The hand is empty again: the canvas stops being in a run, and the library comes back
+   * if a run is what put it away.
+   *
+   * Both halves matter. The purpose has to return, or the next click is still read as
+   * "place the next card". And the drawer has to return, because a reader who started a
+   * sequence from it expects to pick the next thing without hunting for the button —
+   * that is the whole shape of "place these, then back to the shelf".
+   */
+  useEffect(() => {
+    if (placementRunActive) return;
+    if (useUiStore.getState().purpose === "run") setPurpose("explore");
+    if (useUiStore.getState().libraryReason !== "run") return;
+    setLibraryOpen(true, "reader");
+  }, [placementRunActive, setLibraryOpen, setPurpose]);
 
   // A run places into the board in front of the reader. Navigating away cancels it
   // rather than continuing into a board they are no longer looking at (ADR-0063 §9).
@@ -375,9 +385,17 @@ function WorkspaceShell({
     (cardIds: readonly string[], runMode: CanvasMode, source: PlacementSource) => {
       if (!canEditLayout || cardIds.length === 0) return;
       setMode(runMode);
+      // A run is a state the canvas is in, and the whole canvas has to know: the cursor,
+      // presence and the click handler all read it. It is entered here rather than from
+      // the purpose control, because a queue can only come from the library.
+      setPurpose("run");
       placementRun.start(cardIds, source);
+      // Out of the way: the next card lands where the reader aims, and the drawer that
+      // was in front of the board is what they would be aiming around. It comes back
+      // when the hand is empty.
+      setLibraryOpen(false, "run");
     },
-    [canEditLayout, placementRun, setMode],
+    [canEditLayout, placementRun, setLibraryOpen, setMode, setPurpose],
   );
 
   /**

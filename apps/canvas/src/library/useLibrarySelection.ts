@@ -127,6 +127,7 @@ export function useLibrarySelection({
     selection,
     selecting,
     selected,
+    runnableCount: runnable.length,
     selectableOrder,
     selectRow,
     shiftHeld,

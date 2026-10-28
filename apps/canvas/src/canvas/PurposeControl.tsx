@@ -1,136 +1,71 @@
 import { useUiStore } from "../store/useUiStore";
-import { heldKey, isHeld, previewedValue } from "./modifierPreview";
-import {
-  type CanvasPurpose,
-  nextPurpose,
-  type PreviewablePurpose,
-  previewablePurposes,
-} from "./purpose";
-import { useModifierState } from "./useModifierState";
+import { RESTING_PURPOSE } from "./purpose";
 
 /**
- * The purpose family (ADR-0064):
- * what the canvas is *for*, as opposed to what the next click does. One glyph per
- * purpose, and the glyph carries the state: a ring that differed only by hue
- * would disappear in a monochrome screenshot and for a reader who cannot tell the
- * hues apart.
+ * The purpose control (ADR-0064): one button, one choice.
  *
- * `run` is a queue, not a transport control. A play triangle beside a record dot
- * reads as media playback — "play this tour back" — and a run is the opposite of
- * playback: a list of cards being placed one click at a time (ADR-0064 §11).
- */
-/**
- * Display for every value the control can show, including the one that is only ever a
- * previewed state (`present`) — the glyph and label a value carries do not depend on
- * whether it can be clicked.
- */
-const PREVIEW_DISPLAY: Record<CanvasPurpose, { label: string; glyph: string }> = {
-  explore: { label: "Explore mode: edit the canvas", glyph: "\u25cb" },
-  run: { label: "Run mode: place a sequence of cards", glyph: "\u2261" },
-  explain: { label: "Explain mode: gather this selection into a context", glyph: "\u25c8" },
-  // States a tour puts the reader in. Nothing in this control offers them — they are
-  // named here only so the button can say where the reader is while it lasts.
-  record: { label: "Record mode: capture steps into a tour", glyph: "\u25cf" },
-  present: { label: "Presenting a tour", glyph: "\u25a3" },
-};
-
-const PURPOSES: Record<CanvasPurpose, { label: string; glyph: string }> = {
-  explore: {
-    label: "Explore mode: edit the canvas",
-    glyph: "\u25cb",
-  },
-  run: {
-    label: "Run mode: place a sequence of cards",
-    glyph: "\u2261",
-  },
-  explain: {
-    label: "Explain mode: gather this selection into a context",
-    glyph: "\u25c8",
-  },
-  record: { label: "Record mode: capture steps into a tour", glyph: "\u25cf" },
-  present: { label: "Presenting a tour", glyph: "\u25a3" },
-};
-
-/** "Record mode", the name without the clause after the colon, for a label that embeds it. */
-function shortPurposeLabel(purpose: CanvasPurpose | "explain"): string {
-  return PREVIEW_DISPLAY[purpose].label.split(":")[0] ?? PREVIEW_DISPLAY[purpose].label;
-}
-
-/** "Switch to run mode: place a sequence of cards". */
-function switchLabel(purpose: CanvasPurpose, target: CanvasPurpose): string {
-  // A tour state is not a mode to switch out of; the tour's own control is the
-  // way out, and the label says so rather than promising a switch.
-  if (purpose === "present") return "Stop presenting and return to the canvas";
-  if (purpose === "record") return "Stop recording and return to the canvas";
-  const next = PURPOSES[target];
-  return `Switch to ${next.label.charAt(0).toLowerCase()}${next.label.slice(1)}`;
-}
-
-/**
- * The purpose control, stacked with the zoom and gesture controls.
+ * It used to cycle through three values and take a modifier preview from the same key
+ * map the link tool uses. Both went away. A run is started from the library — the only
+ * surface that has a queue to start one with — so offering "run" here was a mode that
+ * sent the reader somewhere else to finish choosing. And a purpose preview on Shift meant
+ * holding Shift to *thread* was read as "run", which is the collision that made the axis
+ * cost more than it explained (ADR-0064 amendment).
  *
- * It cycles rather than segments, for the same reason the gesture control does:
- * the values are one question, and buttons side by side would offer "exploring
- * and recording at once" — the one thing the two axes cannot mean.
+ * What is left is the one purpose a reader chooses without a queue: `explain`, which
+ * gathers the selection into a context. Off is the canvas as usual, so this is a toggle
+ * and its label says which way it will go.
  *
- * It is the pill's bottom segment rather than a separate button: one column with
- * the purpose at the floor and the link mode above it, sharing the pill's corners
- * so the stack reads as one object.
- *
- * The modifiers preview the same way the link tool's do (ADR-0066): shift points
- * at `run`, ctrl at `explain`. A held key repaints the button and refuses the
- * click — the key *is* the override, and releasing ends it — so the button never
- * promises a switch it would not perform.
+ * A run, a tour and a presentation are states the canvas is *in* rather than choices, so
+ * this control neither offers nor shows them: the run bar and the tour's own widget are
+ * their controls, and a second one here would be a second way out of a state whose exit
+ * is already on screen.
  */
 export function PurposeControl() {
   const purpose = useUiStore((state) => state.purpose);
   const setPurpose = useUiStore((state) => state.setPurpose);
-  const modifiers = useModifierState();
 
-  // What a click would choose: the previewed value when a modifier points at one,
-  // otherwise the next value in the cycle.
-  const previewed =
-    purpose === "present" || purpose === "record"
-      ? null
-      : previewedValue<PreviewablePurpose>(previewablePurposes, modifiers, purpose);
-  const target = previewed ?? nextPurpose(purpose);
+  // A run's control is the run bar, which says how much is left and offers the exit; a
+  // second button here would be a second label for the same decision. A presentation and a
+  // recording are different: the widget *is* the way out of those, because the surface
+  // that took the canvas over has no other exit on screen (ADR-0064 §11).
+  if (purpose === "run") return null;
 
-  /**
-   * A held modifier is a momentary override, and a click during one changes nothing
-   * (the guard below). It is the same rule as the link tool's, because the two axes
-   * share one modifier vocabulary (ADR-0066) and a gesture cannot mean two things.
-   */
-  const held = isHeld(modifiers) ? heldKey(modifiers) : null;
-
-  const current = PURPOSES[purpose];
-  const label = held
-    ? `${shortPurposeLabel(previewed ?? purpose)} while ${held} is held. Release ${held} to return to ${shortPurposeLabel(purpose)}`
-    : `${current.label}. ${switchLabel(purpose, target)}`;
-  // The previewed value is shown, not stored: the ring stays on what the reader is
-  // actually doing, and the glyph says what the modifier would make it.
-  const shown = PREVIEW_DISPLAY[previewed ?? purpose];
+  const explaining = purpose === "explain";
+  const stateLabel =
+    purpose === "present"
+      ? "Presenting a tour. Stop presenting and return to the canvas"
+      : purpose === "record"
+        ? "Record mode: capture steps into a tour. Stop recording and return to the canvas"
+        : null;
+  const label =
+    stateLabel ??
+    (explaining
+      ? "Stop explaining: return to the canvas"
+      : "Explain mode: gather this selection into a context");
 
   return (
     <button
       type="button"
       className="purpose-control"
-      aria-pressed={purpose !== "explore"}
+      aria-pressed={explaining || purpose === "present" || purpose === "record"}
       aria-label={label}
       title={label}
       data-testid="purpose-toggle"
       data-purpose={purpose}
-      data-preview={previewed ?? undefined}
       // The canvas claims pointerdown for panning and selection and prevents the
       // default, which suppresses the click a nested control would otherwise get.
       onPointerDown={(event) => event.stopPropagation()}
       onPointerUp={(event) => event.stopPropagation()}
       onClick={() => {
-        // Held, the preview is momentary and the key release is what ends it.
-        if (held) return;
-        setPurpose(target);
+        // Present and record have no way in from here — only a tour can put the reader in
+        // one — so a click on them is the exit and nothing else.
+        if (purpose === "present" || purpose === "record") setPurpose(RESTING_PURPOSE);
+        else setPurpose(explaining ? RESTING_PURPOSE : "explain");
       }}
     >
-      <span aria-hidden="true">{shown.glyph}</span>
+      <span aria-hidden="true">
+        {purpose === "present" ? "\u25a3" : purpose === "record" ? "\u25cf" : "\u25c8"}
+      </span>
     </button>
   );
 }

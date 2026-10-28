@@ -89,9 +89,14 @@ function Gate({ onReady }: { onReady: () => void }) {
     "checking",
   );
   const [error, setError] = useState<string | null>(null);
+  // Bumped by the anonymous card's retry: signing in happens in the app, which is a
+  // different page, so this panel has to be told to ask again rather than assuming.
+  const [attempt, setAttempt] = useState(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` is the retry signal, not an input
   useEffect(() => {
     let live = true;
+    setState("checking");
     void (async () => {
       try {
         await getStatus();
@@ -110,7 +115,7 @@ function Gate({ onReady }: { onReady: () => void }) {
     return () => {
       live = false;
     };
-  }, []);
+  }, [attempt]);
 
   if (state === "ready") {
     onReady();
@@ -130,9 +135,28 @@ function Gate({ onReady }: { onReady: () => void }) {
               This panel reads and deletes every workspace on this relay. Sign in with an account
               this deployment named as an operator.
             </p>
-            <a className="admin-button admin-button-primary" href="/admin.html">
-              Sign in in the app, then reload this page
-            </a>
+            {/* The panel is its own page with no sign-in form, so the action leaves it. It used
+                to point at `/admin.html`, which is this page: pressing it reloaded the same
+                refusal. Signing in opens in a second tab so the panel, and this check, stay put. */}
+            <div className="admin-gate-actions">
+              <a
+                className="admin-button admin-button-primary"
+                href="/?signin=1"
+                target="_blank"
+                rel="noreferrer"
+                data-testid="admin-sign-in"
+              >
+                Sign in
+              </a>
+              <button
+                type="button"
+                className="admin-button"
+                data-testid="admin-retry"
+                onClick={() => setAttempt((count) => count + 1)}
+              >
+                I have signed in
+              </button>
+            </div>
           </>
         ) : null}
         {state === "denied" ? (

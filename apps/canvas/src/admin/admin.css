@@ -544,6 +544,18 @@ code {
   padding: 24px;
 }
 
+.admin-gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.admin-gate-actions a {
+  text-decoration: none;
+}
+
 .admin-gate-card {
   width: min(440px, 100%);
   display: flex;

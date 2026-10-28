@@ -225,13 +225,20 @@ validation needs plain HTTP on port 80, and the edge redirect refuses it before 
 
 ### The operator door
 
-`/admin.html`, `/admin/*`, `/metrics` and `/api/admin/*` are served only to the networks in
-`SUITE_OPERATOR_ALLOW`. The default is the Tailscale tailnet (`100.64.0.0/10`) plus loopback, so the
-panel and a metrics scrape exist for the person who runs the deployment and for nobody else; anything
-else gets the 404 an unknown path gets, which means the panel is not discoverable either.
+`/admin.html`, `/admin/*` and `/api/admin/*` are gated by the **account**, not the network: the panel
+asks the control plane who is signed in and whether that address is in `SUITE_ADMIN_EMAILS`, answers
+401 without a session and 403 for a signed-in account that is not an operator. That is what lets the
+panel work from a phone or a hotel, where an address-based rule cannot.
+
+`/metrics` is the exception and stays address-gated by `SUITE_OPERATOR_ALLOW`, because it carries room
+and memory counts and a scraper has no business reaching it from the internet.
+
+The panel used to sit behind the same address rule, and the cost of that decision was an owner who
+could not reach their own deployment from anywhere but one connection. The trade is discoverability:
+`/admin.html` is reachable by anyone, and the lock is the session plus the operator list.
 
 **What `SUITE_OPERATOR_ALLOW` must contain on a compose host** is not obvious, and getting it wrong
-either locks you out or opens the panel. Measured on a running stack, twice:
+breaks the metrics scrape. Measured on a running stack, twice:
 
 | Client | Address the door sees |
 | --- | --- |
@@ -241,7 +248,8 @@ either locks you out or opens the panel. Measured on a running stack, twice:
 So a list of loopback alone refuses the tunnel, and the bridge subnet is both safe and necessary:
 external addresses keep their identity, which is why `172.16.0.0/12` cannot be spoofed from outside.
 The compose default already carries it, so leave it there, and delete the tailnet entry only if you are not
-using one.
+using one. The probe in `deploy/cloudwatch/probe.sh` scrapes inside the relay's namespace, which is what
+makes the loopback entry sufficient for it.
 
 Tailscale's personal plan is free and covers this. Install it on the box (the instance user-data does),
 run `tailscale up --ssh`, and connect your laptop: `ssh` and the panel both arrive over the tailnet, so

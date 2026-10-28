@@ -189,6 +189,14 @@ async function start(
         audit: trail,
         roleOverrides: overrides,
         notices,
+        // The real membership row: the operator's own role in org-1, which a costume must
+        // never be mistaken for.
+        realRoles: {
+          countForOrganization: async () => 1,
+          countForUser: async () => 1,
+          roleFor: async () => "owner",
+          listForOrganization: async () => [],
+        },
         logger: log,
       }),
     ],
@@ -582,5 +590,25 @@ describe("telling the account", () => {
 
     expect(response.status).toBe(404);
     expect(notices.notices[0]?.readAt).toBeNull();
+  });
+});
+
+describe("the real role beside the costume", () => {
+  it("answers the membership row, not the role being worn", async () => {
+    const { url } = await start();
+
+    await fetch(`${url}/api/account/role-override`, {
+      method: "PUT",
+      headers: { cookie: "better-auth.session_token=abc", "content-type": "application/json" },
+      body: JSON.stringify({ role: "member" }),
+    });
+
+    const read = await fetch(`${url}/api/account/role-override`, {
+      headers: { cookie: "better-auth.session_token=abc" },
+    });
+    const body = (await read.json()) as { role: string | null; realRole: string | null };
+
+    // The panel tells an operator what they actually are, so "wear my own" is a real choice.
+    expect(body).toMatchObject({ role: "member", realRole: "owner" });
   });
 });

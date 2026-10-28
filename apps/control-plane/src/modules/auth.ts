@@ -7,8 +7,10 @@ import {
   authEnvironment,
   createAuthHandler,
   createMigratedAuthEntry,
+  type MembershipReader,
   mailSenders,
   mailTransportFromEnv,
+  postgresMemberships,
   type RoleOverrideLookup,
   type WorkspaceDataErasure,
   type WorkspaceDataStore,
@@ -112,6 +114,11 @@ export interface AuthModuleOptions {
   roleOverrides?: ReturnType<typeof createRoleOverrideStore>;
   /** The account notices. Defaults to this module's pool; a test passes a memory store. */
   notices?: NoticeStore;
+  /**
+   * The memberships reader *without* a worn role, so "your own role" can be answered.
+   * Defaults to Postgres; a test passes a memory reader.
+   */
+  realRoles?: MembershipReader;
   logger?: Logger;
 }
 
@@ -214,6 +221,27 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
   const database = (): Pool => {
     authPool ??= new Pool({ connectionString: authDatabaseUrl, max: 2 });
     return authPool;
+  };
+
+  /**
+   * The *real* role, unwrapped.
+   *
+   * The module's published reader applies a worn role, which is right for capabilities and
+   * wrong for the answer "what is your own role" — that question has to be answered by the
+   * `member` row, or the panel tells an operator their own role is the costume they are
+   * wearing.
+   */
+  const realRoleOf = async (
+    organizationId: string | null,
+    userId: string,
+  ): Promise<Awaited<ReturnType<MembershipReader["roleFor"]>>> => {
+    if (organizationId === null) return null;
+    const reader =
+      options.realRoles ??
+      postgresMemberships({
+        query: async (text, values) => database().query(text, values as unknown[] | undefined),
+      });
+    return reader.roleFor(organizationId, userId);
   };
 
   let store: GrantStore | null = options.grants ?? null;
@@ -461,7 +489,11 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
     if (method === "GET") {
       // A non-operator never has one, so the read does not touch the table for them.
       const override = session.operator ? await roleOverrides().get(session.userId) : null;
-      sendJson(response, 200, { ok: true, ...overrideBody(override), realRole: session.role });
+      sendJson(response, 200, {
+        ok: true,
+        ...overrideBody(override),
+        realRole: await realRoleOf(session.organizationId, session.userId),
+      });
       return true;
     }
 
@@ -494,7 +526,11 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
         target: session.organizationId,
         outcome: "ok",
       });
-      sendJson(response, 200, { ok: true, ...overrideBody(null), realRole: session.role });
+      sendJson(response, 200, {
+        ok: true,
+        ...overrideBody(null),
+        realRole: await realRoleOf(session.organizationId, session.userId),
+      });
       return true;
     }
 
@@ -525,14 +561,18 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
       action: "role.play",
       target: session.organizationId,
       outcome: "ok",
-      details: { role, realRole: session.role },
+      details: { role, realRole: await realRoleOf(session.organizationId, session.userId) },
     });
     logger.info("an operator is wearing a role", {
       actor: session.userId,
       role,
       organizationId: session.organizationId,
     });
-    sendJson(response, 200, { ok: true, ...overrideBody(written), realRole: session.role });
+    sendJson(response, 200, {
+      ok: true,
+      ...overrideBody(written),
+      realRole: await realRoleOf(session.organizationId, session.userId),
+    });
     return true;
   }
 

@@ -137,21 +137,6 @@ export const signInActions: SignInActions = {
     }
   },
 
-  google: async (): Promise<SignInResult> => {
-    try {
-      const { error } = await authClient.signIn.social({
-        provider: "google",
-        callbackURL: returnUrl(),
-      });
-      if (error)
-        return { ok: false, message: messageOf(error, "Google sign-in is not available here.") };
-      // A redirect is in flight; nothing else to say.
-      return { ok: true, message: "Taking you to Google…" };
-    } catch {
-      return { ok: false, message: "The account service did not answer." };
-    }
-  },
-
   signUp: async (input: SignUpInput): Promise<SignInResult> => {
     try {
       const { error } = await authClient.signUp.email({

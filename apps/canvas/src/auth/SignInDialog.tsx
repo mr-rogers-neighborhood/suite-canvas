@@ -50,7 +50,6 @@ const TITLES: Record<SignInMethod, string> = {
   passkey: "Passkey",
   password: "Password",
   "magic-link": "Magic link",
-  google: "Google",
 };
 
 export function SignInDialog({
@@ -64,7 +63,15 @@ export function SignInDialog({
 }: SignInDialogProps) {
   const [mode, setMode] = useState<"sign-in" | "sign-up">(initialMode);
   const [busy, setBusy] = useState<SignInMethod | "sign-up" | null>(null);
-  const [emailing, setEmailing] = useState(false);
+  /**
+   * The password path, folded away by default.
+   *
+   * A link needs nothing but an address and a passkey needs nothing at all, so the two
+   * doors that ask the reader to remember something are behind one press. It is a
+   * disclosure rather than a hidden feature: the copy names it, so a reader who wants a
+   * password is not hunting for the door.
+   */
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -89,18 +96,6 @@ export function SignInDialog({
     }
     setProblem(result.message);
   }, [actions, onClose, onSignedIn]);
-
-  const google = useCallback(async () => {
-    setBusy("google");
-    setProblem(null);
-    const result = await actions.google();
-    setBusy(null);
-    if (result.ok) {
-      setNotice(result.message);
-      return;
-    }
-    setProblem(result.message);
-  }, [actions]);
 
   const signInWithPassword = useCallback(
     async (event: FormEvent) => {
@@ -146,6 +141,35 @@ export function SignInDialog({
   );
 
   const sendLink = useCallback(
+    async (event: FormEvent) => {
+      event.preventDefault();
+      const invalid = emailProblem(email);
+      if (invalid !== null) {
+        setProblem(invalid);
+        return;
+      }
+      setBusy("magic-link");
+      setProblem(null);
+      const result = await actions.magicLink(email);
+      setBusy(null);
+      if (result.ok) {
+        setNotice(result.message);
+        return;
+      }
+      setProblem(result.message);
+    },
+    [actions, email],
+  );
+
+  /**
+   * Creating an account with a link.
+   *
+   * The address is the account, and following the link is what proves it — so this is the
+   * same call the sign-in screen makes. Better Auth creates the user on first use, which
+   * is why "sign up" and "sign in" are one path here: a reader should not have to know
+   * which of the two they are.
+   */
+  const createWithLink = useCallback(
     async (event: FormEvent) => {
       event.preventDefault();
       const invalid = emailProblem(email);
@@ -239,118 +263,81 @@ export function SignInDialog({
 
             {feedback}
 
-            <div className="mt-3 flex flex-col gap-2">
-              {offers.map((offer) => {
-                if (offer.method === "magic-link") {
-                  return (
-                    <div key={offer.method}>
-                      <button
-                        type="button"
-                        data-testid="sign-in-magic-link"
-                        data-recent={offer.recent ? "true" : undefined}
-                        disabled={busy !== null}
-                        onClick={() => {
-                          setEmailing(true);
-                          setProblem(null);
-                        }}
-                        className={offerClass(offer.recent)}
-                      >
-                        {offer.label}
-                      </button>
-                      {emailing ? (
-                        <form onSubmit={sendLink} className="mt-2 flex flex-col gap-1.5">
-                          <label
-                            className="text-[11px] text-[var(--ink-muted)]"
-                            htmlFor="sign-in-email"
-                          >
-                            Email address
-                          </label>
-                          <input
-                            id="sign-in-email"
-                            data-testid="sign-in-email"
-                            type="email"
-                            autoComplete="email"
-                            value={email}
-                            onChange={(event) => setEmail(event.target.value)}
-                            className="rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1 text-[12px]"
-                          />
-                          <button
-                            type="submit"
-                            data-testid="sign-in-email-submit"
-                            disabled={busy !== null}
-                            className="self-start rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] disabled:opacity-50"
-                          >
-                            {busy === "magic-link" ? "Sending…" : "Email me a link"}
-                          </button>
-                        </form>
-                      ) : null}
-                    </div>
-                  );
-                }
-                if (offer.method === "password") {
-                  return (
-                    <form
-                      key={offer.method}
-                      onSubmit={signInWithPassword}
-                      className="flex flex-col gap-1.5"
-                    >
-                      <button
-                        type="button"
-                        data-testid="sign-in-password"
-                        data-recent={offer.recent ? "true" : undefined}
-                        disabled={busy !== null}
-                        onClick={() => setProblem(null)}
-                        className={offerClass(offer.recent)}
-                      >
-                        {offer.label}
-                      </button>
-                      <input
-                        data-testid="sign-in-password-email"
-                        type="email"
-                        aria-label="Email address"
-                        autoComplete="email"
-                        placeholder="you@example.com"
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                        className="rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1 text-[12px]"
-                      />
-                      <input
-                        data-testid="sign-in-password-value"
-                        type="password"
-                        aria-label="Password"
-                        autoComplete="current-password"
-                        placeholder="Your password"
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                        className="rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1 text-[12px]"
-                      />
-                      <button
-                        type="submit"
-                        data-testid="sign-in-password-submit"
-                        disabled={busy !== null}
-                        className="self-start rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] disabled:opacity-50"
-                      >
-                        {busy === "password" ? "Signing in…" : "Sign in"}
-                      </button>
-                    </form>
-                  );
-                }
-                const run = offer.method === "passkey" ? passkey : google;
-                return (
-                  <button
-                    key={offer.method}
-                    type="button"
-                    data-testid={`sign-in-${offer.method}`}
-                    data-recent={offer.recent ? "true" : undefined}
-                    disabled={busy !== null}
-                    onClick={() => void run()}
-                    className={offerClass(offer.recent)}
-                  >
-                    {busy === offer.method ? `${TITLES[offer.method]}…` : offer.label}
-                  </button>
-                );
-              })}
-            </div>
+            {/*
+              One field, one press: a link is the shortest path from "I have an account" to
+              being in it, and it costs the reader no new secret. The passkey button sits
+              beside it for a device that already holds one, and the password is the
+              exception behind the disclosure at the bottom.
+            */}
+            <form onSubmit={sendLink} className="mt-3 flex flex-col gap-1.5">
+              <label className="text-[11px] text-[var(--ink-muted)]" htmlFor="sign-in-email">
+                Email address
+              </label>
+              <input
+                id="sign-in-email"
+                data-testid="sign-in-email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1 text-[12px]"
+              />
+              <button
+                type="submit"
+                data-testid="sign-in-email-submit"
+                disabled={busy !== null}
+                className="self-start rounded-lg bg-[var(--ink)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--surface)] disabled:opacity-50"
+              >
+                {busy === "magic-link" ? "Sending…" : "Email me a sign-in link"}
+              </button>
+            </form>
+
+            {offers.some((offer) => offer.method === "passkey") ? (
+              <button
+                type="button"
+                data-testid="sign-in-passkey"
+                disabled={busy !== null}
+                onClick={() => void passkey()}
+                className="mt-2 w-full rounded-lg border border-[var(--hairline)] px-2.5 py-1.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/10"
+              >
+                {busy === "passkey" ? `${TITLES.passkey}…` : "Use a passkey instead"}
+              </button>
+            ) : null}
+
+            {passwordOpen ? (
+              <form onSubmit={signInWithPassword} className="mt-2 flex flex-col gap-1.5">
+                <input
+                  data-testid="sign-in-password-value"
+                  type="password"
+                  aria-label="Password"
+                  autoComplete="current-password"
+                  placeholder="Your password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1 text-[12px]"
+                />
+                <button
+                  type="submit"
+                  data-testid="sign-in-password-submit"
+                  disabled={busy !== null}
+                  className="self-start rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] disabled:opacity-50"
+                >
+                  {busy === "password" ? "Signing in…" : "Sign in with the password above"}
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                data-testid="sign-in-password"
+                onClick={() => {
+                  setPasswordOpen(true);
+                  setProblem(null);
+                }}
+                className="mt-2 text-[11px] text-[var(--ink-muted)] underline decoration-dotted"
+              >
+                Use a password instead
+              </button>
+            )}
 
             <p className="mt-3 border-t border-[var(--hairline)] pt-2 text-[11px] leading-5 text-[var(--ink-muted)]">
               Signing in keeps the workspaces this device already holds: same workspace, same link.
@@ -363,6 +350,7 @@ export function SignInDialog({
                 setMode("sign-up");
                 setProblem(null);
                 setNotice(null);
+                setPasswordOpen(false);
               }}
               className="mt-2 text-[11px] text-[var(--ink)] underline decoration-dotted"
             >
@@ -372,10 +360,13 @@ export function SignInDialog({
         ) : null}
 
         {availability === "available" && mode === "sign-up" ? (
-          <form onSubmit={createAccount} className="mt-2 flex flex-col gap-1.5">
+          <form
+            onSubmit={passwordOpen ? createAccount : createWithLink}
+            className="mt-2 flex flex-col gap-1.5"
+          >
             <p className="text-[12px] leading-5 text-[var(--ink-muted)]">
               An account syncs this workspace, and the workspaces this device already holds come
-              with you. Your address is verified before the first sync.
+              with you.
             </p>
             {feedback}
             <label className="mt-1 text-[11px] text-[var(--ink-muted)]" htmlFor="sign-up-name">
@@ -401,29 +392,70 @@ export function SignInDialog({
               onChange={(event) => setEmail(event.target.value)}
               className="rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1 text-[12px]"
             />
-            <label className="text-[11px] text-[var(--ink-muted)]" htmlFor="sign-up-password">
-              Password
-            </label>
-            <input
-              id="sign-up-password"
-              data-testid="sign-up-password"
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1 text-[12px]"
-            />
-            {captchaSiteKey ? (
-              <TurnstileWidget siteKey={captchaSiteKey} onToken={setCaptcha} />
-            ) : null}
-            <button
-              type="submit"
-              data-testid="sign-up-submit"
-              disabled={busy !== null}
-              className="mt-1 rounded-lg bg-[var(--ink)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--surface)] disabled:opacity-50"
-            >
-              {busy === "sign-up" ? "Creating…" : "Create account"}
-            </button>
+            {/*
+              Creating an account needs no password either: the link proves the address, and
+              the address is the account. A password is offered for a reader who wants one —
+              the same disclosure the sign-in screen uses, so the two read alike.
+            */}
+            {passwordOpen ? (
+              <>
+                <label className="text-[11px] text-[var(--ink-muted)]" htmlFor="sign-up-password">
+                  Password
+                </label>
+                <input
+                  id="sign-up-password"
+                  data-testid="sign-up-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1 text-[12px]"
+                />
+                {captchaSiteKey ? (
+                  <TurnstileWidget siteKey={captchaSiteKey} onToken={setCaptcha} />
+                ) : null}
+                <button
+                  type="submit"
+                  data-testid="sign-up-submit"
+                  disabled={busy !== null}
+                  className="mt-1 rounded-lg bg-[var(--ink)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--surface)] disabled:opacity-50"
+                >
+                  {busy === "sign-up" ? "Creating…" : "Create account"}
+                </button>
+              </>
+            ) : (
+              <button
+                type="submit"
+                data-testid="sign-up-link-submit"
+                disabled={busy !== null}
+                className="mt-1 rounded-lg bg-[var(--ink)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--surface)] disabled:opacity-50"
+              >
+                {busy === "magic-link" ? "Sending…" : "Create the account with an email link"}
+              </button>
+            )}
+            {passwordOpen ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setPasswordOpen(false);
+                  setProblem(null);
+                }}
+                className="self-start text-[11px] text-[var(--ink-muted)] underline decoration-dotted"
+              >
+                Use an email link instead
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setPasswordOpen(true);
+                  setProblem(null);
+                }}
+                className="self-start text-[11px] text-[var(--ink-muted)] underline decoration-dotted"
+              >
+                Use a password instead
+              </button>
+            )}
             <button
               type="button"
               data-testid="sign-up-to-sign-in"
@@ -431,6 +463,7 @@ export function SignInDialog({
                 setMode("sign-in");
                 setProblem(null);
                 setNotice(null);
+                setPasswordOpen(false);
               }}
               className="self-start text-[11px] text-[var(--ink-muted)] underline decoration-dotted"
             >
@@ -453,13 +486,4 @@ export function SignInDialog({
     </div>,
     document.body,
   );
-}
-
-/** One button's paint: the remembered method is the only filled one. */
-function offerClass(recent: boolean): string {
-  return `w-full rounded-lg border px-2.5 py-1.5 text-left text-[12px] disabled:opacity-50 ${
-    recent
-      ? "border-[var(--ink)] bg-[var(--ink)] font-medium text-[var(--surface)]"
-      : "border-[var(--hairline)] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
-  }`;
 }

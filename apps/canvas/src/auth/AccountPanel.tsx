@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "../dialogs/useFocusTrap";
 import { useEscapeLayer } from "../shell/escapeLayers";
+import { isPlaceholderEmail } from "./accountLabel";
 import { DevicesPanel } from "./DevicesPanel";
 import { currentEntitlement } from "./entitlement";
 import { MembersPanel } from "./MembersPanel";
@@ -87,7 +88,13 @@ export function AccountPanel() {
             <div data-testid="account-section" className="text-[12px]">
               <h3 className="text-[13px] font-semibold">Account</h3>
               <p data-testid="account-email" className="mt-1 leading-5">
-                {account?.email ?? "No address on this session."}
+                {
+                  /* The panel's job is the address itself, so it shows the address — but a generated
+                placeholder is not one, and printing it would be the same bug the app bar had. */
+                  account?.email && !isPlaceholderEmail(account.email)
+                    ? account.email
+                    : "No address on this session."
+                }
               </p>
               {account?.name ? (
                 <p className="text-[11px] text-[var(--ink-muted)]">{account.name}</p>

@@ -3,22 +3,26 @@ import type { PasskeyResult } from "./passkey";
 /**
  * The ways in, and the one thing the screen remembers about them.
  *
- * Four methods, because a deployment can offer all four (ADR-0077 opens sign-up
- * and keeps the email path): a passkey, a password, a magic link, and Google. The
- * password is here for the same reason sign-up is — a stranger with no passkey and
- * no Google account has to be able to pay for a subscription — and the copy never
- * pretends one door is safer than another.
+ * Three methods: a magic link, a passkey, and a password. Google is gone for now — an
+ * OAuth client is one more thing an operator has to provision before the first sign-in,
+ * and a deployment that has it can add it back without changing this list.
+ *
+ * The order is a decision, not an accident: the link needs nothing but an address, the
+ * passkey needs a device that has one registered, and the password is the one that
+ * makes the reader invent and remember something. The dialog leads with the first two
+ * and keeps the password behind a disclosure, so the default path is the one with the
+ * fewest ways to go wrong.
  *
  * Better Auth's `lastLoginMethod` plugin records the method that worked last in a
  * **non-httpOnly cookie** — a convenience, not a credential — so the screen can
  * offer *"continue with your passkey"* instead of four equal buttons.
  */
-export type SignInMethod = "passkey" | "password" | "magic-link" | "google";
+export type SignInMethod = "passkey" | "password" | "magic-link";
 
 /** Must match the server plugin's `cookieName` (Better Auth's default). */
 export const LAST_LOGIN_METHOD_COOKIE = "better-auth.last_used_login_method";
 
-const KNOWN: readonly SignInMethod[] = ["passkey", "password", "magic-link", "google"];
+const KNOWN: readonly SignInMethod[] = ["passkey", "password", "magic-link"];
 
 function asMethod(value: string | null | undefined): SignInMethod | null {
   return KNOWN.find((method) => method === value) ?? null;
@@ -47,12 +51,11 @@ const LABELS: Record<SignInMethod, { recent: string; plain: string }> = {
   passkey: { recent: "Continue with your passkey", plain: "Use a passkey" },
   password: { recent: "Sign in with your password", plain: "Use a password" },
   "magic-link": { recent: "Continue with a magic link", plain: "Email me a sign-in link" },
-  google: { recent: "Continue with Google", plain: "Continue with Google" },
 };
 
 /**
- * The four methods in the order a person should read them: the one that worked
- * last first, the rest in a fixed order so the screen does not shuffle.
+ * The methods in the order a person should read them: the one that worked last first, the
+ * rest in a fixed order so the screen does not shuffle.
  */
 export function signInOffers(last: SignInMethod | null): MethodOffer[] {
   return KNOWN.map((method) => ({
@@ -108,6 +111,5 @@ export interface SignInActions {
   passkey: () => Promise<PasskeyResult>;
   password: (input: { email: string; password: string }) => Promise<SignInResult>;
   magicLink: (email: string) => Promise<SignInResult>;
-  google: () => Promise<SignInResult>;
   signUp: (input: SignUpInput) => Promise<SignInResult>;
 }

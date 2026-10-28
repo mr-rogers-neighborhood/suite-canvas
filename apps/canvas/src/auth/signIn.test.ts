@@ -14,7 +14,9 @@ describe("last login method", () => {
     expect(readLastLoginMethod(`other=1; ${LAST_LOGIN_METHOD_COOKIE}=magic-link; third=2`)).toBe(
       "magic-link",
     );
-    expect(readLastLoginMethod(`${LAST_LOGIN_METHOD_COOKIE}=google`)).toBe("google");
+    // Google is not offered, so a cookie left by an older build reads as unknown rather
+    // than resurrecting a button the dialog no longer has.
+    expect(readLastLoginMethod(`${LAST_LOGIN_METHOD_COOKIE}=google`)).toBeNull();
     expect(readLastLoginMethod(`${LAST_LOGIN_METHOD_COOKIE}=password`)).toBe("password");
   });
 
@@ -34,13 +36,11 @@ describe("sign-in offers", () => {
       "passkey",
       "password",
       "magic-link",
-      "google",
     ]);
-    expect(signInOffers("google").map((offer) => offer.method)).toEqual([
-      "google",
+    expect(signInOffers("magic-link").map((offer) => offer.method)).toEqual([
+      "magic-link",
       "passkey",
       "password",
-      "magic-link",
     ]);
   });
 
@@ -53,18 +53,12 @@ describe("sign-in offers", () => {
       "Continue with a magic link",
       "Use a passkey",
       "Use a password",
-      "Continue with Google",
     ]);
   });
 
-  it("offers the same four methods, in a stable order, on a first visit", () => {
+  it("offers the same three methods, in a stable order, on a first visit", () => {
     const offers = signInOffers(null);
-    expect(offers.map((offer) => offer.method)).toEqual([
-      "passkey",
-      "password",
-      "magic-link",
-      "google",
-    ]);
+    expect(offers.map((offer) => offer.method)).toEqual(["passkey", "password", "magic-link"]);
     expect(offers.some((offer) => offer.recent)).toBe(false);
   });
 });

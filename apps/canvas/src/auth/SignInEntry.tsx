@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
+import { accountLabel } from "./accountLabel";
 import { type AccountTab, awaitingAdmission, useAccountStore } from "./useAccountStore";
 
 /** The account surfaces, in the order the menu lists them. */
@@ -83,11 +84,11 @@ export function SignInEntry({ onSignOut = signOutLazily }: SignInEntryProps = {}
           data-testid="account-chip"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
-          title={account.email ?? "Account"}
+          title={accountLabel(account)}
           onClick={() => setMenuOpen((open) => !open)}
           className="inline-flex h-6 max-w-[180px] items-center gap-1 rounded-md px-2 text-[11px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
         >
-          <span className="min-w-0 truncate">{account.email ?? account.name ?? "Account"}</span>
+          <span className="min-w-0 truncate">{accountLabel(account)}</span>
           <span aria-hidden="true">{"\u25be"}</span>
         </button>
         {menuOpen ? (

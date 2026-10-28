@@ -1,6 +1,13 @@
 import { expect, type Page, test } from "@playwright/test";
 import { emptyPanePoint } from "../fixtures/marquee";
-import { boardId, createNote, libraryRowAction, newBoard, openBoard } from "../fixtures/support";
+import {
+  boardId,
+  boardIdOrNull,
+  createNote,
+  libraryRowAction,
+  newBoard,
+  openBoard,
+} from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-portal-${name}-${Date.now()}-${++sequence}`;
@@ -31,6 +38,7 @@ test("creates a portal and enters the target board through the camera", { tag: "
 }) => {
   await page.goto(workspaceUrl("enter"));
   await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
+  await expect.poll(() => boardIdOrNull(page)).not.toBeNull();
 
   const firstBoard = boardId(page);
   const secondBoard = await createBoard(page);
@@ -58,6 +66,8 @@ test("the back control exists only for a board entered through a portal", {
   tag: "@smoke",
 }, async ({ page }) => {
   await page.goto(workspaceUrl("back"));
+  await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
+  await expect.poll(() => boardIdOrNull(page)).not.toBeNull();
   const firstBoard = boardId(page);
   const secondBoard = await createBoard(page);
   await createNote(page, "Target Two");
@@ -82,6 +92,8 @@ test("Escape leaves a portal entry the same way the back control does", { tag: "
   page,
 }) => {
   await page.goto(workspaceUrl("escape"));
+  await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
+  await expect.poll(() => boardIdOrNull(page)).not.toBeNull();
   const firstBoard = boardId(page);
   const secondBoard = await createBoard(page);
   await createNote(page, "Target Two");
@@ -98,6 +110,8 @@ test("Escape leaves a portal entry the same way the back control does", { tag: "
 
 test("survives an A to B to A cycle", { tag: "@smoke" }, async ({ page }) => {
   await page.goto(workspaceUrl("cycle"));
+  await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
+  await expect.poll(() => boardIdOrNull(page)).not.toBeNull();
   const firstBoard = boardId(page);
   const secondBoard = await createBoard(page);
   await createNote(page, "Target Two");
@@ -155,6 +169,8 @@ test("marks a portal unavailable instead of breaking when its board is deleted",
   tag: "@smoke",
 }, async ({ page }) => {
   await page.goto(workspaceUrl("missing"));
+  await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
+  await expect.poll(() => boardIdOrNull(page)).not.toBeNull();
   const firstBoard = boardId(page);
   const secondBoard = await createBoard(page);
   await openBoard(page, firstBoard);

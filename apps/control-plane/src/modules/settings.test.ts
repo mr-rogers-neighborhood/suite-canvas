@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { encryptSetting, isEncryptedSetting } from "@suite/settings";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createLogger } from "../logging.js";
+import { memoryAuditStore } from "./audit.js";
 import { publishSessionReader } from "./context.js";
 import { createSettingsModule, SETTINGS_PATH, settingsBody } from "./settings.js";
 
@@ -79,11 +80,15 @@ afterEach(async () => {
   rmSync(directory, { recursive: true, force: true });
 });
 
+let trail: ReturnType<typeof memoryAuditStore> | null = null;
+
 async function start(): Promise<void> {
+  trail = memoryAuditStore();
   const module = createSettingsModule({
     env: { SUITE_CONTROL_PLANE_DATABASE_URL: "postgres://stub/suite" } as never,
     logger: createLogger(),
     pool: poolDouble(rows) as never,
+    audit: trail,
   });
   const listening = createServer((request: IncomingMessage, response: ServerResponse) => {
     void Promise.resolve(module.handle(request, response))
@@ -236,5 +241,48 @@ describe("the settings module", () => {
     expect(mode?.value).toBe("live");
     // Every row carries where a boot value would come from, so the panel can explain it.
     expect(mode?.env).toBe("SUITE_BILLING_MODE");
+  });
+});
+
+describe("the audit trail", () => {
+  it("records a write with the value it moved to, and a secret only as a replacement", async () => {
+    await start();
+
+    await call("PUT", `${SETTINGS_PATH}/billing.mode`, { value: "test" });
+    await call("PUT", `${SETTINGS_PATH}/billing.stripe.secretKey.test`, { value: "sk_test_123" });
+
+    const entries = trail?.entries ?? [];
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({
+      actor: "user-operator",
+      action: "settings.write",
+      target: "billing.mode",
+      outcome: "ok",
+      details: { scope: "global", value: "test" },
+    });
+    // The secret's value is nowhere in the trail: an audit table is not a keystore.
+    expect(entries[1]?.details).toEqual({ scope: "global", secret: true });
+    expect(JSON.stringify(entries)).not.toContain("sk_test_123");
+  });
+
+  it("records a reset as its own act", async () => {
+    await start();
+    await call("PUT", `${SETTINGS_PATH}/billing.mode`, { value: "test" });
+
+    await call("DELETE", `${SETTINGS_PATH}/billing.mode`);
+
+    expect(trail?.entries.at(-1)).toMatchObject({
+      action: "settings.reset",
+      target: "billing.mode",
+      outcome: "ok",
+    });
+  });
+
+  it("writes nothing for a refusal, which changed no setting", async () => {
+    await start();
+
+    await call("PUT", `${SETTINGS_PATH}/billing.mode`, { value: "sandbox" });
+
+    expect(trail?.entries ?? []).toHaveLength(0);
   });
 });

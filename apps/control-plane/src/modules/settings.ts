@@ -15,6 +15,7 @@ import type { AccountSession } from "../../../../services/auth/src/types.js";
 import { type ConfigEnv, DATABASE_URL_VARIABLE } from "../config.js";
 import { createLogger, type Logger } from "../logging.js";
 import type { RouteModule } from "../routes.js";
+import { type AuditStore, auditSafely, createAuditStore } from "./audit.js";
 import { sessionReader } from "./context.js";
 
 /**
@@ -45,6 +46,8 @@ export interface SettingsModuleOptions {
   logger: Logger;
   /** Injected by a test so the SQL runs against a stub rather than a live database. */
   pool?: Pick<Pool, "query"> | undefined;
+  /** The audit trail. A test passes a memory store; the default shares this module's pool. */
+  audit?: AuditStore | undefined;
 }
 
 interface SettingsRow {
@@ -147,6 +150,35 @@ export function createSettingsModule(options: SettingsModuleOptions): RouteModul
   const refuse = (response: ServerResponse, status: number, error: string, message: string) => {
     sendJson(response, status, { ok: false, error, message });
   };
+
+  // The same pool the settings table uses: one connection budget per module, and a test
+  // that stubs the pool absorbs the audit rows too.
+  let auditStore: AuditStore | null = options.audit ?? null;
+  const audit = (): AuditStore => {
+    auditStore ??= createAuditStore(database());
+    return auditStore;
+  };
+
+  /**
+   * A write is an act worth keeping, and a secret's *value* never is.
+   *
+   * The row says which key moved from what to what; a secret records only that it was
+   * replaced, because an audit table that holds a credential is a second place to leak it
+   * from.
+   */
+  const record = (entry: {
+    actor: string;
+    action: string;
+    target: string;
+    outcome: string;
+    details?: Record<string, unknown>;
+  }) =>
+    auditSafely(audit(), entry, (error) =>
+      logger.error("the audit row did not write", {
+        action: entry.action,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
 
   /** The operator gate, with the session it admitted so a write can name the actor. */
   const operator = async (
@@ -259,6 +291,16 @@ export function createSettingsModule(options: SettingsModuleOptions): RouteModul
           Date.now(),
           session.userId,
         ]);
+        await record({
+          actor: session.userId,
+          action: "settings.write",
+          target: key,
+          outcome: "ok",
+          details: {
+            scope,
+            ...(definition.kind === "secret" ? { secret: true } : { value: String(value) }),
+          },
+        });
         logger.info("setting written", { key, scope, actor: session.userId });
         sendJson(response, 200, { ok: true, key, scope });
         return true;
@@ -267,6 +309,13 @@ export function createSettingsModule(options: SettingsModuleOptions): RouteModul
       if (request.method === "DELETE") {
         await database().query(CREATE_TABLE);
         await database().query(DELETE_ROW, [scope, key]);
+        await record({
+          actor: session.userId,
+          action: "settings.reset",
+          target: key,
+          outcome: "ok",
+          details: { scope },
+        });
         logger.info("setting reset", { key, scope, actor: session.userId });
         sendJson(response, 200, { ok: true, key, scope });
         return true;

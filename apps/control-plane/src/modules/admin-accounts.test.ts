@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type AdminModuleOptions, createAdminModule } from "./admin.js";
+import { memoryAuditStore } from "./audit.js";
 import { publishSessionReader, resetSessionReader } from "./context.js";
 
 /**
@@ -83,6 +84,7 @@ afterEach(() => resetSessionReader());
 
 function moduleWith(rows: unknown[] = []) {
   const sql = query(rows);
+  const trail = memoryAuditStore();
   const module = createAdminModule({
     env: {
       SUITE_ADMIN_EMAILS: OPERATOR,
@@ -90,8 +92,9 @@ function moduleWith(rows: unknown[] = []) {
     } as AdminModuleOptions["env"],
     logger: silence(),
     pool: sql.run as unknown as AdminModuleOptions["pool"],
+    audit: trail,
   });
-  return { module, sql };
+  return { module, sql, trail };
 }
 
 const account = {
@@ -158,8 +161,9 @@ describe("ending support access", () => {
 
     expect(out.status).toBe(200);
     expect(JSON.parse(out.body)).toMatchObject({ ok: true, granted: false });
-    expect(sql.calls.at(-1)?.text).toContain("SET revoked_at");
-    expect(sql.calls.at(-1)?.values?.[0]).toBe("user-9");
+    // The revoke is the statement that writes; the audit row follows it on the same pool.
+    const revoke = sql.calls.find((call) => call.text.includes("SET revoked_at"));
+    expect(revoke?.values?.[0]).toBe("user-9");
   });
 
   it("refuses to grant, because consent is the account's", async () => {
@@ -174,6 +178,25 @@ describe("ending support access", () => {
     expect(out.status).toBe(403);
     expect(JSON.parse(out.body)).toMatchObject({ error: "consent-is-the-accounts" });
     expect(sql.calls.some((call) => call.text.includes("SET revoked_at"))).toBe(false);
+  });
+
+  it("records who ended it, because the account cannot see the operator otherwise", async () => {
+    const { module, trail } = moduleWith([]);
+    const { res } = response();
+
+    await module.handle(
+      request("PUT", "/admin/accounts/user-9/support-access", "{}", authorized),
+      res,
+    );
+
+    expect(trail.entries).toEqual([
+      expect.objectContaining({
+        actor: "user-1",
+        action: "support-access.revoke",
+        target: "user-9",
+        outcome: "ok",
+      }),
+    ]);
   });
 
   it("does not read a path it does not own", async () => {
@@ -243,5 +266,47 @@ describe("the mail test", () => {
 
     expect(out.status).toBe(502);
     expect(JSON.parse(out.body).message).toContain("SUITE_MAIL_TRANSPORT=smtp needs");
+  });
+});
+
+describe("the activity trail", () => {
+  it("is an operator's door", async () => {
+    const { module } = moduleWith([]);
+    const { out, res } = response();
+
+    await module.handle(request("GET", "/admin/activity"), res);
+
+    expect(out.status).toBe(401);
+  });
+
+  it("answers the rows the acts wrote", async () => {
+    const { module, trail } = moduleWith([]);
+    await trail.record(
+      { actor: "user-1", action: "impersonate", target: "user-9", outcome: "ok" },
+      1_700_000_000_000,
+    );
+    const { out, res } = response();
+
+    await module.handle(request("GET", "/admin/activity", null, authorized), res);
+
+    expect(out.status).toBe(200);
+    const body = JSON.parse(out.body) as { entries: { action: string }[]; next: unknown };
+    expect(body.entries.map((entry) => entry.action)).toEqual(["impersonate"]);
+    expect(body.next).toEqual({ beforeAt: 1_700_000_000_000, beforeId: 1 });
+  });
+
+  it("hides the whole list when no database is configured", async () => {
+    const sql = query([]);
+    const module = createAdminModule({
+      env: { SUITE_ADMIN_EMAILS: OPERATOR } as AdminModuleOptions["env"],
+      logger: silence(),
+      pool: sql.run as unknown as AdminModuleOptions["pool"],
+      audit: memoryAuditStore(),
+    });
+    const { out, res } = response();
+
+    await module.handle(request("GET", "/admin/activity", null, authorized), res);
+
+    expect(out.status).toBe(503);
   });
 });

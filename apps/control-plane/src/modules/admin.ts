@@ -6,6 +6,7 @@ import { Pool } from "pg";
 import { type ConfigEnv, DATABASE_URL_VARIABLE } from "../config.js";
 import { createLogger, type Logger, REQUEST_ID_HEADER } from "../logging.js";
 import type { RouteModule } from "../routes.js";
+import { type AuditStore, auditSafely, createAuditStore } from "./audit.js";
 import { sessionReader } from "./context.js";
 import { readStoredSettings } from "./settings.js";
 
@@ -45,6 +46,9 @@ export const ACCOUNTS_PATH = "/admin/accounts";
 /** One message, to prove the deployment can send one. */
 export const MAIL_TEST_PATH = "/admin/mail/test";
 
+/** What operators have done, newest first. */
+export const ACTIVITY_PATH = "/admin/activity";
+
 /** The launcher's list, readable without a token. */
 export const TEMPLATES_PATH = "/api/templates";
 /** The same list, plus writing, behind the token. One template is `/admin/templates/:id`. */
@@ -70,6 +74,8 @@ export interface AdminModuleOptions {
   logger: Logger;
   /** The pool is injectable so a test drives the SQL against a stub, not a server. */
   pool?: Pick<Pool, "query"> | undefined;
+  /** The audit trail. Defaults to this module's pool; a test passes a memory store. */
+  audit?: AuditStore | undefined;
 }
 
 /**
@@ -342,6 +348,34 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
   const refuse = (response: ServerResponse, status: number, error: string, message: string) => {
     sendJson(response, status, { ok: false, error, message });
   };
+
+  let trail: AuditStore | null = options.audit ?? null;
+  const audit = (): AuditStore => {
+    trail ??= createAuditStore(database());
+    return trail;
+  };
+
+  /**
+   * One row per act on somebody else's account or data.
+   *
+   * `operatorGate` has already resolved who is calling by the time these run, so the actor
+   * is the account the deployment named an operator rather than the word "admin".
+   */
+  const record = (
+    actor: string,
+    entry: {
+      action: string;
+      target: string;
+      outcome: string;
+      details?: Record<string, unknown>;
+    },
+  ) =>
+    auditSafely(audit(), { actor, ...entry }, (error) =>
+      logger.error("the audit row did not write", {
+        action: entry.action,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
 
   const admittedEmail = async (emails: readonly string[]): Promise<void> => {
     const appUrl = (env[APP_URL_VARIABLE] ?? "").trim();
@@ -707,6 +741,13 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
     try {
       await database().query(GRANTS_TABLE_SQL);
       await database().query(REVOKE_GRANT_SQL, [id, Date.now()]);
+      const actor = (await sessionReader()?.(headersOf(request)))?.userId ?? "operator";
+      await record(actor, {
+        action: "support-access.revoke",
+        target: id,
+        outcome: "ok",
+        details: { by: "operator" },
+      });
       logger.info("support access revoked by an operator", { account: id });
       sendJson(response, 200, { ok: true, granted: false });
     } catch (error) {
@@ -736,6 +777,41 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
         "the account id in the path is not valid URL encoding",
       );
       return undefined;
+    }
+  };
+
+  /**
+   * The trail, newest first.
+   *
+   * `before` is the `(at, id)` watermark of the last row a reader has, so the next page
+   * continues exactly where the last one stopped even when two acts share a millisecond.
+   */
+  const listActivity = async (request: IncomingMessage, response: ServerResponse) => {
+    const url = new URL(request.url ?? "/", "http://localhost");
+    const limit = Number.parseInt(url.searchParams.get("limit") ?? "", 10);
+    const at = Number.parseInt(url.searchParams.get("beforeAt") ?? "", 10);
+    const id = Number.parseInt(url.searchParams.get("beforeId") ?? "", 10);
+    const before = Number.isFinite(at) && Number.isFinite(id) ? { at, id } : undefined;
+    const query = {
+      ...(Number.isFinite(limit) ? { limit } : {}),
+      ...(before === undefined ? {} : { before }),
+      ...(url.searchParams.get("actor") ? { actor: url.searchParams.get("actor") ?? "" } : {}),
+      ...(url.searchParams.get("action") ? { action: url.searchParams.get("action") ?? "" } : {}),
+    };
+    try {
+      const entries = await audit().recent(query);
+      sendJson(response, 200, {
+        ok: true,
+        entries,
+        // The watermark for the next page, or null when this page was the last one.
+        next:
+          entries.length === 0
+            ? null
+            : { beforeAt: entries.at(-1)?.at ?? 0, beforeId: entries.at(-1)?.id ?? 0 },
+      });
+    } catch (error) {
+      logger.error("the activity trail did not read", { error: messageOf(error) });
+      refuse(response, 500, "activity-unavailable", "the activity trail could not be read");
     }
   };
 
@@ -778,6 +854,13 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
         ].join("\n"),
       });
     } catch (error) {
+      const actor = (await sessionReader()?.(headersOf(request)))?.userId ?? "operator";
+      await record(actor, {
+        action: "mail.test",
+        target: to,
+        outcome: "failed",
+        details: { transport: kind, error: messageOf(error) },
+      });
       logger.error("the test message did not send", {
         transport: kind,
         error: messageOf(error),
@@ -786,6 +869,13 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
       return;
     }
 
+    const actor = (await sessionReader()?.(headersOf(request)))?.userId ?? "operator";
+    await record(actor, {
+      action: "mail.test",
+      target: to,
+      outcome: "ok",
+      details: { transport: kind },
+    });
     logger.info("test message sent", { transport: kind, to });
     sendJson(response, 200, { ok: true, transport: kind });
   };
@@ -794,6 +884,17 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
     name: "admin",
     async handle(request, response): Promise<boolean> {
       const path = new URL(request.url ?? "/", "http://localhost").pathname;
+
+      if (path === ACTIVITY_PATH) {
+        if (!(await operatorGate(request, response))) return true;
+        if (!storageGate(response)) return true;
+        if (methodOf(request) !== "GET") {
+          methodNotAllowed(response, "GET", methodOf(request));
+          return true;
+        }
+        await listActivity(request, response);
+        return true;
+      }
 
       if (path === MAIL_TEST_PATH) {
         if (!(await operatorGate(request, response))) return true;

@@ -16,6 +16,7 @@ import { envWithSettings, resolveSetting } from "@suite/settings";
 import { Pool } from "pg";
 import { createLogger, type Logger } from "../logging.js";
 import type { RouteModule } from "../routes.js";
+import { type AuditStore, auditSafely, createAuditStore } from "./audit.js";
 import { composeBilling } from "./auth-billing.js";
 import { publishSessionReader, sessionReader } from "./context.js";
 import { createGrantStore, type GrantStore } from "./grants.js";
@@ -100,6 +101,8 @@ export interface AuthModuleOptions {
   grants?: GrantStore;
   /** Writes the plugin's `admin` role for an operator. A test passes a spy. */
   operatorRoles?: (userId: string) => Promise<void>;
+  /** The audit trail. Defaults to this module's pool; a test passes a memory store. */
+  audit?: AuditStore;
   logger?: Logger;
 }
 
@@ -209,6 +212,34 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
     store ??= createGrantStore(database());
     return store;
   };
+
+  let trail: AuditStore | null = options.audit ?? null;
+  const audit = (): AuditStore => {
+    trail ??= createAuditStore(database());
+    return trail;
+  };
+
+  /**
+   * One row per act on somebody else's account.
+   *
+   * The actor is always the *operator*: an impersonation is their act, and the row exists so
+   * the account can be told and so a later question can be answered. A refusal that reached
+   * an authorisation answer writes too, because "somebody tried" is the fact an incident
+   * review wants; a 401 writes nothing, because it names no actor.
+   */
+  const record = (entry: {
+    actor: string;
+    action: string;
+    target: string;
+    outcome: string;
+    details?: Record<string, unknown>;
+  }) =>
+    auditSafely(audit(), entry, (error) =>
+      logger.error("the audit row did not write", {
+        action: entry.action,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
 
   /**
    * Gives an operator-by-address the role the plugin's own gate reads.
@@ -350,6 +381,12 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
 
     const grant = await grants().get(session.userId);
     if (method !== "GET") {
+      await record({
+        actor: session.userId,
+        action: method === "PUT" ? "support-access.grant" : "support-access.revoke",
+        target: session.userId,
+        outcome: "ok",
+      });
       logger.info("support access changed", {
         account: session.userId,
         granted: method === "PUT",
@@ -401,10 +438,18 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
     }
 
     if (stop) {
+      // The target is the account being worn, read from the plugin's own cookie jar rather
+      // than guessed: `admin_session` names the operator, `session_token` names who is worn.
       await relayCookies(
         await pluginCall(entry, "/api/auth/admin/stop-impersonating", cookies),
         response,
       );
+      await record({
+        actor: session.userId,
+        action: "impersonate.stop",
+        target: session.userId,
+        outcome: "ok",
+      });
       return true;
     }
 
@@ -475,6 +520,13 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
     const answeredText = await answered.text();
     const refusal = refusalOf(answeredText);
     if (refusal !== null) {
+      await record({
+        actor: session.userId,
+        action: "impersonate",
+        target: userId,
+        outcome: "refused",
+        details: { code: refusal.code },
+      });
       logger.warn("operator impersonation refused", {
         actor: session.userId,
         target: userId,
@@ -489,6 +541,12 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
       return true;
     }
 
+    await record({
+      actor: session.userId,
+      action: "impersonate",
+      target: userId,
+      outcome: "ok",
+    });
     logger.warn("operator impersonation started", { actor: session.userId, target: userId });
     await relayCookies(answered, response, answeredText);
     return true;

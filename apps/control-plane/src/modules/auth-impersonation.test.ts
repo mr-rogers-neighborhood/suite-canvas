@@ -2,6 +2,7 @@ import type { AccountSession, AuthEntry } from "@suite/auth";
 import { afterEach, describe, expect, it } from "vitest";
 import { type ControlPlane, createControlPlane } from "../host.js";
 import { createLogger } from "../logging.js";
+import { memoryAuditStore } from "./audit.js";
 import { createAuthModule } from "./auth.js";
 import type { GrantStore, SupportGrant } from "./grants.js";
 
@@ -51,6 +52,8 @@ interface Harness {
   calls: string[];
   /** The accounts whose plugin role this module wrote before impersonating. */
   roles: string[];
+  /** The audit rows the module wrote. */
+  trail: ReturnType<typeof memoryAuditStore>;
 }
 
 async function start(
@@ -67,6 +70,7 @@ async function start(
 ): Promise<Harness> {
   const calls: string[] = [];
   const roles: string[] = [];
+  const trail = memoryAuditStore();
   const session =
     options.session === null
       ? null
@@ -136,6 +140,7 @@ async function start(
         operatorRoles: async (userId) => {
           roles.push(userId);
         },
+        audit: trail,
         logger: log,
       }),
     ],
@@ -145,7 +150,7 @@ async function start(
   });
   running.push(plane);
   const port = await plane.listen(0);
-  return { url: `http://127.0.0.1:${port}`, calls, roles };
+  return { url: `http://127.0.0.1:${port}`, calls, roles, trail };
 }
 
 const impersonate = (url: string, body: unknown = { userId: TARGET }) =>
@@ -308,5 +313,73 @@ describe("the plugin's own refusal", () => {
     expect(response.headers.getSetCookie()).toHaveLength(0);
     // The role was still written: the refusal is about the operator, not the target.
     expect(roles).toEqual([OPERATOR]);
+  });
+});
+
+describe("the audit trail", () => {
+  it("records a started impersonation with the operator as the actor", async () => {
+    const { url, trail } = await start({ granted: [TARGET] });
+
+    await impersonate(url);
+
+    expect(trail.entries).toEqual([
+      expect.objectContaining({
+        actor: OPERATOR,
+        action: "impersonate",
+        target: TARGET,
+        outcome: "ok",
+      }),
+    ]);
+  });
+
+  it("records the plugin's refusal, because somebody tried", async () => {
+    const { url, trail } = await start({
+      granted: [TARGET],
+      pluginRefusal: { code: "mfa-enrollment-required", message: "needs a second factor" },
+    });
+
+    await impersonate(url);
+
+    expect(trail.entries).toEqual([
+      expect.objectContaining({
+        actor: OPERATOR,
+        action: "impersonate",
+        target: TARGET,
+        outcome: "refused",
+        details: { code: "mfa-enrollment-required" },
+      }),
+    ]);
+  });
+
+  it("records a stop so the pair reads as one session", async () => {
+    const { url, trail } = await start({ granted: [TARGET] });
+
+    await fetch(`${url}/api/account/stop-impersonating`, {
+      method: "POST",
+      headers: { cookie: "better-auth.admin_session=operator" },
+    });
+
+    expect(trail.entries.at(-1)).toMatchObject({ action: "impersonate.stop", outcome: "ok" });
+  });
+
+  it("records an account's own consent, which is what version two of a dispute cites", async () => {
+    const { url, trail } = await start({ session: { operator: false } });
+
+    await fetch(`${url}/api/account/support-access`, {
+      method: "PUT",
+      headers: { cookie: "better-auth.session_token=abc" },
+    });
+
+    expect(trail.entries).toEqual([
+      expect.objectContaining({ action: "support-access.grant", outcome: "ok" }),
+    ]);
+  });
+
+  it("writes nothing when nobody is signed in, because it names no actor", async () => {
+    const { url, trail } = await start({ session: null });
+
+    await fetch(`${url}/api/account/support-access`, { method: "PUT" });
+
+    expect(trail.entries).toHaveLength(0);
   });
 });

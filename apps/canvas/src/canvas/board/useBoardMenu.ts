@@ -1,7 +1,5 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import type { ContextMenuItem } from "../../dialogs/ContextMenu";
-import { useUiStore } from "../../store/useUiStore";
-import { usePlacementRunStore } from "../placementRun";
 import { buildBoardMenu } from "./menu/buildMenu";
 import type { useBoardCommands } from "./useBoardCommands";
 import type { useBoardProjection } from "./useBoardProjection";
@@ -21,19 +19,6 @@ export function useBoardMenu(
   const { contextMenu, snapshot, workspace, store, mode, setMode } = ui;
   const { projection, sections, commands, enterPortal, startEdgeDescription } = input;
   const { cardsById, sectionMembershipMap } = projection;
-
-  /**
-   * A run from a card that is already placed: the card is the hub, so the run holds
-   * nothing and the library is what fills the hand. Opened rather than started here,
-   * because the spokes are the reader's to choose.
-   */
-  const runFromCard = useCallback((cardId: string, shape: "fan" | "thread") => {
-    usePlacementRunStore
-      .getState()
-      .start([], { shape, hub: "existing", originId: cardId, source: "canvas" });
-    useUiStore.getState().setPurpose("run");
-    useUiStore.getState().setLibraryOpen(true, "run");
-  }, []);
 
   return useMemo<ContextMenuItem[]>(() => {
     // Menus are built from what this session may do, so a share never renders
@@ -65,7 +50,6 @@ export function useBoardMenu(
       createPortalAt: commands.createPortalAt,
       createPortalToNewBoard: commands.createPortalToNewBoard,
       duplicateCards: commands.duplicateCards,
-      runFromCard,
       moveCardToBoard: commands.moveCardToBoard,
       otherBoards: commands.otherBoards,
       changeLayer: commands.changeLayer,
@@ -110,6 +94,5 @@ export function useBoardMenu(
     sections,
     enterPortal,
     startEdgeDescription,
-    runFromCard,
   ]);
 }

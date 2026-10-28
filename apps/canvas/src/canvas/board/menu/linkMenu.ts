@@ -1,5 +1,4 @@
 import type { ContextMenuItem } from "../../../dialogs/ContextMenu";
-import { MODE_NAMES, nextMode } from "../../links/linkGesture";
 import { appearanceBranch } from "./appearanceMenu";
 import type { BoardMenuContext } from "./types";
 
@@ -82,30 +81,15 @@ export function edgeMenuBranch(ctx: BoardMenuContext): ContextMenuItem[] | null 
 }
 
 export function connectorMenuBranch(ctx: BoardMenuContext): ContextMenuItem[] | null {
-  const {
-    workspace,
-    mode,
-    setMode,
-    canManageStructure,
-    setSelectedConnector,
-    setSelectedSectionConnector,
-  } = ctx;
+  const { workspace, canManageStructure, setSelectedConnector, setSelectedSectionConnector } = ctx;
   const menu = ctx.menu;
   const nodeId = menu.nodeId;
   if (!(menu.kind === "connector")) return null;
   if (!canManageStructure) return [];
-  // The same toggle as the widget bar, where the user is already looking when
-  // they right-click the dot they mean to start from.
-  const switched = nextMode(mode);
-  const modeItem = {
-    label: `Switch to ${MODE_NAMES[switched]} mode`,
-    onSelect: () => setMode(switched),
-  };
   // Section connectors address a section, card connectors address a node.
   if (menu.sectionId && menu.connectorId) {
     const { sectionId, connectorId } = menu;
     return [
-      modeItem,
       {
         label: "Reposition Connector",
         onSelect: () => setSelectedSectionConnector({ sectionId, connectorId }),
@@ -121,26 +105,6 @@ export function connectorMenuBranch(ctx: BoardMenuContext): ContextMenuItem[] | 
     ];
   }
   return [
-    modeItem,
-    // The dot names the card as surely as the card does, and a reader right-clicking a
-    // dot to fan from it means the card behind it.
-    ...(ctx.canCreateContent && nodeId
-      ? [
-          {
-            label: "Run from here",
-            items: [
-              {
-                label: "Fan cards from here",
-                onSelect: () => ctx.runFromCard(nodeId, "fan"),
-              },
-              {
-                label: "Thread cards from here",
-                onSelect: () => ctx.runFromCard(nodeId, "thread"),
-              },
-            ],
-          },
-        ]
-      : []),
     {
       label: "Reposition Connector",
       onSelect: () => {

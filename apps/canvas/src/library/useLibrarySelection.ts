@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import type { CanvasMode } from "../canvas/links/linkGesture";
+import { useRef, useState } from "react";
 import {
   applySelection,
   EMPTY_SELECTION,
@@ -8,27 +7,19 @@ import {
   selectAll,
   selectedInOrder,
 } from "./librarySelection";
-import { isBoardItem, type LibraryItem } from "./libraryTypes";
+import type { LibraryItem } from "./libraryTypes";
 
 /**
- * Row selection: the input every bulk action and every run shares (ADR-0011
- * amendment, ADR-0063). It is drawer state, not document state — nothing about a
- * selection is stored.
+ * Row selection: the input every bulk action shares (ADR-0011 amendment). It is
+ * drawer state, not document state: nothing about a selection is stored.
  */
 export function useLibrarySelection({
   tab,
   ordered,
-  running,
-  onRunCards,
-  onRunLoop,
 }: {
   tab: string;
-  /** The rows in the order on screen; a run places in this order. */
+  /** The rows in the order on screen, which is the order a bulk action follows. */
   ordered: LibraryItem[];
-  /** A live run keeps selection mode on, and its end leaves it (ADR-0064 §10). */
-  running: boolean;
-  onRunCards: ((cardIds: readonly string[], mode: CanvasMode) => void) | undefined;
-  onRunLoop: ((cardIds: readonly string[]) => void) | undefined;
 }) {
   const [selection, setSelection] = useState<SelectionState>(EMPTY_SELECTION);
   /**
@@ -40,12 +31,6 @@ export function useLibrarySelection({
   /** Shift is down and has not picked anything yet: the mode is only borrowed. */
   const armed = useRef(false);
   const selectedCount = useRef(0);
-  useEffect(() => {
-    // Leaving a run leaves selection mode with it: a selection made for a run
-    // means nothing once the run has ended. Only a purpose change runs this, so
-    // a reader who turned the mode on themselves keeps it.
-    setSelecting(running);
-  }, [running]);
 
   /** The rows a selection can hold, in the order on screen. */
   const selectableOrder = tab === "cards" || tab === "inbox" ? ordered.map((item) => item.id) : [];
@@ -98,49 +83,15 @@ export function useLibrarySelection({
   const clear = () => setSelection(EMPTY_SELECTION);
   selectedCount.current = selected.length;
 
-  /**
-   * A run places cards. A board in the selection is skipped rather than failing
-   * the run: it is a row like any other in this list, but there is nothing to
-   * place — placing a board is what the portal row action does.
-   */
-  /**
-   * The selected rows a run can place, in the same order. A board is a row like the
-   * rest, but there is nothing to place: it opens through a portal, which is the row
-   * action, not a card in the hand.
-   */
-  const runnable = selected.filter((id) => {
-    const item = ordered.find((entry) => entry.id === id);
-    return item === undefined || !isBoardItem(item);
-  });
-
-  const runVerb = (mode: CanvasMode) => {
-    if (runnable.length === 0) return;
-    onRunCards?.(runnable, mode);
-    // A run is now live; the selection has done its job.
-    setSelection(EMPTY_SELECTION);
-    setSelecting(false);
-  };
-
-  const runLoop = () => {
-    if (runnable.length === 0) return;
-    onRunLoop?.(runnable);
-    setSelection(EMPTY_SELECTION);
-    setSelecting(false);
-  };
-
   return {
     selection,
     selecting,
     selected,
-    runnable,
-    runnableCount: runnable.length,
     selectableOrder,
     selectRow,
     shiftHeld,
     toggleSelecting,
     clear,
     selectAll: () => setSelection(selectAll(selectableOrder)),
-    runVerb,
-    runLoop,
   };
 }

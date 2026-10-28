@@ -2,11 +2,8 @@ import { useEffect } from "react";
 import { targetAtElement } from "../../cards/tour";
 import { markBoot, measureBoot } from "../../dev/bootTiming";
 import { countRender } from "../../dev/perf";
-import { useEscapeLayer } from "../../shell/escapeLayers";
 import { usePublishLibraryDrag } from "../PeerLibraryDragLayer";
-import { usePlacementRunStore } from "../placementRun";
 import { isRecording, useRecordRunStore } from "../recordRun";
-import { usePlacementEngine } from "../usePlacementEngine";
 import { useRecordEngine } from "../useRecordEngine";
 import { BoardOverlays } from "./BoardOverlays";
 import { BoardSurface } from "./BoardSurface";
@@ -22,7 +19,6 @@ import { useBoardSections } from "./useBoardSections";
 import { useBoardSelection } from "./useBoardSelection";
 import { useBoardUi } from "./useBoardUi";
 import { useNoTextSelection } from "./useNoTextSelection";
-import { useSettledRun } from "./useSettledRun";
 
 /** Pointer samples published to peers land at most once per this window. */
 const POINTER_THROTTLE_MS = 60;
@@ -43,9 +39,6 @@ const RECORD_CLICK_THROUGH =
  */
 export function BoardView() {
   countRender("canvas");
-  // One engine per surface: the canvas reports and steers a run, and the library
-  // starts one. Same hook, so there is exactly one implementation.
-  const placementEngine = usePlacementEngine();
   const ui = useBoardUi();
   const { setPointer, selectedConnector, screenToFlowPosition } = ui;
   usePublishLibraryDrag();
@@ -55,17 +48,7 @@ export function BoardView() {
     measureBoot("to-canvas", "store:created", "canvas:mounted");
   }, []);
 
-  /**
-   * A held run and an armed thread are modes the reader is *in*, so Escape ends
-   * them before it closes anything they are standing on — a card in hand keeps its
-   * selection, which keeps the inspector open, and the run still owns the key.
-   * They are layers rather than branches of the chain below for exactly that
-   * reason: a layer is ordered by when it started, and a run starts after the
-   * panel it is standing over.
-   */
-  const armedRun = usePlacementRunStore((state) => state.run !== null);
-  useEscapeLayer(() => usePlacementRunStore.getState().finish(), armedRun);
-  /** The record lane's one engine, beside the placement run's (ADR-0064 §9). */
+  /** The record lane's one engine. */
   const recordEngine = useRecordEngine();
 
   // Board-scoped views derived from the snapshot, so a CRDT change anywhere
@@ -81,8 +64,6 @@ export function BoardView() {
   // wide, because the sweep grows out of whatever was selected before it, wherever that
   // was, and the board is the only surface this hook is mounted on.
   useNoTextSelection();
-  // A run that just placed its last card still owns the press until the pointer lifts.
-  useSettledRun();
 
   const links = useBoardLinks(ui, { refs, projection });
   const { labelHandlers, startEdgeDescription } = links;
@@ -172,15 +153,8 @@ export function BoardView() {
         links={links}
         camera={camera}
         commands={commands}
-        placementEngine={placementEngine}
       />
-      <BoardOverlays
-        ui={ui}
-        projection={projection}
-        links={links}
-        menuItems={menuItems}
-        placementEngine={placementEngine}
-      />
+      <BoardOverlays ui={ui} projection={projection} links={links} menuItems={menuItems} />
     </div>
   );
 }

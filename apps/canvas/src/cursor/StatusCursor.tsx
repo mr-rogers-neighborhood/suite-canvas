@@ -27,9 +27,6 @@ export const GESTURE_GLYPHS: Record<CanvasMode, string> = {
  */
 export const PURPOSE_GLYPHS: Record<CanvasPurpose, string | null> = {
   explore: null,
-  // A queue, not a play triangle: `run` places a list, it does not play anything
-  // back (ADR-0064 §11).
-  run: "\u2261",
   explain: "\u25c8",
   record: "\u25c9",
   present: "\u25a3",
@@ -40,7 +37,6 @@ export type RingShape = "solid" | "double" | "dashed" | "halo";
 
 export const RING_SHAPES: Record<CanvasPurpose, RingShape> = {
   explore: "solid",
-  run: "double",
   // Solid, like exploring: explain is a way of *looking*, and the ring's shape has to
   // stay free to mark the states that change what a click will write.
   explain: "solid",
@@ -50,7 +46,6 @@ export const RING_SHAPES: Record<CanvasPurpose, RingShape> = {
 
 const PURPOSE_LABELS: Record<CanvasPurpose, string> = {
   explore: "exploring",
-  run: "running a sequence",
   explain: "gathering a context",
   record: "recording a tour",
   present: "presenting",
@@ -77,10 +72,7 @@ function initialOf(user: PresenceUser): string {
  * Everything the cursor knows, in one sentence. A pointer that is only a colour would
  * be a state some readers cannot read, so the label is not decoration.
  *
- * A peer cursor carries two things now: who they are, and what the next click will do.
- * A run count, the unread count and the stack of off-screen people used to ride here
- * too; all three spoke for the reader's own pointer, and the bar, the dock and the
- * edge ticks answer them without a bubble.
+ * A peer cursor carries two things: who they are, and what the next click will do.
  */
 function cursorLabel(user: PresenceUser, purpose: CanvasPurpose, gesture: CanvasMode): string {
   const parts = [`${user.name} \u2014 ${PURPOSE_LABELS[purpose]}`];

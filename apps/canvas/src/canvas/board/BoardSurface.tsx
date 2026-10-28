@@ -16,7 +16,6 @@ import { edgeTypes } from "../EdgeDescription";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../interactions/multiSelect";
 import { AboveLinkLayer } from "../links/AboveLinkLayer";
 import { useLinkThreadStore } from "../links/linkThread";
-import { ModeControl } from "../links/ModeControl";
 import { SectionLinkLayer } from "../links/SectionLinkLayer";
 import { LocalDragEase, prefersReducedMotion } from "../localEasing";
 import { nodeTypes } from "../NoteNode";
@@ -28,7 +27,6 @@ import { PresenceLayer } from "../presence/PresenceLayer";
 import { SnapGuideLayer } from "../SnapGuideLayer";
 import { SectionLayer } from "../sections/SectionLayer";
 import { type SnapGuide, type SnapRect, snapRect } from "../snapping";
-import type { usePlacementEngine } from "../usePlacementEngine";
 import { WhiteboardNode } from "../WhiteboardNode";
 import { ZOOM_MAX, ZOOM_MIN } from "../zoomRange";
 import { DRAG_THROTTLE_MS, isEditorTarget } from "./boardSupport";
@@ -65,7 +63,6 @@ type BoardSurfaceProps = {
   links: ReturnType<typeof useBoardLinks>;
   camera: ReturnType<typeof useBoardCamera>;
   commands: ReturnType<typeof useBoardCommands>;
-  placementEngine: ReturnType<typeof usePlacementEngine>;
 };
 
 /**
@@ -83,7 +80,6 @@ export function BoardSurface({
   links,
   camera,
   commands,
-  placementEngine,
 }: BoardSurfaceProps) {
   const {
     workspace,
@@ -648,7 +644,6 @@ export function BoardSurface({
       <SnapGuideLayer guides={snapGuides} />
       <Background color="var(--rf-dot)" />
       <Controls showInteractive={false}>
-        <ModeControl engine={placementEngine} />
         <PurposeControl />
         {/* Zoom to what is selected, inside the pill React Flow already draws:
             a readout and a grid switch in a second corner stack were a control

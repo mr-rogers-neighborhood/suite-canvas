@@ -25,23 +25,6 @@ export interface LinkEndpointRef {
 export const canvasModes = ["place", "thread", "fan"] as const;
 export type CanvasMode = (typeof canvasModes)[number];
 
-/** Human name of each mode, for menus and labels. */
-export const MODE_NAMES: Record<CanvasMode, string> = {
-  place: "place",
-  thread: "thread",
-  fan: "fan",
-};
-
-/**
- * The cycle a click walks: place → thread → fan → branch → place. One reader, so
- * the widget-bar button and the connector menu can never offer different next
- * steps.
- */
-export function nextMode(mode: CanvasMode): CanvasMode {
-  const index = canvasModes.indexOf(mode);
-  return canvasModes[(index + 1) % canvasModes.length] ?? "place";
-}
-
 /** True for the modes that keep drawing instead of placing one thing at a time. */
 export function isChainingMode(mode: CanvasMode): boolean {
   return mode !== "place";

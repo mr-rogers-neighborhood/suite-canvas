@@ -9,7 +9,6 @@ export function useLibraryRowActions({
   tab,
   ordered,
   activeBoardId,
-  runActive,
   canManageTrash,
   onLocateCard,
   onLocateBoard,
@@ -20,7 +19,6 @@ export function useLibraryRowActions({
   onOpenCard,
   onGoToBoard,
   onPlace,
-  onQueueCards,
   onTrash,
   setLocateMiss,
   setPendingDelete,
@@ -30,7 +28,6 @@ export function useLibraryRowActions({
   ordered: LibraryItem[];
   visibleBoards: LibraryBoard[];
   activeBoardId: string | null;
-  runActive: boolean;
   canManageTrash: boolean;
   onLocateCard: (cardId: string) => boolean;
   onLocateBoard: (boardId: string) => boolean;
@@ -43,7 +40,6 @@ export function useLibraryRowActions({
   onOpenCard: (cardId: string) => void;
   onGoToBoard: (boardId: string) => void;
   onPlace: (cardId: string) => void;
-  onQueueCards: ((cardIds: readonly string[]) => void) | undefined;
   onTrash: (cardId: string) => void;
   setLocateMiss: (message: string | null) => void;
   setPendingDelete: (board: LibraryBoard) => void;
@@ -122,8 +118,8 @@ export function useLibraryRowActions({
         : {
             // While a run is live, picking another card is the loop: it joins the
             // sequence instead of starting a second run beside it (ADR-0063 §6).
-            label: runActive ? "Place next" : "Place on board",
-            onSelect: () => (runActive ? onQueueCards?.([card.id]) : onPlace(card.id)),
+            label: "Place on board",
+            onSelect: () => onPlace(card.id),
           },
       ...(canManageTrash
         ? [{ label: "Move to trash", danger: true, onSelect: () => onTrash(card.id) }]

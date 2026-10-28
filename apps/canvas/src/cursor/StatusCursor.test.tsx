@@ -50,14 +50,14 @@ describe("StatusCursor", () => {
 
   it("carries the gesture slot only when the next click is not a plain placement", () => {
     const { container, rerender } = render(
-      <StatusCursor user={ana} purpose="run" gesture="thread" isSelf={false} />,
+      <StatusCursor user={ana} purpose="record" gesture="thread" isSelf={false} />,
     );
 
     // One slot is the whole vocabulary of a peer's cursor now: the run count, the unread
     // count and the stack of off-screen people went with the local bubble.
     expect(slots(container)).toEqual(["gesture"]);
 
-    rerender(<StatusCursor user={ana} purpose="run" gesture="place" isSelf={false} />);
+    rerender(<StatusCursor user={ana} purpose="record" gesture="place" isSelf={false} />);
 
     expect(slots(container)).toEqual([]);
   });
@@ -86,19 +86,19 @@ describe("StatusCursor", () => {
       "Ana \u2014 recording a tour",
     );
 
-    rerender(<StatusCursor user={ana} purpose="run" gesture="thread" isSelf={false} />);
+    rerender(<StatusCursor user={ana} purpose="record" gesture="thread" isSelf={false} />);
 
     // Purpose and gesture, in one sentence: a screenshot of the bubble is legible
     // without the widget the other reader is looking at.
     expect(screen.getByTestId("status-cursor-bubble")).toHaveAttribute(
       "title",
-      "Ana \u2014 running a sequence \u00b7 thread",
+      "Ana \u2014 recording a tour \u00b7 thread",
     );
   });
 
   it("keeps everything but the bubble transparent to the pointer", () => {
     const { container } = render(
-      <StatusCursor user={ana} purpose="run" gesture="fan" isSelf={false} />,
+      <StatusCursor user={ana} purpose="record" gesture="fan" isSelf={false} />,
     );
 
     // Expressed as classes because the discipline is the stylesheet's: the layer wraps a

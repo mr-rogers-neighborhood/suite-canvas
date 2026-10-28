@@ -27,35 +27,18 @@
 }
 
 /*
- * Two treatments, because the palette decides the colour and the treatment decides the
- * emphasis:
- *
- *   rest    the bar's own surface with an ink glyph — explore, and the resting look  (explore)
- *   chip    an ink fill with a surface glyph, i.e. the bar inverted  (run, present)
- *   solid   a hue fill with a surface glyph  (record)
- *
- * `run` is the chip on purpose: it is what holding shift shows, so the preview and
- * the committed control are the same painting — which is the whole point of the note
- * that started this. In a dark theme the chip reads white; in a light one, black.
- */
-/*
  * The treatments are all fill-and-ink now, because the segment has no border of its own:
  * the palette already supplies both for every value, so the only thing left to say is
  * that these three are *engaged* rather than resting.
  */
-.purpose-control[data-purpose="run"],
 .purpose-control[data-purpose="present"],
 .purpose-control[data-purpose="record"] {
   box-shadow: inset 0 0 0 1px var(--value-hue);
 }
 
 /*
- * Hover is the same rule the link tool uses, on purpose: these are two segments of one
- * bar, so pointing at either should tint it by its own value by the same amount. It
- * used to mix the ink in instead, which in a light theme greyed a white chip and in a
- * dark one lifted the bar's own segment — a change of *state* for what is only a
- * pointer. Mixing the value's own hue keeps a chip a chip: `run`'s fill is its hue, so
- * an engaged purpose looks untouched, which is the state outranking the pointer.
+ * Hover tints by the value's own hue rather than mixing ink in: a pointer is not a
+ * change of state, so an engaged purpose must look the same with the pointer on it.
  */
 .purpose-control:hover {
   background: color-mix(in srgb, var(--value-hue) 10%, var(--value-fill));

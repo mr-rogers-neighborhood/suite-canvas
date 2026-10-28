@@ -38,7 +38,7 @@ Tests:
 
 - Behaviour with React: `apps/canvas/src/canvas/CanvasBoard.test.tsx` mounts the board and fires
   pointer and key events. Add one case for the gesture and one for the capability it needs.
-- Geometry or a plan: a pure module beside the code, such as `canvas/placeRun.test.ts` or
+- Geometry or a plan: a pure module beside the code, such as `canvas/arrangeCommand.test.ts` or
   `canvas/localEasing.test.ts`, with `pnpm exec vitest run <path>`.
 - The real pointer path: `e2e/tests/input/` for modifier and purpose gestures, `e2e/tests/boards/` for
   board and section gestures. `e2e/tests/fixtures/marquee.ts` has the drag helpers.

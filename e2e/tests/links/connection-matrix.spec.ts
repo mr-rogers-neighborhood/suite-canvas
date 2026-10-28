@@ -286,7 +286,9 @@ async function linkByDrag(
 
 const names = ["note", "sketch", "portal", "section"] as const;
 
-test("every kind links to every other kind by clicking dots in thread mode", async ({ page }) => {
+test("every kind links to every other kind by clicking one dot and then another", async ({
+  page,
+}) => {
   for (const sourceName of names) {
     for (const targetName of names) {
       if (sourceName === targetName) continue;
@@ -295,7 +297,6 @@ test("every kind links to every other kind by clicking dots in thread mode", asy
         // strokes and covers across each other, and a failure then blames the
         // pair that happens to run last rather than the pair that is broken.
         const entities = await kinds(page);
-        await page.getByTestId("link-mode-toggle").click();
         const source = entities.find((entry) => entry.name === sourceName);
         const target = entities.find((entry) => entry.name === targetName);
         if (!source || !target) throw new Error(`missing ${sourceName} or ${targetName}`);
@@ -317,7 +318,6 @@ test("every kind links to every other kind by dragging between dots", async ({ p
         // its own (covered by the connectors and section specs); the gesture
         // here is the drag, and a dot that hides mid-flight would only test the
         // hover rule.
-        await page.getByTestId("link-mode-toggle").click();
         const source = entities.find((entry) => entry.name === sourceName);
         const target = entities.find((entry) => entry.name === targetName);
         if (!source || !target) throw new Error(`missing ${sourceName} or ${targetName}`);

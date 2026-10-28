@@ -6,7 +6,6 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { usePlacementRunStore } from "../canvas/placementRun";
 import { useSavedViews } from "../chrome/ViewsBar";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
 import { useEscapeLayer } from "../shell/escapeLayers";
@@ -93,10 +92,6 @@ export function LibraryDrawer({
   groupBySection,
   onToggleGroup,
   onOpenCard,
-  onRunCards,
-  runActive = false,
-  onQueueCards,
-  onRunLoop,
   canManageTrash = true,
   workspace: workspaceProp = null,
   initialQuery = "",
@@ -106,19 +101,6 @@ export function LibraryDrawer({
   const activeViewId = useUiStore((state) => state.activeViewId);
   const exitView = useUiStore((state) => state.exitView);
   const setLibraryQuery = useUiStore((state) => state.setLibraryQuery);
-  /**
-   * A run is "I am about to place a set", and the set comes from here, so the
-   * purpose opens the drawer already selecting (ADR-0064 §8). Read from the store
-   * rather than taken as a prop: the drawer already reads the library's own state
-   * from it, and the purpose can change while the drawer is open, so a prop would
-   * leave the caller keeping two states in sync.
-   */
-  const running = useUiStore((state) => state.purpose === "run");
-  /**
-   * A card in hand makes the canvas press the run's, not a dismissal: the drawer
-   * stays open behind a run because it is where the next card comes from.
-   */
-  const holdingCard = usePlacementRunStore((state) => state.run !== null);
   const views = useSavedViews(workspace);
   const activeView = views.find((view) => view.id === activeViewId);
   const [activeResult, setActiveResult] = useState(0);
@@ -269,7 +251,7 @@ export function LibraryDrawer({
    * still a press on the library.
    */
   useEffect(() => {
-    if (!open || holdingCard) return;
+    if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Element | null;
       if (target?.closest?.(LIBRARY_PRESS_KEEP)) return;
@@ -282,7 +264,7 @@ export function LibraryDrawer({
     };
     window.addEventListener("pointerdown", onPointerDown, true);
     return () => window.removeEventListener("pointerdown", onPointerDown, true);
-  }, [open, holdingCard, onClose]);
+  }, [open, onClose]);
 
   useEffect(() => {
     const focus = () => {
@@ -330,7 +312,6 @@ export function LibraryDrawer({
     ordered,
     visibleBoards,
     activeBoardId,
-    runActive,
     canManageTrash,
     onLocateCard,
     onLocateBoard,
@@ -342,7 +323,6 @@ export function LibraryDrawer({
     onOpenCard,
     onGoToBoard,
     onPlace,
-    onQueueCards,
     onTrash,
     setLocateMiss,
     setPendingDelete,
@@ -368,16 +348,7 @@ export function LibraryDrawer({
     toggleSelecting,
     clear: clearSelection,
     selectAll: selectAllRows,
-    runVerb,
-    runLoop: runSelectionLoop,
-    runnable,
-  } = useLibrarySelection({
-    tab,
-    ordered,
-    running,
-    onRunCards,
-    onRunLoop,
-  });
+  } = useLibrarySelection({ tab, ordered });
 
   // Shift over the open drawer borrows the multi-select UI; a pick keeps it.
   useEffect(() => {
@@ -503,15 +474,12 @@ export function LibraryDrawer({
         onClose={onClose}
       />
 
-      {/* The selection bar replaces the search row while a selection exists: the
-          verbs are the reason the rows were selected, and a run starts from here. */}
+      {/* The selection bar replaces the search row while a selection exists: what a
+          reader picks rows for is acting on them together. */}
       {selecting || selection.ids.length > 0 ? (
         <LibrarySelectionBar
           selected={selected}
-          runnable={runnable}
           canManageTrash={canManageTrash}
-          onRun={runVerb}
-          onRunLoop={runSelectionLoop}
           onTrash={onTrash}
           onSelectAll={selectAllRows}
           onClear={clearSelection}

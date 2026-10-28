@@ -83,24 +83,18 @@ test("turns explain on and off, and offers nothing else", async ({ page }) => {
   await expect(page.getByTestId("explain-panel")).toHaveCount(0);
 });
 
-test("a held modifier previews the gesture tool and nothing else", async ({ page }) => {
+test("a held modifier does not open the library or repaint the purpose", async ({ page }) => {
   await page.goto(workspaceUrl("modifiers"));
   await expect(cards(page)).toHaveCount(2);
-  const mode = page.getByTestId("link-mode-toggle");
 
-  // Shift, Control and Alt belong to the relationship axis now. Holding one must not
-  // open the library or repaint the purpose button: that collision is what made a
-  // threaded link impossible while Shift meant "run".
+  // Shift, Control and Alt belong to the relationship axis. Holding one must not open
+  // the library or repaint the purpose button: a modifier is a gesture, not a mode.
   for (const key of ["Shift", "Control", "Alt"]) {
     await page.keyboard.down(key);
     await expect(purpose(page)).toHaveAttribute("data-purpose", "explore");
     await expect(library(page)).toHaveCount(0);
     await page.keyboard.up(key);
   }
-
-  await page.keyboard.down("Shift");
-  await expect(mode).toHaveAttribute("data-hint-mode", "thread");
-  await page.keyboard.up("Shift");
 });
 
 test("presents from the tour card, and the widget is only the exit", async ({ page }) => {

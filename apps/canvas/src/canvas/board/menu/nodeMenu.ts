@@ -183,26 +183,6 @@ export function nodeMenuBranch(ctx: BoardMenuContext): ContextMenuItem[] | null 
               if (nodeId) duplicateCards([nodeId]);
             },
           },
-          {
-            // "How do I put a bunch of cards around this one?" — the answer used to be
-            // "go to the library and start a run, then place the hub first". The card
-            // is already the hub.
-            label: "Run from here",
-            items: [
-              {
-                label: "Fan cards from here",
-                onSelect: () => {
-                  if (nodeId) ctx.runFromCard(nodeId, "fan");
-                },
-              },
-              {
-                label: "Thread cards from here",
-                onSelect: () => {
-                  if (nodeId) ctx.runFromCard(nodeId, "thread");
-                },
-              },
-            ],
-          },
         ]
       : []),
     ...(canEditLayout && moveTargets.length > 0

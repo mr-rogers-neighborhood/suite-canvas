@@ -18,7 +18,7 @@ const id = workspaceIdFactory("e2e-palette-contrast");
  */
 
 /** Everything a "value" is called, across both axes. */
-const VALUES = ["place", "thread", "fan", "branch", "explore", "run", "record", "explain"] as const;
+const VALUES = ["place", "thread", "fan", "branch", "explore", "record", "explain"] as const;
 
 const FLOOR = 4.5;
 

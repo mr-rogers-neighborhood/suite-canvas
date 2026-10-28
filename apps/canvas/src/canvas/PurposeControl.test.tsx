@@ -14,7 +14,7 @@ beforeEach(() => {
  *
  * It is a toggle now, not a cycle. `run` left the axis because a queue can only come from
  * the library, and so did the modifier preview — holding Shift to thread was being read
- * as "run", which is the collision that made the second menu cost more than it explained.
+ * as "record", which is the collision that made the second menu cost more than it explained.
  */
 describe("the purpose control", () => {
   it("turns explain on and off, and nothing else", () => {
@@ -44,12 +44,6 @@ describe("the purpose control", () => {
       expect(["explore", "explain"]).toContain(toggle().getAttribute("data-purpose"));
       fireEvent.click(toggle());
     }
-  });
-
-  it("stands down while a run is in hand, because the run bar is its control", () => {
-    useUiStore.setState({ purpose: "run" });
-    render(<PurposeControl />);
-    expect(screen.queryByTestId("purpose-toggle")).toBeNull();
   });
 
   it("stays as the exit from a state only a tour can enter", () => {

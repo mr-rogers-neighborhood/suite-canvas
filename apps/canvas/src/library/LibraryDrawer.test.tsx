@@ -3,7 +3,6 @@ import { WorkspaceDocument as Document, PORTAL_BOARD_FIELD_ID } from "@suite/gra
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { LoroMap, LoroText } from "loro-crdt";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { usePlacementRunStore } from "../canvas/placementRun";
 import { Dock } from "../chrome/Dock";
 import { useUiStore } from "../store/useUiStore";
 import { LibraryDrawer, type LibraryDrawerProps, type LibraryItem } from "./LibraryDrawer";
@@ -308,7 +307,6 @@ describe("LibraryDrawer search", () => {
 
 describe("LibraryDrawer dismissal", () => {
   afterEach(() => {
-    usePlacementRunStore.setState({ run: null, proposal: null, suspended: [] });
     document.querySelector('[data-testid="canvas-board"]')?.remove();
   });
 
@@ -357,19 +355,6 @@ describe("LibraryDrawer dismissal", () => {
     renderDrawer(workspace, items, { onClose });
 
     fireEvent.pointerDown(screen.getByTestId("library-search"));
-
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it("should leave a press alone while a card is in hand", () => {
-    // The drawer is where the next card of a run comes from, so the canvas press
-    // that puts the held one down must not shut it (ADR-0063 third amendment).
-    const { workspace, items } = fixture();
-    usePlacementRunStore.getState().start(["c1"], { source: "selection" });
-    const onClose = vi.fn();
-    renderDrawer(workspace, items, { onClose });
-
-    fireEvent.pointerDown(board("pane"));
 
     expect(onClose).not.toHaveBeenCalled();
   });

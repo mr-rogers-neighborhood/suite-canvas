@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { Connector, type Point } from "../presence/Connector";
 import { useLinkThreadStore } from "./links/linkThread";
-import { usePlacementRunStore } from "./placementRun";
 import { edgePoint, readSilhouette, type Silhouette } from "./silhouette";
 
 /** Everyone dragging one connector, plus where the first of them is holding it. */
@@ -144,11 +143,7 @@ export function NodeConnectors({
     };
   }, []);
   const hovered = hoveredProp ?? hoveredSelf;
-  // The proposal is read here rather than passed in, so every node kind that mounts
-  // this layer gets the preview without a new prop at five call sites.
-  const proposed = usePlacementRunStore((state) => state.proposal?.anchorId === nodeId);
   const revealed = revealConnectors({
-    proposed,
     selected,
     chaining,
     draftActive,

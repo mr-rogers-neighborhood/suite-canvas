@@ -38,7 +38,7 @@ const global = read("global.css");
 const purpose = read("purpose.css");
 const cursor = read("cursor.css");
 
-const VALUES = ["place", "thread", "fan", "branch", "explore", "run", "record", "explain"] as const;
+const VALUES = ["place", "thread", "fan", "branch", "explore", "record", "explain"] as const;
 
 describe("the value palette", () => {
   it("defines hue, fill and ink for every value", () => {
@@ -54,7 +54,8 @@ describe("the value palette", () => {
     for (const value of ["place", "thread", "fan", "branch"]) {
       expect(global).toContain(`[data-mode="${value}"]`);
     }
-    for (const value of ["explore", "run", "record", "explain"]) {
+    // `run` is not a purpose: the placement run was removed, so no element carries it.
+    for (const value of ["explore", "record", "explain", "present"]) {
       expect(global).toContain(`[data-purpose="${value}"]`);
     }
   });
@@ -157,27 +158,25 @@ describe("the value palette", () => {
     }
     // And the second value is that pairing inverted, which is the "white" the author
     // sees in a dark theme and the "black" in a light one.
-    for (const value of ["thread", "run"]) {
+    for (const value of ["thread"]) {
       expect(global).toContain(`--value-${value}-fill: var(--ink)`);
       expect(global).toContain(`--value-${value}-ink: var(--surface)`);
     }
   });
 
-  it("paints both segments from the palette rather than from per-mode colours", () => {
-    // The rule moved into the pill's own block when the container became the one owner:
-    // every segment is styled in one place, so the link tool and the purpose cannot
-    // disagree about what a value is painted with. Both segments are named by two rules
-    // there — one for geometry, one for paint — so read every rule that names them.
-    const shared = [...global.matchAll(/\.react-flow__controls \.link-mode-control,[^}]*}/g)].map(
+  it("paints the purpose segment from the palette rather than from per-mode colours", () => {
+    // The rule lives in the pill's own block, where the container is the one owner: a
+    // value is painted in one place, so a segment cannot disagree with the palette.
+    const shared = [...global.matchAll(/\.react-flow__controls \.purpose-control\s*\{[^}]*}/g)].map(
       (match) => match[0],
     );
-    expect(shared).toHaveLength(2);
+    expect(shared.length).toBeGreaterThanOrEqual(1);
     const block = shared.join("\n");
     expect(block).toContain("background: var(--value-fill)");
     expect(block).toContain("color: var(--value-ink)");
 
-    // And neither segment may own a border again: that is what produced the seams.
-    for (const segment of [".link-mode-control {", ".purpose-control {"]) {
+    // And the segment may not own a border again: that is what produced the seams.
+    for (const segment of [".purpose-control {"]) {
       const at = segment.startsWith(".purpose")
         ? purpose.indexOf(segment)
         : global.indexOf(segment);

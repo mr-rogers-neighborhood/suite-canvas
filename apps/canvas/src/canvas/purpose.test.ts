@@ -39,7 +39,7 @@ describe("the purpose control", () => {
 describe("what a purpose implies", () => {
   it("reads the gesture everywhere except while presenting", () => {
     expect(purposeReadsGesture("explore")).toBe(true);
-    expect(purposeReadsGesture("run")).toBe(true);
+    expect(purposeReadsGesture("record")).toBe(true);
     expect(purposeReadsGesture("record")).toBe(true);
     // A presentation ignores the tool rather than resetting it, so leaving it
     // returns the reader to what they had.
@@ -47,14 +47,14 @@ describe("what a purpose implies", () => {
   });
 
   it("names run and record as the click-consuming purposes, and only those", () => {
-    expect(purposeClaimsClicks("run")).toBe(true);
+    expect(purposeClaimsClicks("record")).toBe(true);
     expect(purposeClaimsClicks("record")).toBe(true);
     expect(purposeClaimsClicks("explore")).toBe(false);
     expect(purposeClaimsClicks("present")).toBe(false);
   });
 
   it("starts a run and a record in thread, because both are sequences by default", () => {
-    expect(initialGestureFor("run")).toBe("thread");
+    expect(initialGestureFor("record")).toBe("thread");
     expect(initialGestureFor("record")).toBe("thread");
     // Exploring and presenting have no opinion, so the reader keeps their tool.
     expect(initialGestureFor("explore")).toBeNull();

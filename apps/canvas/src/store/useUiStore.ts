@@ -1,8 +1,6 @@
 import type { ViewQuery } from "@suite/graph";
 import { create } from "zustand";
 import type { CanvasMode } from "../canvas/links/linkGesture";
-import { usePlacementRunStore } from "../canvas/placementRun";
-import { DEFAULT_PLACEMENT_OPTIONS, type PlacementOptions } from "../canvas/placeRun";
 import type { CanvasPurpose } from "../canvas/purpose";
 import { useRecordRunStore } from "../canvas/recordRun";
 import { getSession, type SessionCapabilities, sessionCapabilities } from "../session/session";
@@ -55,10 +53,10 @@ export type LibraryTab = "inbox" | "cards" | "trash";
 /**
  * Who put the drawer away, so the same party can bring it back.
  *
- * `mode` was the purpose control's, and it is gone with that control's cycling: a run now
- * starts *from* the drawer, so the drawer is `run`'s to restore when the hand is empty.
+ * `mode` was the purpose control's, and it is gone with that control's cycling.
+ * `reader` is the only door left: the person opened it, so only the person closes it.
  */
-export type LibraryReason = "reader" | "mode" | "run";
+export type LibraryReason = "reader";
 
 /**
  * Puts a board at the front of the session's recency list, once.
@@ -210,11 +208,7 @@ interface UiState extends SessionCapabilities {
   /** Tests and stories override the capability matrix derived from the session. */
   setCapabilities: (capabilities: Partial<SessionCapabilities>) => void;
   libraryOpen: boolean;
-  /**
-   * Who asked for the drawer. A library the *mode* opened (`run` needs a queue) is
-   * the mode's to close; one the reader opened is theirs, and leaving a mode must
-   * not shut a drawer they asked for.
-   */
+  /** Who asked for the drawer: the reader, who is also the one who closes it. */
   libraryReason: LibraryReason;
   libraryTab: LibraryTab;
   selectedNodeIds: string[];
@@ -292,21 +286,13 @@ interface UiState extends SessionCapabilities {
   purpose: CanvasPurpose;
   /**
    * Choose a purpose the reader may choose, and carry out what it implies:
-   * leaving `run` ends the run, and leaving `present` stops the takeover.
+   * leaving `present` stops the takeover.
    *
    * `present` is refused, always. A presentation is scoped to a tour, so only a
    * tour can put the reader in one — the widget can show the state and get out of
    * it, never select it (ADR-0064 §11).
    */
   setPurpose: (purpose: CanvasPurpose) => void;
-  /**
-   * The numbers a placement run reads: gap, columns, ring radius, section padding
-   * (ADR-0056 amendment).
-   * They live in UI state because Card Settings — the surface that will own them —
-   * is A33; when it lands it writes these same fields rather than a second copy.
-   */
-  placementOptions: PlacementOptions;
-  setPlacementOptions: (options: Partial<PlacementOptions>) => void;
   libraryGroupBySection: boolean;
   /** Saved query view applied to the library, if any. */
   activeViewId: string | null;
@@ -506,7 +492,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   librarySectionFilter: [],
   libraryScope: "all",
   libraryFull: false,
-  placementOptions: DEFAULT_PLACEMENT_OPTIONS,
   purpose: "explore",
   libraryGroupBySection: false,
   activeViewId: null,
@@ -801,8 +786,6 @@ export const useUiStore = create<UiState>((set, get) => ({
     })),
   setLibraryScope: (libraryScope) => set({ libraryScope }),
   setLibraryFull: (libraryFull) => set({ libraryFull }),
-  setPlacementOptions: (options) =>
-    set((state) => ({ placementOptions: { ...state.placementOptions, ...options } })),
   setPurpose: (purpose) =>
     set((state) => {
       if (state.purpose === purpose) return state;
@@ -810,9 +793,6 @@ export const useUiStore = create<UiState>((set, get) => ({
       // be offering to present nothing, then asking which tour — a worse way to
       // pick one than opening the tour itself (ADR-0064 §11).
       if (purpose === "present") return state;
-      // Leaving these purposes ends what they started, which is the same rule as
-      // Escape ending an arm (ADR-0063 §9).
-      if (state.purpose === "run") usePlacementRunStore.getState().finish();
       // A recording ends with the purpose that armed it (ADR-0064 §10): the
       // tutorial card keeps the steps it has, but no further click is a step.
       if (state.purpose === "record") useRecordRunStore.getState().stop();

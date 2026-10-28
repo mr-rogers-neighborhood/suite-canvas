@@ -90,10 +90,6 @@
   --value-explore-fill: var(--surface);
   --value-explore-ink: var(--ink);
 
-  --value-run-hue: var(--ink);
-  --value-run-fill: var(--ink);
-  --value-run-ink: var(--surface);
-
   --value-record-hue: var(--danger);
   --value-record-fill: var(--danger);
   --value-record-ink: var(--surface);
@@ -546,10 +542,9 @@ body {
   --xy-controls-button-border-color: var(--hairline);
 }
 
-/* One segment geometry for all five: React Flow's buttons and ours. The border belongs
-   to the container, so a segment is exactly 26px and fills the column's width. */
+/* One segment geometry for React Flow's buttons and the purpose control. The border
+   belongs to the container, so a segment is exactly 26px and fills the column's width. */
 .react-flow__controls-button,
-.react-flow__controls .link-mode-control,
 .react-flow__controls .purpose-control {
   box-sizing: border-box;
   width: 26px;
@@ -572,7 +567,6 @@ body {
   border-bottom: 0;
 }
 
-.react-flow__controls .link-mode-control,
 .react-flow__controls .purpose-control {
   /* Painted by its value (ADR-0064 fifth amendment); the container paints the chrome. */
   display: flex;
@@ -594,7 +588,6 @@ body {
   background: color-mix(in srgb, var(--ink) 8%, var(--surface));
 }
 
-.react-flow__controls .link-mode-control:hover,
 .react-flow__controls .purpose-control:hover {
   background: color-mix(in srgb, var(--value-hue) 10%, var(--value-fill));
 }
@@ -2929,15 +2922,6 @@ html[data-inspector-linking] .card-inspector {
   }
 }
 
-/* A held modifier previews on this axis too, with the same dashed edge the purpose
-   control uses: one glance says the key is doing this and a click will not. An inset
-   outline, not a border — the pill owns the border, and a dashed border on a segment
-   that has none draws nothing. */
-.link-mode-control[data-hint="true"] {
-  outline: 1px dashed var(--ink-muted);
-  outline-offset: -3px;
-}
-
 /* The armed end of a thread reads as "the next click goes here". */
 .section-connector[data-armed="true"] .section-connector__dot {
   border-color: var(--accent);
@@ -2966,8 +2950,7 @@ html[data-inspector-linking] .card-inspector {
   --value-ink: var(--value-place-ink);
 }
 
-[data-mode="thread"],
-[data-purpose="run"] {
+[data-mode="thread"] {
   --value-hue: var(--value-thread-hue);
   --value-fill: var(--value-thread-fill);
   --value-ink: var(--value-thread-ink);

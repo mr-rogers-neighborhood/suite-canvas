@@ -12,11 +12,8 @@ import { useWorkspaceSyncFacts } from "./app/useWorkspaceSyncFacts";
 import { WorkspaceShellView } from "./app/WorkspaceShellView";
 import { useSurfacePalette, useWorkspacePalette } from "./app/workspacePaint";
 import { signedIn as accountSignedIn, useAccountStore } from "./auth/useAccountStore";
-import type { CanvasMode } from "./canvas/links/linkGesture";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
-import { isOpenRun, type PlacementSource, usePlacementRunStore } from "./canvas/placementRun";
 import type { CanvasPurpose } from "./canvas/purpose";
-import { usePlacementEngine } from "./canvas/usePlacementEngine";
 import { useRecordEngine } from "./canvas/useRecordEngine";
 import { zoomBand } from "./canvas/zoomRange";
 import { ensureTutorialType, tutorialCardOnBoard } from "./cards/tour";
@@ -137,8 +134,6 @@ function WorkspaceShell({
   const toggleLibrarySection = useUiStore((state) => state.toggleLibrarySection);
   const clearLibraryFilters = useUiStore((state) => state.clearLibraryFilters);
   const setLibraryScope = useUiStore((state) => state.setLibraryScope);
-  const setMode = useUiStore((state) => state.setMode);
-  const setPurpose = useUiStore((state) => state.setPurpose);
   /** What the canvas is for (ADR-0064); the control owns the click, this owns the effect. */
   const purpose = useUiStore((state) => state.purpose);
   const libraryFull = useUiStore((state) => state.libraryFull);
@@ -353,108 +348,6 @@ function WorkspaceShell({
     previousPurpose.current = purpose;
     if (purpose === "record") startRecording();
   }, [purpose, startRecording]);
-
-  /** A run is carried out by one engine, shared with the canvas and the library. */
-  const placementRun = usePlacementEngine();
-  // Subscribed, not read at render time: a row's Place verb changes with it.
-  const placementRunActive = usePlacementRunStore((state) => state.run !== null);
-
-  /**
-   * The hand is empty again: the canvas stops being in a run, and the library comes back
-   * if a run is what put it away.
-   *
-   * Both halves matter. The purpose has to return, or the next click is still read as
-   * "place the next card". And the drawer has to return, because a reader who started a
-   * sequence from it expects to pick the next thing without hunting for the button —
-   * that is the whole shape of "place these, then back to the shelf".
-   */
-  useEffect(() => {
-    if (placementRunActive) return;
-    if (useUiStore.getState().purpose === "run") setPurpose("explore");
-    if (useUiStore.getState().libraryReason !== "run") return;
-    setLibraryOpen(true, "reader");
-  }, [placementRunActive, setLibraryOpen, setPurpose]);
-
-  // A run places into the board in front of the reader. Navigating away cancels it
-  // rather than continuing into a board they are no longer looking at (ADR-0063 §9).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the board is the trigger; the store call needs no dependency of its own.
-  useEffect(() => {
-    usePlacementRunStore.getState().finishAll();
-  }, [activeBoardId]);
-
-  /**
-   * The run verbs: "Thread cards", "Web cards", "Pattern cards", "Place cards".
-   * The verb *is* the mode, so choosing one sets the mode and starts the run — two
-   * things a user should not have to do separately.
-   */
-  const runCards = useCallback(
-    (cardIds: readonly string[], runMode: CanvasMode, source: PlacementSource) => {
-      if (!canEditLayout || cardIds.length === 0) return;
-      // A run started from a card on the canvas is waiting for its spokes: a pick fills
-      // the hand rather than replacing the run the reader just set up.
-      const live = usePlacementRunStore.getState().run;
-      if (live !== null && live.source === "canvas" && isOpenRun(live)) {
-        usePlacementRunStore.getState().enqueue(cardIds);
-        setLibraryOpen(false, "run");
-        return;
-      }
-      setMode(runMode);
-      // A run is a state the canvas is in, and the whole canvas has to know: the cursor,
-      // presence and the click handler all read it. It is entered here rather than from
-      // the purpose control, because a queue can only come from the library.
-      setPurpose("run");
-      // The shape is the run's, captured here rather than read on every step: it is
-      // what a run *is*, and a live read is what let a mid-run mode write turn the
-      // rest of a fan into a chain.
-      placementRun.start(cardIds, { shape: runMode, hub: "first", source });
-      // Out of the way: the next card lands where the reader aims, and the drawer that
-      // was in front of the board is what they would be aiming around. It comes back
-      // when the hand is empty.
-      setLibraryOpen(false, "run");
-    },
-    [canEditLayout, placementRun, setLibraryOpen, setMode, setPurpose],
-  );
-
-  /**
-   * Start a picker loop: one card now, and every later pick joins the same
-   * sequence. The loop is the only run that outlives its queue, because it is
-   * waiting to be fed (ADR-0063 §6).
-   */
-  const startPlacementLoop = useCallback(
-    (cardIds: readonly string[]) => {
-      if (!canEditLayout || cardIds.length === 0) return;
-      const [first, ...rest] = cardIds;
-      if (!first) return;
-      usePlacementRunStore
-        .getState()
-        .start([first], { shape: useUiStore.getState().mode, hub: "first", source: "picker" });
-      // The rest are queued behind the first, so a selection can seed the loop and
-      // still be added to by hand afterwards.
-      if (rest.length > 0) usePlacementRunStore.getState().enqueue(rest);
-      placementRun.step();
-    },
-    [canEditLayout, placementRun],
-  );
-
-  /**
-   * A dock pick during a run joins the run instead of landing at a fixed point: the
-   * card is created unplaced and queued, which is the "pick, place, pick again"
-   * loop from the add-card side (ADR-0063 §6).
-   */
-  const createCardInRun = useCallback(
-    (typeId: string) => {
-      if (!activeBoardId) return;
-      const running = usePlacementRunStore.getState().run;
-      if (!running) {
-        createCard(typeId);
-        return;
-      }
-      const card = workspace.createCard({ typeId });
-      usePlacementRunStore.getState().enqueue([card.id]);
-      placementRun.step();
-    },
-    [activeBoardId, createCard, placementRun, workspace],
-  );
 
   /**
    * Dock-created portals land at the viewport centre, centred on the pointer
@@ -812,13 +705,11 @@ function WorkspaceShell({
         activateBoard(board.id);
       }}
       activateBoard={activateBoard}
-      runCards={runCards}
       boardPainted={boardPainted}
       boardPaint={boardPaint}
       boardEmpty={boardEmpty}
       sharedEmpty={sharedEmpty}
       createCard={createCard}
-      createCardInRun={createCardInRun}
       createPortal={createPortal}
       createSketch={createSketch}
       createSection={createSection}
@@ -857,9 +748,6 @@ function WorkspaceShell({
       libraryGroupBySection={libraryGroupBySection}
       toggleLibraryGroupBySection={toggleLibraryGroupBySection}
       openInspector={openInspector}
-      startPlacementLoop={startPlacementLoop}
-      placementRunStep={placementRun.step}
-      placementRunActive={placementRunActive}
       leaveAnyway={leaveAnyway}
       dismissLeavePrompt={dismissLeavePrompt}
     />

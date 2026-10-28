@@ -5,9 +5,6 @@ import { SignInEntry } from "../auth/SignInEntry";
 import type { AccountPhase } from "../auth/useAccountStore";
 import { BoardOutlineHost } from "../canvas/BoardOutline";
 import { CanvasBoard } from "../canvas/CanvasBoard";
-import type { CanvasMode } from "../canvas/links/linkGesture";
-import type { PlacementSource } from "../canvas/placementRun";
-import { usePlacementRunStore } from "../canvas/placementRun";
 import type { SurfacePalette } from "../canvas/rules";
 import { SurfacePaintProvider } from "../canvas/surfaceContext";
 import { CardFocusHost } from "../cards/CardFocusHost";
@@ -136,7 +133,6 @@ export interface WorkspaceShellViewProps {
   goBackBoard: UiState["goBackBoard"];
   peersByBoard: Record<string, BoardPresence>;
   activateBoard: UiState["activateBoard"];
-  runCards: (cardIds: readonly string[], mode: CanvasMode, source: PlacementSource) => void;
   boardPainted: boolean;
   boardPaint: Record<string, string>;
   boardEmpty: boolean;
@@ -144,7 +140,6 @@ export interface WorkspaceShellViewProps {
   createCard: (typeId: string, point?: { x: number; y: number }) => string | undefined;
   /** A new board, opened: what the start page and the tab chooser both mean. */
   createBoard: () => void;
-  createCardInRun: (typeId: string) => void;
   /** Places a portal to the board; a point drops it under the cursor. */
   createPortal: (targetBoardId: string, point?: { x: number; y: number }) => void;
   createSketch: () => void;
@@ -185,9 +180,6 @@ export interface WorkspaceShellViewProps {
   libraryGroupBySection: boolean;
   toggleLibraryGroupBySection: UiState["toggleLibraryGroupBySection"];
   openInspector: UiState["openInspector"];
-  startPlacementLoop: (cardIds: readonly string[]) => void;
-  placementRunStep: () => void;
-  placementRunActive: boolean;
   leaveAnyway: () => void;
   dismissLeavePrompt: () => void;
 }
@@ -243,14 +235,12 @@ export function WorkspaceShellView({
   goBackBoard,
   peersByBoard,
   activateBoard,
-  runCards,
   boardPainted,
   boardPaint,
   boardEmpty,
   sharedEmpty,
   createCard,
   createBoard,
-  createCardInRun,
   createPortal,
   createSketch,
   createSection,
@@ -289,9 +279,6 @@ export function WorkspaceShellView({
   libraryGroupBySection,
   toggleLibraryGroupBySection,
   openInspector,
-  startPlacementLoop,
-  placementRunStep,
-  placementRunActive,
   leaveAnyway,
   dismissLeavePrompt,
 }: WorkspaceShellViewProps) {
@@ -662,7 +649,7 @@ export function WorkspaceShellView({
             types={snapshot.types}
             boards={snapshot.boards}
             activeBoardId={activeBoardId}
-            onCreateCard={createCardInRun}
+            onCreateCard={createCard}
             onCreatePortal={createPortal}
             onCreateSketch={createSketch}
             onCreateSection={createSection}
@@ -739,13 +726,6 @@ export function WorkspaceShellView({
             groupBySection={libraryGroupBySection}
             onToggleGroup={toggleLibraryGroupBySection}
             onOpenCard={openInspector}
-            onRunCards={(cardIds, runMode) => runCards(cardIds, runMode, "selection")}
-            onQueueCards={(cardIds) => {
-              usePlacementRunStore.getState().enqueue(cardIds);
-              placementRunStep();
-            }}
-            onRunLoop={(cardIds) => startPlacementLoop(cardIds)}
-            runActive={placementRunActive}
             canManageTrash={canManageTrash}
           />
         ) : null}

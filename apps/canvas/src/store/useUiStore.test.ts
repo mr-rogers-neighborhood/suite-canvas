@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { usePlacementRunStore } from "../canvas/placementRun";
 import { useUiStore } from "./useUiStore";
 
 function resetUiState() {
@@ -362,8 +361,8 @@ describe("useUiStore purpose", () => {
   it("defaults to explore and cycles through the axis", () => {
     expect(useUiStore.getState().purpose).toBe("explore");
 
-    useUiStore.getState().setPurpose("run");
-    expect(useUiStore.getState().purpose).toBe("run");
+    useUiStore.getState().setPurpose("explain");
+    expect(useUiStore.getState().purpose).toBe("explain");
 
     useUiStore.getState().setPurpose("record");
     expect(useUiStore.getState().purpose).toBe("record");
@@ -430,31 +429,11 @@ describe("useUiStore purpose", () => {
     useUiStore.setState({
       tour: { tutorialId: "t1", stepIndex: 0, presenting: false, panelOpen: true },
     });
-    useUiStore.getState().setPurpose("run");
+    useUiStore.getState().setPurpose("explain");
 
     useUiStore.getState().closeTour();
 
-    expect(useUiStore.getState().purpose).toBe("run");
-  });
-
-  it("ends a live run when the purpose leaves run", () => {
-    usePlacementRunStore.getState().start(["a", "b"]);
-    useUiStore.getState().setPurpose("run");
-    expect(usePlacementRunStore.getState().run).not.toBeNull();
-
-    useUiStore.getState().setPurpose("explore");
-
-    // A run is a reading of the purpose, not a thing that outlives it.
-    expect(usePlacementRunStore.getState().run).toBeNull();
-  });
-
-  it("is a no-op when the purpose is already set, so a re-render cannot end a run", () => {
-    usePlacementRunStore.getState().start(["a", "b"]);
-    useUiStore.getState().setPurpose("run");
-
-    useUiStore.getState().setPurpose("run");
-
-    expect(usePlacementRunStore.getState().run).not.toBeNull();
+    expect(useUiStore.getState().purpose).toBe("explain");
   });
 });
 

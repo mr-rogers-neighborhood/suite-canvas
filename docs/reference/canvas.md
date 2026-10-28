@@ -11,7 +11,7 @@ that draws it, and which layer owns each input.
 `board/BoardView.tsx` is the entry. It builds the board's hooks in the order they depend on each other
 and hands the results to two components: `board/BoardSurface.tsx` hosts the React Flow `<ReactFlow>`
 element, and `board/BoardOverlays.tsx` holds the layers beside it: the context menu, the link
-description input, the link thread preview, the placement run bar and the portal transition.
+description input, the link preview and the portal transition.
 
 A card reaches the board through a placement, not through the card record:
 
@@ -84,12 +84,11 @@ A link is one `GraphEdge`. Both ends name a node and optionally a connector:
 SVG path with no React, Loro or DOM in sight. The edge component, the section-link layer and the tests
 all call the same functions, which is what keeps a preview and the finished link on the same curve.
 
-A line left without dots by a template, an import, a paste or a quick connect is *unpinned*. When a
-placement run links those two cards knowing the dots the line leaves and arrives on,
-`WorkspaceDocument.linkEndpoints` puts them on the record that is already there: a pinned line beside an
-unpinned one is two lines between the same pair on screen, which reads as a duplicate the reader cannot
-undo on its own. Two links between the same pair on *different* dots is still two links, because that is
-a difference the reader can mean.
+A line left without dots by a template, an import, a paste or a quick connect is *unpinned*.
+`WorkspaceDocument.linkEndpoints` puts chosen dots on the record that is already there rather than
+drawing a second line beside it: a pinned line next to an unpinned one is two lines between the same
+pair on screen, which reads as a duplicate the reader cannot undo on its own. Two links between the same
+pair on *different* dots is still two links, because that is a difference the reader can mean.
 
 A board end has no position, so it draws through the first portal card pointing at that board. With no
 portal on the board there is no line, and the link survives in the inspector. A link whose two ends are
@@ -138,8 +137,8 @@ move the camera. Creating is gated by `canCreateContent`, so a viewer's double-c
 Escape walks a stack. `useEscapeLayer` from `shell/escapeLayers.ts` pushes a dismiss function when a
 surface opens and pops it when it closes; the most recently pushed layer takes the key and the board's
 own chain only sees Escape when the stack is empty. A text field inside a layer keeps the key unless
-that layer is a dialog. The board's own layers are the armed link thread (`board/useBoardLinks.ts`) and
-a held placement run (`board/BoardView.tsx`).
+that layer is a dialog. The board's own layer is the armed link thread
+(`board/useBoardLinks.ts`).
 
 With the stack empty, the ladder climbs from the most specific thing on the board to the plainest:
 section edit → selected section → container inspector → card focus → card edit → focus target → a portal
@@ -149,37 +148,15 @@ on an exploration, whatever they had armed an hour ago.
 
 ## Two axes, one of which is mostly implicit
 
-`mode` says what the next click does (`place`, `thread`, `fan`) and is the axis a reader changes: the
-widget bar's link tool cycles it and a held key previews it. `purpose` says what the canvas is *for*, and
-it is deliberately small — `explore` is the resting state and needs no button, and `explain` is the only
-other value a reader chooses from the canvas itself.
+`mode` says what a link gesture does, and `purpose` says what the canvas is *for*. Purpose is
+deliberately small: `explore` is the resting state and needs no button, and `explain` is the only value a
+reader chooses from the canvas itself.
 
-A **run** is a state rather than a choice. It is a queue of cards being placed, and it carries two things
-fixed when it starts: a **shape** and an **anchor**.
-
-| shape | the anchor | a drop draws |
-| --- | --- | --- |
-| `place` | none | nothing |
-| `thread` | moves to the card just placed | anchor → card |
-| `fan` | stays at the hub | hub → card |
-
-The shape is a property of the run, never a read of the live mode: a modifier pressed for something else
-used to change the shape halfway through, which is how a fan drew a web. It changes only from the run bar,
-the one control that shows it while a run is live.
-
-The hub is context. `library-run-place|thread|fan` starts a run from the library, where the first card
-dropped becomes the hub. `Run from here` on a card's menu (or on a connector's) starts a spokes-only run
-anchored on that card, which is never dropped again; the run waits with an empty hand, and a library pick
-fills it. A link released over empty canvas offers the other half of the same idea: add the card at the
-drop point, or add it to the library, and either way the line is drawn.
-
-While a run is live the drawer steps aside so the next click is the placement, and when the hand is empty
-it comes back. A run that placed its last card keeps owning the pointer until that press ends, because
-React Flow's own connection events fire before it does. That is why `run` left the purpose control and the
-modifier map: a purpose preview on Shift meant holding Shift to thread read as "run", and a menu that
-offers to start something it cannot supply is a menu that sends the reader somewhere else to finish
-choosing. `record` and `present` remain states only a tour can enter, and the purpose control shows them
-purely as the way out (ADR-0064 amendment, ADR-0063 fourth amendment).
+There is no placement run. Cards are placed one at a time, by a drop, a dock action or a
+double-click, and a link is drawn by dragging from a dot. The run, its shapes and its bar were removed
+because they made the common gesture unpredictable; `place`, `thread` and `fan` survive only as the
+internal names of the link gesture's shapes (`links/linkThread.ts`), which is what a click-and-drag
+between two dots already draws.
 
 ## Camera and viewport
 

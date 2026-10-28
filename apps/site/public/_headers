@@ -1,0 +1,19 @@
+# Cloudflare Pages headers for the marketing host.
+#
+# The same policy `deploy/Caddyfile` applies when this site is served from the box.
+# This page has no scripts of its own, so `script-src` stays at `'self'` with no
+# inline allowance, which is the one place the landing page is stricter than docs.
+
+/*
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Strict-Transport-Security: max-age=31536000
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'
+
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate

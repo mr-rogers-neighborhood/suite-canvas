@@ -677,6 +677,23 @@ do is create an organization or open a sync connection, which is what "waiting f
 with no server, so both belong on Cloudflare Pages rather than on the box: a page that is a file does
 not need a machine that can go down.
 
+Both projects are uploaded as a prebuilt directory, not built by Pages, so nothing about the workspace
+has to be reproduced in Cloudflare's builder:
+
+```sh
+pnpm docs:site:build && pnpm site:build          # apps/docs/dist and apps/site/dist
+npx wrangler pages deploy apps/docs/dist --project-name suite-docs
+npx wrangler pages deploy apps/site/dist   --project-name suite
+```
+
+Then add the custom domains in the Pages project, and leave those two `A` or `CNAME` records proxied:
+unlike the app, a static origin has no long-lived socket for the proxy's idle timeout to cut.
+
+`_headers` in each site's `public/` directory is the Cloudflare equivalent of the Caddy policy, and it
+is copied into `dist` at build time. Keep the two in step: the same page should not have a different
+security posture depending on whether it was served from Pages or from the box. The docs site allows
+inline scripts because Starlight emits them; the marketing page does not need to.
+
 ## Docs site
 
 The reader-facing docs are a static Astro site in `apps/docs`, built from `docs/`. It needs no

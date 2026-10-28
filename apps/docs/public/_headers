@@ -1,0 +1,27 @@
+# Cloudflare Pages headers for the docs host.
+#
+# The same policy `deploy/Caddyfile` applies when this site is served from the box,
+# written in the format Pages reads. Keep the two in step: a docs page served from
+# `docs.suite.run` should not have a different posture depending on whether it came
+# from Caddy or from Pages.
+#
+# `script-src` needs `'unsafe-inline'` because Starlight emits inline module scripts
+# for the theme toggle, the sidebar and the search index. There is no user content on
+# this origin, which is what makes the relaxation acceptable here and nowhere else.
+# `connect-src` stays `'self'`: Pagefind fetches its index from this origin.
+
+/*
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Strict-Transport-Security: max-age=31536000
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'
+
+# Astro hashes everything under `_astro`, so a year is safe. The HTML is the
+# freshness question, and a stale page is how a shipped fix reads as a bug.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate

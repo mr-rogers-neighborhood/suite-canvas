@@ -244,7 +244,7 @@
 	# below. Without them the rewrite answers each with the panel's HTML, which looks like a
 	# broken route rather than a misrouted one. Adding a route to the control plane means
 	# adding its path here.
-	@admin_api path /admin/settings* /admin/accounts* /admin/activity* /admin/mail/*
+	@admin_api path /admin/settings* /admin/accounts* /admin/activity* /admin/subscriptions* /admin/mail/*
 	handle @admin_api {
 		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
 	}

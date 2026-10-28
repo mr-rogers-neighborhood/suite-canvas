@@ -8,6 +8,7 @@ import { RoomsPanel } from "./panels/RoomsPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
 import { SharesPanel } from "./panels/SharesPanel";
 import { StatusPanel } from "./panels/StatusPanel";
+import { SubscriptionsPanel } from "./panels/SubscriptionsPanel";
 import { SupportPanel } from "./panels/SupportPanel";
 import { TemplatesPanel } from "./panels/TemplatesPanel";
 import { WorkspacesPanel } from "./panels/WorkspacesPanel";
@@ -15,6 +16,7 @@ import { WorkspacesPanel } from "./panels/WorkspacesPanel";
 type View =
   | "status"
   | "accounts"
+  | "subscriptions"
   | "activity"
   | "workspaces"
   | "rooms"
@@ -47,6 +49,7 @@ const GROUPS: { id: string; label: string; views: { id: View; label: string }[] 
     label: "People",
     views: [
       { id: "accounts", label: "Accounts" },
+      { id: "subscriptions", label: "Subscriptions" },
       { id: "activity", label: "Activity" },
     ],
   },
@@ -269,6 +272,7 @@ export function App() {
         {view === "accounts" ? (
           <AccountsPanel onRoleChange={(state) => setWorn(state.role === null ? null : state)} />
         ) : null}
+        {view === "subscriptions" ? <SubscriptionsPanel /> : null}
         {view === "activity" ? <ActivityPanel /> : null}
         {view === "workspaces" ? <WorkspacesPanel /> : null}
         {view === "rooms" ? <RoomsPanel /> : null}

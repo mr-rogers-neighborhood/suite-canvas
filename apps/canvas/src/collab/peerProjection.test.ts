@@ -3,6 +3,8 @@ import {
   GESTURE_TTL_MS,
   gestureSignature,
   MAX_DRAG_NODE_IDS,
+  PRESENCE_BEAT_MS,
+  PRESENCE_TTL_MS,
   projectPeers,
   type SeenGesture,
 } from "./peerProjection";
@@ -25,9 +27,69 @@ function states(overrides: Record<string, unknown> = {}) {
   ]);
 }
 
-function project(now: number, seen: Map<string, SeenGesture>, overrides?: Record<string, unknown>) {
-  return projectPeers(states(overrides), { selfId: SELF, now, seen });
+function project(
+  now: number,
+  seen: Map<string, SeenGesture>,
+  overrides?: Record<string, unknown>,
+  heard: Map<string, { marker: string; at: number }> = new Map(),
+) {
+  return projectPeers(states(overrides), { selfId: SELF, now, seen, heard });
 }
+
+describe("presence liveness", () => {
+  const state = {
+    [AWARENESS_FIELDS.user]: { name: "Nova", color: "#f97316" },
+    [AWARENESS_FIELDS.presenceBeat]: 1,
+  };
+
+  it("keeps a peer who keeps beating", () => {
+    const heard = new Map<string, { marker: string; at: number }>();
+    const seen = new Map<string, SeenGesture>();
+    projectPeers(new Map([[PEER, state]]), { selfId: SELF, now: 0, seen, heard });
+
+    // Still here after a minute of silence-free beating, well past the ephemeral timeout.
+    const peers = projectPeers(
+      new Map([[PEER, { ...state, [AWARENESS_FIELDS.presenceBeat]: 9 }]]),
+      {
+        selfId: SELF,
+        now: PRESENCE_BEAT_MS * 4,
+        seen,
+        heard,
+      },
+    );
+    expect(peers[PEER]).toBeDefined();
+  });
+
+  it("drops a peer who stopped beating, because the relay never says they left", () => {
+    const heard = new Map<string, { marker: string; at: number }>();
+    const seen = new Map<string, SeenGesture>();
+    projectPeers(new Map([[PEER, state]]), { selfId: SELF, now: 0, seen, heard });
+
+    // The state is still in the store, because nothing removes it; only silence does.
+    const peers = projectPeers(new Map([[PEER, state]]), {
+      selfId: SELF,
+      now: PRESENCE_TTL_MS + 1,
+      seen,
+      heard,
+    });
+    expect(peers[PEER]).toBeUndefined();
+  });
+
+  it("treats a state change as life for a peer on a build with no heartbeat", () => {
+    const heard = new Map<string, { marker: string; at: number }>();
+    const seen = new Map<string, SeenGesture>();
+    const legacy = { [AWARENESS_FIELDS.user]: { name: "Nova", color: "#f97316" } };
+    projectPeers(new Map([[PEER, legacy]]), { selfId: SELF, now: 0, seen, heard });
+
+    const peers = projectPeers(new Map([[PEER, { ...legacy, [AWARENESS_FIELDS.board]: "b2" }]]), {
+      selfId: SELF,
+      now: PRESENCE_TTL_MS - 1000,
+      seen,
+      heard,
+    });
+    expect(peers[PEER]).toBeDefined();
+  });
+});
 
 describe("projectPeers", () => {
   it("keeps a gesture that is still arriving", () => {
@@ -114,10 +176,12 @@ describe("projectPeers", () => {
       [SELF, { [AWARENESS_FIELDS.user]: { name: "Me", color: "#000" } }],
       ...states().entries(),
     ]);
-    expect(projectPeers(map, { selfId: SELF, now: 0, seen })).not.toHaveProperty(String(SELF));
+    expect(projectPeers(map, { selfId: SELF, now: 0, seen, heard: new Map() })).not.toHaveProperty(
+      String(SELF),
+    );
     expect(seen.has(PEER)).toBe(true);
 
-    projectPeers(new Map(), { selfId: SELF, now: 10, seen });
+    projectPeers(new Map(), { selfId: SELF, now: 10, seen, heard: new Map() });
     expect(seen.has(PEER)).toBe(false);
   });
 
@@ -280,7 +344,7 @@ describe("section gestures", () => {
           },
         ],
       ]),
-      { selfId: SELF, now: 1000, seen: new Map() },
+      { selfId: SELF, now: 1000, seen: new Map(), heard: new Map() },
     );
 
     expect(peers[PEER]?.sectionDrag).toEqual({
@@ -297,11 +361,12 @@ describe("section gestures", () => {
       [AWARENESS_FIELDS.user]: { name: "Nova", color: "#f97316" },
       [AWARENESS_FIELDS.sectionDrag]: { sectionId: "s1", position: { x: 10, y: 20 } },
     };
-    projectPeers(new Map([[PEER, state]]), { selfId: SELF, now: 1000, seen });
+    projectPeers(new Map([[PEER, state]]), { selfId: SELF, now: 1000, seen, heard: new Map() });
     const peers = projectPeers(new Map([[PEER, state]]), {
       selfId: SELF,
       now: 1000 + 4000,
       seen,
+      heard: new Map(),
     });
     expect(peers[PEER]?.sectionDrag).toBeNull();
   });

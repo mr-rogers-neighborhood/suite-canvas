@@ -166,6 +166,16 @@ export const AWARENESS_FIELDS = {
    * beat is what says "still here" without pretending anything moved.
    */
   gestureBeat: "gestureBeat",
+  /**
+   * Liveness of the *client*, as opposed to `gestureBeat`'s liveness of a gesture.
+   *
+   * The relay has no awareness protocol: `loro-websocket` never announces a peer leaving,
+   * so a disconnected client's state simply stays where it was. Presence therefore has to
+   * expire on the reader's side, and expiring on silence alone would also remove a peer who
+   * is connected and reading. This counter is published on a timer, so silence means
+   * something.
+   */
+  presenceBeat: "presenceBeat",
 } as const;
 
 export interface PeerPresence {

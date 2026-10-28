@@ -12,7 +12,7 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | --- | --- | --- |
 | Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, sync and storage status, the workspace menu, the account slot, the theme toggle |
 | Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history and outline buttons in `app/WorkspaceShellView.tsx` | Home, the open boards with their peer counts, undo, redo, version history and the outline, in one row |
-| Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface |
+| Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface, plus the plan wall and the retry for whoever just paid |
 | Views bar | `apps/canvas/src/chrome/ViewsBar.tsx` | Saved views, applying one, renaming and deleting one |
 | Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new sketch, new section, new portal, type settings |
 | Outline rail | `apps/canvas/src/canvas/BoardOutline.tsx` | The active board's section tree, in reading order, with counts and presence. Hidden while the board has no sections |

@@ -342,8 +342,8 @@ Presence rides one `EphemeralStore` per workspace, joined by `collab/loroProvide
 `<workspaceId>:presence`. Signals are fields in `AWARENESS_FIELDS` (`collab/presence.ts`), typed in
 `PeerPresence`: `board`, `user`, `pointer`, `focus`, `dragging`, `selection`, `selectionBox`,
 `connector`, `resizing`, `sectionDrag`, `sectionResize`, `reconnect`, `connect`, `labelDrag`,
-`libraryDrag`, `purpose`, `gesture` and `gestureBeat`. A new signal is a new field on that schema, which
-is what keeps every feature from inventing its own channel.
+`libraryDrag`, `purpose`, `gesture`, `gestureBeat` and `presenceBeat`. A new signal is a new field on that
+schema, which is what keeps every feature from inventing its own channel.
 
 Carets are separate. `loro-prosemirror`'s `CursorEphemeralStore` joins `<workspaceId>:cursors` with a 30
 second TTL, and only the editor surface that owns the keystrokes receives it, so a mirrored editor cannot
@@ -355,6 +355,15 @@ stamps each gesture with the time it last changed on the receiving side, so cloc
 and drops the payload after `GESTURE_TTL_MS` (3000 ms) of silence. A one second sweep re-projects. A held
 gesture bumps `gestureBeat` every `GESTURE_BEAT_MS` (1000 ms) so a press with no movement does not age
 out. Selections and carets are state, so they outlive the TTL.
+
+Leaving is the client's problem, not the relay's. `loro-websocket` has no awareness protocol: measured
+against a real `SimpleServer`, a client that disconnects leaves its ephemeral state in place and nothing
+is announced, so a peer who closed the tab looks exactly like a peer who is reading. Every client
+therefore publishes `presenceBeat` every `PRESENCE_BEAT_MS` (15 s), and `projectPeers` drops a peer it has
+not heard from within `PRESENCE_TTL_MS` (60 s). Both numbers are inside the timer budget a background tab
+gets, so a tab left in the background stays counted. The beat also distinguishes a live-and-idle peer from
+one whose state the relay has just replayed, which is what made a departed collaborator reappear until a
+reload.
 
 Every published coordinate is in flow units. Presence is workspace-wide, so a board-scoped surface filters
 by `peer.board` through `hooks/useBoardPeers.ts`; a cursor from another board is not drawn at all. The

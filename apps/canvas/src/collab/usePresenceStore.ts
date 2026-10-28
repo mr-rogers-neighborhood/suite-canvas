@@ -4,7 +4,12 @@ import type { CanvasMode } from "../canvas/links/linkGesture";
 import type { CanvasPurpose } from "../canvas/purpose";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { getOrCreateIdentity, type Identity } from "./identity";
-import { projectPeers, type SeenGesture, sanitizeDraggedNodeIds } from "./peerProjection";
+import {
+  PRESENCE_BEAT_MS,
+  projectPeers,
+  type SeenGesture,
+  sanitizeDraggedNodeIds,
+} from "./peerProjection";
 import {
   AWARENESS_FIELDS,
   type ConnectorState,
@@ -61,11 +66,16 @@ const GESTURE_BEAT_MS = 1000;
 /** Last gesture signature and arrival time per peer, for the staleness check. */
 const gestureClock = new Map<string, SeenGesture>();
 
+/** Last heartbeat marker and arrival time per peer, for the liveness check. */
+const heartbeatClock = new Map<string, { marker: string; at: number }>();
+
 export const usePresenceStore = create<PresenceState>((set, get) => {
   const initial = useCanvasStore.getState();
   let localState: Record<string, Value> = {
     [AWARENESS_FIELDS.user]: getOrCreateIdentity() as unknown as Value,
+    [AWARENESS_FIELDS.presenceBeat]: 0,
   };
+  let heartbeat = 0;
 
   const publish = (field: string, value: unknown) => {
     localState = { ...localState, [field]: value as Value };
@@ -129,7 +139,12 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
       Object.entries(presenceStore.getAllStates() as Record<string, Record<string, unknown>>),
     );
     set({
-      peers: projectPeers(states, { selfId: peerId, now: performance.now(), seen: gestureClock }),
+      peers: projectPeers(states, {
+        selfId: peerId,
+        now: performance.now(),
+        seen: gestureClock,
+        heard: heartbeatClock,
+      }),
     });
   };
 
@@ -164,9 +179,20 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
       store.set(peerId, localState);
       const unsubscribe = store.subscribe(sync);
       const timer = setInterval(sync, 1000);
+      // The client's own liveness, on a timer rather than on activity.
+      //
+      // The relay never announces a leave, so the reader's side has to expire a peer, and
+      // expiring on silence would also remove someone who is connected and reading. A beat
+      // is what makes silence mean something: without it, a peer who sits still for the
+      // ephemeral timeout looks exactly like a peer who closed the tab.
+      const beatTimer = setInterval(() => {
+        heartbeat += 1;
+        publish(AWARENESS_FIELDS.presenceBeat, heartbeat);
+      }, PRESENCE_BEAT_MS);
       stopBinding = () => {
         unsubscribe();
         window.clearInterval(timer);
+        window.clearInterval(beatTimer);
       };
       set({ presenceStore: store, peerId, bound: true });
       sync();

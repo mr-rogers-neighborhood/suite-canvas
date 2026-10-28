@@ -50,6 +50,16 @@ export const MAIL_TEST_PATH = "/admin/mail/test";
 /** What operators have done, newest first. */
 export const ACTIVITY_PATH = "/admin/activity";
 
+/**
+ * Who is paying, and what for.
+ *
+ * A subscription belongs to an *organization*, not a workspace and not a person, and that
+ * distinction is the one operators get wrong: nothing in this panel is per workspace, and
+ * nothing here changes a plan. The list exists so "is anyone paying?" is a press rather
+ * than an SSH session and a psql prompt.
+ */
+export const SUBSCRIPTIONS_PATH = "/admin/subscriptions";
+
 /** The launcher's list, readable without a token. */
 export const TEMPLATES_PATH = "/api/templates";
 /** The same list, plus writing, behind the token. One template is `/admin/templates/:id`. */
@@ -57,6 +67,28 @@ export const ADMIN_TEMPLATES_PATH = "/admin/templates";
 
 /** Where an admitted person is told to go. Defaults to the app origin for this deployment. */
 export const APP_URL_VARIABLE = "SUITE_APP_URL";
+
+/** A timestamp column, as a number: `pg` hands back a Date, a string or a number. */
+function millisOf(value: unknown): number | null {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+/** One row of the subscription list, as the query above returns it. */
+interface SubscriptionRow {
+  organization_id: string;
+  organization_name: string | null;
+  plan: string;
+  status: string;
+  periodEnd: string | Date | number | null;
+  cancelAtPeriodEnd: boolean | null;
+  seats: number | string | null;
+}
 
 /** One row of the people list, as the query above returns it. */
 interface AccountRow {
@@ -108,6 +140,26 @@ const REVOKE_GRANT_SQL = `
   UPDATE operator_support_grants
   SET revoked_at = $2
   WHERE user_id = $1 AND revoked_at IS NULL
+`;
+
+/**
+ * Every subscription row, with the organization it belongs to.
+ *
+ * Live rows first, then the newest period: the same rule `LIVE_SUBSCRIPTION_SQL` uses to
+ * pick the one that counts, so the panel cannot show a cancelled row above the one being
+ * paid for. `NULLS LAST` matters because a subscription that has not been through a period
+ * yet has no end.
+ */
+const SUBSCRIPTIONS_SQL = `
+  SELECT s."referenceId" AS organization_id, s."plan", s."status",
+         s."periodEnd", s."cancelAtPeriodEnd", s."seats",
+         o.name AS organization_name
+  FROM "subscription" s
+  LEFT JOIN "organization" o ON o.id = s."referenceId"
+  ORDER BY
+    CASE WHEN s."status" IN ('active', 'trialing') THEN 0 ELSE 1 END,
+    s."periodEnd" DESC NULLS LAST
+  LIMIT 200
 `;
 
 const PENDING_SQL = `
@@ -881,10 +933,55 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
     sendJson(response, 200, { ok: true, transport: kind });
   };
 
+  /**
+   * The paid half of the deployment.
+   *
+   * Read-only on purpose: cancelling somebody's plan from an operator surface is a billing
+   * write with a person's money behind it, and it deserves its own decision rather than a
+   * second button here. Missing table reads as an empty list, because a deployment with
+   * billing off has no subscription table at all and that is not an error.
+   */
+  const listSubscriptions = async (response: ServerResponse) => {
+    try {
+      const result = await database().query(SUBSCRIPTIONS_SQL);
+      sendJson(response, 200, {
+        ok: true,
+        subscriptions: (result.rows as SubscriptionRow[]).map((row) => ({
+          organizationId: row.organization_id,
+          organizationName: row.organization_name,
+          plan: row.plan,
+          status: row.status,
+          periodEnd: millisOf(row.periodEnd),
+          cancelAtPeriodEnd: row.cancelAtPeriodEnd === true,
+          seats: row.seats === null ? null : Number(row.seats),
+        })),
+      });
+    } catch (error) {
+      // A missing table is "billing has never run here", not a failure to report.
+      if (/does not exist|no such table|undefined table/iu.test(messageOf(error))) {
+        sendJson(response, 200, { ok: true, subscriptions: [] });
+        return;
+      }
+      logger.error("the subscription list did not read", { error: messageOf(error) });
+      refuse(response, 500, "subscriptions-unavailable", "the subscription list could not be read");
+    }
+  };
+
   return {
     name: "admin",
     async handle(request, response): Promise<boolean> {
       const path = new URL(request.url ?? "/", "http://localhost").pathname;
+
+      if (path === SUBSCRIPTIONS_PATH) {
+        if (!(await operatorGate(request, response))) return true;
+        if (!storageGate(response)) return true;
+        if (methodOf(request) !== "GET") {
+          methodNotAllowed(response, "GET", methodOf(request));
+          return true;
+        }
+        await listSubscriptions(response);
+        return true;
+      }
 
       if (path === ACTIVITY_PATH) {
         if (!(await operatorGate(request, response))) return true;

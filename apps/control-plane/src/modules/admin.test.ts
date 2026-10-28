@@ -20,10 +20,11 @@ function request(
   method: string,
   body: string | null,
   headers: Record<string, string> = {},
+  path = "/admin/admissions",
 ): IncomingMessage {
   const stream = {
     method,
-    url: "/admin/admissions",
+    url: path,
     headers: { "x-request-id": "req-1", ...headers },
     async *[Symbol.asyncIterator]() {
       if (body !== null) yield Buffer.from(body, "utf8");
@@ -207,5 +208,87 @@ describe("the operator admission queue", () => {
     await module.handle(request("GET", null, { cookie: OPERATOR_COOKIE }), res);
     expect(out.status).toBe(503);
     expect(JSON.parse(out.body).error).toBe("auth-not-configured");
+  });
+});
+
+describe("the subscription list", () => {
+  /** One row, shaped the way `pg` hands it back: a Date, not a number. */
+  const ROW = {
+    organization_id: "org-1",
+    organization_name: "Studio",
+    plan: "personal",
+    status: "active",
+    periodEnd: new Date("2026-11-28T00:00:00.000Z"),
+    cancelAtPeriodEnd: false,
+    seats: 1,
+  };
+
+  it("refuses a caller with no session, before it reads anything", async () => {
+    signedIn();
+    const { module, sql } = moduleWith();
+    const { out, res } = response();
+    await module.handle(request("GET", null, {}, "/admin/subscriptions"), res);
+
+    expect(out.status).toBe(401);
+    expect(sql.calls).toHaveLength(0);
+  });
+
+  it("refuses a signed-in account that is not an operator", async () => {
+    signedIn({ "session=member": { operator: false } });
+    const { module } = moduleWith();
+    const { out, res } = response();
+    await module.handle(
+      request("GET", null, { cookie: "session=member" }, "/admin/subscriptions"),
+      res,
+    );
+    expect(out.status).toBe(403);
+  });
+
+  it("lists who is paying, with the organization beside it", async () => {
+    signedIn();
+    const { module } = moduleWith({ rows: [ROW] });
+    const { out, res } = response();
+    await module.handle(
+      request("GET", null, { cookie: OPERATOR_COOKIE }, "/admin/subscriptions"),
+      res,
+    );
+
+    expect(out.status).toBe(200);
+    expect(JSON.parse(out.body).subscriptions).toEqual([
+      {
+        organizationId: "org-1",
+        organizationName: "Studio",
+        plan: "personal",
+        status: "active",
+        periodEnd: Date.parse("2026-11-28T00:00:00.000Z"),
+        cancelAtPeriodEnd: false,
+        seats: 1,
+      },
+    ]);
+  });
+
+  it("reads as an empty list where billing has never run, rather than an error", async () => {
+    signedIn();
+    const failing = {
+      query: async () => {
+        throw new Error('relation "subscription" does not exist');
+      },
+    };
+    const module = createAdminModule({
+      env: {
+        SUITE_ADMIN_EMAILS: OPERATOR,
+        SUITE_CONTROL_PLANE_DATABASE_URL: "postgres://localhost/suite",
+      } as AdminModuleOptions["env"],
+      logger: silence(),
+      pool: failing as unknown as AdminModuleOptions["pool"],
+    });
+    const { out, res } = response();
+    await module.handle(
+      request("GET", null, { cookie: OPERATOR_COOKIE }, "/admin/subscriptions"),
+      res,
+    );
+
+    expect(out.status).toBe(200);
+    expect(JSON.parse(out.body).subscriptions).toEqual([]);
   });
 });

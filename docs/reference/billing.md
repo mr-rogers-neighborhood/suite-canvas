@@ -51,6 +51,12 @@ come from its member rows. Checkout therefore sends `customerType: "organization
 `referenceId` holding the organization id, and the plugin stores that id on the
 `subscription` row.
 
+That is why the operator panel's **Subscriptions** view reads the `subscription` table and
+shows one row per organization: there is no per-workspace plan to look at, and a plan is
+changed by the organization itself through the billing portal on its Plan tab, not by an
+operator. The view is read-only, because ending somebody's subscription is a billing write
+with their money behind it.
+
 The plugin defaults `customerType` to `user`, which would bill an individual and put
 subscription state outside the tenant. Two callbacks close that:
 

@@ -428,6 +428,9 @@ export async function resetSetting(key: string, organizationId?: string | null):
  * account and `stop` puts it back. Nothing about that exchange is held here.
  */
 const ACCOUNTS_BASE = `${authServiceBase()}/admin/accounts`;
+
+/** Who is paying. Read-only: a plan is changed by the organization itself, in the app. */
+const ADMIN_SUBSCRIPTIONS_PATH = `${authServiceBase()}/admin/subscriptions`;
 const ACCOUNT_BASE = `${authServiceBase()}/api/account`;
 
 export interface SupportAccess {
@@ -444,6 +447,29 @@ export interface AdminAccount {
   createdAt: string | null;
   twoFactorEnabled: boolean;
   supportAccess: SupportAccess;
+}
+
+/**
+ * One organization's subscription, as the panel reads it.
+ *
+ * `periodEnd` and the tier ceilings are the two numbers an operator actually asks about:
+ * when money next moves, and what the plan allows either way.
+ */
+export interface AdminSubscription {
+  organizationId: string;
+  organizationName: string | null;
+  plan: string;
+  status: string;
+  periodEnd: number | null;
+  cancelAtPeriodEnd: boolean;
+  seats: number | null;
+}
+
+export function listSubscriptions(): Promise<{
+  ok: boolean;
+  subscriptions: AdminSubscription[];
+}> {
+  return requestUrl(`${ADMIN_SUBSCRIPTIONS_PATH}`);
 }
 
 export function listAccounts(query: string): Promise<{ ok: boolean; accounts: AdminAccount[] }> {

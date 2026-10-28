@@ -27,6 +27,20 @@ import {
  */
 export const GESTURE_TTL_MS = 3000;
 
+/**
+ * How long a peer may go unheard before this page stops counting them, and how often a
+ * client says it is still there.
+ *
+ * `loro-websocket` has no awareness protocol, so nothing tells us a peer left: their
+ * ephemeral state is simply still in the store. Silence is the only available signal, and
+ * silence alone would also evict a peer who is connected and reading, which is why every
+ * client publishes a beat on a timer. The TTL is four beats, so one dropped message is not
+ * someone disappearing, and it sits inside the background-tab timer budget browsers allow
+ * (~60s) rather than outside it.
+ */
+export const PRESENCE_BEAT_MS = 15_000;
+export const PRESENCE_TTL_MS = 60_000;
+
 /** Guard rail: a peer cannot legitimately drag more cards than this at once. */
 export const MAX_DRAG_NODE_IDS = 500;
 
@@ -151,7 +165,13 @@ function withoutGesture(peer: PeerPresence): PeerPresence {
  */
 export function projectPeers(
   states: Map<string, Record<string, unknown>>,
-  context: { selfId: string | null; now: number; seen: Map<string, SeenGesture> },
+  context: {
+    selfId: string | null;
+    now: number;
+    seen: Map<string, SeenGesture>;
+    /** Last heartbeat per client: the marker it sent, and when this page last heard it. */
+    heard: Map<string, { marker: string; at: number }>;
+  },
 ): Record<string, PeerPresence> {
   const peers: Record<string, PeerPresence> = {};
   const live = new Set<string>();
@@ -159,6 +179,17 @@ export function projectPeers(
   for (const [clientId, state] of states) {
     if (clientId === context.selfId) continue;
     live.add(clientId);
+
+    // The marker is the heartbeat when the peer sends one, and the whole state when they
+    // do not: an older build changes state only when something happens, and treating that
+    // as liveness keeps it visible rather than evicting it on a field it never heard of.
+    const beat = state[AWARENESS_FIELDS.presenceBeat];
+    const marker = typeof beat === "number" ? String(beat) : JSON.stringify(state);
+    const previousBeat = context.heard.get(clientId);
+    const heardAt = previousBeat?.marker === marker ? previousBeat.at : context.now;
+    context.heard.set(clientId, { marker, at: heardAt });
+    // Unheard for longer than the TTL: the client is gone, whatever its state still says.
+    if (context.now - heardAt > PRESENCE_TTL_MS) continue;
 
     const peer = toPeerPresence(clientId, state);
     const signature = gestureSignature(peer);
@@ -177,6 +208,9 @@ export function projectPeers(
 
   for (const clientId of context.seen.keys()) {
     if (!live.has(clientId)) context.seen.delete(clientId);
+  }
+  for (const clientId of [...context.heard.keys()]) {
+    if (!live.has(clientId)) context.heard.delete(clientId);
   }
 
   return peers;

@@ -156,7 +156,14 @@ fi
 
 tag=$(git describe --tags --exact-match 2>/dev/null || true)
 if [ -z "$tag" ]; then
+  # The host that runs this builds in Docker and has no Node — the user-data installs
+  # Docker, sqlite3 and the AWS CLI, nothing else — so `node -p` is not available and a
+  # deployment would stop here for want of a version string. Ask Node when it exists and
+  # read the one field with sed when it does not.
   version=$(node -p "require('./package.json').version" 2>/dev/null || true)
+  if [ -z "$version" ]; then
+    version=$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' package.json | head -n1)
+  fi
   [ -n "$version" ] || die "HEAD is not a tag and package.json has no version; check out a release tag"
   tag="v$version"
   printf 'deploy: HEAD is not a tag; building %s from package.json\n' "$tag" >&2

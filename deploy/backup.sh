@@ -42,6 +42,10 @@
 #   SUITE_BACKUP_BUCKET   optional s3://bucket/ to upload to; unset = local only
 #   SUITE_BACKUP_PREFIX   key prefix inside the bucket (default: suite)
 #   SUITE_BACKUP_ENDPOINT S3-compatible endpoint for R2/MinIO, passed to aws
+#   SUITE_PG_DUMP_URL     connection string for the control-plane database, for a
+#                         deployment whose Postgres is not a compose service (RDS).
+#                         Unset falls back to `docker compose exec` in
+#                         $SUITE_POSTGRES_SERVICE, which is the local shape.
 #
 # Restore with the server stopped: deploy/restore.sh (or docs/operations.md).
 set -euo pipefail
@@ -254,26 +258,44 @@ EOF
 } >"$MANIFEST"
 
 # The control plane's own database: accounts, organizations, invitations, starter templates
-# and the panel's settings. It lives in Postgres, so the dump comes from the database
-# service rather than from the app volume — `postgres:17-alpine` ships `pg_dump`, and the
-# host needs no client of its own.
+# and the panel's settings. It lives in Postgres, which is one of two shapes:
+#
+# - a compose service, which is the local stack: `docker compose exec` needs no client on
+#   the host, because `postgres:17-alpine` ships `pg_dump`;
+# - a managed database (RDS), which is the hosted shape: there is no service to exec into,
+#   so the dump runs in a throwaway container against `SUITE_PG_DUMP_URL`.
+#
+# A snapshot that quietly omits the accounts database is the worst kind of regression,
+# because the script still exits 0, so "neither shape configured" is a failure rather than
+# a warning.
 dump_control_plane() {
   local service=${SUITE_POSTGRES_SERVICE:-postgres}
   local user=${POSTGRES_USER:-suite}
   local database=${POSTGRES_DB:-suite}
-  local running=""
-  if command -v docker >/dev/null 2>&1; then
-    running=$(docker compose ps --status running --quiet "$service" 2>/dev/null || true)
-  fi
-  if [ -z "$running" ]; then
-    printf 'warning: the %s service is not running; accounts, templates and settings are not in this snapshot\n' "$service" >&2
-    printf 'file\tcontrol-plane\t-\tmissing\t-\n' >>"$MANIFEST"
-    return 0
-  fi
-  if ! docker compose exec -T "$service" pg_dump --no-owner --no-privileges -U "$user" -d "$database" \
-    >"$DEST/control-plane.sql" 2>"$DEST/control-plane.err"; then
-    printf 'error: pg_dump failed in the %s service; see %s\n' "$service" "$DEST/control-plane.err" >&2
-    exit 1
+  local image=${SUITE_PG_DUMP_IMAGE:-postgres:17-alpine}
+
+  if [ -n "${SUITE_PG_DUMP_URL:-}" ]; then
+    if ! docker run --rm --network host "$image" pg_dump --no-owner --no-privileges \
+      --dbname "$SUITE_PG_DUMP_URL" >"$DEST/control-plane.sql" 2>"$DEST/control-plane.err"; then
+      printf 'error: pg_dump failed against SUITE_PG_DUMP_URL; see %s\n' "$DEST/control-plane.err" >&2
+      exit 1
+    fi
+  else
+    local running=""
+    if command -v docker >/dev/null 2>&1; then
+      running=$(docker compose ps --status running --quiet "$service" 2>/dev/null || true)
+    fi
+    if [ -z "$running" ]; then
+      printf 'error: no control-plane database to dump: set SUITE_PG_DUMP_URL for a managed\n' >&2
+      printf '       Postgres, or start the %s service for a local one. A snapshot without\n' "$service" >&2
+      printf '       accounts, templates and settings is not a backup.\n' >&2
+      exit 1
+    fi
+    if ! docker compose exec -T "$service" pg_dump --no-owner --no-privileges -U "$user" -d "$database" \
+      >"$DEST/control-plane.sql" 2>"$DEST/control-plane.err"; then
+      printf 'error: pg_dump failed in the %s service; see %s\n' "$service" "$DEST/control-plane.err" >&2
+      exit 1
+    fi
   fi
   rm -f "$DEST/control-plane.err"
   printf 'file\tcontrol-plane\t%s\t%s\t%s\n' \

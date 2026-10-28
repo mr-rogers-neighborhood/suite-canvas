@@ -304,9 +304,9 @@ docker run --rm \
     done
     ls -l /data'
 
-# The control plane's database, when the snapshot carries one. It goes back through the
-# database service, the same way it came out, so neither the host nor the app image needs a
-# Postgres client.
+# The control plane's database, when the snapshot carries one. It goes back the same way it
+# came out: through the compose service on a local stack, or through a throwaway container
+# against SUITE_PG_DUMP_URL when Postgres is managed.
 restore_control_plane() {
   local dump="$SNAPSHOT/control-plane.sql"
   [ -f "$dump" ] || {
@@ -316,9 +316,15 @@ restore_control_plane() {
   local service=${SUITE_POSTGRES_SERVICE:-postgres}
   local user=${POSTGRES_USER:-suite}
   local database=${POSTGRES_DB:-suite}
+  local image=${SUITE_PG_DUMP_IMAGE:-postgres:17-alpine}
   printf 'restoring the control plane from control-plane.sql...\n'
-  docker compose exec -T "$service" psql --quiet --no-psqlrc -v ON_ERROR_STOP=1 -U "$user" -d "$database" \
-    <"$dump" >/dev/null
+  if [ -n "${SUITE_PG_DUMP_URL:-}" ]; then
+    docker run --rm -i --network host "$image" psql --quiet --no-psqlrc -v ON_ERROR_STOP=1 \
+      --dbname "$SUITE_PG_DUMP_URL" <"$dump" >/dev/null
+  else
+    docker compose exec -T "$service" psql --quiet --no-psqlrc -v ON_ERROR_STOP=1 -U "$user" -d "$database" \
+      <"$dump" >/dev/null
+  fi
   printf '  restored  control-plane.sql\n'
 }
 

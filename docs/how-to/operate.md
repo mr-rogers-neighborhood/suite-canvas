@@ -271,10 +271,16 @@ the server runs and includes whatever is still in the `-wal` file, and it dumps 
 Postgres database beside them. Accounts, organizations, invitations, starter templates and the panel's
 settings live there; a snapshot without them restores the documents and leaves every account behind.
 
-The dump runs through the compose database service, whose image ships `pg_dump`, so neither the host nor
-the app image needs a Postgres client. `SUITE_POSTGRES_SERVICE`, `POSTGRES_USER` and `POSTGRES_DB` name
-the service and role it uses, and the manifest records the dump's table count and checksum beside the
-stores:
+The dump takes one of two shapes, and the script refuses to write a snapshot with neither:
+
+- **A compose service** (the local stack): `docker compose exec` into `postgres`, whose image ships
+  `pg_dump`, so neither the host nor the app image needs a client. `SUITE_POSTGRES_SERVICE`,
+  `POSTGRES_USER` and `POSTGRES_DB` name the service and role it uses.
+- **A managed database** (RDS, the hosted shape): there is no service to exec into, so set
+  `SUITE_PG_DUMP_URL` and the dump runs in a throwaway `postgres:17-alpine` container against that URL.
+  `restore.sh` reads the same variable, so the way back matches the way out.
+
+The manifest records the dump's table count and checksum beside the stores:
 
 ```sh
 deploy/backup.sh                 # writes backups/suite-<UTC timestamp>/

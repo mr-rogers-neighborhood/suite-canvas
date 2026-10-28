@@ -135,7 +135,13 @@ services:
     # licence records all live here (ADR-0069). One pinned major, because a dump
     # from one major restores into the next only through `pg_upgrade`, which
     # makes the tag a decision rather than a convenience.
+    #
+    # It is a *local* shape, not the deployed one: a hosted launch points
+    # SUITE_CONTROL_PLANE_DATABASE_URL at RDS and starts `docker compose up`
+    # without this profile, so the box runs no database of its own. `pnpm up`
+    # and `pnpm dev:db` pass `--profile local-db`; nothing else needs to.
     image: postgres:17-alpine
+    profiles: ["local-db"]
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-suite}
@@ -166,9 +172,11 @@ services:
       args:
         SUITE_VERSION: ${SUITE_VERSION:-0.0.0}
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
+    # No `depends_on: postgres`: that service is behind the `local-db` profile, and
+    # compose refuses to start a service whose dependency is profiled away. The control
+    # plane retries its own connection instead — a boot that lands before Postgres is
+    # ready clears its memo and answers the next request, which is also what a managed
+    # database with a failover does.
     # The same hardening as `app`, and the same reason: this process holds the
     # Stripe signing secret and the auth signing key, so the smaller its
     # writable surface, the better. It owns no file of its own -- Postgres is a

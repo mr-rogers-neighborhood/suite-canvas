@@ -196,6 +196,11 @@ three. A webhook is verified with the active mode's signing secret and no other,
 arrives while the deployment is live fails verification instead of writing a licence. Switching to live
 with the `_LIVE` set incomplete leaves billing off, and the boot log names the variables it wanted.
 
+`SUITE_PG_DUMP_URL` is not read by a process; it tells `deploy/backup.sh` and `deploy/restore.sh` how to
+reach a managed Postgres. Unset, they dump through the compose `postgres` service instead, which is the
+local shape. The `postgres` service itself sits behind the `local-db` profile: `pnpm up` passes it, a
+deployed host with RDS does not.
+
 `compose.yaml` adds three variables it consumes itself: `SUITE_DOMAIN` (the hostname Caddy serves),
 `SUITE_ACME_EMAIL` (the ACME account address) and `SUITE_IMAGE` (the image to run, defaulting to the image
 the host builds locally, `suite:local`).

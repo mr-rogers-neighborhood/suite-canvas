@@ -18,8 +18,8 @@
     "coverage:graph": "vitest run --coverage --project=graph --coverage.include='packages/graph/src/**'",
     "db:verify": "node scripts/db-verify.mjs",
     "dev": "turbo run dev",
-    "dev:db": "docker compose -f compose.yaml -f compose.dev.yaml up -d --wait postgres",
-    "dev:db:stop": "docker compose -f compose.yaml -f compose.dev.yaml stop postgres",
+    "dev:db": "docker compose --profile local-db -f compose.yaml -f compose.dev.yaml up -d --wait postgres",
+    "dev:db:stop": "docker compose --profile local-db -f compose.yaml -f compose.dev.yaml stop postgres",
     "dev:env": "node scripts/dev-env.mjs",
     "docs:check": "node scripts/docs-check.mjs && node scripts/generate-doc-indexes.mjs --check && node scripts/generate-limits.mjs --check",
     "docs:index": "node scripts/generate-doc-indexes.mjs",
@@ -70,7 +70,7 @@
     "test:stories": "pnpm --filter @suite/canvas test:stories",
     "test:watch": "vitest",
     "typecheck": "turbo run typecheck",
-    "up": "docker compose build && docker compose up -d && node scripts/doctor.mjs",
+    "up": "docker compose --profile local-db build && docker compose --profile local-db up -d && node scripts/doctor.mjs",
     "verify": "node scripts/scratchpad.mjs --quiet && pnpm lint && pnpm typecheck && pnpm test && pnpm turbo run test --filter=@suite/billing && pnpm test:stories && pnpm build && pnpm docs:check && pnpm docs:symbols && pnpm shape && pnpm security:deps && pnpm security:secrets"
   },
   "devDependencies": {

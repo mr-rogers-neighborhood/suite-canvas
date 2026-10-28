@@ -1,5 +1,11 @@
 import type { CardType, CreateFieldInput, FieldDefinition, SubField } from "@suite/graph";
-import { displayTemplate, fieldKinds, subFieldKinds, typePluralName } from "@suite/graph";
+import {
+  displayTemplate,
+  fieldKinds,
+  isBehaviourType,
+  subFieldKinds,
+  typePluralName,
+} from "@suite/graph";
 import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Dialog } from "../dialogs/Dialog";
@@ -154,6 +160,17 @@ export function TypeSettingsDialog({
     [types, selectedId],
   );
 
+  /**
+   * A behaviour type is drawn by the runtime, not authored by the reader.
+   *
+   * A sketch is a drawing surface and a portal is a door onto another board, so their name,
+   * their plural, their fields and their style all belong to the renderer: renaming the
+   * type a sketch wears, or giving it a field, would produce a card the canvas cannot
+   * draw. The editor still *shows* them — a reader should be able to see what the two
+   * runtime types are — but it does not offer to change them (ADR-0040).
+   */
+  const readOnlyType = isBehaviourType(selected?.id);
+
   const panel = useRef<HTMLDivElement | null>(null);
 
   useEscapeLayer(onClose);
@@ -306,20 +323,55 @@ export function TypeSettingsDialog({
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="border-b border-[var(--hairline)] px-3 py-2">
             <div className="flex items-center gap-2">
-              {selected ? <TypeIconButton type={selected} onUpdate={onUpdateType} /> : null}
-              <input
-                key={`${selected?.id}-name`}
-                type="text"
-                defaultValue={selected?.name ?? ""}
-                aria-label="Type name"
-                className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm font-semibold text-[var(--ink)] hover:border-[var(--hairline)] focus:border-[var(--ink-muted)] focus:outline-none"
-                onBlur={(event) => {
-                  const name = event.target.value.trim();
-                  if (!selected) return;
-                  if (name && name !== selected.name) onUpdateType(selected.id, { name });
-                  else event.target.value = selected.name;
-                }}
-              />
+              {selected ? (
+                <TypeIconButton type={selected} onUpdate={onUpdateType} disabled={readOnlyType} />
+              ) : null}
+              {/*
+                One row, two words: "Note / Notes" is one name in two numbers, and the
+                second field is the one the reader edits least — it sat under the first as a
+                separate eyebrow row, which made a single concept look like two settings.
+                The placeholder is the plural the app would derive, so an empty field still
+                reads as the answer it will be used as.
+              */}
+              <div className="flex min-w-0 flex-1 items-baseline gap-1">
+                <input
+                  key={`${selected?.id}-name`}
+                  type="text"
+                  defaultValue={selected?.name ?? ""}
+                  aria-label="Type name"
+                  readOnly={readOnlyType}
+                  className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm font-semibold text-[var(--ink)] hover:border-[var(--hairline)] focus:border-[var(--ink-muted)] focus:outline-none read-only:hover:border-transparent"
+                  onBlur={(event) => {
+                    const name = event.target.value.trim();
+                    if (!selected || readOnlyType) return;
+                    if (name && name !== selected.name) onUpdateType(selected.id, { name });
+                    else event.target.value = selected.name;
+                  }}
+                />
+                {selected ? (
+                  <>
+                    <span aria-hidden="true" className="shrink-0 text-sm text-[var(--ink-muted)]">
+                      /
+                    </span>
+                    <input
+                      key={`${selected.id}-plural`}
+                      type="text"
+                      defaultValue={selected.pluralName ?? ""}
+                      placeholder={typePluralName({ name: selected.name })}
+                      aria-label="Type plural name"
+                      data-testid="type-plural-name"
+                      readOnly={readOnlyType}
+                      className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-[var(--ink)] placeholder:text-[var(--ink-muted)] hover:border-[var(--hairline)] focus:border-[var(--ink-muted)] focus:outline-none read-only:hover:border-transparent"
+                      onBlur={(event) => {
+                        if (readOnlyType) return;
+                        const pluralName = event.target.value.trim();
+                        if (pluralName === (selected.pluralName ?? "")) return;
+                        onUpdateType(selected.id, { pluralName: pluralName || null });
+                      }}
+                    />
+                  </>
+                ) : null}
+              </div>
               <button
                 type="button"
                 className="rounded px-2 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
@@ -328,29 +380,22 @@ export function TypeSettingsDialog({
                 Done
               </button>
             </div>
-            {selected ? (
-              <div className="mt-1 flex items-center gap-1.5">
-                <span className="shrink-0 text-[11px] text-[var(--ink-muted)]">Plural</span>
-                <input
-                  key={`${selected.id}-plural`}
-                  type="text"
-                  defaultValue={selected.pluralName ?? ""}
-                  placeholder={typePluralName({ name: selected.name })}
-                  aria-label="Type plural name"
-                  data-testid="type-plural-name"
-                  className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-muted)] hover:border-[var(--hairline)] focus:border-[var(--ink-muted)] focus:outline-none"
-                  onBlur={(event) => {
-                    const pluralName = event.target.value.trim();
-                    if (pluralName === (selected.pluralName ?? "")) return;
-                    onUpdateType(selected.id, { pluralName: pluralName || null });
-                  }}
-                />
-              </div>
+            {readOnlyType ? (
+              <p
+                className="mt-1 text-[11px] text-[var(--ink-muted)]"
+                data-testid="type-readonly-note"
+              >
+                Sketches and portals are how the canvas draws, not what it holds. Their names,
+                fields and style are fixed.
+              </p>
             ) : null}
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            {selected ? (
+            {/* A behaviour type has nothing here to edit: its template is the renderer's,
+                its style is the renderer's, and its fields are the ones the canvas reads.
+                Nothing is hidden that a reader could otherwise use. */}
+            {selected && !readOnlyType ? (
               <>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
                   Template
@@ -747,9 +792,12 @@ export function TypeSettingsDialog({
 function TypeIconButton({
   type,
   onUpdate,
+  disabled = false,
 }: {
   type: CardType;
   onUpdate: (id: string, patch: { icon?: string | null }) => void;
+  /** A behaviour type's mark belongs to the runtime that draws it. */
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -760,7 +808,8 @@ function TypeIconButton({
         aria-haspopup="dialog"
         aria-expanded={open}
         data-testid="type-icon"
-        className="flex h-6 w-6 items-center justify-center rounded border border-[var(--hairline)] text-[13px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+        disabled={disabled}
+        className="flex h-6 w-6 items-center justify-center rounded border border-[var(--hairline)] text-[13px] text-[var(--ink)] hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"
         onClick={() => setOpen((value) => !value)}
       >
         {type.icon ? (

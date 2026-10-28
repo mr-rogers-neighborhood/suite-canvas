@@ -1,4 +1,10 @@
-import { type Card, type CardType, isTutorialType, type Placement } from "@suite/graph";
+import {
+  type Card,
+  type CardType,
+  isBehaviourType,
+  isTutorialType,
+  type Placement,
+} from "@suite/graph";
 import { type NodeProps, NodeResizer, type NodeTypes, type ResizeParams } from "@xyflow/react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { CardMeta } from "../cards/cardMeta";
@@ -177,14 +183,23 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     [workspace, id, setSelectedNodeIds, stopEditing],
   );
 
-  const typeTargets = useMemo(
-    () =>
-      workspace
-        .listTypes()
-        .filter((entry) => entry.name.length > 0)
-        .map((entry) => ({ id: entry.id, name: entry.name })),
-    [workspace],
-  );
+  /**
+   * What this card can become.
+   *
+   * A behaviour type is drawn by the runtime — a sketch is a drawing surface, a portal is a
+   * door — so it is neither a target nor a starting point: converting a note into a sketch
+   * would produce a card the canvas has no renderer for, and converting a sketch into a
+   * note would throw away the drawing. Both lists are the same list, so the menu simply
+   * offers nothing for a behaviour card (ADR-0040).
+   */
+  const typeTargets = useMemo(() => {
+    // A behaviour card is the runtime's: it has no siblings to become.
+    if (isBehaviourType(type.id) || card.typeIds.some((entry) => isBehaviourType(entry))) return [];
+    return workspace
+      .listTypes()
+      .filter((entry) => entry.name.length > 0 && !isBehaviourType(entry.id))
+      .map((entry) => ({ id: entry.id, name: entry.name }));
+  }, [workspace, type.id, card.typeIds]);
   const moveTargets = useMemo(
     () =>
       boards

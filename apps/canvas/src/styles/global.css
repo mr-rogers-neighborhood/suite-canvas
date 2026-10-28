@@ -428,10 +428,25 @@ body {
   z-index: -1;
   pointer-events: none;
   background: var(--paint-surface, var(--surface));
-  border-top: var(--paint-border-top, 1px solid var(--hairline));
-  border-right: var(--paint-border-right, 1px solid var(--hairline));
-  border-bottom: var(--paint-border-bottom, 1px solid var(--hairline));
-  border-left: var(--paint-border-left, 1px solid var(--hairline));
+  /*
+   * A patterned side's border is the strip's own thickness, published by the painter as
+   * `--paint-dash-thickness-*`, so the band and the edge are the same number. It used to
+   * be `1px solid var(--hairline)` with the strip painted at 1.5px inside it, which is one
+   * way a dash ends up looking like a bar.
+   */
+  border-top: var(--paint-border-top, var(--paint-dash-thickness-top, 1px) solid transparent);
+  border-right: var(
+    --paint-border-right,
+    var(--paint-dash-thickness-right, 1px) solid transparent
+  );
+  border-bottom: var(
+    --paint-border-bottom,
+    var(--paint-dash-thickness-bottom, 1px) solid transparent
+  );
+  border-left: var(
+    --paint-border-left,
+    var(--paint-dash-thickness-left, 1px) solid transparent
+  );
   /* A painted card's underlay is the silhouette, so it defaults to whatever the card
      resolved rather than to a radius of its own. */
   border-radius: var(--paint-radius, var(--card-radius, 12px));
@@ -453,6 +468,12 @@ body {
     100% 0,
     0 100%,
     0 0;
+  /*
+   * One copy per side, and this is the whole of why a dash used to be a bar: a strip is
+   * a band as tall as its edge, and the default `repeat` tiled that band across the
+   * surface, so a 1.5px dashed line became a column of stripes.
+   */
+  background-repeat: no-repeat;
   background-origin: border-box;
   background-clip: border-box;
   animation:

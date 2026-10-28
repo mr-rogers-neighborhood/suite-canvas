@@ -1,14 +1,16 @@
-import { resolveSurfaceStyle, styleShapes } from "@suite/graph";
+import { resolveSurfaceStyle, type SurfaceStyle, styleShapes } from "@suite/graph";
 import { describe, expect, it } from "vitest";
 import {
   colourRoleVar,
   isShapedSurface,
+  type ResolvedSurfaceStyle,
   shapeClipPath,
   shapeInset,
   shapeOutline,
   shapeRadius,
   sideAnimation,
   sideBorder,
+  sideStrip,
   surfacePaintVars,
 } from "./surfacePaint";
 
@@ -50,10 +52,10 @@ describe("surface paint", () => {
       "card",
     );
     const paint = surfacePaintVars(styled);
-    // A patterned side keeps its thickness and paints nothing: the pattern is a strip
-    // inside the border box, because the browser's own `dashed` is a hairline at the
-    // thickness a card edge has.
-    expect(paint["--paint-border-top"]).toBe("2px solid transparent");
+    // A patterned side draws no border: the strip is the edge, and it carries its own
+    // thickness, because the browser's own `dashed` is a hairline at the thickness a card
+    // edge has and a transparent border could be zeroed under it.
+    expect(paint["--paint-border-top"]).toBe("0");
     expect(paint["--paint-dash-top"]).toContain("var(--accent)");
     expect(paint["--paint-dash-size-top"]).toBe("100% 2px");
     expect(paint["--paint-border-left"]).toBeUndefined();
@@ -170,5 +172,39 @@ describe("a silhouette that is not the box", () => {
     // A document is a rectangle with a turned corner: its bar is as wide as its body.
     const document = shapeInset("document", size);
     expect(document.titleX).toBe(document.x);
+  });
+});
+
+/**
+ * A patterned edge is one number drawn twice: a strip of a thickness, and the band it
+ * occupies. They used to be two numbers a rule apart (a 1px fallback border under a 1.5px
+ * strip), and the strip then painted partly outside the edge it stood for.
+ */
+describe("a patterned side reports the edge it draws", () => {
+  const style = (paint: "dashed" | "dotted"): ResolvedSurfaceStyle =>
+    resolveSurfaceStyle({ sides: { top: { paint } } } as SurfaceStyle, "card");
+
+  for (const paint of ["dashed", "dotted"] as const) {
+    it(`draws ${paint} at the thickness its strip claims`, () => {
+      const resolved = style(paint);
+      const strip = sideStrip(resolved, "top");
+      const border = sideBorder(resolved, "top");
+      if (!strip) throw new Error("expected a strip");
+      // The band is exactly as thick as the edge, and one period long.
+      expect(strip.size).toBe(`100% ${strip.thickness}px`);
+      // No border holds its place: the strip is the edge, so nothing can zero the band.
+      expect(border).toBe("0");
+      expect(strip.period).toBeGreaterThan(0);
+    });
+  }
+
+  it("lets a reader's own width win over the pattern's default", () => {
+    const resolved = resolveSurfaceStyle(
+      { sides: { top: { paint: "dashed", width: 4 } } } as SurfaceStyle,
+      "card",
+    );
+    expect(sideStrip(resolved, "top")?.thickness).toBe(4);
+    expect(sideStrip(resolved, "top")?.size).toBe("100% 4px");
+    expect(sideBorder(resolved, "top")).toBe("0");
   });
 });

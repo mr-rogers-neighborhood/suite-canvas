@@ -178,16 +178,19 @@
   background: var(--paint-surface);
   color: var(--paint-ink, var(--ink));
   opacity: var(--paint-opacity, 1);
-  border-top: var(--paint-border-top, 1px dashed color-mix(in srgb, var(--ink) 22%, transparent));
+  border-top: var(--paint-border-top, var(--paint-dash-thickness-top, 1px) solid transparent);
   border-right: var(
     --paint-border-right,
-    1px dashed color-mix(in srgb, var(--ink) 22%, transparent)
+    var(--paint-dash-thickness-right, 1px) solid transparent
   );
   border-bottom: var(
     --paint-border-bottom,
-    1px dashed color-mix(in srgb, var(--ink) 22%, transparent)
+    var(--paint-dash-thickness-bottom, 1px) solid transparent
   );
-  border-left: var(--paint-border-left, 1px dashed color-mix(in srgb, var(--ink) 22%, transparent));
+  border-left: var(
+    --paint-border-left,
+    var(--paint-dash-thickness-left, 1px) solid transparent
+  );
   border-radius: var(--paint-radius, 12px);
   clip-path: var(--paint-clip, none);
   animation:
@@ -207,6 +210,8 @@
     100% 0,
     0 100%,
     0 0;
+  /* One copy per side, or the band tiles into stripes across the whole frame. */
+  background-repeat: no-repeat;
   background-origin: border-box;
   background-clip: border-box;
 }
@@ -297,10 +302,20 @@
   z-index: -1;
   pointer-events: none;
   background: var(--paint-surface, var(--surface));
-  border-top: var(--paint-border-top, 1px solid var(--hairline));
-  border-right: var(--paint-border-right, 1px solid var(--hairline));
-  border-bottom: var(--paint-border-bottom, 1px solid var(--hairline));
-  border-left: var(--paint-border-left, 1px solid var(--hairline));
+  /* A patterned side's edge is the strip's own thickness, exactly as on a card. */
+  border-top: var(--paint-border-top, var(--paint-dash-thickness-top, 1px) solid transparent);
+  border-right: var(
+    --paint-border-right,
+    var(--paint-dash-thickness-right, 1px) solid transparent
+  );
+  border-bottom: var(
+    --paint-border-bottom,
+    var(--paint-dash-thickness-bottom, 1px) solid transparent
+  );
+  border-left: var(
+    --paint-border-left,
+    var(--paint-dash-thickness-left, 1px) solid transparent
+  );
   /* Same strips as a card's underlay: see the note in `global.css`. */
   background-image:
     var(--paint-dash-top, none), var(--paint-dash-right, none), var(--paint-dash-bottom, none),
@@ -313,6 +328,8 @@
     100% 0,
     0 100%,
     0 0;
+  /* One copy per side: the default `repeat` tiles a 1.5px band across the whole frame. */
+  background-repeat: no-repeat;
   background-origin: border-box;
   background-clip: border-box;
   border-radius: var(--paint-radius, 12px);

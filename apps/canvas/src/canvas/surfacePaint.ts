@@ -239,11 +239,19 @@ const PATTERN: Partial<Record<StyleEdgePaint, { period: number; on: number; widt
   dotted: { period: 4, on: 2, width: 2 },
 };
 
-/** The strip a patterned side paints: an image, and the size of the edge it covers. */
+/**
+ * The strip a patterned side paints: an image, the size of the edge it covers, and the
+ * numbers behind both.
+ *
+ * `thickness` and `period` travel with the image because the stylesheet needs them too:
+ * the strip's band is the same thickness as the edge it stands for, and a dash animation
+ * has to travel exactly one period. Publishing them means no rule has to repeat a number
+ * that the painter owns, which is how an edge once drew at 1px under a 1.5px strip.
+ */
 export function sideStrip(
   style: ResolvedSurfaceStyle,
   side: StyleSide,
-): { image: string; size: string } | null {
+): { image: string; size: string; thickness: number; period: number } | null {
   const edge = style.sides[side];
   const pattern = edge ? PATTERN[edge.paint] : undefined;
   if (!edge || !pattern) return null;
@@ -252,7 +260,7 @@ export function sideStrip(
   const along = side === "top" || side === "bottom" ? "to right" : "to bottom";
   const image = `repeating-linear-gradient(${along}, ${colour} 0 ${pattern.on}px, transparent ${pattern.on}px ${pattern.period}px)`;
   const size = along === "to right" ? `100% ${width}px` : `${width}px 100%`;
-  return { image, size };
+  return { image, size, thickness: width, period: pattern.period };
 }
 
 /**
@@ -265,8 +273,11 @@ export function sideStrip(
 export function sideBorder(style: ResolvedSurfaceStyle, side: StyleSide, defaultWidth = 1): string {
   const edge = style.sides[side];
   if (!edge || edge.paint === "none") return "none";
-  const pattern = PATTERN[edge.paint];
-  if (pattern) return `${edge.width ?? pattern.width}px solid transparent`;
+  // A patterned side draws no border at all: the strip *is* the edge, and it carries its
+  // own thickness. A transparent border of the same width used to hold its place, but any
+  // rule that reset the border collapsed the band and left the strip painting into the
+  // surface at full size, which is how a dash became a bar.
+  if (PATTERN[edge.paint]) return "0";
   return `${edge.width ?? defaultWidth}px solid ${colourRoleVar(edge.colour ?? style.ink)}`;
 }
 
@@ -315,6 +326,10 @@ export function surfacePaintVars(
     if (strip) {
       paint[`--paint-dash-${side}`] = strip.image;
       paint[`--paint-dash-size-${side}`] = strip.size;
+      // The band's own thickness and one period: the stylesheet positions the strip with
+      // these instead of borrowing a border width, which a shorthand could zero.
+      paint[`--paint-dash-thickness-${side}`] = `${strip.thickness}px`;
+      paint[`--paint-dash-period-${side}`] = `${strip.period}px`;
     }
     const animation = sideAnimation(style, side);
     if (animation) paint[`--paint-animation-${side}`] = animation;

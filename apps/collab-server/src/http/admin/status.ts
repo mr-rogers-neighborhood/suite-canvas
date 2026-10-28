@@ -281,7 +281,7 @@ export function sendMetrics(response: ServerResponse, collector: MetricsCollecto
  * Read-only operator API plus the controlled mutations behind the same token,
  * and the Prometheus scrape at `GET /metrics`. Like the share and workspace
  * handlers, it returns false when the path is not its own. Both routes only
- * exist while `SUITE_ADMIN_TOKEN` is set: an unconfigured server answers 404,
+ * exist while a control plane is configured: a server with no identity answers 404,
  * never 401. There is no owner-key path to a mutation or to a scrape: only the
  * bearer token above reaches any of them.
  */

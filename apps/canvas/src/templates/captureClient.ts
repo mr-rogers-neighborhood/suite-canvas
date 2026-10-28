@@ -28,7 +28,7 @@ import { operatorToken } from "./operatorToken";
  * screenshots; each reason below says which of those it was.
  */
 
-/** Where a template is written. Behind `SUITE_ADMIN_TOKEN` on the control plane. */
+/** Where a template is written. Behind the operator session on the control plane. */
 export const TEMPLATE_POST_PATH = "/admin/templates";
 
 /**

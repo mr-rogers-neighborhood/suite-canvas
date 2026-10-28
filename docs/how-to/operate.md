@@ -63,7 +63,7 @@ links orphaned or a paid workspace unentitled.
 
 ### Secrets
 
-`.env` and `/etc/suite/*.env` are credential files: `chmod 600`, never committed. `SUITE_ADMIN_TOKEN`
+`.env` and `/etc/suite/*.env` are credential files: `chmod 600`, never committed. `SUITE_AUTH_SECRET`
 is all-or-nothing, since it reads every workspace's metadata and links, deletes workspaces, and serves
 `/metrics` and `/admin`; rotate it by writing a new value and running `docker compose up -d app`.
 `SUITE_PROJECTION_TOKEN` and `SUITE_SOURCE_TOKEN` are worker credentials: set them on a deployed host,
@@ -152,9 +152,13 @@ report-only is a deliberate change with a note, not a fallback.
 
 ### `/metrics`
 
-Prometheus text, no client library, gated by the same token as `/api/admin/*`: `404` without
-`SUITE_ADMIN_TOKEN`, `401` on a wrong bearer, `200` with the right one, `429` under the admin rate
-limit. Never cached.
+Prometheus text, no client library, gated like `/api/admin/*`: `404` when the relay has no control
+plane to verify a session against, `401` without an operator session, `200` with one, `429` above the
+admin rate limit. Never cached.
+
+A cron scrape has no browser and cannot hold a session, so `SUITE_METRICS_LOCAL=1` lets a request from
+a loopback address read it with no credential. That opens `/metrics` and nothing else, and a request
+that arrived through the proxy is never a loopback request.
 
 The relay samples event-loop lag every 50 ms and exports it as a histogram, because a document write
 is a full-snapshot upsert and the interesting question is how late the loop was, not how long one
@@ -163,7 +167,7 @@ write took. Five samples in a row at or over `SUITE_EVENT_LOOP_LAG_MS` (default 
 window, so the first thing an operator reads says whether writes are the cause.
 
 ```sh
-curl -s -H "authorization: Bearer $SUITE_ADMIN_TOKEN" http://127.0.0.1:1235/metrics
+curl -s http://127.0.0.1:1235/metrics
 ```
 
 | Metric | Type | Meaning |
@@ -189,12 +193,13 @@ cannot multiply series or copy a capability into a metrics store.
 
 ### Admin status
 
-With `SUITE_ADMIN_TOKEN` set, `GET /api/admin/status` returns uptime, pid, version, `rssBytes` (`null`,
+With an operator signed in, `GET /api/admin/status` returns uptime, pid, version, `rssBytes` (`null`,
 never `0`, when unreadable), per-store sizes, room and client counts, and the limits in force. Its
 `projections` block carries `open`, `limit`, `opened`, `evicted`, `refused` and `documentBytes`;
-`opened` read just after boot is the boot cost. Without the token every `/api/admin/*` path answers
-`404`. Read-only siblings: `rooms`, `shares?workspaceId=`, `workspaces?limit=&offset=`,
-`workspaces/:id`, `limits`. Behind the same token: `POST fixtures`, `GET workspaces/:id/export`,
+`opened` read just after boot is the boot cost. Without a control plane configured every `/api/admin/*`
+path answers `404`, and without an operator session it answers `401` (or `403` for a signed-in account
+that is not on `SUITE_ADMIN_EMAILS`). Read-only siblings: `rooms`, `shares?workspaceId=`, `workspaces?limit=&offset=`,
+`workspaces/:id`, `limits`. Behind the same door: `POST fixtures`, `GET workspaces/:id/export`,
 `PUT limits` and `POST rooms/sweep`.
 
 ### Projection rooms are opened on demand
@@ -253,7 +258,7 @@ line. It exits `2` with `CANNOT CHECK:` when it cannot check at all: no token, a
 `--json` prints the same result for a wrapper.
 
 ```cron
-*/5 * * * * root SUITE_ADMIN_TOKEN=<token> /srv/suite/deploy/alert.sh >/dev/null
+*/5 * * * * root /srv/suite/deploy/alert.sh >/dev/null
 ```
 
 Any runner that can `curl` and read an exit code works: a hosted Prometheus with a bearer token, or a
@@ -380,8 +385,9 @@ Resolution order is built-in defaults, then `SUITE_*` environment, then runtime 
 such as soft above hard stops the process with the reason.
 
 ```sh
-curl -s -H "authorization: Bearer $SUITE_ADMIN_TOKEN" http://localhost:1235/api/admin/limits
-curl -s -X PUT -H "authorization: Bearer $SUITE_ADMIN_TOKEN" -H 'content-type: application/json' \
+# Signed in as an operator: the browser panel sends this, and so does this command.
+curl -s -H "authorization: Bearer $OPERATOR_SESSION" http://localhost:1235/api/admin/limits
+curl -s -X PUT -H "authorization: Bearer $OPERATOR_SESSION" -H 'content-type: application/json' \
   -d '{"maxWorkspaces":50,"projectionBytesPerWorkspace":67108864,"diskSoftBytes":"unlimited"}' \
   http://localhost:1235/api/admin/limits
 ```

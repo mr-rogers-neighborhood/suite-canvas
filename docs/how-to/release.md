@@ -72,8 +72,9 @@ sed -i -E 's|^#?[[:space:]]*SUITE_IMAGE=.*|SUITE_IMAGE=suite:v1.1.0|' .env
 docker compose up -d --no-build app                   # the new tag; Caddy keeps running
 docker compose ps                                     # app healthy, caddy up
 curl -fsS https://$SUITE_DOMAIN/health                # {"ok":true}
-curl -fsS --oauth2-bearer "$SUITE_ADMIN_TOKEN" https://$SUITE_DOMAIN/api/admin/status | head -c 400
-curl -fsS --oauth2-bearer "$SUITE_ADMIN_TOKEN" https://$SUITE_DOMAIN/metrics | grep suite_build_info
+# The operator API answers a session, so this runs on the box: SUITE_METRICS_LOCAL=1 lets a
+# loopback request read /metrics with no credential, and the version stamp lives there.
+curl -fsS http://127.0.0.1:1235/metrics | grep suite_build_info
 ```
 
 `/api/admin/status` must report `"version":"v1.1.0"` and `suite_build_info` must carry the same tag,

@@ -187,27 +187,42 @@ workspace URL and share token are not sent along, and the URL itself is document
 reader can see it. The CSP allows `https:` in `img-src` for this reason; an `attachment` keeps readers off
 third-party hosts.
 
-## Operator tokens
+## The operator surface
 
-`/metrics` and `/api/admin/*` are gated by operator tokens, and both routes answer `404` while none is
-configured. A token carries one or both scopes:
+`/metrics` and `/api/admin/*` answer an **operator session**, and both routes answer `404` when the
+relay has no control plane to verify one against. An operator is an account whose address is on
+`SUITE_ADMIN_EMAILS`:
 
-| Variable | Scopes | Can |
-| --- | --- | --- |
-| `SUITE_ADMIN_TOKEN` | `read`, `mutate` | Everything below |
-| `SUITE_ADMIN_READ_TOKEN` | `read` | `GET /metrics`, the status, room and share inventories, the workspace list and export |
+| Caller | Answer |
+| --- | --- |
+| No session, or a session this deployment cannot verify | `401` |
+| A valid session for an account that is not on the list | `403 forbidden`, logged with the path |
+| An account on the list | `200`, with both scopes |
 
-`read` cannot mutate. A mutation presented with a read token answers `403` and is recorded, because an
-attempt to escalate is a fact an operator wants in the log. The two variables must hold different values;
-the same secret in both does not widen the read token.
+Two things follow from using a session rather than an environment token. Revoking an operator is a
+restart, not a rotation of a secret that may be cached in a script or a shell history. And the token is
+the same one the canvas already holds, minted from `SUITE_ADMIN_EMAILS` on the control plane and read
+here as an `operator` claim, so the answer cannot differ between the two processes.
+
+The claim is **not** a role. `role` is the account's role inside the organization the session acts in, so
+an organization owner is a perfectly valid session that an operator route still refuses: owning a tenant
+is not operating the deployment.
+
+`read` cannot mutate, and the router keeps that split even though every operator holds both scopes today:
+it describes the blast radius a narrower role would arrive with.
+
+A scrape timer has no session, so `SUITE_METRICS_LOCAL=1` lets a request from a loopback address read
+`/metrics` with no credential. That opens one route for one method, and a request that arrived through
+the proxy is never a loopback request.
 
 Every mutating admin request writes one audit row to the relay's log, tagged `admin.mutation`:
 
 ```json
-{"msg":"admin.mutation","actor":"admin","action":"delete-workspace","target":"ws-1","result":"deleted","path":"/api/admin/workspaces/ws-1"}
+{"msg":"admin.mutation","actor":"account:user-1","action":"delete-workspace","target":"ws-1","result":"deleted","path":"/api/admin/workspaces/ws-1"}
 ```
 
-`actor` is `admin` or `admin-read`, never the token. `result` is `ok`-family (`created`, `deleted`,
+`actor` is `account:<id>`, never a secret and never a role, because "somebody with the token did it" is
+not an audit trail. `result` is `ok`-family (`created`, `deleted`,
 `revoked`, `updated`, `swept`), `refused`, `refused-scope` or `failed`. The relay writes no other audit
 store, so ship these lines somewhere that keeps them: a log line that scrolls away is not an audit trail.
 
@@ -292,7 +307,7 @@ a mitigation can be read as an answer to a named adversary rather than as a feat
 | Attachment bytes | `attachments.sqlite` on the relay | The same, for images: pasted screenshots, scans, photos. |
 | Account identity | Postgres: users, sessions, organizations, members, invitations | Who works with whom, and every address an account signed up with. |
 | Share tokens | SHA-256 hashes in `shares.sqlite` | A working link, which is a working credential, until it is revoked or expires. |
-| Operator tokens | the process environment (`SUITE_ADMIN_TOKEN`, `SUITE_ADMIN_READ_TOKEN`) | Every workspace's metadata, every link, and the ability to delete. |
+| An operator session | a signed token for an address on `SUITE_ADMIN_EMAILS`, held in a signed-in browser | Every workspace's metadata, every link, and the ability to delete. Nothing in the environment grants it. |
 | Licence private key | never on the relay; the control plane signs with it | The ability to mint entitlements for any tier. |
 | Licence claims | `licences.sqlite` per workspace, `licence` rows in Postgres | Quota bookkeeping, not a credential. |
 
@@ -427,9 +442,9 @@ sends, on its own credential, and the report carries what came back. Without tha
 workspace, which is `DELETE /api/workspaces/<id>` with the owning account's session, or
 `pnpm --filter @suite/collab-server admin delete <id> --force`.
 
-The purge credential is a third token rather than `SUITE_ADMIN_TOKEN`. The account service is the process
-with a public sign-in surface, and the operator token would let a fault there reach every workspace's
-limits, rooms and links. This one deletes the workspace it is handed and opens nothing else, and it is set
+The purge credential is its own token rather than the operator's authority. The account service is the
+process with a public sign-in surface, and an operator session reaching it would let a fault there reach
+every workspace's limits, rooms and links. This one deletes the workspace it is handed and opens nothing else, and it is set
 on each side independently, so rotating it costs one restart of each process.
 
 **Backups age out; they do not vanish.** A delete is immediate on the live stores and permanent for the

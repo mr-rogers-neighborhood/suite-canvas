@@ -179,19 +179,22 @@ function authPassthrough(env: ConfigEnv): Readonly<Record<string, string>> {
 /**
  * The one pairing that would otherwise boot into a state nobody can leave.
  *
- * `SUITE_ADMISSION_REQUIRED` holds every new account, and only the operator route
- * releases one. With no token for that route the queue is a one-way door, so it is
- * reported at startup rather than discovered by the first person who signs up.
+ * `SUITE_ADMISSION_REQUIRED` holds every new account, and only an operator releases
+ * one. With no operator nominated the queue is a one-way door, so it is reported at
+ * startup rather than discovered by the first person who signs up.
  */
 function admissionProblemOf(env: ConfigEnv): ConfigProblem | null {
   const required = (env.SUITE_ADMISSION_REQUIRED ?? "").trim().toLowerCase();
   const queueOn = required === "1" || required === "true";
-  const token = (env.SUITE_ADMIN_TOKEN ?? "").trim();
-  if (!queueOn || token.length >= 16) return null;
+  const operators = (env.SUITE_ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (!queueOn || operators.length > 0) return null;
   return {
-    variable: "SUITE_ADMIN_TOKEN",
+    variable: "SUITE_ADMIN_EMAILS",
     message:
-      "SUITE_ADMISSION_REQUIRED is on and SUITE_ADMIN_TOKEN is missing or too short, so nobody could be admitted",
+      "SUITE_ADMISSION_REQUIRED is on and SUITE_ADMIN_EMAILS names no operator, so nobody could be admitted",
   };
 }
 

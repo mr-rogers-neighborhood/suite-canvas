@@ -190,7 +190,7 @@ The workspaces store keeps its file name and its `SUITE_WORKSPACES_DB` variable,
 
 The relay logs one JSON line per request with a request id. Capability paths are redacted. The logger is `apps/collab-server/src/logging.ts`; server code does not call `console`.
 
-`GET /health` answers on `HEALTH_PORT` and is unauthenticated. `GET /metrics` is token-gated: 404 when no operator token is configured, 401 without the bearer token, 429 above the admin rate limit. Either token reads it; only `SUITE_ADMIN_TOKEN` mutates.
+`GET /health` answers on `HEALTH_PORT` and is unauthenticated. `GET /metrics` needs an operator session: 404 when the relay has no control plane to verify one against, 401 without a valid session, 429 above the admin rate limit. A loopback request reads it with no credential while `SUITE_METRICS_LOCAL=1`, which is what a cron scrape needs.
 
 The admin API can read every workspace and delete any of them. Its panel is a separate Vite entry point, never linked from the app. A token is the access control; not linking it is not.
 

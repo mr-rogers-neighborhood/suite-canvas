@@ -190,7 +190,7 @@ describe("validateConfig", () => {
 
   it("never repeats a token value in a problem", () => {
     const token = `short-${"x".repeat(3)}`;
-    const result = validateConfig({ SUITE_ADMIN_TOKEN: token, SUITE_SOURCE_TOKEN: token });
+    const result = validateConfig({ SUITE_PROJECTION_TOKEN: token, SUITE_SOURCE_TOKEN: token });
 
     expect(result.ok).toBe(false);
     expect(JSON.stringify(result.problems)).not.toContain(token);

@@ -25,7 +25,7 @@ import { applyCors, methodNotAllowed, sendEmpty, sendJson, sendProblem } from ".
  * an account erasure, has no session to present and no browser to ask, so it
  * presents `SUITE_RELAY_PURGE_TOKEN`: one operation, the purge of the workspace
  * named in the path, and nothing on `/api/admin/*`. A dedicated token rather
- * than `SUITE_ADMIN_TOKEN`, because the identity process should not hold the
+ * than an operator session, because the identity process should not hold the
  * relay's root key: a bug in the account service would otherwise reach every
  * workspace's limits, rooms and links.
  */

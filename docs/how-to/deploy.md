@@ -92,7 +92,7 @@ that. Create the volume before the first `docker compose up`, because compose na
 
 ```sh
 docker run --rm --network "container:$(docker compose ps -q app)" curlimages/curl:8 \
-  -fsS -H "authorization: Bearer $SUITE_ADMIN_TOKEN" http://127.0.0.1:1235/metrics | head
+  -fsS http://127.0.0.1:1235/metrics | head
 ```
 
 ## 5. DNS and Cloudflare
@@ -122,7 +122,6 @@ instance being down; `deploy/alert.sh` from cron catches it being sick.
 
 ```sh
 cd /srv/suite && cp .env.example .env && chmod 600 .env
-openssl rand -base64 32     # SUITE_ADMIN_TOKEN, the root credential
 openssl rand -base64 32     # SUITE_PROJECTION_TOKEN
 openssl rand -base64 32     # SUITE_SOURCE_TOKEN
 ```
@@ -194,7 +193,7 @@ EOF
 20 3 * * * root set -a; . /etc/suite/backup.env; set +a; /srv/suite/deploy/backup.sh /srv/backups >> /var/log/suite-backup.log 2>&1
 40 3 * * * root find /srv/backups -mindepth 1 -maxdepth 1 -name 'suite-*' -mtime +14 -exec rm -rf {} +
 */15 * * * * root mountpoint -q /mnt/suite-data || logger -t suite 'EBS data volume is NOT mounted'
-*/5 * * * * root SUITE_ADMIN_TOKEN=<token> /srv/suite/deploy/alert.sh --url https://canvas.example.com >/dev/null
+*/5 * * * * root /srv/suite/deploy/alert.sh --url http://127.0.0.1:1235 >/dev/null
 ```
 
 Retention (7 daily and 4 weekly copies) belongs to the bucket lifecycle, and the rule plus the restore
@@ -279,7 +278,9 @@ running now is tagged *before* the build starts; that tag is the whole rollback.
 
    ```sh
    curl -fsS https://canvas.example.com/health
-   curl -fsS --oauth2-bearer "$SUITE_ADMIN_TOKEN" https://canvas.example.com/api/admin/status | head -c 200
+   # The operator API answers a session: sign in at /admin.html and use its token,
+   # or read /api/admin/status from the box while SUITE_METRICS_LOCAL is on.
+   curl -fsS http://127.0.0.1:1235/metrics | grep suite_build_info
    ```
 
    A container that reports the previous version is still the previous release, however healthy
@@ -461,21 +462,18 @@ Four variables decide whether a person who signs up can ever get in:
 | --- | --- |
 | `SUITE_AUTH_SECRET` | Signs the session. Changing it signs everyone out. |
 | `SUITE_MAIL_TRANSPORT` | `console` cannot deliver a verification link. Use `resend` with `RESEND_API_KEY` and `SUITE_MAIL_FROM`, or `smtp` with `SUITE_SMTP_URL`. |
-| `SUITE_ADMISSION_REQUIRED` | `1` holds every new account. Pair it with `SUITE_ADMIN_TOKEN` (16+ characters) or the boot refuses: the queue would have no door. |
+| `SUITE_ADMISSION_REQUIRED` | `1` holds every new account. Pair it with `SUITE_ADMIN_EMAILS` or the boot refuses: the queue would have no door. |
 | `STRIPE_WEBHOOK_SECRET` | Without it every delivery fails verification, so no payment is recorded. `pnpm stripe --listen` prints it locally; on the host it comes from the Stripe dashboard endpoint. |
 
-Admitting the first users, once mail and the queue are live. `deploy/Caddyfile` sends
-`/admin/admissions` to the control plane ahead of the operator panel, so the app origin is the right
-host:
+Admitting the first users, once mail and the queue are live: sign in at
+`https://app.suite.run/admin.html` with an address from `SUITE_ADMIN_EMAILS` and use the
+Admissions tab. The same list opens `/admin/templates` for writing and the relay's
+`/api/admin/*`. The account API needs the queue and starter list, which
+`deploy/Caddyfile` already routes to the control plane on the app origin.
 
-```sh
-curl -fsS "https://app.suite.run/admin/admissions" \
-  -H "authorization: Bearer $SUITE_ADMIN_TOKEN"          # who is waiting
-curl -fsS -X POST "https://app.suite.run/admin/admissions" \
-  -H "authorization: Bearer $SUITE_ADMIN_TOKEN" \
-  -H "content-type: application/json" \
-  -d '{"emails":["them@example.com"]}'                   # admit, and tell them
-```
+An address that is not on the list gets `403 forbidden` and a sentence saying so, which
+is the honest answer rather than a lockout: the panel tells the reader their address
+needs adding.
 
 `SUITE_APP_URL` is where the admission notice sends someone. Unset admits without sending one.
 

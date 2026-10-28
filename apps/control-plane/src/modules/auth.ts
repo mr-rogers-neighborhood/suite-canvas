@@ -318,7 +318,7 @@ function requestIdOf(request: IncomingMessage): string | undefined {
  *
  * Two variables rather than the relay's operator token: the account service is
  * the process with an internet-facing sign-in surface and an account database,
- * and `SUITE_ADMIN_TOKEN` would let a bug here reach every workspace's limits,
+ * and the operator's own authority would let a bug here reach every workspace's limits,
  * rooms and links. This credential opens exactly one relay operation — purge the
  * workspace named in the path — so a compromise of this process costs documents,
  * not the relay's whole operator surface. The relay reads the token under the

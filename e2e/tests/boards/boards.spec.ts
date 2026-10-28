@@ -1,5 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
-import { boardId, libraryRowAction, newBoard, openBoard } from "../fixtures/support";
+import {
+  boardId,
+  libraryRowAction,
+  newBoard,
+  openBoard,
+  openLibraryBoards,
+} from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-boards-${name}-${Date.now()}-${++sequence}`;
@@ -45,7 +51,7 @@ test("keeps a board's cards when you leave it and come back", {
   await expect(cards(page)).toHaveCount(2);
 
   // The library still lists it, and says it is not the board on screen.
-  await page.getByTestId("library-tab-boards").click();
+  await openLibraryBoards(page);
   await expect(page.getByTestId(`library-item-${secondBoardId}`)).toBeVisible();
   await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toHaveText("Closed");
 
@@ -125,7 +131,7 @@ test("unplaces one board's cards and leaves a shared card on the other", { tag: 
 
   // The card also lives on the first board, so unplacing this board's copy
   // removes only this placement — the card stays where else it was.
-  await page.getByTestId("library-tab-boards").click();
+  await openLibraryBoards(page);
   await libraryRowAction(page.getByTestId(`library-item-${secondBoardId}`), "Unplace its cards");
   await expect(cards(page)).toHaveCount(0);
   await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toHaveText("Open");

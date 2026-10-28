@@ -8,6 +8,7 @@ import {
   libraryRowAction,
   newBoard,
   openBoard,
+  openLibraryBoards,
 } from "../fixtures/support";
 
 /**
@@ -312,10 +313,7 @@ async function closeLibrary(page: Page): Promise<void> {
 
 /** Deletes a board from the library, answering the one question it asks. */
 async function deleteBoard(page: Page, boardId: string): Promise<void> {
-  if ((await page.getByTestId("library-drawer").count()) === 0) {
-    await page.getByTestId("dock-library").click();
-  }
-  await page.getByTestId("library-tab-boards").click();
+  await openLibraryBoards(page);
   await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Delete board\u2026");
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();

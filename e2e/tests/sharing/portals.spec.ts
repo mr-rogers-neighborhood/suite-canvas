@@ -7,6 +7,7 @@ import {
   libraryRowAction,
   newBoard,
   openBoard,
+  openLibraryBoards,
 } from "../fixtures/support";
 
 let sequence = 0;
@@ -179,7 +180,7 @@ test("marks a portal unavailable instead of breaking when its board is deleted",
   // Deleting a board asks once, in the library — and the board on screen is the
   // one that stays.
   await page.getByTestId("dock-library").click();
-  await page.getByTestId("library-tab-boards").click();
+  await openLibraryBoards(page);
   await libraryRowAction(page.getByTestId(`library-item-${secondBoard}`), "Delete board\u2026");
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();

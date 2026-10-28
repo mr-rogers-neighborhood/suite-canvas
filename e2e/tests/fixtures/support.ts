@@ -83,6 +83,21 @@ export async function openLibrary(page: Page, tab: "cards" | "inbox" | "trash"):
 }
 
 /**
+ * Opens the library and shows only boards.
+ *
+ * Boards used to have a tab of their own; they are rows in the card list now, with a
+ * type facet as the filter, so "where are my boards" is a press on `Boards` rather than
+ * a different section. The facet toggles, so a spec that already filtered reads it
+ * first — clicking it twice would empty the list instead of narrowing it.
+ */
+export async function openLibraryBoards(page: Page): Promise<void> {
+  await openLibrary(page, "cards");
+  const facet = page.getByTestId("facet-type-board");
+  if ((await facet.getAttribute("data-active")) !== "true") await facet.click();
+  await expect(facet).toHaveAttribute("data-active", "true");
+}
+
+/**
  * Library rows are the list entries (`li[data-row-id]`). The row title lives in
  * `library-title-<id>`, so a `library-item-` prefix selector would be a
  * different (and historically double-counted) thing.

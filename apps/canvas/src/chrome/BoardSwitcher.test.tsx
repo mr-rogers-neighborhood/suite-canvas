@@ -49,6 +49,27 @@ describe("BoardSwitcher", () => {
     expect(trigger.className).toContain("max-w-[220px]");
   });
 
+  /**
+   * A reader handed one board still needs to know which one. The list a workspace
+   * offers would hold that single row, with everything in it disabled, so the control
+   * becomes a label: where you are, offering nowhere to go.
+   */
+  it("should be a label rather than a menu when there is one board to be on", () => {
+    render(
+      <BoardSwitcher {...baseProps} boards={[board("b1", "Shared board")]} navigation="board" />,
+    );
+
+    const label = screen.getByTestId("board-switcher");
+    expect(label).toHaveTextContent("Shared board");
+    expect(label.tagName).toBe("SPAN");
+    expect(label).not.toHaveAttribute("aria-haspopup");
+
+    fireEvent.click(label);
+    expect(screen.queryByTestId("board-switcher-menu")).toBeNull();
+    expect(screen.queryByTestId("board-switcher-new")).toBeNull();
+    expect(screen.queryByTestId("board-switcher-all")).toBeNull();
+  });
+
   it("should mark the current board and switch to another", () => {
     const onSelect = vi.fn();
     render(<BoardSwitcher {...baseProps} onSelect={onSelect} />);

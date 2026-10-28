@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
-import { libraryRowAction, newBoard } from "../fixtures/support";
+import { libraryRowAction, newBoard, openLibraryBoards } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-ws-${name}-${Date.now()}-${++sequence}`;
@@ -204,7 +204,7 @@ test("asks before deleting a board with cards and keeps them in the library", {
   await libraryRowAction(page.locator('[data-testid^="library-item-"]').first(), "Place on board");
   await expect(cards(page)).toHaveCount(1);
 
-  await page.getByTestId("library-tab-boards").click();
+  await openLibraryBoards(page);
   await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Delete board\u2026");
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();

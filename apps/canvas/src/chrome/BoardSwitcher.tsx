@@ -96,6 +96,16 @@ export interface BoardSwitcherProps {
   rowMenuRequest?: { boardId: string; x: number; y: number } | null;
   /** Viewers and shares may switch boards but not rename or recolour one. */
   canManage?: boolean;
+  /**
+   * Whether there is anywhere to navigate to.
+   *
+   * `"workspace"` is the app: every board, plus the pins and the two ways in
+   * (create one, or open the library on them). `"board"` is a reader who was handed
+   * *one* board — a board-scope share — and for whom the list would hold exactly one
+   * row, all of it disabled. They still need to know which board they are looking at,
+   * so the same control renders as a label: where you are, offering nothing.
+   */
+  navigation?: "workspace" | "board";
   peersByBoard?: Record<string, BoardPresence>;
 }
 
@@ -123,6 +133,7 @@ export function BoardSwitcher({
   onTogglePin,
   rowMenuRequest = null,
   canManage = true,
+  navigation = "workspace",
   peersByBoard,
 }: BoardSwitcherProps) {
   const [open, setOpen] = useState(false);
@@ -227,6 +238,23 @@ export function BoardSwitcher({
       </button>
     );
   };
+
+  // A single-board reader gets the name and nothing behind it: no list of one, no
+  // "New board" they cannot use, no pin they do not own.
+  if (navigation === "board") {
+    return (
+      <div className="relative min-w-0" ref={root}>
+        <span
+          data-testid="board-switcher"
+          title={active?.name ?? "No board"}
+          className="inline-flex max-w-[220px] min-w-0 items-center gap-1.5 px-2 py-1 text-[12px] font-medium text-[var(--ink)]"
+        >
+          {active ? <BoardGlyph board={active} /> : null}
+          <span className="min-w-0 truncate">{active?.name ?? "No board"}</span>
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-w-0" ref={root}>

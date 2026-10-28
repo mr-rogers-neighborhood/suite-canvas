@@ -1,5 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
-import { boardId, libraryRowAction, newBoard, openBoard } from "../fixtures/support";
+import {
+  boardId,
+  libraryRowAction,
+  newBoard,
+  openBoard,
+  openLibraryBoards,
+} from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -43,7 +49,7 @@ test("uses a saved board template as a new board and undoes it whole", async ({ 
   const sourceCardId = await cards(page).first().getAttribute("data-node-id");
   expect(sourceCardId).toBeTruthy();
 
-  await page.getByTestId("library-tab-boards").click();
+  await openLibraryBoards(page);
   await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Save as blueprint");
   await expect(page.getByTestId(`library-board-template-${boardId}`)).toHaveText(
     "\u00b7 blueprint",

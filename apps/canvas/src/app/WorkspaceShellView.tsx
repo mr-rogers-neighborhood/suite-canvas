@@ -439,7 +439,12 @@ export function WorkspaceShellView({
             )
           }
         >
-          {workspaceSurface ? (
+          {/*
+            The board you are on is a fact about the page, not about the workspace, so
+            it is shown everywhere — including a share that hands over a single board,
+            where the switcher becomes a label because there is nowhere to go.
+          */}
+          {workspaceSurface || activeBoardId !== null ? (
             <>
               {/*
                 A way back exists only where the reader was *taken* somewhere: a
@@ -475,6 +480,7 @@ export function WorkspaceShellView({
                 onSelect={activateBoard}
                 peersByBoard={peersByBoard}
                 canManage={canManageBoards}
+                navigation={workspaceSurface ? "workspace" : "board"}
                 onCreate={createBoard}
                 rowMenuRequest={rowMenuRequest}
                 onOpenLibrary={(facet) => {

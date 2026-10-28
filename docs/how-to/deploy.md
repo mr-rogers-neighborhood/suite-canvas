@@ -44,13 +44,23 @@ security group from step 4. Instance store is not durable; root EBS is. Give the
 because the build in §9 writes `node_modules`, the pnpm store and image layers there; the 2 GB
 Lightsail plan already includes 60 GB.
 
-```sh
-sudo apt-get update && sudo apt-get install -y ca-certificates curl gnupg git sqlite3
-curl -fsSL https://get.docker.com | sudo sh          # Docker's own repo, not the distro package
-sudo usermod -aG docker "$USER"                     # log out and back in
+The instance's user-data does the installing: `deploy/user-data.sh` brings up Docker from
+Docker's repository, `sqlite3`, the AWS CLI, Tailscale and a 2 GB swap file, creates the
+`suite` user in the `docker` group, and stops there.
 
-sudo mkdir -p /srv && sudo chown "$USER" /srv
+```sh
+aws ec2 run-instances --image-id "$(aws ssm get-parameters --names /aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id --query 'Parameters[0].Value' --output text)" \
+  --instance-type t4g.medium --key-name "" --iam-instance-profile "Name=suite-host" \
+  --security-group-ids sg-… --subnet-id subnet-… --user-data file://deploy/user-data.sh \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=suite-app}]'
+```
+
+Then, once, by hand (both are decisions rather than setup):
+
+```sh
+sudo -iu suite
 git clone https://github.com/mr-rogers-neighborhood/suite /srv/suite
+sudo tailscale up --ssh        # prints a URL; click it, and SSH and /admin arrive over the tailnet
 ```
 
 The host needs the checkout because it builds every image it runs: `caddy` bakes `deploy/Caddyfile`

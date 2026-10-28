@@ -1,0 +1,35 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BackupObjectsOnly",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject"],
+      "Resource": "arn:aws:s3:::suite-backups-ACCOUNT_ID-use2/suite/*"
+    },
+    {
+      "Sid": "ListOwnBucketSoAPutCanBeDebugged",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::suite-backups-ACCOUNT_ID-use2",
+      "Condition": {
+        "StringLike": { "s3:prefix": ["suite/*"] }
+      }
+    },
+    {
+      "Sid": "ContainerLogs",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"],
+      "Resource": "arn:aws:logs:us-east-2:ACCOUNT_ID:log-group:suite-app:*"
+    },
+    {
+      "Sid": "ProbeMetric",
+      "Effect": "Allow",
+      "Action": ["cloudwatch:PutMetricData"],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": { "cloudwatch:namespace": "Suite" }
+      }
+    }
+  ]
+}

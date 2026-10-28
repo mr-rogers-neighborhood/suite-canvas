@@ -121,12 +121,11 @@ export function HeldStackCursor({ engine }: { engine: PlacementEngine }) {
     const down = (event: PointerEvent) => {
       if (event.button !== 0) return;
       const target = event.target as HTMLElement | null;
-      // A control keeps its own press: the stack must never swallow a button.
-      if (target?.closest("button, a, input, textarea, select, [contenteditable='true']")) return;
       if (!target?.closest('[data-testid="canvas-board"]')) return;
       // A dot is a choice, not a place: pressing one while holding a card names the
       // connector this step should use, and the card stays in hand so the reader can
-      // aim it knowing which side it will leave from.
+      // aim it knowing which side it will leave from. Checked before the control rule,
+      // because a section's dots live inside the section's own button.
       const dot = target.closest("[data-connector-id]");
       const connectorId = dot?.getAttribute("data-connector-id");
       if (connectorId) {
@@ -135,6 +134,15 @@ export function HeldStackCursor({ engine }: { engine: PlacementEngine }) {
         usePlacementRunStore.getState().setOverrides({ source: connectorId });
         return;
       }
+      // A control keeps its own press: the stack must never swallow a button. The
+      // section frame is the exception, because its hit area is a whole section — the
+      // canvas itself, drawn as a button so it can be focused and labelled. Without
+      // this, every press aimed inside a section was swallowed and the run looked
+      // broken exactly where most boards put their cards.
+      const control = target.closest(
+        "button, a, input, textarea, select, [contenteditable='true']",
+      );
+      if (control && !control.classList.contains("section-region")) return;
       event.preventDefault();
       event.stopPropagation();
       engineRef.current.placeAt(toFlow.current({ x: event.clientX, y: event.clientY }));

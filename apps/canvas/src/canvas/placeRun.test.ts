@@ -302,12 +302,16 @@ describe("connectorToward: the dot that faces where the card landed", () => {
     expect(connectorToward(dots, box, { x: 700, y: 210 })?.id).toBe("right");
   });
 
-  it("prefers a vertical dot on an exact diagonal, because those read apart", () => {
-    // Equal offsets: vertical wins, so a card dropped diagonally does not flicker
-    // between two dots depending on a pixel.
-    // Box centre is (200, 150): these are exact 45° offsets in each direction.
-    expect(connectorToward(dots, box, { x: 500, y: -150 })?.id).toBe("top");
+  it("leaves from the dot nearest what it faces, so a close spoke does not wrap", () => {
+    // Box centre is (200, 150): an offset of (+300, -300) is up and to the right. By
+    // direction that reads "above", and the line used to leave the top dot and wrap
+    // over the corner to reach a card on the right. The right dot is nearer, so the
+    // line leaves the side it is going towards.
+    expect(connectorToward(dots, box, { x: 500, y: -150 })?.id).toBe("right");
+    // Straight up and straight down are unchanged: the near dot is the vertical one.
+    expect(connectorToward(dots, box, { x: 200, y: -150 })?.id).toBe("top");
     expect(connectorToward(dots, box, { x: 200, y: 450 })?.id).toBe("bottom");
+    expect(connectorToward(dots, box, { x: -400, y: 150 })?.id).toBe("left");
   });
 
   it("answers nothing for a card with no connectors, rather than inventing one", () => {
@@ -417,7 +421,9 @@ describe("inferConnectors: geometry proposes, the reader disposes", () => {
     });
 
     expect(fromRightPort.target?.id).toBe("right");
-    expect(fromLeftPort.target?.id).toBe("top");
+    // From the near port the departure point is up and to the right of the target, so
+    // the target's right dot is the one physically nearest it.
+    expect(fromLeftPort.target?.id).toBe("right");
   });
 
   it("answers nulls for cards with no dots, rather than inventing one", () => {

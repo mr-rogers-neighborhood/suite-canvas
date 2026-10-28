@@ -97,6 +97,42 @@ describe("a held stack", () => {
     expect(first.placeAt).not.toHaveBeenCalled();
   });
 
+  it("places inside a section, whose hit area is a button because it is focusable", () => {
+    // The section frame is a `<button>`: its hit area is the whole section, not chrome.
+    // Treating it as a control swallowed every press aimed inside it, which is where a
+    // board keeps most of its cards, so a run looked broken exactly where it was used.
+    const board = mountBoard();
+    const frame = document.createElement("button");
+    frame.type = "button";
+    frame.className = "section-region";
+    board.append(frame);
+    usePlacementRunStore.getState().start(["card-1", "card-2"], { shape: "fan" });
+    const placed = vi.fn();
+    render(<HeldStackCursor engine={engine({ placeAt: placed })} />);
+
+    frame.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }),
+    );
+
+    expect(placed).toHaveBeenCalledTimes(1);
+  });
+
+  it("still leaves a real control its own press", () => {
+    const board = mountBoard();
+    const control = document.createElement("button");
+    control.type = "button";
+    board.append(control);
+    usePlacementRunStore.getState().start(["card-1", "card-2"], { shape: "fan" });
+    const placed = vi.fn();
+    render(<HeldStackCursor engine={engine({ placeAt: placed })} />);
+
+    control.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }),
+    );
+
+    expect(placed).not.toHaveBeenCalled();
+  });
+
   it("does not place when nothing is in hand", () => {
     const board = mountBoard();
     const placed = engine();

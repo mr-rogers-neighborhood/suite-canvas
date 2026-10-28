@@ -261,13 +261,16 @@ export interface FacingBox {
  * for every mode at once — a card threaded above its anchor leaves the top, a spoke
  * placed below-right arrives on its own top-left, and no mode needs its own rule.
  *
- * Two details make it behave like a person would:
+ * The dot is the one **physically nearest the thing being faced**, not the one on the
+ * side its direction names. The difference is what a fan looked like: a spoke a little
+ * above and well to the right of the hub is "above" by direction, so its line left the
+ * hub's top dot and wrapped over the corner to reach a card on the right — and one
+ * spoke placed above-left could leave the right dot. Nearest-dot has no such case: the
+ * line leaves the side it is going towards, because that side's dot is the closest one.
  *
- * - **The dominant direction wins**, so a spoke at 70° still reads as "above" rather
- *   than as "slightly right"; the comparison is on the axis with the larger offset.
- * - **Ties go vertical.** A card placed exactly diagonally (equal offset on both
- *   axes) is more often "above" or "below" in practice, and vertical dots are the
- *   ones a reader can tell apart at a glance.
+ * A square card with four side dots makes the same choice as "the dominant axis" for
+ * anything well away from the diagonal, and the reader sees the difference exactly
+ * where it matters — spokes close to the hub, where a wrapping line reads as a mistake.
  *
  * Returns `undefined` only when the card has no connectors at all, which the caller
  * already treats as "link without naming a dot".
@@ -279,13 +282,17 @@ export function connectorToward(
 ): Connector | undefined {
   if (connectors.length === 0) return undefined;
 
-  // Offset from the box's centre to the thing we are facing.
-  const dx = toward.x - (box.x + box.width / 2);
-  const dy = toward.y - (box.y + box.height / 2);
-  const side: keyof typeof FACING =
-    Math.abs(dy) >= Math.abs(dx) ? (dy >= 0 ? "bottom" : "top") : dx >= 0 ? "right" : "left";
-
-  return connectorFacing(connectors, side);
+  let best: Connector | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const connector of connectors) {
+    const point = dotPoint(box, connector);
+    const distance = (point.x - toward.x) ** 2 + (point.y - toward.y) ** 2;
+    if (distance < bestDistance) {
+      best = connector;
+      bestDistance = distance;
+    }
+  }
+  return best;
 }
 
 /**

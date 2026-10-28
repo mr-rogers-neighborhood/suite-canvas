@@ -237,6 +237,9 @@ describe("standalone guard rails", () => {
     // Support access is an account row on the control plane: the dialog is mounted
     // from a menu row the standalone build does not draw, so it never renders there.
     "dialogs/SupportAccessDialog.tsx": ["chrome/WorkspaceActions.tsx"],
+    // The worn role is a control-plane row, and the reader refuses before it builds a
+    // request in a standalone build: `readWornRole` returns at the first line.
+    "session/roleOverride.ts": ["app/WornRoleStrip.tsx"],
   };
 
   /**

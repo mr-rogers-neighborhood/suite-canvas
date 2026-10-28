@@ -68,6 +68,19 @@ vi.mock("../api", () => ({
     backupCodes: ["a-b", "c-d"],
   }),
   confirmTotp: async () => {},
+  readRoleOverride: async () => ({
+    role: null,
+    organizationId: "org-1",
+    setAt: null,
+    realRole: "owner",
+  }),
+  playRole: async (role: string) => ({
+    role,
+    organizationId: "org-1",
+    setAt: 1,
+    realRole: "owner",
+  }),
+  stopRole: async () => ({ role: null, organizationId: null, setAt: null, realRole: "owner" }),
   impersonate: (...args: unknown[]) => impersonate(...(args as [])),
   stopImpersonating: () => stopImpersonating(),
   revokeSupportAccess: (...args: unknown[]) => revokeSupportAccess(...(args as [])),
@@ -171,5 +184,33 @@ describe("the second factor card", () => {
       "needs a second factor",
     );
     expect(screen.getByLabelText("Your password")).toBeTruthy();
+  });
+});
+
+describe("wearing a role", () => {
+  it("says what the real role is, and that a costume cannot spend money", async () => {
+    render(<AccountsPanel />);
+
+    const card = await screen.findByTestId("worn-role-card");
+    expect(card.textContent).toContain("owner");
+    expect(card.textContent).toContain("cannot spend money");
+    expect(screen.getByTestId("worn-role-state").textContent).toBe("wearing your own role");
+  });
+
+  it("tells the topbar when a role goes on and comes off", async () => {
+    const onRoleChange = vi.fn();
+    render(<AccountsPanel onRoleChange={onRoleChange} />);
+    await screen.findByTestId("worn-role-card");
+
+    fireEvent.click(screen.getByText("member"));
+    await waitFor(() =>
+      expect(onRoleChange).toHaveBeenCalledWith(expect.objectContaining({ role: "member" })),
+    );
+    expect(screen.getByTestId("worn-role-state").textContent).toBe("wearing member");
+
+    fireEvent.click(screen.getByText("Wear my own"));
+    await waitFor(() =>
+      expect(onRoleChange).toHaveBeenLastCalledWith(expect.objectContaining({ role: null })),
+    );
   });
 });

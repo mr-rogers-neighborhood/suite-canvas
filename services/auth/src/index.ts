@@ -88,12 +88,14 @@ export {
   RELAY_TOKEN_TTL_SECONDS,
   type RelayClaimInput,
   type RelayClaims,
+  type RoleOverrideLookup,
   relayClaims,
   resolvePrincipal,
   rolesOf,
   type SignInMethod,
   secondFactorRequired,
   type WorkspaceCapabilities,
+  withRoleOverride,
 } from "./identity/index.js";
 export {
   ADMISSION_PENDING_CODE,

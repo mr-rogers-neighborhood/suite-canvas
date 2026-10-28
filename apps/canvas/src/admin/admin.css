@@ -656,3 +656,15 @@ code {
 .admin-activity-row[data-action="impersonate"] .admin-settings-source {
   font-variant-numeric: tabular-nums;
 }
+
+/* The worn role sits with the tabs, where it cannot be missed. */
+.admin-worn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(244, 63, 94, 0.5);
+  background: rgba(244, 63, 94, 0.12);
+  font-size: 12px;
+}

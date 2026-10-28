@@ -594,3 +594,42 @@ export function listActivity(options: {
   const suffix = query.toString();
   return requestUrl(`${ACTIVITY_BASE}${suffix.length === 0 ? "" : `?${suffix}`}`);
 }
+
+/**
+ * The role this operator is wearing, if any.
+ *
+ * The override is a row on the control plane, wrapped around the memberships reader, so the
+ * panel and the app read the same answer. Any signed-in account may read its own; only an
+ * operator may write.
+ */
+const ROLE_OVERRIDE_BASE = `${authServiceBase()}/api/account/role-override`;
+
+export type WearableRole = "owner" | "admin" | "member";
+
+export interface RoleOverrideState {
+  role: WearableRole | null;
+  organizationId: string | null;
+  setAt: number | null;
+  realRole: WearableRole | null;
+}
+
+export async function readRoleOverride(): Promise<RoleOverrideState> {
+  const authorization = await credentialAuthorization();
+  const response = await fetch(ROLE_OVERRIDE_BASE, {
+    headers: { ...authorization },
+    credentials: "include",
+  });
+  if (!response.ok) return { role: null, organizationId: null, setAt: null, realRole: null };
+  return (await response.json()) as RoleOverrideState;
+}
+
+export async function playRole(role: WearableRole): Promise<RoleOverrideState> {
+  return requestUrl(`${ROLE_OVERRIDE_BASE}`, {
+    method: "PUT",
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function stopRole(): Promise<RoleOverrideState> {
+  return requestUrl(`${ROLE_OVERRIDE_BASE}`, { method: "DELETE" });
+}

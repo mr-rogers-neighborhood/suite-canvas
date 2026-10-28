@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { signOut } from "../auth/client";
-import { errorText, getStatus } from "./api";
+import { errorText, getStatus, type RoleOverrideState, readRoleOverride, stopRole } from "./api";
 import { AccountsPanel } from "./panels/AccountsPanel";
 import { ActivityPanel } from "./panels/ActivityPanel";
 import { FixturesPanel } from "./panels/FixturesPanel";
@@ -113,6 +113,24 @@ function Gate({ onReady }: { onReady: () => void }) {
 export function App() {
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<View>("status");
+  const [worn, setWorn] = useState<RoleOverrideState | null>(null);
+
+  // Read once the gate has admitted the operator: a worn role is session state, so a
+  // reload keeps it and the topbar says so from the first paint.
+  useEffect(() => {
+    if (!ready) return;
+    let live = true;
+    readRoleOverride()
+      .then((state) => {
+        if (live) setWorn(state.role === null ? null : state);
+      })
+      .catch(() => {
+        if (live) setWorn(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [ready]);
 
   if (!ready) return <Gate onReady={() => setReady(true)} />;
 
@@ -135,6 +153,22 @@ export function App() {
             </button>
           ))}
         </nav>
+        {worn?.role == null ? null : (
+          <span className="admin-worn" data-testid="worn-role" data-role={worn.role}>
+            wearing <strong>{worn.role}</strong>
+            <button
+              type="button"
+              className="admin-button"
+              onClick={() => {
+                stopRole()
+                  .then(() => setWorn(null))
+                  .catch(() => setWorn(null));
+              }}
+            >
+              Stop
+            </button>
+          </span>
+        )}
         <button
           type="button"
           className="admin-button"
@@ -150,7 +184,9 @@ export function App() {
 
       <main className="admin-main">
         {view === "status" ? <StatusPanel /> : null}
-        {view === "accounts" ? <AccountsPanel /> : null}
+        {view === "accounts" ? (
+          <AccountsPanel onRoleChange={(state) => setWorn(state.role === null ? null : state)} />
+        ) : null}
         {view === "activity" ? <ActivityPanel /> : null}
         {view === "workspaces" ? <WorkspacesPanel /> : null}
         {view === "rooms" ? <RoomsPanel /> : null}

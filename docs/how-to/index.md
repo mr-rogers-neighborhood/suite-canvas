@@ -6,8 +6,8 @@ One task at a time: the steps for a job you already know you need to do.
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Operate a deployment](operate.md) | Suite runs as a single Node process with six SQLite stores on one directory; there is no external database and no multi-replica mode. | 2026-10-28 |
 | [Deploy a server](deploy.md) | One small instance, one Docker host, one app container, six SQLite stores on one volume, Caddy in front, Cloudflare in front of Caddy. | 2026-10-28 |
+| [Operate a deployment](operate.md) | Suite runs as a single Node process with six SQLite stores on one directory; there is no external database and no multi-replica mode. | 2026-10-28 |
 | [Change the canvas](change-the-canvas.md) | Adding to the canvas means answering three questions before writing code: which layer owns the input, what the document records, and what peers see wh… | 2026-10-28 |
 | [Import an Obsidian vault](import-an-obsidian-vault.md) | Importing a vault folder reads every note, tag, link and canvas into one workspace. The import runs once, as a single change, so undo takes it back wh… | 2026-10-28 |
 | [Try the paid flow on this machine](try-the-paid-flow.md) | The whole product runs in five containers on one machine: the relay, the control plane, Postgres, Caddy, and the docs site. This page walks the parts… | 2026-10-28 |

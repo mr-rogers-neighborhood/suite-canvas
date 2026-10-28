@@ -4,6 +4,33 @@ import { type ControlPlane, createControlPlane } from "../host.js";
 import { createLogger } from "../logging.js";
 import { memoryAuditStore } from "./audit.js";
 import { createAuthModule } from "./auth.js";
+import type { RoleOverrideStore } from "./roleOverride.js";
+
+/** The worn-role store in memory: the row, and the lookup the auth wrapper asks. */
+function memoryRoleOverrides(): RoleOverrideStore {
+  const rows = new Map<
+    string,
+    { userId: string; organizationId: string; role: "owner" | "admin" | "member"; setAt: number }
+  >();
+  return {
+    get: async (userId) => rows.get(userId) ?? null,
+    set: async (input, now = 1) => {
+      const written = { ...input, setAt: now };
+      rows.set(input.userId, written);
+      return written;
+    },
+    clear: async (userId) => {
+      rows.delete(userId);
+      return true;
+    },
+    lookup: async ({ userId, organizationId, role }) => {
+      const row = rows.get(userId);
+      if (role === null || row === undefined) return null;
+      return row.organizationId === organizationId ? row.role : null;
+    },
+  };
+}
+
 import type { GrantStore, SupportGrant } from "./grants.js";
 
 /**
@@ -54,6 +81,8 @@ interface Harness {
   roles: string[];
   /** The audit rows the module wrote. */
   trail: ReturnType<typeof memoryAuditStore>;
+  /** The worn-role store the module shares. */
+  overrides: RoleOverrideStore;
 }
 
 async function start(
@@ -71,6 +100,7 @@ async function start(
   const calls: string[] = [];
   const roles: string[] = [];
   const trail = memoryAuditStore();
+  const overrides = memoryRoleOverrides();
   const session =
     options.session === null
       ? null
@@ -141,6 +171,7 @@ async function start(
           roles.push(userId);
         },
         audit: trail,
+        roleOverrides: overrides,
         logger: log,
       }),
     ],
@@ -150,7 +181,7 @@ async function start(
   });
   running.push(plane);
   const port = await plane.listen(0);
-  return { url: `http://127.0.0.1:${port}`, calls, roles, trail };
+  return { url: `http://127.0.0.1:${port}`, calls, roles, trail, overrides };
 }
 
 const impersonate = (url: string, body: unknown = { userId: TARGET }) =>
@@ -381,5 +412,98 @@ describe("the audit trail", () => {
     await fetch(`${url}/api/account/support-access`, { method: "PUT" });
 
     expect(trail.entries).toHaveLength(0);
+  });
+});
+
+describe("wearing a role", () => {
+  const override = (url: string, method: string, body?: unknown) =>
+    fetch(`${url}/api/account/role-override`, {
+      method,
+      headers: {
+        cookie: "better-auth.session_token=abc",
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  it("reports nothing worn to an account that is not an operator", async () => {
+    const { url } = await start({ session: { operator: false } });
+
+    const response = await override(url, "GET");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ role: null, realRole: "owner" });
+  });
+
+  it("puts a role on, answers it, and takes it off", async () => {
+    const { url, overrides } = await start();
+
+    const put = await override(url, "PUT", { role: "member" });
+    expect(put.status).toBe(200);
+    expect(await put.json()).toMatchObject({ role: "member", organizationId: "org-1" });
+    // The lookup the memberships reader uses now answers the costume.
+    expect(
+      await overrides.lookup({ userId: OPERATOR, organizationId: "org-1", role: "owner" }),
+    ).toBe("member");
+
+    const cleared = await override(url, "DELETE");
+    expect(await cleared.json()).toMatchObject({ role: null });
+    expect(
+      await overrides.lookup({ userId: OPERATOR, organizationId: "org-1", role: "owner" }),
+    ).toBeNull();
+  });
+
+  it("accepts only the three roles", async () => {
+    const { url } = await start();
+
+    for (const role of ["root", "", 7, null]) {
+      const response = await override(url, "PUT", { role });
+      expect(response.status, String(role)).toBe(400);
+    }
+  });
+
+  it("is an operator surface, not a member one", async () => {
+    const { url, overrides } = await start({ session: { operator: false } });
+
+    const response = await override(url, "PUT", { role: "owner" });
+
+    expect(response.status).toBe(403);
+    expect(
+      await overrides.lookup({ userId: OPERATOR, organizationId: "org-1", role: "owner" }),
+    ).toBeNull();
+  });
+
+  it("needs an organization to wear anything in", async () => {
+    const { url } = await start({ session: { organizationId: null } });
+
+    const response = await override(url, "PUT", { role: "owner" });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "no-organization" });
+  });
+
+  it("is cleared when a support session ends, so a costume cannot outlive it", async () => {
+    const { url, overrides } = await start();
+    await override(url, "PUT", { role: "owner" });
+
+    await fetch(`${url}/api/account/stop-impersonating`, {
+      method: "POST",
+      headers: { cookie: "better-auth.admin_session=operator" },
+    });
+
+    expect(await overrides.get(OPERATOR)).toBeNull();
+  });
+
+  it("records both halves in the trail", async () => {
+    const { url, trail } = await start();
+
+    await override(url, "PUT", { role: "member" });
+    await override(url, "DELETE");
+
+    expect(trail.entries.map((entry) => [entry.action, entry.outcome])).toEqual([
+      ["role.play", "ok"],
+      ["role.clear", "ok"],
+    ]);
+    expect(trail.entries[0]?.details).toEqual({ role: "member", realRole: "owner" });
   });
 });

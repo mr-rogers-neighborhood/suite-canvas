@@ -6,10 +6,15 @@ import {
   errorText,
   impersonate,
   listAccounts,
+  playRole,
+  type RoleOverrideState,
   readOwnSession,
+  readRoleOverride,
   revokeSupportAccess,
   stopImpersonating,
+  stopRole,
   type TotpEnrolment,
+  type WearableRole,
 } from "../api";
 import { Button, ConfirmButton, ErrorLine, formatWhen, Muted, PanelHeader, useLoad } from "../ui";
 
@@ -28,7 +33,12 @@ import { Button, ConfirmButton, ErrorLine, formatWhen, Muted, PanelHeader, useLo
  */
 const IMPERSONATING_KEY = "suite.admin.impersonating";
 
-export function AccountsPanel() {
+export function AccountsPanel({
+  onRoleChange = () => {},
+}: {
+  /** Told when the worn role changes, so the topbar chip cannot fall out of date. */
+  onRoleChange?: (state: RoleOverrideState) => void;
+}) {
   const [query, setQuery] = useState("");
   const { data, error, loading, reload } = useLoad(() => listAccounts(query));
   const [busy, setBusy] = useState<string | null>(null);
@@ -99,6 +109,8 @@ export function AccountsPanel() {
           </Button>
         </p>
       )}
+
+      <WornRole onRoleChange={onRoleChange} />
 
       <SecondFactor onEnrolled={() => setNeedsMfa(false)} />
 
@@ -300,6 +312,92 @@ function SecondFactor({ onEnrolled }: { onEnrolled: () => void }) {
               </Button>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A role to wear, for as long as testing needs one.
+ *
+ * Wearing a role changes what the canvas lets this account do — layout, boards, schema,
+ * trash, links — and nothing else. It cannot spend the organization's money: billing asks
+ * the real membership row, so a worn owner who opens checkout is told their own role
+ * instead of being handed a card form. The card says that, because a button whose reach is
+ * invisible teaches the wrong lesson.
+ */
+function WornRole({ onRoleChange }: { onRoleChange: (state: RoleOverrideState) => void }) {
+  const [state, setState] = useState<RoleOverrideState | null>(null);
+  const [busy, setBusy] = useState<WearableRole | "stop" | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    readRoleOverride()
+      .then((read) => {
+        if (live) setState(read);
+      })
+      .catch(() => {
+        if (live) setState(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const run = async (work: () => Promise<RoleOverrideState>, key: WearableRole | "stop") => {
+    setBusy(key);
+    setFailure(null);
+    try {
+      const next = await work();
+      setState(next);
+      onRoleChange(next);
+    } catch (cause) {
+      setFailure(errorText(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const real = state?.realRole ?? null;
+
+  return (
+    <div className="admin-card admin-settings-group" data-testid="worn-role-card">
+      <h2 className="admin-settings-heading">Your role</h2>
+      <div className="admin-settings-row">
+        <div className="admin-settings-label">
+          <Muted>
+            Your own organization role is <strong>{real ?? "none"}</strong>. Wearing another one
+            changes what the canvas lets you do so you can see that role's experience. It never
+            changes your membership, and it cannot spend money.
+          </Muted>
+          <span
+            className="admin-settings-source"
+            data-source={state?.role == null ? "default" : "global"}
+            data-testid="worn-role-state"
+          >
+            {state?.role == null ? "wearing your own role" : `wearing ${state.role}`}
+          </span>
+          {failure === null ? null : <span role="alert">{failure}</span>}
+        </div>
+        <div className="admin-row-actions">
+          {(["owner", "admin", "member"] as const).map((role) => (
+            <Button
+              key={role}
+              tone={state?.role === role ? "primary" : "default"}
+              disabled={busy !== null || real === null}
+              onClick={() => void run(() => playRole(role), role)}
+            >
+              {role}
+            </Button>
+          ))}
+          <Button
+            disabled={busy !== null || state?.role == null}
+            onClick={() => void run(() => stopRole(), "stop")}
+          >
+            {busy === "stop" ? "Clearing…" : "Wear my own"}
+          </Button>
         </div>
       </div>
     </div>

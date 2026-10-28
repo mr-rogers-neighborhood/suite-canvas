@@ -9,6 +9,7 @@ import {
   createMigratedAuthEntry,
   mailSenders,
   mailTransportFromEnv,
+  type RoleOverrideLookup,
   type WorkspaceDataErasure,
   type WorkspaceDataStore,
 } from "@suite/auth";
@@ -20,6 +21,7 @@ import { type AuditStore, auditSafely, createAuditStore } from "./audit.js";
 import { composeBilling } from "./auth-billing.js";
 import { publishSessionReader, sessionReader } from "./context.js";
 import { createGrantStore, type GrantStore } from "./grants.js";
+import { createRoleOverrideStore, isWearableRole, overrideBody } from "./roleOverride.js";
 import { readStoredSettings } from "./settings.js";
 
 /**
@@ -70,6 +72,7 @@ const ACCOUNT_PATHS: readonly string[] = [
   // Support access and impersonation, which are ours: the plugin owns the mechanism and
   // this module owns the consent gate, the flag and the audit line.
   "/api/account/support-access",
+  "/api/account/role-override",
   "/api/account/impersonate",
   "/api/account/stop-impersonating",
   "/api/workspaces/claim",
@@ -103,6 +106,8 @@ export interface AuthModuleOptions {
   operatorRoles?: (userId: string) => Promise<void>;
   /** The audit trail. Defaults to this module's pool; a test passes a memory store. */
   audit?: AuditStore;
+  /** The worn-role store. Defaults to this module's pool; a test passes a memory store. */
+  roleOverrides?: ReturnType<typeof createRoleOverrideStore>;
   logger?: Logger;
 }
 
@@ -188,7 +193,7 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
       source.SUITE_AUTH_DATABASE_URL ?? source.SUITE_CONTROL_PLANE_DATABASE_URL,
   });
   const logger = options.logger ?? createLogger().child({ component: "auth-module" });
-  const boot = options.boot ?? defaultBoot(logger, source);
+  const boot = options.boot ?? defaultBoot(logger, source, () => roleOverrides().lookup);
   const enabled = authEnabled(env);
 
   /**
@@ -211,6 +216,12 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
   const grants = (): GrantStore => {
     store ??= createGrantStore(database());
     return store;
+  };
+
+  let overrides: ReturnType<typeof createRoleOverrideStore> | null = options.roleOverrides ?? null;
+  const roleOverrides = (): ReturnType<typeof createRoleOverrideStore> => {
+    overrides ??= createRoleOverrideStore(database());
+    return overrides;
   };
 
   let trail: AuditStore | null = options.audit ?? null;
@@ -347,6 +358,111 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
   }
 
   /**
+   * Wearing a role: read it, put it on, take it off.
+   *
+   * Any signed-in account may *read* its own answer, because the app draws a strip from it
+   * and a member with no override should get a quiet `null` rather than a 403. Only an
+   * operator may write: the organization comes from the session, never from the body, so a
+   * worn role cannot point at a tenant the operator is not in.
+   */
+  async function handleRoleOverride(
+    request: IncomingMessage,
+    response: ServerResponse,
+    path: string,
+  ): Promise<boolean> {
+    if (path !== "/api/account/role-override") return false;
+
+    const cookies = typeof request.headers.cookie === "string" ? request.headers.cookie : "";
+    const session = await sessionReader()?.({ cookie: cookies });
+    if (!session) {
+      sendJson(response, 401, {
+        ok: false,
+        error: "unauthorized",
+        message: "sign in to read or change your role",
+      });
+      return true;
+    }
+
+    const method = request.method ?? "GET";
+    if (method === "GET") {
+      // A non-operator never has one, so the read does not touch the table for them.
+      const override = session.operator ? await roleOverrides().get(session.userId) : null;
+      sendJson(response, 200, { ok: true, ...overrideBody(override), realRole: session.role });
+      return true;
+    }
+
+    if (method !== "PUT" && method !== "DELETE") {
+      sendJson(response, 405, { error: "method-not-allowed", requestId: requestIdOf(request) });
+      return true;
+    }
+    if (!session.operator) {
+      sendJson(response, 403, {
+        ok: false,
+        error: "forbidden",
+        message: "wearing a role is an operator surface",
+      });
+      return true;
+    }
+    if (session.organizationId === null) {
+      sendJson(response, 400, {
+        ok: false,
+        error: "no-organization",
+        message: "choose an organization before wearing a role in it",
+      });
+      return true;
+    }
+
+    if (method === "DELETE") {
+      await roleOverrides().clear(session.userId);
+      await record({
+        actor: session.userId,
+        action: "role.clear",
+        target: session.organizationId,
+        outcome: "ok",
+      });
+      sendJson(response, 200, { ok: true, ...overrideBody(null), realRole: session.role });
+      return true;
+    }
+
+    const read = await bodyOf(request);
+    let body: { role?: unknown } | null = null;
+    try {
+      body = read.ok && read.body !== null ? (JSON.parse(read.body) as { role?: unknown }) : null;
+    } catch {
+      body = null;
+    }
+    const role = body?.role;
+    if (!isWearableRole(role)) {
+      sendJson(response, 400, {
+        ok: false,
+        error: "invalid-body",
+        message: "expected { role } to be owner, admin or member",
+      });
+      return true;
+    }
+
+    const written = await roleOverrides().set({
+      userId: session.userId,
+      organizationId: session.organizationId,
+      role,
+    });
+    await record({
+      actor: session.userId,
+      action: "role.play",
+      target: session.organizationId,
+      outcome: "ok",
+      details: { role, realRole: session.role },
+    });
+    logger.info("an operator is wearing a role", {
+      actor: session.userId,
+      role,
+      organizationId: session.organizationId,
+    });
+    sendJson(response, 200, { ok: true, ...overrideBody(written), realRole: session.role });
+    return true;
+  }
+
+  /**
    * The account's own view of its support grant.
    *
    * This is the whole consent surface: the account reads whether support access is on,
@@ -450,6 +566,9 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
         target: session.userId,
         outcome: "ok",
       });
+      // A costume outliving the session it was put on for is the kind of state nobody
+      // remembers: stopping support stops the role too.
+      await roleOverrides().clear(session.userId);
       return true;
     }
 
@@ -676,6 +795,7 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
       }
 
       if (ownsAuth) await handleAuth(request, response, entry);
+      else if (await handleRoleOverride(request, response, path)) return true;
       else if (await handleSupportAccess(request, response, path)) return true;
       else if (await handleImpersonation(request, response, entry, path)) return true;
       else await handleAccount(request, response, entry);
@@ -832,7 +952,11 @@ export function relayWorkspaceData(
  * plugin and the entitlement reader as ports. The mail transport is chosen the same
  * way: the service names four senders and never decides how a message travels.
  */
-function defaultBoot(logger: Logger, source: Readonly<Record<string, string | undefined>>) {
+function defaultBoot(
+  logger: Logger,
+  source: Readonly<Record<string, string | undefined>>,
+  roleOverride: () => RoleOverrideLookup,
+) {
   return async (env: AuthEnvironment): Promise<AuthEntry> => {
     // The panel's saved values, laid over the process environment before anything reads it.
     // Billing and mail take their settings once, when their plugin and transport are built,
@@ -853,6 +977,10 @@ function defaultBoot(logger: Logger, source: Readonly<Record<string, string | un
     // relay stores as not configured, with the command that finishes them.
     const workspaceData = relayWorkspaceData(configured);
     const entry = await createMigratedAuthEntry(env, {
+      // Wrapped into the memberships reader, which is what both the session the app loads
+      // and the token the relay verifies ask: one answer, so a worn role cannot show a
+      // member's buttons over an owner's powers.
+      roleOverride: roleOverride(),
       ...mailSenders(
         mailTransportFromEnv(configured, {
           write: (line) => logger.info("auth mail", { line }),

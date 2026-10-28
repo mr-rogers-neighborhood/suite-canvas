@@ -48,6 +48,7 @@ import type { LibraryTab, useUiStore } from "../store/useUiStore";
 import { AppearanceHost } from "./AppearanceHost";
 import { BlueprintInstallHost } from "./BlueprintInstallHost";
 import { HistoryPanelHost } from "./HistoryPanelHost";
+import { WornRoleStrip } from "./WornRoleStrip";
 import { documentLabel } from "./workspacePaint";
 
 type UiState = ReturnType<typeof useUiStore.getState>;
@@ -356,6 +357,7 @@ export function WorkspaceShellView({
         data-ready={ready && synced}
         data-leaving={leaving ? "true" : undefined}
       >
+        <WornRoleStrip />
         <TitleBar
           onNavigateHome={requestLeave}
           onOpenSearch={() => setPaletteOpen(true)}

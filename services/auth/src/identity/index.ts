@@ -35,3 +35,4 @@ export {
   type RelayClaims,
   relayClaims,
 } from "./relayToken.js";
+export { type RoleOverrideLookup, withRoleOverride } from "./roleOverride.js";

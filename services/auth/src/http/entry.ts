@@ -6,6 +6,7 @@ import {
   createAuthService,
   sessionReader,
 } from "../identity/betterAuth.js";
+import { type RoleOverrideLookup, withRoleOverride } from "../identity/roleOverride.js";
 import { type EnrollmentRedemption, enrollmentRedemption } from "../invitations/enrollment.js";
 import type { LicenceStore, MembershipReader } from "../licensing/licences.js";
 import type { WorkspaceRepository } from "../organizations/workspaces.js";
@@ -196,6 +197,14 @@ export interface PostgresAuthEntryDeps
   queryable?: Queryable;
   /** Better Auth's adapter over that same pool. Required with `queryable`. */
   database?: AuthDatabase;
+  /**
+   * A worn role, if the deployment has one for this account.
+   *
+   * Wrapped around the memberships reader once, here, because that reader is what both
+   * the session and the relay's token ask: an override applied at one of the two would
+   * show a member's buttons over an owner's powers.
+   */
+  roleOverride?: RoleOverrideLookup;
 }
 
 /**
@@ -218,6 +227,19 @@ function injectedPair(deps: PostgresAuthEntryDeps): {
   return { queryable: deps.queryable, database: deps.database };
 }
 
+/** The repositories, with the worn-role reader wrapped around memberships when one is set. */
+function repositoriesFor(
+  queryable: Queryable,
+  roleOverride: RoleOverrideLookup | undefined,
+): ReturnType<typeof postgresRepositories> {
+  const repositories = postgresRepositories(queryable);
+  if (roleOverride === undefined) return repositories;
+  return {
+    ...repositories,
+    memberships: withRoleOverride(repositories.memberships, roleOverride),
+  };
+}
+
 export function createPostgresAuthEntry(
   env: AuthEnvironment,
   deps: PostgresAuthEntryDeps,
@@ -225,7 +247,7 @@ export function createPostgresAuthEntry(
   const pair = injectedPair(deps);
   if (pair !== null) {
     return createAuthEntry(env, {
-      ...postgresRepositories(pair.queryable),
+      ...repositoriesFor(pair.queryable, deps.roleOverride),
       account: postgresAccountStore(pair.queryable),
       ...(deps.workspaceData === undefined ? {} : { workspaceData: deps.workspaceData }),
       database: pair.database,
@@ -244,7 +266,7 @@ export function createPostgresAuthEntry(
     connectionString: env.SUITE_AUTH_DATABASE_URL?.trim() ?? "",
   });
   return createAuthEntry(env, {
-    ...postgresRepositories(opened.queryable),
+    ...repositoriesFor(opened.queryable, deps.roleOverride),
     account: postgresAccountStore(opened.queryable),
     ...(deps.workspaceData === undefined ? {} : { workspaceData: deps.workspaceData }),
     database: opened.database,

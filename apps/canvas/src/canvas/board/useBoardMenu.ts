@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import type { ContextMenuItem } from "../../dialogs/ContextMenu";
 import { buildBoardMenu } from "./menu/buildMenu";
 import type { useBoardCommands } from "./useBoardCommands";
@@ -17,6 +17,21 @@ export function useBoardMenu(
   },
 ): ContextMenuItem[] {
   const { contextMenu, snapshot, workspace, store, mode, setMode } = ui;
+
+  /**
+   * Appearance edits the whole selection when the card that was right-clicked is part
+   * of one: a reader who picked four cards to restyle means the four, not the one the
+   * menu happened to open over. One panel either way, so there is no second editor to
+   * drift from the inspector.
+   */
+  const openAppearance = useCallback(
+    (target: { kind: "card" | "edge"; id: string; at: { x: number; y: number } }) => {
+      const selected = ui.selectedNodeIds;
+      const many = target.kind === "card" && selected.length > 1 && selected.includes(target.id);
+      ui.openAppearance(many ? { ...target, ids: selected } : target);
+    },
+    [ui],
+  );
   const { projection, sections, commands, enterPortal, startEdgeDescription } = input;
   const { cardsById, sectionMembershipMap } = projection;
 
@@ -43,7 +58,7 @@ export function useBoardMenu(
       canManageLinks: ui.canManageLinks,
       requestShare: ui.requestShare,
       palette: ui.palette,
-      openAppearance: ui.openAppearance,
+      openAppearance,
       createNoteAt: commands.createNoteAt,
       createWhiteboardAt: commands.createWhiteboardAt,
       createSectionAt: sections.createSectionAt,
@@ -85,7 +100,7 @@ export function useBoardMenu(
     ui.canManageLinks,
     ui.requestShare,
     ui.palette,
-    ui.openAppearance,
+    openAppearance,
     ui.setSelectedNodeIds,
     ui.setSelectedConnector,
     ui.setEditingSection,

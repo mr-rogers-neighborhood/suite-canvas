@@ -6,13 +6,17 @@ import { openSettings } from "../styles/settingsEvents";
 import { StyleTab } from "../styles/surface/StyleTab";
 
 /**
- * The appearance panel, opened from a right-click.
+ * The appearance panel, opened from a right-click or from a selection.
  *
  * It is the inspector's Style tab, mounted where the reader is looking. The point
  * is that "change how this looks" is one gesture from the board: the menu's own
- * colour row handles the common case, and this holds everything else — shape,
- * ink, radius, opacity, text scale, the four per-side edges, and the control that
- * makes the result the default for the card's type.
+ * colour row handles the common case, and this holds everything else — shape, ink,
+ * radius, opacity, text scale, the four per-side edges, and the control that makes
+ * the result the default for the card's type.
+ *
+ * One panel for one card or for thirty. Right-clicking a card inside a selection
+ * edits the whole selection, so a multi-select costs a right-click rather than a
+ * panel appearing on its own the moment a second card is picked.
  */
 export function AppearanceHost() {
   const target = useUiStore((state) => state.appearanceTarget);
@@ -37,10 +41,11 @@ export function AppearanceHost() {
 
   if (target === null) return null;
 
+  const ids = target.ids.length > 0 ? target.ids : [target.id];
   const typeName =
-    target.kind === "card"
+    target.kind === "card" && ids.length === 1
       ? (() => {
-          const card = snapshot.cards.find((entry) => entry.id === target.id);
+          const card = snapshot.cards.find((entry) => entry.id === ids[0]);
           const type = snapshot.types.find((entry) => entry.id === card?.primaryTypeId);
           return type?.name ?? null;
         })()
@@ -48,8 +53,8 @@ export function AppearanceHost() {
 
   // Kept on screen: a right-click near the bottom-right corner would otherwise
   // open a panel halfway off the window.
-  const left = Math.min(target.at.x, Math.max(8, window.innerWidth - 340));
-  const top = Math.min(target.at.y, Math.max(8, window.innerHeight - 420));
+  const left = Math.min(target.at.x, Math.max(8, window.innerWidth - 288));
+  const top = Math.min(target.at.y, Math.max(8, window.innerHeight - 380));
 
   return (
     <div
@@ -57,11 +62,13 @@ export function AppearanceHost() {
       data-testid="appearance-panel"
       role="dialog"
       aria-label="Appearance"
-      className="fixed z-50 max-h-[70vh] w-[320px] overflow-auto rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-3 shadow-xl"
+      className="fixed z-50 max-h-[60vh] w-[268px] overflow-auto rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-2.5 shadow-xl"
       style={{ left, top }}
     >
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-[13px] font-semibold text-[var(--ink)]">Appearance</h2>
+        <h2 className="text-[12px] font-semibold text-[var(--ink)]">
+          {ids.length > 1 ? `Appearance \u00b7 ${ids.length} cards` : "Appearance"}
+        </h2>
         <button
           type="button"
           data-testid="appearance-close"
@@ -73,7 +80,7 @@ export function AppearanceHost() {
         </button>
       </div>
       <StyleTab
-        targets={[{ kind: target.kind, id: target.id }]}
+        targets={ids.map((id) => ({ kind: target.kind, id }))}
         canEdit={canEditLayout}
         typeName={typeName}
       />

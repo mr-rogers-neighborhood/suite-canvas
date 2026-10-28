@@ -13,6 +13,7 @@ import { WorkspaceShellView } from "./app/WorkspaceShellView";
 import { useSurfacePalette, useWorkspacePalette } from "./app/workspacePaint";
 import { signedIn as accountSignedIn, useAccountStore } from "./auth/useAccountStore";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
+import { usePlaceStackStore } from "./canvas/placeStack";
 import type { CanvasPurpose } from "./canvas/purpose";
 import { useRecordEngine } from "./canvas/useRecordEngine";
 import { zoomBand } from "./canvas/zoomRange";
@@ -733,6 +734,7 @@ function WorkspaceShell({
       setBoardTemplate={setBoardTemplate}
       setLibraryTab={setLibraryTab}
       placeCard={placeCard}
+      startPlaceStack={(cardIds) => usePlaceStackStore.getState().start(cardIds)}
       toggleLibraryType={toggleLibraryType}
       toggleLibraryTag={toggleLibraryTag}
       clearLibraryFilters={clearLibraryFilters}

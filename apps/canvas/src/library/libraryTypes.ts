@@ -137,8 +137,10 @@ export interface LibraryDrawerProps {
   onDeleteForever: (cardId: string) => void;
   onEmptyTrash: () => void;
   onGoToBoard: (boardId: string) => void;
-  /** Pointer drop over the canvas, in client coordinates. */
-  onDropAt: (cardId: string, point: { x: number; y: number }) => void;
+  /** Pointer drop over the canvas, in client coordinates: one card or a picked stack. */
+  onDropAt: (cardIds: readonly string[], point: { x: number; y: number }) => void;
+  /** Put the picked rows in the reader's hand, to place one press at a time. */
+  onPlaceCards: (cardIds: readonly string[]) => void;
   types: CardType[];
   tags: Tag[];
   typeFilter: string[];

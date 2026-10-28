@@ -84,6 +84,7 @@ function renderDrawer(
     onEmptyTrash: () => {},
     onGoToBoard: () => {},
     onDropAt: () => {},
+    onPlaceCards: () => {},
     types: [],
     tags: [],
     typeFilter: [],
@@ -426,6 +427,7 @@ describe("Library shortcut", () => {
             onEmptyTrash={() => {}}
             onGoToBoard={() => {}}
             onDropAt={() => {}}
+            onPlaceCards={() => {}}
             types={[]}
             tags={[]}
             typeFilter={[]}

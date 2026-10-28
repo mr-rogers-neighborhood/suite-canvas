@@ -228,6 +228,7 @@ describe("ViewsBar", () => {
           onEmptyTrash={() => {}}
           onGoToBoard={() => {}}
           onDropAt={() => {}}
+          onPlaceCards={() => {}}
           types={[]}
           tags={[]}
           typeFilter={[]}

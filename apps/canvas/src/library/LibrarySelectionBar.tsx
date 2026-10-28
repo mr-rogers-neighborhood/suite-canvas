@@ -2,6 +2,7 @@
 export function LibrarySelectionBar({
   selected,
   canManageTrash,
+  onPlace,
   onTrash,
   onSelectAll,
   onClear,
@@ -9,6 +10,8 @@ export function LibrarySelectionBar({
   /** Selected row ids, in the order they appear on screen. */
   selected: readonly string[];
   canManageTrash: boolean;
+  /** Put the picked rows in the reader's hand, to place one press at a time. */
+  onPlace: (ids: readonly string[]) => void;
   onTrash: (id: string) => void;
   onSelectAll: () => void;
   onClear: () => void;
@@ -31,6 +34,16 @@ export function LibrarySelectionBar({
           Pick rows to act on them together
         </span>
       ) : null}
+      <button
+        type="button"
+        className="library-action"
+        data-testid="library-place-cards"
+        disabled={selected.length === 0}
+        title="Carry these cards and put them down one at a time"
+        onClick={() => onPlace(selected)}
+      >
+        {selected.length > 0 ? `Place ${selected.length}` : "Place cards"}
+      </button>
       {canManageTrash ? (
         <button
           type="button"

@@ -92,6 +92,7 @@ export function LibraryDrawer({
   groupBySection,
   onToggleGroup,
   onOpenCard,
+  onPlaceCards,
   canManageTrash = true,
   workspace: workspaceProp = null,
   initialQuery = "",
@@ -177,13 +178,15 @@ export function LibraryDrawer({
   } = useLibraryHold({
     // A board dragged onto the canvas becomes a portal at the drop point, which
     // is the same gesture a card makes: the row lifts, the canvas receives it.
-    onDropAt: (id, point) => {
+    onDropAt: (ids, point) => {
+      const [id] = ids;
+      if (!id) return;
       const item = ordered.find((entry) => entry.id === id);
       if (item !== undefined && isBoardItem(item)) {
         onDropBoardAt?.(id, point);
         return;
       }
-      onDropAt(id, point);
+      onDropAt(ids, point);
     },
     onOpen: (id) => {
       const item = ordered.find((entry) => entry.id === id);
@@ -192,6 +195,17 @@ export function LibraryDrawer({
         return;
       }
       onOpenCard(id);
+    },
+    // In selection mode a click on a picked row unpicks it, the way every list works;
+    // it must not open the card the reader was sorting through.
+    onTap: (id, event) => {
+      if (!selecting) {
+        const item = ordered.find((entry) => entry.id === id);
+        if (item !== undefined && isBoardItem(item)) onOpenBoard(id);
+        else onOpenCard(id);
+        return;
+      }
+      selectRow(id, event);
     },
     canPlace,
   });
@@ -381,12 +395,19 @@ export function LibraryDrawer({
     // Selection mode claims the press, and so does a modifier: shift or ctrl/cmd
     // is unambiguously "pick rows", which is how every list on the desktop works.
     // A drag-to-place here would be a second meaning for the same gesture.
-    if (selecting || event.shiftKey || event.metaKey || event.ctrlKey) {
+    // A row that is already picked carries the whole pick: dragging one of the
+    // selected rows out is how a stack leaves the drawer, and a press that quietly
+    // discarded the selection first would make it useless the moment it was used.
+    // An *unpicked* row in selection mode is a pick, which is how a selection is built.
+    const picked = selection.ids.includes(item.id);
+    if (!picked && (selecting || event.shiftKey || event.metaKey || event.ctrlKey)) {
       selectRow(item.id, event);
       return;
     }
+    const carried = picked ? selectableOrder.filter((id) => selection.ids.includes(id)) : [item.id];
     holdRef.current = {
       cardId: item.id,
+      cardIds: carried,
       startX: event.clientX,
       startY: event.clientY,
       dragging: false,
@@ -480,6 +501,7 @@ export function LibraryDrawer({
         <LibrarySelectionBar
           selected={selected}
           canManageTrash={canManageTrash}
+          onPlace={onPlaceCards}
           onTrash={onTrash}
           onSelectAll={selectAllRows}
           onClear={clearSelection}

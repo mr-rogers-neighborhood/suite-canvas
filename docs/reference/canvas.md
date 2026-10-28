@@ -152,11 +152,16 @@ on an exploration, whatever they had armed an hour ago.
 deliberately small: `explore` is the resting state and needs no button, and `explain` is the only value a
 reader chooses from the canvas itself.
 
-There is no placement run. Cards are placed one at a time, by a drop, a dock action or a
-double-click, and a link is drawn by dragging from a dot. The run, its shapes and its bar were removed
-because they made the common gesture unpredictable; `place`, `thread` and `fan` survive only as the
-internal names of the link gesture's shapes (`links/linkThread.ts`), which is what a click-and-drag
-between two dots already draws.
+There is no placement run: no shapes, no anchors, no bar. Cards are placed one at a time, by a drop, a
+dock action, a double-click, or from a stack — pick rows in the library, press "Place cards", and the
+stack follows the pointer, one press per card (`canvas/placeStack.ts`, `canvas/PlaceStackCursor.tsx`).
+Dragging a picked row out of the drawer carries the whole pick, and the drop's dashed outline is the
+card's own box at the current zoom, so where it is drawn is where it lands. A link is drawn by dragging
+from a dot, or clicking one dot and then another; `place`, `thread` and `fan` survive only as the
+internal names of those gesture shapes (`links/linkThread.ts`).
+
+The appearance panel is one panel: right-clicking a card inside a selection edits the whole selection,
+and nothing opens on its own when a second card is picked (`app/AppearanceHost.tsx`).
 
 ## Camera and viewport
 

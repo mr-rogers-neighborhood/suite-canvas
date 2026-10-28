@@ -6,8 +6,8 @@ import { NudgeHint } from "../BoardHints";
 import { DropOffer } from "../DropOffer";
 import { EdgeDescriptionInput } from "../EdgeDescription";
 import { LibraryDropPreview } from "../PeerLibraryDragLayer";
+import { PlaceStackCursor } from "../PlaceStackCursor";
 import { PortalTransitionLayer } from "../PortalTransitionLayer";
-import { SelectionStylePanel } from "../SelectionStylePanel";
 import { ThreadLinkPreview } from "./ThreadLinkPreview";
 import type { useBoardLinks } from "./useBoardLinks";
 import type { useBoardProjection } from "./useBoardProjection";
@@ -26,25 +26,8 @@ type BoardOverlaysProps = {
  * it rather than inside it.
  */
 export function BoardOverlays({ ui, projection, links, menuItems }: BoardOverlaysProps) {
-  const {
-    activeBoardId,
-    closeContextMenu,
-    contextMenu,
-    selectedNodeIds,
-    canEditLayout,
-    workspace,
-  } = ui;
-  const { linkScene, cardsById } = projection;
-  // The two selection affordances share the strip above the dock: the nudge hint owns
-  // a lone card, and the style panel owns a multi-selection.
-  const styleTargets =
-    selectedNodeIds.length > 1
-      ? selectedNodeIds.flatMap((id) => {
-          const card = cardsById.get(id);
-          if (!card) return [];
-          return [{ id, ...(card.style ? { style: card.style } : {}) }];
-        })
-      : [];
+  const { activeBoardId, closeContextMenu, contextMenu, selectedNodeIds, canEditLayout } = ui;
+  const { linkScene } = projection;
   const {
     armedThread,
     threadCursor,
@@ -66,19 +49,13 @@ export function BoardOverlays({ ui, projection, links, menuItems }: BoardOverlay
         />
       ) : null}
       {canEditLayout && selectedNodeIds.length > 0 ? (
-        <NudgeHint count={selectedNodeIds.length} lifted={styleTargets.length > 1} />
-      ) : null}
-      {canEditLayout && styleTargets.length > 1 ? (
-        <SelectionStylePanel
-          cardIds={styleTargets.map((target) => target.id)}
-          canEdit={canEditLayout}
-          workspace={workspace}
-        />
+        <NudgeHint count={selectedNodeIds.length} lifted={selectedNodeIds.length > 1} />
       ) : null}
       <DropOffer />
       <ExplainPanel />
       <StatusCursorLayer />
       <LibraryDropPreview />
+      <PlaceStackCursor />
       <PortalTransitionLayer />
       {edgeDescription ? (
         <EdgeDescriptionInput

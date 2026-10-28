@@ -99,6 +99,7 @@ const meta = {
     onEmptyTrash: () => {},
     onGoToBoard: () => {},
     onDropAt: () => {},
+    onPlaceCards: () => {},
     types: [
       { id: "note", name: "Note", glyph: "\u25a1", createdAt: 0, updatedAt: 0, fields: [] },
       { id: "concept", name: "Concept", glyph: "\u25c6", createdAt: 1, updatedAt: 1, fields: [] },

@@ -218,8 +218,10 @@ interface UiState extends SessionCapabilities {
    * the gesture; the canvas owns the camera, so it converts this to flow space
    * before publishing presence.
    */
-  libraryDrag: { cardId: string; screen: { x: number; y: number } } | null;
-  setLibraryDrag: (drag: { cardId: string; screen: { x: number; y: number } } | null) => void;
+  libraryDrag: { cardId: string; screen: { x: number; y: number }; count: number } | null;
+  setLibraryDrag: (
+    drag: { cardId: string; screen: { x: number; y: number }; count: number } | null,
+  ) => void;
   /**
    * A link end waiting for a connector to be clicked. The link inspector arms
    * this so an end can be moved without dragging on the canvas; the next
@@ -322,7 +324,10 @@ interface UiState extends SessionCapabilities {
    */
   appearanceTarget: {
     kind: "card" | "edge";
+    /** The thing that was right-clicked. */
     id: string;
+    /** Every card the panel edits: the right-clicked one, or the whole selection. */
+    ids: readonly string[];
     at: { x: number; y: number };
   } | null;
   /**
@@ -431,6 +436,7 @@ interface UiState extends SessionCapabilities {
   openAppearance: (target: {
     kind: "card" | "edge";
     id: string;
+    ids?: readonly string[];
     at: { x: number; y: number };
   }) => void;
   closeAppearance: () => void;
@@ -833,7 +839,11 @@ export const useUiStore = create<UiState>((set, get) => ({
   toggleOutline: () => set((state) => ({ outlineOpen: !state.outlineOpen })),
   toggleHistory: () => set((state) => ({ historyOpen: !state.historyOpen })),
   closeHistory: () => set({ historyOpen: false }),
-  openAppearance: (appearanceTarget) => set({ appearanceTarget, contextMenu: null }),
+  openAppearance: (target) =>
+    set({
+      appearanceTarget: { ...target, ids: target.ids ?? [target.id] },
+      contextMenu: null,
+    }),
   closeAppearance: () => set({ appearanceTarget: null }),
   toggleCardCollapsed: (cardId) =>
     set((state) => ({ collapsedCards: toggled(state.collapsedCards, cardId) })),

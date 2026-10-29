@@ -12,10 +12,12 @@ import {
   statusOf,
   type TierTable,
 } from "@suite/billing";
+import { envWithSettings } from "@suite/settings";
 import { type ConfigEnv, DATABASE_URL_VARIABLE } from "../config.js";
 import { createLogger, type Logger, REQUEST_ID_HEADER } from "../logging.js";
 import type { RouteModule } from "../routes.js";
 import { stripeCredentials } from "./auth-billing.js";
+import { readStoredSettings } from "./settings.js";
 
 /**
  * The billing routes the Stripe plugin does not own.
@@ -235,12 +237,42 @@ export async function billingDepsFromEnvironment(
 }
 
 /**
+ * The environment this process booted with, the panel's rows laid over it.
+ *
+ * The plugin beside this module is built once, at boot, from exactly that composition. A
+ * module that read `process.env` instead published the *test* catalogue on a deployment
+ * whose checkouts and webhook were live, because the mode lives in a row rather than in the
+ * environment: two answers to one question, and the Plan tab showed the wrong prices
+ * beside the button that charged the right ones.
+ *
+ * Resolved once. A process that has already spent one mode cannot honestly describe
+ * another, and the panel's "restart to apply" marker is what says so; re-reading a row on
+ * every request would make this the one place that pretends otherwise.
+ */
+let bootEnv: ConfigEnv | null = null;
+
+export async function bootBillingEnvironment(
+  read: typeof readStoredSettings = readStoredSettings,
+): Promise<ConfigEnv> {
+  if (bootEnv !== null) return bootEnv;
+  const databaseUrl = (process.env[DATABASE_URL_VARIABLE] ?? "").trim();
+  const rows = await read(databaseUrl).catch(() => []);
+  bootEnv = envWithSettings({ env: process.env, rows });
+  return bootEnv;
+}
+
+/** For a test, and for a process that changed the rows: the next read composes again. */
+export function forgetBillingEnvironment(): void {
+  bootEnv = null;
+}
+
+/**
  * The mounted module.
  *
  * The pool it opens is closed by process exit, which is what the host does after it
  * drains; a module has no shutdown hook of its own.
  */
 export const module: RouteModule = createBillingModule({
-  resolve: () => billingDepsFromEnvironment(),
+  resolve: async () => billingDepsFromEnvironment(await bootBillingEnvironment()),
   logger: createLogger(),
 });

@@ -3,7 +3,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { type ControlPlane, createControlPlane } from "../host.js";
 import { createLogger } from "../logging.js";
 import type { RouteModule } from "../routes.js";
-import { type BillingModuleDeps, createBillingModule } from "./billing.js";
+import {
+  type BillingModuleDeps,
+  bootBillingEnvironment,
+  createBillingModule,
+  forgetBillingEnvironment,
+} from "./billing.js";
 
 /**
  * The billing routes over a real socket: the paths, the statuses and the one read they
@@ -177,5 +182,48 @@ describe("billing module", () => {
 
     expect(response.status).toBe(500);
     expect(await response.json()).toMatchObject({ error: "unexpected" });
+  });
+});
+
+describe("the environment the billing module reads", () => {
+  afterEach(() => {
+    forgetBillingEnvironment();
+    delete process.env.SUITE_BILLING_MODE;
+  });
+
+  it("takes the mode from the panel's row, not from the process environment", async () => {
+    // The bug this pins: the plugin is built from the overlay at boot, and the module used
+    // to read `process.env`, so a deployment in live mode published the test catalogue
+    // beside a checkout that charged live prices.
+    process.env.SUITE_BILLING_MODE = "test";
+
+    const env = await bootBillingEnvironment(async () => [
+      { scope: "global", key: "billing.mode", value: "live" },
+    ]);
+
+    expect(env.SUITE_BILLING_MODE).toBe("live");
+  });
+
+  it("composes once, because a process that spent one mode describes that one", async () => {
+    let reads = 0;
+    const rows = async () => {
+      reads += 1;
+      return [{ scope: "global", key: "billing.mode", value: "live" }];
+    };
+
+    await bootBillingEnvironment(rows);
+    await bootBillingEnvironment(rows);
+
+    expect(reads).toBe(1);
+  });
+
+  it("falls back to the environment when the table cannot be read", async () => {
+    process.env.SUITE_BILLING_MODE = "test";
+
+    const env = await bootBillingEnvironment(async () => {
+      throw new Error("no database");
+    });
+
+    expect(env.SUITE_BILLING_MODE).toBe("test");
   });
 });

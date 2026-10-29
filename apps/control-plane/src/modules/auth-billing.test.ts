@@ -364,6 +364,58 @@ describe("verifyStripeProfile", () => {
     expect(check.problem).toContain("could not be reached");
   });
 
+  it("should call a coupon that does not exist in the mode", async () => {
+    // The same trap as a copied price table: a coupon made in test mode is not in live,
+    // and the checkout that names it fails for the customer.
+    const { fetcher } = stripe({
+      "/v1/account": { status: 200 },
+      "/v1/prices/price_solo": { status: 200 },
+      "/v1/prices/price_team": { status: 200 },
+    });
+
+    const check = await verifyStripeProfile(
+      { ...env, STRIPE_CHECKOUT_COUPON: "alpha-free" },
+      "test",
+      { fetch: fetcher },
+    );
+
+    expect(check.coupon).toEqual({ id: "alpha-free", exists: false });
+    expect(check.ok).toBe(false);
+    expect(check.problem).toContain("alpha-free does not exist in test mode");
+  });
+
+  it("should pass when the coupon is there too", async () => {
+    const { fetcher } = stripe({
+      "/v1/account": { status: 200 },
+      "/v1/prices/price_solo": { status: 200 },
+      "/v1/prices/price_team": { status: 200 },
+      "/v1/coupons/alpha-free": { status: 200 },
+    });
+
+    const check = await verifyStripeProfile(
+      { ...env, STRIPE_CHECKOUT_COUPON: "alpha-free" },
+      "test",
+      { fetch: fetcher },
+    );
+
+    expect(check.coupon).toEqual({ id: "alpha-free", exists: true });
+    expect(check.ok).toBe(true);
+  });
+
+  it("should not look for a coupon nobody configured", async () => {
+    const { fetcher, seen } = stripe({
+      "/v1/account": { status: 200 },
+      "/v1/prices/price_solo": { status: 200 },
+      "/v1/prices/price_team": { status: 200 },
+    });
+
+    const check = await verifyStripeProfile(env, "test", { fetch: fetcher });
+
+    // Null is "not checked", which is not the same answer as "checked and missing".
+    expect(check.coupon).toBeNull();
+    expect(seen.some((path) => path.startsWith("/v1/coupons/"))).toBe(false);
+  });
+
   it("should name a missing key before it calls anything", async () => {
     const { fetcher, seen } = stripe({});
 

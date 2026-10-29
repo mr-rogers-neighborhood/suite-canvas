@@ -27,13 +27,34 @@ function granting(): {
   };
 }
 
-function optionsWith(authorize: (input: AuthorizeOrganizationInput) => Promise<boolean>) {
+function optionsWith(
+  authorize: (input: AuthorizeOrganizationInput) => Promise<boolean>,
+  extra: { coupon?: string } = {},
+) {
   return billingPluginOptions({
     secretKey: SECRET,
     webhookSecret: WEBHOOK_SECRET,
     tiers: TIERS,
     authorizeOrganization: authorize,
+    ...extra,
   });
+}
+
+/** The params hook called the way the plugin calls it, with one organization's reference. */
+async function checkoutParams(extra: { coupon?: string } = {}) {
+  const options = optionsWith(granting().authorize, extra);
+  const params = subscriptionOf(options).getCheckoutSessionParams;
+  assert.ok(params !== undefined);
+  type Input = Parameters<typeof params>[0];
+  return params(
+    {
+      user: { id: "user_1" },
+      subscription: { referenceId: "org_1", plan: "solo", status: "incomplete" },
+      plan: plansOf(options)[0],
+    } as unknown as Input,
+    {} as unknown as Parameters<typeof params>[1],
+    {} as unknown as Parameters<typeof params>[2],
+  );
 }
 
 function subscriptionOf(options: ReturnType<typeof optionsWith>) {
@@ -216,6 +237,29 @@ describe("getCheckoutSessionParams", () => {
     );
 
     // Off by default on a Checkout Session, and the only place a discount can come from.
+    assert.equal(result?.params?.allow_promotion_codes, true);
+  });
+
+  it("does not ask for a card when the amount due is nothing", async () => {
+    // A free alpha behind a card form is a card form in front of a product nobody is
+    // paying for. `if_required` is what lets a fully discounted first invoice through.
+    const result = await checkoutParams();
+
+    assert.equal(result?.params?.payment_method_collection, "if_required");
+  });
+
+  it("applies a configured coupon to every checkout instead of a code to type", async () => {
+    const result = await checkoutParams({ coupon: "alpha-free" });
+
+    assert.deepEqual(result?.params?.discounts, [{ coupon: "alpha-free" }]);
+    // Stripe refuses both on one session, so the field goes when the discount arrives.
+    assert.equal(result?.params?.allow_promotion_codes, undefined);
+  });
+
+  it("treats a blank coupon as none, rather than sending an empty id", async () => {
+    const result = await checkoutParams({ coupon: "   " });
+
+    assert.equal(result?.params?.discounts, undefined);
     assert.equal(result?.params?.allow_promotion_codes, true);
   });
 

@@ -142,6 +142,11 @@ export interface ProfileCheck {
   keyWorks: boolean;
   /** One row per price the table names, in table order. */
   prices: { priceId: string; tier: string; exists: boolean }[];
+  /**
+   * The launch coupon, when one is configured: null when none is, so "not checked" and
+   * "checked and missing" stay different answers.
+   */
+  coupon: { id: string; exists: boolean } | null;
   /** The first thing wrong, in a sentence an operator can act on; null when nothing is. */
   problem: string | null;
   ok: boolean;
@@ -186,6 +191,7 @@ export async function verifyStripeProfile(
     reachable: false,
     keyWorks: false,
     prices: [],
+    coupon: null,
     problem: null,
     ok: false,
   };
@@ -241,15 +247,41 @@ export async function verifyStripeProfile(
     }
   }
 
+  // A coupon is the same trap as a price: one made in test mode does not exist in live,
+  // and a checkout that names it fails for the customer rather than for the operator.
+  const couponId = (env.STRIPE_CHECKOUT_COUPON ?? "").trim();
+  if (couponId.length > 0) {
+    try {
+      const coupon = await stripeGet(
+        fetcher,
+        `/v1/coupons/${encodeURIComponent(couponId)}`,
+        credentials.secretKey,
+        timeoutMs,
+      );
+      check.coupon = { id: couponId, exists: coupon.status >= 200 && coupon.status < 300 };
+    } catch (cause) {
+      return {
+        ...check,
+        problem: `Stripe could not be reached while checking the coupon ${couponId}: ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`,
+      };
+    }
+  }
+
   // A price id belongs to one mode. A table copied from test mode reads as complete here
   // and fails at the first checkout, which is the mistake this names.
   const missing = check.prices.filter((price) => !price.exists);
+  const couponProblem =
+    check.coupon !== null && !check.coupon.exists
+      ? `the coupon ${check.coupon.id} does not exist in ${mode} mode`
+      : null;
   const problem =
-    missing.length === 0
-      ? null
-      : `${missing.map((price) => price.priceId).join(", ")} ${
+    missing.length > 0
+      ? `${missing.map((price) => price.priceId).join(", ")} ${
           missing.length === 1 ? "does" : "do"
-        } not exist in ${mode} mode. A price id belongs to one mode, so a table copied from the other mode has to be replaced with ${mode} prices.`;
+        } not exist in ${mode} mode. A price id belongs to one mode, so a table copied from the other mode has to be replaced with ${mode} prices.`
+      : couponProblem;
   return { ...check, problem, ok: problem === null };
 }
 
@@ -380,6 +412,7 @@ export async function composeBilling(env: Env, logger: Logger): Promise<BillingC
   }
 
   const stripe = stripeCredentials(env);
+  const coupon = (env.STRIPE_CHECKOUT_COUPON ?? "").trim();
   const parsed = parseTierTable(stripe.priceTiers);
   if (parsed.isErr()) throw new Error(`STRIPE_PRICE_TIERS is unusable: ${parsed.error.message}`);
   const tiers = parsed.value;
@@ -436,6 +469,9 @@ export async function composeBilling(env: Env, logger: Logger): Promise<BillingC
       tiers,
       authorizeOrganization,
       licence: parts.licence,
+      // A launch discount, when an operator has one: it applies to every checkout, so
+      // nobody types a code.
+      ...(coupon.length === 0 ? {} : { coupon }),
     }),
     entitlements: parts.entitlements,
     licence: parts.licence,

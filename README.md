@@ -1,13 +1,32 @@
 # Suite
 
+> **Suite is alpha software.** The hosted deployment at <https://app.suite.run> is real and the
+> paying path is real, but expect rough edges and expect the shape of things to change.
+>
+> A subscription is **early access** to sync, collaboration and file uploads. The canvas, the cards
+> and export work without one, on this device, with no account and no limit.
+>
+> The source goes public within about two weeks. After that you can run it yourself, and a
+> subscription is a way to fund the work rather than the only way to use it. A self-hosted relay
+> verifies a signed licence token at boot, so running one means asking for a licence; the
+> [self-host section](docs/reference/billing.md) has the shape. Until the source is public, the
+> hosted deployment is the only one, and every plan there is free: a 100% discount is applied at
+> checkout, so no money moves and no card is taken.
+>
+> Two things that are easy to discover too late: **a workspace is this browser's copy until a plan
+> puts it in your account**, so clearing site data takes it with it, and export is always available.
+> Payments run through Stripe, which holds the card; this deployment never sees it.
+
 Suite is a local-first, collaborative canvas for connected thinking. A workspace owns its cards and
 the boards they appear on: cards are objects first, and a board is a view that places them. Every edit
 lands in one Loro CRDT, `@suite/graph` validates each write with Zod before it reaches the document,
 and the canvas keeps working offline.
 
-**Status: Beta, `0.2.0-beta.1`, MIT.** Hosted billing is closed: no checkout, no price, no upgrade
-control. Anonymous workspaces are the shipped path; the account layer in `services/auth` is built and
-tested, and no process mounts it. The Beta exit gates are not all closed.
+**Status: alpha, `1.1.0`, MIT.** Hosted billing is live: accounts, organizations, invitations,
+checkout, the billing portal and the licence projection all run, in Stripe's test or live universe
+according to one setting. A free account is a local account, unlimited on this device; sync is the
+paid feature, and the same tier table prices it in both universes so a test run exercises what a live
+one will.
 
 ![Suite](assets/preview-dark.png)
 

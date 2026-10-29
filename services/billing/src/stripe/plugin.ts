@@ -87,6 +87,18 @@ export interface BillingPluginDeps {
    * launch discount reaches a customer without this process holding a second price list.
    */
   allowPromotionCodes?: boolean;
+  /**
+   * A Stripe coupon applied to every checkout, by id.
+   *
+   * The alternative to a code somebody has to type and remember. During a free alpha it
+   * is what makes every checkout total zero, which is also what lets Stripe skip the card
+   * (`payment_method_collection: "if_required"`): a subscription whose first invoice is
+   * nothing needs no payment method.
+   *
+   * Stripe refuses `discounts` beside `allow_promotion_codes` on one session, so setting
+   * this replaces the field rather than adding to it.
+   */
+  coupon?: string;
 }
 
 /**
@@ -226,20 +238,39 @@ export function billingPluginOptions(deps: BillingPluginDeps): StripeOptions {
             code: "ORGANIZATION_REFERENCE_REQUIRED",
           });
         }
+        const coupon = (deps.coupon ?? "").trim();
         return {
           params: {
             client_reference_id: subscription.referenceId,
             metadata: { organizationId: subscription.referenceId },
             /**
-             * A promotional code is a Stripe coupon, not a licence grant.
+             * A card is collected when it is needed, and not otherwise.
              *
-             * Stripe owns the discount table, the expiry and the redemption limit, and the
-             * Checkout page has a field for it; the alternative — an operator typing comps
-             * into this process — would be a second source of truth about what somebody
-             * paid. The field is off by default on a Checkout Session, so it has to be
-             * asked for.
+             * The default asks for one on every subscription checkout, which turns a
+             * free alpha into a card form in front of a product nobody is paying for: the
+             * reader stops, and the sign-up that was meant to cost nothing costs a
+             * decision. With `if_required` Stripe asks only when the amount due is above
+             * zero, so a fully discounted first invoice goes straight through.
+             *
+             * The trade is stated where an operator will read it: a subscription with no
+             * payment method cannot renew once the discount stops applying.
              */
-            allow_promotion_codes: deps.allowPromotionCodes ?? true,
+            payment_method_collection: "if_required",
+            ...(coupon.length > 0
+              ? // No field to fill in, and no code to lose.
+                { discounts: [{ coupon }] }
+              : {
+                  /**
+                   * A promotional code is a Stripe coupon, not a licence grant.
+                   *
+                   * Stripe owns the discount table, the expiry and the redemption limit,
+                   * and the Checkout page has a field for it; the alternative — an
+                   * operator typing comps into this process — would be a second source of
+                   * truth about what somebody paid. The field is off by default on a
+                   * Checkout Session, so it has to be asked for.
+                   */
+                  allow_promotion_codes: deps.allowPromotionCodes ?? true,
+                }),
           },
         };
       },

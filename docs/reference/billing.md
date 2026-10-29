@@ -17,6 +17,32 @@ A **promotional code** is a Stripe coupon, not a licence grant. Checkout is crea
 or 100% discount in the dashboard. This process holds no second table describing what somebody paid,
 which is the same reason ADR-0078 deleted the hand-written store.
 
+### A checkout that costs nothing
+
+Two session parameters decide whether a free plan still asks for a card, and both live in
+`getCheckoutSessionParams` in `services/billing/src/stripe/plugin.ts`:
+
+| Parameter | Value | Why |
+| --- | --- | --- |
+| `payment_method_collection` | `if_required` | Stripe asks for a card only when the amount due is above zero, so a fully discounted first invoice goes through without one |
+| `discounts` **or** `allow_promotion_codes` | one coupon id, or the field | Stripe refuses both on one session, so `billing.checkout.coupon` (`STRIPE_CHECKOUT_COUPON`) chooses: a coupon applies to every checkout with nothing to type, and an empty value leaves the code field |
+
+Setting the coupon is one request from the dashboard:
+
+```sh
+stripe coupons create --percent-off 100 --duration forever --id alpha-free
+```
+
+The catch has to be stated, because it is the difference between a free alpha and a paying one: a
+subscription that collected no payment method has nothing to charge when the discount stops applying.
+Its renewal fails, Stripe marks it `past_due` and then `canceled`, and the licence read answers `free`
+at the next token mint. A coupon with `--duration forever` keeps working; a three-month launch coupon
+becomes a three-month trial with no card to convert.
+
+`POST /admin/settings/billing/verify` checks the coupon in the mode being verified, next to the
+prices. A coupon made in test mode does not exist in live, which is the same trap as a copied price
+table and fails at a customer's checkout rather than at the switch.
+
 A licence is a signed token. A self-hosted relay reads one from `SUITE_LICENCE` and verifies it
 at boot ([ADR-0081](../../internal/decisions/open/0081-a-self-host-licence-arrives-in-the-environment.md));
 a hosted relay reads none, because its proof is the session JWT the auth instance signs
@@ -412,6 +438,7 @@ live in the table, because it is what decrypts it.
 | `STRIPE_WEBHOOK_SECRET` | always | Endpoint secret (`whsec_…`) printed by `stripe listen`; never logged |
 | `STRIPE_PRICE_TIERS` | always | The tier table above, as JSON keyed by price id |
 | `STRIPE_SECRET_KEY_LIVE`, `STRIPE_WEBHOOK_SECRET_LIVE`, `STRIPE_PRICE_TIERS_LIVE` | live mode | The same three, in Stripe's live universe |
+| `STRIPE_CHECKOUT_COUPON` | optional | One coupon id applied to every checkout, which replaces the promotion-code field |
 | `SUITE_BILLING_MODE` | always | `test` (default) or `live`: which set is spent |
 | `SUITE_CONTROL_PLANE_DATABASE_URL` | entitlement read | The one Postgres holding `subscription` (ADR-0070) |
 | `SUITE_CONTROL_PLANE_PORT` | local runs | Listener port, `1236` by default |

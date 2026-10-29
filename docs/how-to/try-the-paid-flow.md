@@ -126,7 +126,11 @@ Sign in as any account, open the workspace menu, and the Plan tab: the two plans
 
 The Checkout page is Stripe's own, so no card detail reaches this origin. It also carries a
 **promotion code** field: a percentage or 100% coupon made in the sandbox dashboard is how a comp is
-given, and a 100%-off code is the fastest way to test the whole flow without money moving.
+given, and a 100%-off code is the fastest way to test the whole flow without money moving. With a
+100% coupon the total is zero and Stripe asks for no card at all (`payment_method_collection` is
+`if_required`), so a comp needs neither the test card nor a card form. Setting
+`billing.checkout.coupon` to that coupon's id applies it for everybody and removes the field, which
+is how the alpha runs free.
 
 ## 6. Check what the payment did
 

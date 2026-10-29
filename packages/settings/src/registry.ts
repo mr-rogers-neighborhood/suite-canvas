@@ -115,6 +115,14 @@ export const SETTINGS: readonly SettingDefinition[] = [
     help: "Price ids per tier for live mode.",
   },
   {
+    key: "billing.checkout.coupon",
+    kind: "string",
+    env: "STRIPE_CHECKOUT_COUPON",
+    fallback: "",
+    group: "billing",
+    help: "A Stripe coupon applied to every checkout, so a launch discount needs no code. Empty leaves the promotion-code field.",
+  },
+  {
     key: "mail.smtp.host",
     kind: "string",
     env: "SUITE_SMTP_HOST",

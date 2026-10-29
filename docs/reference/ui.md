@@ -38,6 +38,20 @@ panel on its plan tab. The copy says a plan is what puts a workspace in an accou
 that is now true; the earlier sentence invited the reader to open one while signed in, which
 the claim refuses with `plan-required` and which left the workspace exactly where it was.
 
+The account list is read again when the tab comes back and when the account panel closes,
+because those are the two moments a payment made elsewhere becomes visible here. One read at
+mount left the notice and every row describing the account as it was before a checkout.
+
+### The alpha notice
+
+`apps/canvas/src/launcher/AlphaNotice.tsx` is the modal a first visit lands on, before the list
+is usable: what alpha means, what a subscription buys, that the source goes public and can then
+be run by its reader, that an unclaimed workspace is this browser's copy, and that a card is
+never asked for while the total is zero. Dismissing it, or taking its **See plans** button, is
+remembered in `localStorage` under `suite.alpha-notice.v1` (`alphaNotice.ts`), so it appears once
+per browser rather than once per account. Storage that refuses to write shows it again, which is
+the harmless direction.
+
 ## The library
 
 The drawer has four tabs: `inbox` (cards on no board), `cards`, `boards` and `trash`. `apps/canvas/src/library/libraryFilters.ts` defines the facets: type, tag and section, with OR inside a facet and AND across facets. The section facet appears only when the drawer is scoped to one board, because a section title means nothing outside its board.

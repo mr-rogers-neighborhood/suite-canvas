@@ -59,8 +59,11 @@ Stripe's page and nothing is charged. A redemption limit and an expiry belong on
 (`--max-redemptions`, `--expires-at`), not in this process, which is the same reason the tier table
 holds price ids and no prices.
 
-The alpha deployment carries `suite-alpha-free` (100% off, forever) and the code `SUITE-ALPHA` in
-both universes, as a working example of that pair.
+Where those two objects live is the operator's business, and nowhere else. A published deployment's
+coupon id and promotion code are not in this repository and do not belong in it: a 100%-off code that
+needs no card is a free plan for anybody who reads the page, and this file is public. Keep the ids in
+Stripe, hand the string to the person you mean to comp, and set `--max-redemptions` and
+`--expires-at` on the code so a leak is bounded rather than permanent.
 
 A licence is a signed token. A self-hosted relay reads one from `SUITE_LICENCE` and verifies it
 at boot (ADR-0081);

@@ -193,10 +193,11 @@
 }
 
 # The hosted app: the same surface as above, plus the control plane. Accounts
-# (`/api/auth/*`), billing (`/api/billing/*`) and the Stripe webhook
-# (`/stripe/*`) are answered by the second process, which owns Postgres; every
-# other path stays on the relay. The specific matchers are declared first and
-# are also the longer paths, so either ordering rule Caddy applies picks them.
+# (`/api/auth/*`, which includes the Stripe webhook at
+# `/api/auth/stripe/webhook`) and billing (`/api/billing/*`) are answered by the
+# second process, which owns Postgres; every other path stays on the relay. The
+# specific matchers are declared first and are also the longer paths, so either
+# ordering rule Caddy applies picks them.
 {$SUITE_APP_HOST:app.suite.run} {
 	encode zstd gzip
 	import suite_security_headers
@@ -273,11 +274,6 @@
 	# below, which would otherwise serve it an HTML page. It answers only to a
 	# bearer token, and 503 when `SUITE_ADMIN_TOKEN` is unset.
 	handle /admin/admissions {
-		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
-	}
-
-	# Stripe posts here. The signature is verified by the service, not here.
-	handle /stripe/* {
 		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
 	}
 

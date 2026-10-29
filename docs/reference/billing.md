@@ -458,7 +458,37 @@ device keeps editing its local copy.
 | --- | --- |
 | Control plane | The auth module with `createBillingPlugin`, plus the billing module; `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_TIERS` |
 | Postgres | The control-plane database: the plugin's `subscription` row is the record of what is paid |
-| Stripe webhook | `https://<control-plane>/api/auth/stripe/webhook`, subscribed to the subscription and invoice events |
+| Stripe webhook | `https://<app host>/api/auth/stripe/webhook`, one endpoint per mode; see below |
+
+### The webhook endpoint
+
+One endpoint per Stripe mode, because an endpoint created in test mode does not exist in
+live. Both answer on the app host, and the path is the plugin's and nothing else's:
+
+| Setting in the Stripe dashboard | Value |
+| --- | --- |
+| Destination type | **Webhook endpoint** (not EventBridge, not a thin-event destination) |
+| Endpoint URL, test mode | `https://app.suite.run/api/auth/stripe/webhook` |
+| Endpoint URL, live mode | the same path on the live host |
+| Payload style | **Snapshot**, the full event object |
+| Events | `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted` |
+
+Snapshot because the plugin verifies with `stripe.webhooks.constructEvent` and then reads
+`event.data.object` directly; a thin event carries only an id and would need a fetch the
+plugin does not make. Those four events are the whole switch in `@better-auth/stripe`:
+anything else is acknowledged and ignored, so subscribing to invoices, payment intents or
+customers adds deliveries whose bodies do nothing here. A renewal arrives as
+`customer.subscription.updated` (the period end moved) and a cancellation as
+`customer.subscription.deleted`, so neither needs an invoice event.
+
+After creating the endpoint, copy its **signing secret** (`whsec_…`) into the row for that
+mode: `billing.stripe.webhookSecret.test` or `.live` in the panel, which is
+`STRIPE_WEBHOOK_SECRET` and `STRIPE_WEBHOOK_SECRET_LIVE` in the environment. A secret from
+the other mode fails the signature check by design, so a test event delivered to a live
+deployment is refused rather than writing a licence.
+
+The path is the plugin's. There is no `/stripe/*` route and never was on the control plane,
+so an endpoint pointed there answers `404 not_found` and every delivery fails.
 
 The plugin creates its own tables. Migration `0003_billing.sql` in `services/auth/sql`
 declared `billing_event` and `billing_customer` for the retired hand-written billing

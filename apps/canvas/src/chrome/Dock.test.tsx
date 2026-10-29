@@ -1,7 +1,8 @@
 import type { CardType } from "@suite/graph";
-import { PORTAL_TYPE_ID } from "@suite/graph";
+import { PORTAL_TYPE_ID, TUTORIAL_TYPE_ID } from "@suite/graph";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { WHITEBOARD_TYPE_ID } from "../cards/whiteboard";
 import { Dock } from "./Dock";
 
 const types: CardType[] = [
@@ -48,6 +49,39 @@ describe("Dock portal creation", () => {
     expect(screen.getByTestId("dock-type-note")).toBeInTheDocument();
     expect(screen.queryByTestId(`dock-type-${PORTAL_TYPE_ID}`)).toBeNull();
     expect(screen.getByTestId("dock-new-portal")).toBeInTheDocument();
+  });
+
+  it("should keep every behaviour type out of the new-card list", () => {
+    // Boot creates the sketch and tour types, so they are present in the document
+    // whether or not a sketch exists. A sketch has its own row and a tour has none,
+    // so neither may read as "author a card of this type".
+    mount({
+      types: [
+        ...types,
+        {
+          id: WHITEBOARD_TYPE_ID,
+          name: "Sketch",
+          glyph: "\u270e",
+          createdAt: 0,
+          updatedAt: 0,
+          fields: [],
+        },
+        {
+          id: TUTORIAL_TYPE_ID,
+          name: "Tour",
+          glyph: "T",
+          createdAt: 0,
+          updatedAt: 0,
+          fields: [],
+        },
+      ],
+      onCreateSketch: () => {},
+    });
+    fireEvent.click(screen.getByTestId("dock-new-card"));
+
+    expect(screen.queryByTestId(`dock-type-${WHITEBOARD_TYPE_ID}`)).toBeNull();
+    expect(screen.queryByTestId(`dock-type-${TUTORIAL_TYPE_ID}`)).toBeNull();
+    expect(screen.getByTestId("dock-new-sketch")).toBeInTheDocument();
   });
 
   it("should list the other boards as portal targets", () => {

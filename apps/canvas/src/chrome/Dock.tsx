@@ -1,5 +1,5 @@
 import type { Board, CardType } from "@suite/graph";
-import { PORTAL_TYPE_ID } from "@suite/graph";
+import { isBehaviourType } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
 import { PORTAL_GLYPH } from "../cards/portal";
 import {
@@ -112,9 +112,11 @@ export function Dock({
     setPortalOpen(false);
   };
 
-  // A portal always needs a target, so the seed's portal type never appears in
-  // the ordinary "new card" list: creating one without a board is meaningless.
-  const creatableTypes = types.filter((type) => type.id !== PORTAL_TYPE_ID);
+  // A behaviour is not a type a reader authors a card of: a portal always needs a
+  // target board, and a sketch and a tour have their own doors. They are created
+  // at boot so a document always knows them, which is exactly why they have to be
+  // filtered out here rather than merely absent.
+  const creatableTypes = types.filter((type) => !isBehaviourType(type.id));
   /** The sketch type's glyph, and a section's dashed frame, drawn as text. */
   const SKETCH_GLYPH = "\u270e";
   const SECTION_GLYPH = "\u25a2";

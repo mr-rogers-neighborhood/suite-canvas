@@ -11,6 +11,7 @@ import {
   SKETCH_TYPE_PLURAL,
   setSketchDisplay,
   sketchDisplayField,
+  toDrawingElement,
   WHITEBOARD_TYPE_ID,
 } from "./whiteboard";
 
@@ -170,5 +171,51 @@ describe("sketch stroke batching", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("toDrawingElement", () => {
+  it("should drop the keys Excalidraw leaves undefined and keep the rest", () => {
+    // A real freedraw element carries `customData: undefined`; the drawing schema
+    // refuses an explicit undefined, so this is what makes a stroke storable.
+    const element = {
+      id: "stroke-1",
+      type: "freedraw",
+      x: 10,
+      y: 20,
+      width: 30,
+      height: 40,
+      strokeColor: "#1e1e1e",
+      customData: undefined,
+      roundness: { type: 3, sharpness: undefined },
+      points: [
+        [0, 0],
+        [5, 5],
+      ],
+    } as unknown as DrawingElement;
+
+    expect(toDrawingElement(element)).toEqual({
+      id: "stroke-1",
+      type: "freedraw",
+      x: 10,
+      y: 20,
+      width: 30,
+      height: 40,
+      strokeColor: "#1e1e1e",
+      roundness: { type: 3 },
+      points: [
+        [0, 0],
+        [5, 5],
+      ],
+    });
+  });
+
+  it("should leave a class instance alone so the schema can refuse it", () => {
+    class Opaque {
+      readonly kind = "opaque";
+    }
+    const element = { id: "a", type: "text", x: 0, y: 0, width: 1, height: 1, meta: new Opaque() };
+
+    expect(toDrawingElement(element as unknown as DrawingElement).meta).toBe(element.meta);
   });
 });

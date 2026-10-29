@@ -84,9 +84,13 @@ test("the menus and the library say Sketch, never Whiteboard", async ({ page }) 
   // A sketch is a behaviour, not a facet: offering it in the type row would read as
   // "author your own Sketch type", which the model forbids (ADR-0011 amendment).
   await expect(page.getByTestId("facet-type-whiteboard")).toHaveCount(0);
-  // It is still a card, listed in Cards like any other.
+  // It is still a card, listed in Cards like any other. The row is found by the
+  // node's own id rather than by counting rows, because the list also carries the
+  // board the cards are on.
   await expect(page.getByTestId("library-tab-cards")).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator("li[data-row-id]")).toHaveCount(3);
+  const sketchId = await sketchNode(page).getAttribute("data-id");
+  if (!sketchId) throw new Error("the sketch node has no id");
+  await expect(page.locator(`li[data-row-id="${sketchId}"]`)).toHaveCount(1);
 });
 
 test("seamless drops the frame the framed card keeps", async ({ page }) => {
@@ -172,4 +176,114 @@ test("a single click opens the sketch in the one inspector", async ({ page }) =>
   await expect(page.getByTestId("card-focus")).toBeVisible();
   await expect(page.getByTestId("sketch-focus")).toBeVisible();
   await expect(inspector).toHaveCount(0);
+});
+
+/** The interactive canvas Excalidraw listens on, once the lazy surface is up. */
+const sketchCanvas = (page: Page) => page.locator(".whiteboard-surface canvas.excalidraw__canvas");
+
+/** Draws one freehand stroke across the middle of the open surface. */
+async function drawStroke(page: Page): Promise<void> {
+  const surface = page.getByTestId("whiteboard-surface");
+  await expect(surface).toBeVisible();
+  // The Draw tool, then a drag on the interactive canvas: Excalidraw starts the
+  // stroke on pointer-down and lands it on pointer-up.
+  await page.getByTitle(/^Draw — /).click();
+  const canvas = sketchCanvas(page).last();
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("the sketch canvas has no box");
+  const from = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.4 };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 60, from.y + 10, { steps: 4 });
+  await page.mouse.move(from.x + 120, from.y + 50, { steps: 4 });
+  await page.mouse.up();
+}
+
+test("a stroke drawn in the surface is on the card and survives a reload", async ({ page }) => {
+  await page.goto(workspaceUrl("draw"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await createSketch(page);
+
+  // A new sketch is empty, and says so.
+  await sketchNodes(page).dblclick();
+  await expect(page.getByTestId("sketch-focus")).toBeVisible();
+  await expect(page.getByTestId("whiteboard-surface")).toHaveAttribute("data-elements", "0");
+  await drawStroke(page);
+  // The commit is one stroke per gesture, batched on pointer-up.
+  await expect(page.getByTestId("whiteboard-surface")).toHaveAttribute("data-elements", "1");
+
+  await page.getByTestId("card-focus-close").click();
+  await expect(page.getByTestId("card-focus")).toHaveCount(0);
+
+  // The face is a preview of the document, not of the surface that just closed.
+  const preview = page.getByTestId("whiteboard-preview");
+  await expect(preview).not.toHaveAttribute("data-empty", "true");
+  await expect(sketchFace(page).locator(".whiteboard-card__count")).toHaveText("1");
+
+  // And the document is what carries it: a reload reads the drawing back.
+  await page.reload();
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(page.getByTestId("whiteboard-preview")).not.toHaveAttribute("data-empty", "true");
+  await expect(sketchFace(page).locator(".whiteboard-card__count")).toHaveText("1");
+
+  // Reopening the surface hands the stored stroke back to Excalidraw.
+  await sketchNodes(page).dblclick();
+  await expect(page.getByTestId("whiteboard-surface")).toHaveAttribute("data-elements", "1");
+});
+
+/** A 1x1 PNG: enough for Excalidraw to take a picture, and for us to store one. */
+const PNG_1X1 = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+/**
+ * Excalidraw asks the File System Access API for a picture, which Playwright
+ * cannot intercept the way it intercepts a file input, so the picker is answered
+ * with one small PNG before the app loads.
+ */
+async function stubFilePicker(page: Page): Promise<void> {
+  await page.addInitScript((base64: string) => {
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+    const file = new File([bytes], "dot.png", { type: "image/png" });
+    Object.defineProperty(window, "showOpenFilePicker", {
+      configurable: true,
+      value: async () => [{ kind: "file", name: "dot.png", getFile: async () => file }],
+    });
+  }, PNG_1X1.toString("base64"));
+}
+
+/** The image tool, then the picture the picker hands back. */
+async function insertPicture(page: Page): Promise<void> {
+  await page.getByTitle(/^Insert image/).click();
+  await expect(page.getByTestId("whiteboard-surface")).toHaveAttribute("data-elements", "1");
+  // The bytes are stored beside the document, and the surface holds them.
+  await expect(page.getByTestId("whiteboard-surface")).toHaveAttribute("data-files", "1");
+}
+
+test("a picture in a sketch is stored beside the document and comes back", async ({ page }) => {
+  await stubFilePicker(page);
+  await page.goto(workspaceUrl("image"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await createSketch(page);
+
+  await sketchNodes(page).dblclick();
+  await expect(page.getByTestId("sketch-focus")).toBeVisible();
+  await insertPicture(page);
+
+  // The picture is on the card, and the document holds an id rather than bytes.
+  await expect(sketchFace(page).locator(".whiteboard-card__count")).toHaveText("1");
+
+  await page.getByTestId("card-focus-close").click();
+  await expect(page.getByTestId("card-focus")).toHaveCount(0);
+
+  // A reload starts from the document and this browser's copy of the bytes, which
+  // is the same promise a pasted image keeps: the surface has the picture back, not
+  // just an element pointing at one it cannot draw.
+  await page.reload();
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await sketchNodes(page).dblclick();
+  const surface = page.getByTestId("whiteboard-surface");
+  await expect(surface).toHaveAttribute("data-elements", "1");
+  await expect(surface).toHaveAttribute("data-files", "1");
 });

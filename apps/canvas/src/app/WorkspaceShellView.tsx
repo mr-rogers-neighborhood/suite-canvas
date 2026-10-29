@@ -680,10 +680,7 @@ export function WorkspaceShellView({
             activeBoardId={activeBoardId}
             onCreateCard={createCard}
             onCreatePortal={createPortal}
-            // A sketch does not save or render yet, so the dock's row is a
-            // development-only door: the registry hides the command in a production
-            // build, and passing no handler keeps the row out of it entirely.
-            {...(import.meta.env.DEV ? { onCreateSketch: createSketch } : {})}
+            onCreateSketch={createSketch}
             onCreateSection={createSection}
             onCreateBoardPortal={createBoardPortal}
             onManageTypes={openTypeSettings}

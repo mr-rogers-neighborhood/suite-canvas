@@ -1,4 +1,10 @@
-import type { Card, CardType, FieldDefinition, WorkspaceDocument } from "@suite/graph";
+import type {
+  Card,
+  CardType,
+  DrawingElement,
+  FieldDefinition,
+  WorkspaceDocument,
+} from "@suite/graph";
 
 /**
  * The built-in type id is stable so the renderer can recognise the card. The
@@ -180,4 +186,32 @@ export function createSketchCommitBatcher<T>(
       return pending !== null;
     },
   };
+}
+
+/**
+ * Drops the keys Excalidraw writes as `undefined`.
+ *
+ * Excalidraw builds an element with every optional key present and `undefined`
+ * for the ones it did not use, `customData` being the usual one. The drawing
+ * schema refuses an explicit `undefined`, because the CRDT cannot store one and a
+ * reader would get a key it cannot tell from an absent one. So the boundary drops
+ * those keys, and nothing else about the element is touched.
+ */
+function withoutUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutUndefined);
+  if (value === null || typeof value !== "object") return value;
+  const prototype = Object.getPrototypeOf(value);
+  // Something with its own prototype is not ours to rewrite: let the schema say so.
+  if (prototype !== Object.prototype && prototype !== null) return value;
+  const copy: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === undefined) continue;
+    copy[key] = withoutUndefined(entry);
+  }
+  return copy;
+}
+
+/** One Excalidraw element as the graph will store it. */
+export function toDrawingElement(element: DrawingElement): DrawingElement {
+  return withoutUndefined(element) as DrawingElement;
 }

@@ -15,6 +15,7 @@ import {
 import { type ConfigEnv, DATABASE_URL_VARIABLE } from "../config.js";
 import { createLogger, type Logger, REQUEST_ID_HEADER } from "../logging.js";
 import type { RouteModule } from "../routes.js";
+import { stripeCredentials } from "./auth-billing.js";
 
 /**
  * The billing routes the Stripe plugin does not own.
@@ -43,6 +44,14 @@ const MAX_ID_LENGTH = 128;
 export interface BillingModuleDeps {
   entitlements: OrganizationEntitlements;
   tiers: TierTable;
+  /**
+   * Which Stripe universe these tiers belong to.
+   *
+   * The catalogue is published from the *active* mode's price table, because a test price
+   * id in a live checkout opens nothing. It rides in the response so a surface can say
+   * "these are test cards" instead of leaving the reader to guess who is being charged.
+   */
+  mode: "test" | "live";
 }
 
 export interface BillingModuleOptions {
@@ -135,6 +144,7 @@ export function createBillingModule(options: BillingModuleOptions): RouteModule 
 
     if (path === PLANS_PATH) {
       sendJson(response, 200, {
+        mode: resolved.mode,
         plans: planList(resolved.tiers).map((plan) => ({
           tier: plan.name,
           priceId: plan.priceId,
@@ -205,7 +215,10 @@ export function createBillingModule(options: BillingModuleOptions): RouteModule 
 export async function billingDepsFromEnvironment(
   env: ConfigEnv = process.env,
 ): Promise<BillingModuleDeps> {
-  const parsed = parseTierTable(env.STRIPE_PRICE_TIERS);
+  // The active mode's table, not the test one: a deployment running live must not publish
+  // a catalogue of test price ids, and the panel reads the same table the plugin charges.
+  const credentials = stripeCredentials(env);
+  const parsed = parseTierTable(credentials.priceTiers);
   if (parsed.isErr()) throw parsed.error;
   const tiers = parsed.value;
 
@@ -214,7 +227,11 @@ export async function billingDepsFromEnvironment(
     throw new BillingError("not-configured", `${DATABASE_URL_VARIABLE} is not set`);
   }
   const subscriptions = await createPostgresSubscriptions({ connectionString });
-  return { tiers, entitlements: createEntitlementReader({ subscriptions, tiers }) };
+  return {
+    tiers,
+    mode: credentials.mode,
+    entitlements: createEntitlementReader({ subscriptions, tiers }),
+  };
 }
 
 /**

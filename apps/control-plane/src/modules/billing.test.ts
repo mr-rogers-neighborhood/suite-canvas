@@ -35,7 +35,9 @@ async function start(options: {
   next?: RouteModule;
 }): Promise<string> {
   const billing = createBillingModule({
-    resolve: options.resolve ?? (async () => ({ entitlements: ENTITLEMENT, tiers: tiers() })),
+    resolve:
+      options.resolve ??
+      (async () => ({ entitlements: ENTITLEMENT, tiers: tiers(), mode: "test" as const })),
     logger: createLogger({ level: "error", write: () => undefined }),
   });
   const plane = createControlPlane({
@@ -96,7 +98,10 @@ describe("billing module", () => {
 
     const response = await post(`${url}/api/billing/plans`);
 
+    // This body is the contract `apps/canvas/src/auth/billing.test.ts` reads. The two
+    // drifted once, and the panel showed an empty catalogue on a deployment selling two.
     expect(await response.json()).toEqual({
+      mode: "test",
       plans: [
         {
           tier: "solo",

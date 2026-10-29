@@ -36,11 +36,26 @@ export const BILLING_SERVICE_PATH = "/api/billing";
 export const PLAN_CATALOGUE_PATH = `${BILLING_SERVICE_PATH}/plans`;
 export const ENTITLEMENT_PATH = `${BILLING_SERVICE_PATH}/entitlement`;
 
-/** One plan the deployment sells. The server's answer, never a client table. */
+/**
+ * One plan the deployment sells. The server's answer, never a client table.
+ *
+ * `name` is the identifier checkout takes, which is the tier label the plugin was built
+ * with. The control plane publishes it under `tier`, and reading only `name` is how this
+ * client came to report an empty catalogue on a deployment that sells two plans.
+ */
 export interface BillingPlan {
   name: string;
+  /** The Stripe price behind it, when the server sends one. Never sent to Stripe by us. */
+  priceId: string | null;
   /** Limits that come with the price, when the server sends them. */
   limits: Readonly<Record<string, number>>;
+}
+
+/** What the catalogue says about the deployment itself. */
+export interface PlanCatalogue {
+  plans: BillingPlan[];
+  /** Which Stripe universe is being spent, so a surface can say so. */
+  mode: "test" | "live";
 }
 
 export interface SubscriptionView {
@@ -140,7 +155,7 @@ async function call<T>(
  * one table that also decides every limit, so a price a customer can pick is a
  * price whose caps the relay will enforce.
  */
-export function listPlans(options: BillingTarget = {}): Promise<BillingResult<BillingPlan[]>> {
+export function listPlans(options: BillingTarget = {}): Promise<BillingResult<PlanCatalogue>> {
   return call(
     PLAN_CATALOGUE_PATH,
     {},
@@ -155,21 +170,38 @@ export function listPlans(options: BillingTarget = {}): Promise<BillingResult<Bi
       // The plugin answers `{ subscriptions }`; a deployment may add `plans`.
       const plans = Array.isArray(raw)
         ? raw.flatMap((entry): BillingPlan[] => {
-            if (typeof entry === "string") return [{ name: entry, limits: {} }];
+            if (typeof entry === "string") return [{ name: entry, priceId: null, limits: {} }];
             if (typeof entry !== "object" || entry === null) return [];
             const plan = entry as Record<string, unknown>;
-            const name = typeof plan.name === "string" ? plan.name : null;
-            if (name === null) return [];
+            // `tier` is what the control plane publishes and `name` is what an older
+            // inline catalogue used. Both mean "the identifier checkout takes", and the
+            // reader accepting only one of them is how two plans became none.
+            const name =
+              typeof plan.tier === "string"
+                ? plan.tier
+                : typeof plan.name === "string"
+                  ? plan.name
+                  : null;
+            if (name === null || name.trim().length === 0) return [];
             const limits: Record<string, number> = {};
             if (typeof plan.limits === "object" && plan.limits !== null) {
               for (const [key, value] of Object.entries(plan.limits as Record<string, unknown>)) {
                 if (typeof value === "number" && Number.isFinite(value)) limits[key] = value;
               }
             }
-            return [{ name, limits }];
+            return [
+              {
+                name,
+                priceId: typeof plan.priceId === "string" ? plan.priceId : null,
+                limits,
+              },
+            ];
           })
         : [];
-      return { ok: true, value: plans };
+      // Anything that is not `live` is test: the same rule `stripeMode` applies on the
+      // server, so a deployment that never set the mode cannot claim to charge cards.
+      const mode = record.mode === "live" ? "live" : "test";
+      return { ok: true, value: { plans, mode } };
     },
     options,
   );

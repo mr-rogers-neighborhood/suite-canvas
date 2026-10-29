@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useAccountStore } from "../auth/useAccountStore";
 import { readAccountWorkspaces } from "../session/accountWorkspaces";
 import { configureSession, type SessionConfig } from "../session/session";
 import {
@@ -520,9 +521,27 @@ describe("WorkspaceLauncher recents", () => {
 
     const prompt = await screen.findByTestId("launcher-bring-prompt");
     expect(prompt).toHaveTextContent("saved on this device only");
+    // The sentence used to promise that opening one was enough. Since the plan became
+    // the thing that puts a workspace in an account, it would be an invitation to a
+    // refusal: `plan-required`, and the workspace stays local.
+    expect(prompt).toHaveTextContent("A plan is what puts them in your account");
+    expect(prompt).not.toHaveTextContent("Open one while signed in");
     expect(screen.getByTestId(`launcher-sync-${WORKSPACE}`)).toHaveTextContent("On this device");
 
     fireEvent.click(screen.getByTestId("launcher-bring-dismiss"));
     expect(screen.queryByTestId("launcher-bring-prompt")).toBeNull();
+  });
+
+  it("opens the plan tab from the local-only notice, because a plan is the obstacle", async () => {
+    seedRecent();
+    readAccount.mockResolvedValueOnce({ workspaces: [], organizations: [] });
+    useAccountStore.setState({ panelOpen: false, panelTab: "account" });
+    render(<WorkspaceLauncher />);
+
+    fireEvent.click(await screen.findByTestId("launcher-bring-plans"));
+
+    const account = useAccountStore.getState();
+    expect(account.panelOpen).toBe(true);
+    expect(account.panelTab).toBe("plan");
   });
 });

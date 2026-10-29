@@ -142,6 +142,30 @@ the customer keeps minting.
 the row turns `canceled` when it ends. `past_due` keeps the plan only until `periodEnd`,
 which bounds the grace window to the period Stripe last collected for.
 
+## The catalogue
+
+`POST /api/billing/plans` answers the price list and the mode that produced it:
+
+```json
+{"mode":"test","plans":[{"tier":"personal","priceId":"price_…","limits":{"workspaces":3,…}}]}
+```
+
+Four fields, and every one of them has been a bug when it was missing. `tier` is the
+identifier checkout takes, because it is the plan name the Stripe plugin was built with;
+`priceId` is Stripe's, so no client hardcodes a price; `limits` is the tier table the relay
+will enforce; and `mode` is what lets a surface say whether these are test cards. The table
+is read from the **active** mode (`STRIPE_PRICE_TIERS` in test, `_LIVE` in live), because a
+test price id in a live checkout opens nothing.
+
+The canvas reads the same body through `listPlans` in `apps/canvas/src/auth/billing.ts`. It
+once read only `name`, dropped every plan, and reported an empty catalogue with `ok: true`,
+which is how a deployment selling two plans showed none; both sides now assert one fixture
+copied between them.
+
+When the catalogue says `mode: "test"`, the Plan tab states it plainly: these are Stripe test
+cards and no money moves. Every reader sees that, because the person typing the card number
+is the one who needs it.
+
 ## What the Plan tab shows
 
 `apps/canvas/src/auth/PlanPanel.tsx` reads the entitlement, the catalogue and the subscription

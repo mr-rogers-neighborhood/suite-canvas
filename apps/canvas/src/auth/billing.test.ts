@@ -31,19 +31,41 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/**
+ * The exact body `POST /api/billing/plans` answers, copied from the control plane's own
+ * test (`apps/control-plane/src/modules/billing.test.ts`). The two sides drifted once:
+ * the server published `tier`, this reader wanted `name`, every plan was dropped, and the
+ * panel showed an empty catalogue on a deployment that sells two. One fixture, asserted
+ * on both sides, is what keeps that from coming back.
+ */
+const SERVER_CATALOGUE = {
+  mode: "test",
+  plans: [
+    {
+      tier: "solo",
+      priceId: "price_solo",
+      limits: { workspaces: 3, documentBytes: 1_000, attachmentBytes: 2_000 },
+    },
+  ],
+};
+
 describe("plan list", () => {
-  it("reads the plans the deployment publishes", async () => {
-    const send = vi.fn(async () =>
-      json({ plans: [{ name: "team", limits: { seats: 5 } }, "solo"] }),
-    );
+  it("reads the catalogue the control plane publishes", async () => {
+    const send = vi.fn(async () => json(SERVER_CATALOGUE));
     const result = await listPlans({ base: BASE, serviceBase: SERVICE, fetch: send });
 
     expect(result).toEqual({
       ok: true,
-      value: [
-        { name: "team", limits: { seats: 5 } },
-        { name: "solo", limits: {} },
-      ],
+      value: {
+        mode: "test",
+        plans: [
+          {
+            name: "solo",
+            priceId: "price_solo",
+            limits: { workspaces: 3, documentBytes: 1_000, attachmentBytes: 2_000 },
+          },
+        ],
+      },
     });
     expect(send).toHaveBeenCalledTimes(1);
     expect((send.mock.calls as unknown as [string, RequestInit][])[0]?.[0]).toBe(
@@ -51,11 +73,27 @@ describe("plan list", () => {
     );
   });
 
-  it("is an empty list, not a failure, when the deployment sells nothing", async () => {
+  it("still reads a name-shaped catalogue, and turns anything but live into test", async () => {
+    const send = vi.fn(async () =>
+      json({ plans: [{ name: "team", limits: { seats: 5 } }, "solo"] }),
+    );
+    expect(await listPlans({ base: BASE, serviceBase: SERVICE, fetch: send })).toEqual({
+      ok: true,
+      value: {
+        mode: "test",
+        plans: [
+          { name: "team", priceId: null, limits: { seats: 5 } },
+          { name: "solo", priceId: null, limits: {} },
+        ],
+      },
+    });
+  });
+
+  it("is an empty catalogue, not a failure, when the deployment sells nothing", async () => {
     const send = vi.fn(async () => json({}));
     expect(await listPlans({ base: BASE, serviceBase: SERVICE, fetch: send })).toEqual({
       ok: true,
-      value: [],
+      value: { plans: [], mode: "test" },
     });
   });
 

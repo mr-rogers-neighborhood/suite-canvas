@@ -3,6 +3,7 @@ import {
   type BillingPlan,
   listPlans,
   openBillingPortal,
+  type PlanCatalogue,
   readEntitlement,
   readSubscription,
   type SubscriptionView,
@@ -46,6 +47,7 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
   // authoritative one (a cancelled subscription answers `free` there immediately).
   const [view, setView] = useState<EntitlementView | null>(entitlement ?? currentEntitlement());
   const [plans, setPlans] = useState<BillingPlan[]>([]);
+  const [mode, setMode] = useState<PlanCatalogue["mode"] | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionView | null>(null);
   const [load, setLoad] = useState<Load>("idle");
   const [busy, setBusy] = useState<string | null>(null);
@@ -78,7 +80,10 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
         refreshesAt: null,
       });
     }
-    if (listed.ok) setPlans(listed.value);
+    if (listed.ok) {
+      setPlans(listed.value.plans);
+      setMode(listed.value.mode);
+    }
     if (current.ok) setSubscription(current.value);
     // A refusal is worth a sentence, not an empty page: the account service being down
     // and a deployment that sells nothing look identical once the list is just empty.
@@ -189,6 +194,18 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
           {subscription.seats === null ? "" : `, ${subscription.seats} seat(s)`}
         </p>
       )}
+
+      {mode === "test" ? (
+        // The one thing a person about to type a card number needs to know: whose cards
+        // these are. A test-mode deployment charges nothing, and saying so is cheaper
+        // than the support question it prevents.
+        <p
+          data-testid="plan-test-mode"
+          className="mt-3 rounded-lg border border-[var(--hairline)] px-2 py-1.5 text-[11px] text-[var(--ink-muted)]"
+        >
+          Test mode: these are Stripe test cards and no money moves.
+        </p>
+      ) : null}
 
       {entitlement === undefined && load === "loading" ? (
         <p className="mt-3 text-[var(--ink-muted)]">Reading the plans…</p>

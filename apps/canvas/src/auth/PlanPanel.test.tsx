@@ -80,22 +80,37 @@ describe("the plan surface", () => {
     expect(screen.queryByText(/sets no limits/u)).not.toBeInTheDocument();
   });
 
+  it("says the cards are Stripe's test cards when the deployment is in test mode", async () => {
+    listPlans.mockResolvedValue({
+      ok: true,
+      value: { mode: "test", plans: [{ name: "personal", priceId: null, limits: {} }] },
+    });
+    render(<PlanPanel />);
+
+    expect(await screen.findByTestId("plan-test-mode")).toHaveTextContent("no money moves");
+  });
+
   it("says the plan appears once signed in", () => {
     render(<PlanPanel entitlement={null} />);
     expect(screen.getByTestId("plan-tier")).toHaveTextContent("once you are signed in");
   });
 
   it("lists the plans a deployment sells", async () => {
-    listPlans.mockResolvedValue({ ok: true, value: [{ name: "personal", limits: {} }] });
+    listPlans.mockResolvedValue({
+      ok: true,
+      value: { mode: "live", plans: [{ name: "personal", priceId: null, limits: {} }] },
+    });
     render(<PlanPanel />);
 
     expect(await screen.findByTestId("plan-checkout-personal")).toHaveTextContent(
       "Choose personal",
     );
+    // A live deployment charges cards, so nothing here may claim otherwise.
+    expect(screen.queryByTestId("plan-test-mode")).not.toBeInTheDocument();
   });
 
   it("names the price table when a deployment sells nothing", async () => {
-    listPlans.mockResolvedValue({ ok: true, value: [] });
+    listPlans.mockResolvedValue({ ok: true, value: { mode: "test", plans: [] } });
     render(<PlanPanel />);
 
     expect(await screen.findByTestId("plan-catalogue-empty")).toHaveTextContent(
@@ -114,14 +129,17 @@ describe("the plan surface", () => {
     const unavailable = await screen.findByTestId("plan-unavailable");
     expect(unavailable).toHaveTextContent("did not answer");
 
-    listPlans.mockResolvedValue({ ok: true, value: [{ name: "personal", limits: {} }] });
+    listPlans.mockResolvedValue({
+      ok: true,
+      value: { mode: "test", plans: [{ name: "personal", priceId: null, limits: {} }] },
+    });
     fireEvent.click(screen.getByTestId("plan-retry"));
 
     await waitFor(() => expect(screen.getByTestId("plan-checkout-personal")).toBeInTheDocument());
   });
 
   it("offers the portal only once there is a customer to open it for", async () => {
-    listPlans.mockResolvedValue({ ok: true, value: [] });
+    listPlans.mockResolvedValue({ ok: true, value: { mode: "test", plans: [] } });
     const without = render(<PlanPanel />);
     expect(await screen.findByTestId("plan-no-customer")).toBeInTheDocument();
     expect(screen.queryByTestId("plan-portal")).not.toBeInTheDocument();

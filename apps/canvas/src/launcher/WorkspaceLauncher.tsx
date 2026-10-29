@@ -1,6 +1,7 @@
 import { STARTER_TEMPLATES, type WorkspaceTemplate } from "@suite/graph";
 import type { VaultFile } from "@suite/import-obsidian";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useAccountStore } from "../auth/useAccountStore";
 import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
 import { ToastLayer } from "../feedback/ToastLayer";
 import { toast } from "../feedback/toast";
@@ -620,8 +621,11 @@ export function WorkspaceLauncher() {
           </div>
 
           {/* A signed-in account that holds nothing, beside workspaces saved here, is
-              the one moment bringing them along is worth mentioning — and nothing is
-              moved until the workspace is opened, so this is an offer, not a migration. */}
+              the one moment bringing them along is worth mentioning. The sentence used to
+              say "open one while signed in", which stopped being true when a plan became
+              the thing that puts a workspace in an account: the claim answers
+              `plan-required` and the workspace stays where it is. So the notice says what
+              the obstacle is and carries the door to it. */}
           {account !== null &&
           account.workspaces.length === 0 &&
           recents.length > 0 &&
@@ -633,9 +637,17 @@ export function WorkspaceLauncher() {
               <div className="min-w-0 flex-1 text-[12px] leading-5">
                 <p className="font-medium">These are saved on this device only.</p>
                 <p className="text-[var(--ink-muted)]">
-                  Open one while signed in to add it to your account.
+                  A plan is what puts them in your account, on every device.
                 </p>
               </div>
+              <button
+                type="button"
+                data-testid="launcher-bring-plans"
+                className="shrink-0 rounded-lg bg-[var(--ink)] px-2.5 py-1 text-[11px] font-medium text-[var(--surface)]"
+                onClick={() => useAccountStore.getState().openPanel("plan")}
+              >
+                See plans
+              </button>
               <button
                 type="button"
                 data-testid="launcher-bring-dismiss"

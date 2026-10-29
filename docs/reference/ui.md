@@ -26,6 +26,18 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 
 The shell holds no document data. Selection, the active board, open tabs, filters, the open surface and the palette query live in `apps/canvas/src/store/useUiStore.ts`; the document arrives through `useWorkspaceSnapshot`.
 
+## The start screen
+
+`apps/canvas/src/launcher/WorkspaceLauncher.tsx` lists the workspaces this browser has opened,
+from `localStorage`, and asks `/api/account/workspaces` which of them the account already
+holds. Those are two different facts, and the row says which: on this device, or synced.
+
+A signed-in account that holds nothing, beside local workspaces, gets one notice about it.
+That notice carries the door to the only thing that fixes it: **See plans** opens the account
+panel on its plan tab. The copy says a plan is what puts a workspace in an account, because
+that is now true; the earlier sentence invited the reader to open one while signed in, which
+the claim refuses with `plan-required` and which left the workspace exactly where it was.
+
 ## The library
 
 The drawer has four tabs: `inbox` (cards on no board), `cards`, `boards` and `trash`. `apps/canvas/src/library/libraryFilters.ts` defines the facets: type, tag and section, with OR inside a facet and AND across facets. The section facet appears only when the drawer is scoped to one board, because a section title means nothing outside its board.

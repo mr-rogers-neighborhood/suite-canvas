@@ -27,9 +27,10 @@ Playwright stays outside the gate. No contributor or agent starts it by default,
 on a run. E2E runs when the owner asks for it, or at a commit milestone the owner names. A full
 `pnpm e2e` is a milestone action; when a run is asked for, an area script is the cheaper evidence.
 
-`ci.yml` in `.github/workflows` has valid YAML, and every run on this account ends in
-`startup_failure` with zero jobs, so no workflow is a check on `main`. A self-hosted runner or an
-entitlement change would make the workflow usable again.
+`ci.yml` in `.github/workflows` runs the same commands on a runner, and it is a second opinion rather
+than the gate: the local command above is what a change is measured by, and what a contributor is
+asked for. The workflow keeps Playwright off a push. A pull request gets the smoke tier, and the full
+suite is a manual dispatch, which is the milestone run described above.
 
 ## What each command runs
 

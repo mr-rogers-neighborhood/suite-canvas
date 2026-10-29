@@ -40,9 +40,9 @@ If workflows can start, `.github/workflows/release.yml` runs three jobs:
 | `image` | Builds the `runtime` target with `SUITE_VERSION=<tag>` and pushes `:<tag>`, `:sha-<12>` and `:latest` to GHCR | The build fails |
 | `release` | Opens a GitHub release whose body is the changelog section plus the image digest and a rollback link | `CHANGELOG.md` has no section for the version |
 
-Nothing on this page depends on either workflow file. Every workflow on this account still ends in
-`startup_failure` with zero jobs, which is account state rather than workflow content, so the release
-image is built on the host that serves it.
+Nothing on this page depends on either workflow file, and neither is the release: the image is built
+on the host that serves it, tagged there, and rolled back to by tag. That path needs no runner, no
+registry credential and no account entitlement, which is why it is the one written down.
 
 ### Build the image on the host
 

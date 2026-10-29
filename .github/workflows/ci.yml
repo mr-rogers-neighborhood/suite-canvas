@@ -1,8 +1,14 @@
 name: CI
 
-# Present and unrun: every workflow on this account ends in `startup_failure` with zero jobs, so
-# nothing here gates `main`. The local gate in docs/how-to/test-and-verify.md is authoritative.
-# Re-enabling needs a self-hosted runner or an entitlement change; the job logic below needs no edit.
+# The same gate the repository runs locally, on a runner, for a pull request.
+#
+# The local command in docs/how-to/test-and-verify.md stays authoritative: it is the one that runs on
+# a change before it is pushed, and the one a contributor is asked for. This workflow is a second pair
+# of eyes on a fork's pull request, where nobody has run anything yet.
+#
+# Playwright is deliberately not on a push. `quality` covers the unit, story and build work; a pull
+# request gets the smoke tier; the full suite is a dispatch, because it is the milestone action in the
+# how-to and not something a merge should spend twenty-five minutes on.
 on:
   push:
     branches: [main]
@@ -173,9 +179,9 @@ jobs:
 
   e2e:
     name: End-to-end (full)
-    # Runs on a push to main, a tag, the schedule, or a manual dispatch, and is unrun like every job
-    # here. A pull request would get the smoke tier; the unit and story suites cover the rest.
-    if: github.event_name != 'pull_request'
+    # Dispatch only. A push would run every spec on every merge, which is the cost Playwright is kept
+    # out of the local gate to avoid; a pull request gets the smoke tier instead.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

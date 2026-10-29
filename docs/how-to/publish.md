@@ -50,7 +50,8 @@ does not take it back.
 
 `.github/workflows/ci.yml` is in the tree. A workflow on a private repository with no runner minutes
 sits in `startup_failure` with zero jobs, so the local gate is the only real one until the repository
-is public: public repositories get hosted runners.
+is public: public repositories get hosted runners, and the first push after the flip is what proves
+the workflow file and the account are both in order.
 
 ```sh
 gh run list --limit 5

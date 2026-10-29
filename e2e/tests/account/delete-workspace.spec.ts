@@ -64,10 +64,11 @@ test("requires the exact name, then forgets the workspace in this browser", asyn
   await expect(cardByTitle(page, "Doomed note")).toHaveCount(1);
 
   await openDeleteDialog(page);
-  // The dev build talks to the relay, so this is the relay copy of the dialog:
-  // it says both halves go, and what it cannot reach.
+  // A synced workspace, so this is the copy that says both halves go and what it
+  // cannot reach. The dialog says "server" rather than "relay": the word a reader
+  // meets elsewhere in the app is the one this asserts.
   await expect(page.getByTestId("delete-workspace-copy")).toContainText(
-    "This deletes the relay's copy and this browser's copy",
+    "This deletes the server's copy and this browser's copy",
   );
   await expect(page.getByTestId("delete-workspace-dialog")).toContainText(
     "Type Board 1 to confirm.",

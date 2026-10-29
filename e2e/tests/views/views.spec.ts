@@ -58,7 +58,11 @@ test("saves a search as a view, reapplies it, renames it and deletes it", {
   );
   await page.getByTestId("views-exit").click();
   await expect(search(page)).toHaveValue("");
-  await expect(libraryRows(page)).toHaveCount(3);
+  // Four, not three: the two seeded cards, the note this spec created, and the
+  // board, which is a row in the card list since boards lost their own tab
+  // (`openLibraryBoards` above says so). The point of the count is that exiting a
+  // view drops every filter, so the whole list is back.
+  await expect(libraryRows(page)).toHaveCount(4);
   await expect(page.getByRole("button", { name: "Views" })).toBeVisible();
 
   // Re-applying the stored query restores exactly the rows it was saved with.

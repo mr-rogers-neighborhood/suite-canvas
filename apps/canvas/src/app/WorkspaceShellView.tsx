@@ -19,6 +19,7 @@ import { InteractionModeToggle } from "../chrome/InteractionModeToggle";
 import { StartPage } from "../chrome/StartPage";
 import { TitleBar } from "../chrome/TitleBar";
 import { UndoRedo } from "../chrome/UndoRedo";
+import { ViewsBar } from "../chrome/ViewsBar";
 import { CommandPaletteHost } from "../command/CommandPalette";
 import type { PaletteItem } from "../command/paletteRank";
 import { PerfOverlay } from "../dev/PerfOverlay";
@@ -494,6 +495,15 @@ export function WorkspaceShellView({
                 onSetIcon={(boardId, icon) => workspace.setBoardIcon(boardId, icon)}
                 onTogglePin={pins.togglePin}
               />
+              {/*
+                Saved views sit beside the board switcher because a view is a query
+                over the workspace rather than a property of one board: the bar writes
+                to `workspace.listViews()` and applying one fills the library's own
+                controls. It went missing when the tab strip became the switcher —
+                unmounted, while its unit tests kept passing — and the e2e specs that
+                save and reopen a view are what noticed.
+              */}
+              {workspaceSurface ? <ViewsBar canManage={canManageSchema} /> : null}
               {pinnedBoards.length === 0 ? null : (
                 /* A gap, because a tab touching the switcher reads as part of it. */
                 <span className="ml-1 flex shrink-0 items-center gap-0.5">

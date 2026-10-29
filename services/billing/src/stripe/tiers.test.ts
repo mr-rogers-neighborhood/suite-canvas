@@ -28,7 +28,7 @@ describe("parseTierTable", () => {
     });
   });
 
-  it("should sell one seat for a plan that does not name one", () => {
+  it("should admit one member for a plan that does not name a count", () => {
     const parsed = parseTierTable(
       JSON.stringify({
         price_1: { tier: "solo", workspaces: 3, documentBytes: 1, attachmentBytes: 2 },

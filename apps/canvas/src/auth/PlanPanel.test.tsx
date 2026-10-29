@@ -236,7 +236,7 @@ describe("what a plan card says", () => {
   const priced = {
     name: "personal",
     priceId: "price_1",
-    limits: { workspaces: 3, seats: 1, documentBytes: 268_435_456, attachmentBytes: 1_073_741_824 },
+    limits: { workspaces: 3, seats: 3, documentBytes: 268_435_456, attachmentBytes: 1_073_741_824 },
     price: { amount: 900, currency: "usd", interval: "month" },
   };
 
@@ -250,9 +250,27 @@ describe("what a plan card says", () => {
     expect(screen.getByTestId("plan-allowance-personal-attachmentBytes")).toHaveTextContent(
       "1.0 GB",
     );
-    // A seat count is the member allowance, and one is the whole plan today.
-    expect(screen.getByTestId("plan-allowance-personal-seats")).toHaveTextContent("1, you");
-    expect(screen.getByTestId("plan-card-personal")).toHaveTextContent("one person and a few");
+    // The allowance the invitation check counts, and the sentence that stops "3" reading as
+    // "only three people may look": everybody else arrives by link.
+    expect(screen.getByTestId("plan-allowance-personal-seats")).toHaveTextContent(
+      "3, including you",
+    );
+    expect(screen.getByTestId("plan-allowance-personal-guests")).toHaveTextContent(
+      "by share link, not counted",
+    );
+    expect(screen.getByTestId("plan-card-personal")).toHaveTextContent("a few people and a few");
+  });
+
+  it("says just you for a plan that admits one, rather than a bare number", async () => {
+    listPlans.mockResolvedValue({
+      ok: true,
+      value: { mode: "live", plans: [{ ...priced, limits: { ...priced.limits, seats: 1 } }] },
+    });
+    render(<PlanPanel />);
+
+    expect(await screen.findByTestId("plan-allowance-personal-seats")).toHaveTextContent(
+      "just you",
+    );
   });
 
   it("offers self-hosting beside the plans, because it costs nothing and asks for no licence", async () => {
@@ -266,13 +284,19 @@ describe("what a plan card says", () => {
     expect(within(card).queryByRole("button")).toBeNull();
   });
 
-  it("says a plan is for one person, and how collaboration works without one", async () => {
+  it("separates a member from a guest, and says what the money is for", async () => {
     listPlans.mockResolvedValue({ ok: true, value: { mode: "live", plans: [priced] } });
     render(<PlanPanel />);
 
     const caveats = await screen.findByTestId("plan-caveats");
-    expect(caveats).toHaveTextContent("A plan is for one person today");
-    expect(caveats).toHaveTextContent("Share links");
+    // The two words that used to be one: a member is an account inside the organization and
+    // counts against the allowance; a guest opens a link and does not.
+    expect(caveats).toHaveTextContent("Members and guests");
+    expect(caveats).toHaveTextContent("no seat");
+    expect(caveats).toHaveTextContent("hundred of them");
+    // And the reason somebody pays while the product is alpha, said plainly.
+    expect(caveats).toHaveTextContent("And your support");
+    expect(caveats).toHaveTextContent("Nothing is behind one");
     expect(caveats).toHaveTextContent("cancelled from the portal");
   });
 

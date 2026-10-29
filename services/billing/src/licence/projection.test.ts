@@ -116,7 +116,7 @@ describe("licenceRowFor", () => {
       licenceId: "stripe:sub_1",
       tier: "personal",
       workspaces: personal.workspaces,
-      seats: FREE.seats,
+      seats: personal.seats,
       documentBytes: personal.documentBytes,
       attachmentBytes: personal.attachmentBytes,
       // The paid horizon is the period Stripe last billed, so a lapsed renewal stops
@@ -125,7 +125,8 @@ describe("licenceRowFor", () => {
     });
   });
 
-  it("should carry the seats a plan sells, never fewer than the free tier's", () => {
+  it("should carry the plan's allowance, and honour a larger quantity over it", () => {
+    const personal = fixtureLimits("personal");
     const withSeats = (seats: number) => {
       const subscription = view({ seats });
       return licenceRowFor({
@@ -137,17 +138,19 @@ describe("licenceRowFor", () => {
       });
     };
 
-    assert.equal(withSeats(4).seats, 4);
-    assert.equal(withSeats(0).seats, FREE.seats);
+    // A bigger quantity is a customer who bought more than the plan's allowance through
+    // the API; it never shrinks the row, because a seat is access and access is not
+    // something to take away by accident.
+    assert.equal(withSeats(personal.seats + 5).seats, personal.seats + 5);
+    assert.equal(withSeats(0).seats, personal.seats);
   });
 
-  it("should grant every fixture plan one seat, so no plan admits a second member", () => {
-    // The gap this closes: a plan priced for a team wrote one seat, because the plugin's
-    // quantity is one when the plan carries no seat price. `services/auth` compares the
-    // organization's member count plus the invitee against this number and answers
-    // `seat-refused` with `reason: "seat-allowance-exhausted"` above it
-    // (`checkSeatAllowance`, `services/auth/src/organizations/seats.ts`), so one seat is
-    // the owner and nobody else.
+  it("should grant every fixture plan the members it declares", () => {
+    // `services/auth` compares the organization's member count plus the invitee against
+    // this number and answers `seat-refused` with `reason: "seat-allowance-exhausted"`
+    // above it (`checkSeatAllowance`, `services/auth/src/organizations/seats.ts`). The
+    // quantity cannot supply it, because the plugin writes one for a plan with no
+    // `seatPriceId`, so the table does: a plan that includes a team writes a team.
     for (const plan of fixturePlans()) {
       const subscription = view({ plan: plan.tier });
       const row = licenceRowFor({
@@ -159,12 +162,30 @@ describe("licenceRowFor", () => {
       });
 
       assert.equal(row.tier, plan.tier);
-      assert.equal(row.seats, plan.seats, `${plan.tier} must sell the seats it declares`);
-      assert.equal(row.seats, 1);
+      assert.equal(row.seats, plan.seats, `${plan.tier} must admit the members it declares`);
     }
   });
 
-  it("should keep a two-member organization readable when the subscription drops to one seat", () => {
+  it("should take the table's allowance over a quantity of one", () => {
+    // The reported defect: the card said eight, the invitation check counted one, because
+    // the row was written from the Stripe quantity and checkout always sends one.
+    const subscription = view({ plan: "personal", seats: 1 });
+    const row = licenceRowFor({
+      organizationId: ORG,
+      subscription,
+      entitlement: entitlementFor(subscription, TIERS, NOW),
+      free: FREE,
+      now: NOW,
+    });
+
+    assert.ok(
+      row.seats > 1,
+      `a plan that includes ${String(fixtureLimits("personal").seats)} people must admit them`,
+    );
+    assert.equal(row.seats, Math.max(fixtureLimits("personal").seats, FREE.seats));
+  });
+
+  it("should keep the organization readable when the subscription drops a plan", () => {
     const personal = fixtureLimits("personal");
     const downgraded = view({ seats: 1 });
     const row = licenceRowFor({
@@ -177,12 +198,12 @@ describe("licenceRowFor", () => {
 
     // Downgrading writes a row rather than deleting one, so the organization keeps its
     // plan, its documents and a horizon in the future; a missing row would read
-    // `licence-unprovisioned`, a fault no upgrade fixes. What no longer fits is the second
-    // member, and the refusal says so: "this organization has more members than its
-    // licence allows" with `seat-allowance-exhausted`.
+    // `licence-unprovisioned`, a fault no upgrade fixes. What no longer fits is whoever is
+    // over the smaller plan's allowance, and the refusal says so: "this organization has
+    // more members than its licence allows" with `seat-allowance-exhausted`.
     assert.equal(row.tier, "personal");
     assert.equal(row.workspaces, personal.workspaces);
-    assert.equal(row.seats, 1);
+    assert.equal(row.seats, personal.seats);
     assert.ok(row.expiresAt > NOW);
   });
 
@@ -489,7 +510,10 @@ describe("the plugin's lifecycle hooks", () => {
       projected.map((row) => row.tier),
       ["personal", "personal", "personal", "free"],
     );
-    assert.equal(projected[0]?.seats, 2);
+    // The plan's allowance, not the subscription's quantity: checkout writes a quantity of
+    // one for a plan with no seat price, so reading the quantity alone is what made a team
+    // plan admit its owner and nobody else.
+    assert.equal(projected[0]?.seats, Math.max(2, fixtureLimits("personal").seats));
   });
 
   it("should register no hook at all when no projection is supplied", () => {

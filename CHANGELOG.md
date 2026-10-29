@@ -26,6 +26,11 @@ release adds is everything somebody outside the project needs in order to trust 
   reader who dismissed it last week is the one who most needs reminding.
 - The launcher offers the source and an account from the body of the screen, not only from a corner,
   and the copyright line is a link to the repository.
+- A plan includes a number of members rather than selling one seat: Personal three, Organization ten,
+  at one price and with no per-seat charge. Before this the card's allowance and the invitation check
+  disagreed, because the licence row was written from the Stripe quantity, which is always one.
+- A `Guests` row on each card and a paragraph under them separate a member (an account, counted)
+  from a guest (a share link, not counted), and the caveats now say what a subscription funds.
 - `pnpm security:image` runs Trivy against the three images a deployment ships, and the first run
   changed two of them: the runtime stages stop carrying the npm and pnpm CLIs (13 HIGH advisories in
   a tooling tree the application never calls), and the Caddy image upgrades its Alpine packages over

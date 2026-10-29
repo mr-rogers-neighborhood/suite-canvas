@@ -17,18 +17,18 @@ import { BillingError } from "../errors.ts";
  */
 
 /**
- * Seats a plan sells when the table does not say: one.
+ * Members a plan admits when the table does not say: one.
  *
- * A plan admits the people it sells seats for, and this build has no per-seat price, so
- * one is the only number `planList` will sell (ADR-0082). The default is here rather than
- * in the projection because a table written before seats existed sold one seat.
+ * A plan includes a fixed number of people and there is no per-seat price, so this is a
+ * default rather than a ceiling. A table written before the field existed sold one seat,
+ * which is what an operator gets by leaving it out.
  */
 export const SEATS_PER_PLAN = 1;
 
 /** A tier is configuration: `STRIPE_PRICE_TIERS` maps price ids onto these. */
 export interface TierPlan {
   tier: string;
-  /** Members the plan admits, owner included. One in this build (ADR-0082). */
+  /** Members the plan admits, owner included. Defaults to {@link SEATS_PER_PLAN}. */
   seats: number;
   workspaces: number;
   documentBytes: number;
@@ -62,9 +62,10 @@ function isPlanEntry(value: unknown): value is TierPlan {
  *
  *   {"price_123":{"tier":"solo","seats":1,"workspaces":3,"documentBytes":268435456,"attachmentBytes":1073741824}}
  *
- * `seats` may be left out, which sells one seat: that is what every table written before
- * the field existed sold. A number other than one is refused by `planList`, because this
- * build has no per-seat price to charge for it (ADR-0082).
+ * `seats` may be left out, which admits one member: that is what every table written
+ * before the field existed sold. The number is the plan's own allowance, not a price: no
+ * plan carries a per-seat price, so a bigger team buys the plan that includes more people
+ * rather than more seats of the same plan.
  *
  * A price that is missing from the table is a configuration failure, not a silent free
  * plan: the customer paid, so the operator has to fix the table.

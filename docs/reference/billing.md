@@ -128,8 +128,8 @@ and the deployment's configuration all come from this one table.
 
 ```json
 {
-  "price_1PAbCdEfGhIjKl": { "tier": "personal", "seats": 1, "workspaces": 3, "documentBytes": 268435456, "attachmentBytes": 1073741824 },
-  "price_1PAbCdEfGhIjKm": { "tier": "organization", "seats": 1, "workspaces": 25, "documentBytes": 2147483648, "attachmentBytes": 8589934592 }
+  "price_1PAbCdEfGhIjKl": { "tier": "personal", "seats": 3, "workspaces": 3, "documentBytes": 268435456, "attachmentBytes": 1073741824 },
+  "price_1PAbCdEfGhIjKm": { "tier": "organization", "seats": 10, "workspaces": 25, "documentBytes": 2147483648, "attachmentBytes": 8589934592 }
 }
 ```
 
@@ -142,34 +142,46 @@ granting a free plan.
 `limits`: the relay enforces the three caps against a document, and a seat count bounds
 member rows, so the two numbers have different readers.
 
-## Seats in v1: one per plan
+## Seats: a plan includes a number of people
 
-Both hosted plans sell one seat, so an organization on a paid plan has its owner and no
-second member. `personal` is $9 a month and `organization` $24, and **Organization buys
-capacity, not people**: 25 workspaces and 2 GiB of documents, still for one person. The site
-says so where a buyer reads the price, because a plan called "Organization" that admits one
-member has to be honest about what it is selling (ADR-0082).
+`personal` is $9 a month and admits **3** people; `organization` is $24 and admits **10**. The
+owner counts as one. There is no per-seat price, so nobody is prorated and the price does not
+move when a member joins.
 
-The number is enforced, not asserted. `planList` refuses a table that declares more than
-one seat, because there is no per-seat price to charge for the rest:
+**A seat is nearly free and a byte is not.** A member is a `member` row, a WebSocket and a
+share of a CPU the process is capped at anyway; members of one organization share its
+workspaces, so a tenth member adds no storage. What costs money is `document_bytes` and
+`attachment_bytes` on the host's volume and the egress when somebody downloads an attachment,
+which is why the ladder gets longer on workspaces and storage and generous on people. Sharing
+a plan is the behaviour the pricing is meant to encourage, and it is also the cheap direction
+to be wrong in.
 
-```
-plan "team" sells 2 seats, and this build sells 1: there is no per-seat price to charge
-for the rest (ADR-0082)
-```
+The number reaches the invitation check from this table, through the licence row:
 
-`@better-auth/stripe` writes `subscription.seats` from the member count for any plan that
-carries a `seatPriceId`, and `licenceRowFor` copies that quantity into
-`organization_licences.seats`, which `checkSeatAllowance` treats as a ceiling on the
-organization's members. Quantity and ceiling are then the same number, so the join that
-would raise the quantity is the join the ceiling refuses. Seat pricing needs a purchased
-quantity above the current headcount, and that is a change to the admission rule in
-`@suite/auth` as much as to this service.
+- `@better-auth/stripe` writes `subscription.seats` from the member count **only for a plan
+  that carries a `seatPriceId`**, and no plan here does, so checkout writes a quantity of one.
+- `licenceRowFor` therefore takes the allowance from the entitlement the tier table produces:
+  `max(quantity, limits.seats, the free tier's one seat)`. A quantity larger than the plan's
+  allowance is honoured, because somebody who bought more through the API should not lose it.
+- `checkSeatAllowance` treats `organization_licences.seats` as a ceiling on the organization's
+  members, so the join past it is refused with `seat-allowance-exhausted`.
+
+Reading the quantity alone is the bug this replaced: a plan declaring eight seats showed eight
+on the card and admitted its owner and nobody else.
+
+**A guest is not a member.** A share link is a capability, not a person: no account, no seat,
+editor or viewer, and as many people as the link reaches. `SUITE_MAX_SHARES_PER_WORKSPACE`
+(default 100) bounds how many links one workspace holds, and that bound belongs to the
+deployment rather than to the plan, because a link costs no storage.
+
+**What a lapsed plan returns to.** The free tier is one member and one workspace, so a
+cancelled organization keeps its plan until the end of the period it paid for, then drops to
+one member. Everybody keeps what is already on their own device.
 
 ## The entitlement read
 
 `POST /api/billing/entitlement` takes `{"organizationId":"org_1"}` and answers
-`{"tier":"personal","limits":{"workspaces":3,"documentBytes":268435456,"attachmentBytes":1073741824}}`.
+`{"tier":"personal","limits":{"workspaces":3,"seats":3,"documentBytes":268435456,"attachmentBytes":1073741824}}`.
 It reads the plugin's `subscription` row and the tier table, and calls Stripe for nothing:
 a payment provider outage must not stop hosted sync for customers who already paid.
 
@@ -238,7 +250,8 @@ server's:
 | Name | the tier name from the price table, which is also the identifier checkout takes |
 | Amount | `price` in the catalogue, read from Stripe by price id and cached for ten minutes |
 | Synced workspaces, document storage, attachment storage | the tier table's limits, which are the caps the relay enforces |
-| Members | `seats`, one per plan in this build (ADR-0082) |
+| Members | `seats`, the people the plan includes, from the tier table |
+| Guests | not a number: a constant row saying a share link is not a seat and is not counted |
 | A sentence of purpose | a client map keyed by tier name, with a fallback built from the workspace count |
 
 `price` is `null` when Stripe could not be asked, and the card then renders **Price unavailable**
@@ -251,9 +264,10 @@ price list, and a second price list drifts from what is actually charged.
 Suite yourself charges anybody, a relay with no `SUITE_LICENCE` enforces no limit, and a reader
 should be able to find that out without reading the source.
 
-Under the cards, one caveat block states what a plan buys (sync, collaboration, uploads), that it
-admits one member today with share links as the collaboration path, and that a cancellation holds
-to the end of the paid period.
+Under the cards, one caveat block says four things: what a plan buys (sync, collaboration,
+uploads), that a subscription is what funds the work while the product is alpha and nothing is
+behind one, what separates a member (an account, counted) from a guest (a link, not counted), and
+that a cancellation holds to the end of the paid period.
 
 A zero is shown rather than dropped. The quota rows come from the limits the token carries,
 and filtering out every non-positive limit is how this panel once said "This server sets no
@@ -362,13 +376,13 @@ loses the plan and keeps its data, where a missing row would read as
 reach. The fallback row is byte-for-byte the row the trigger writes, `free:<org>` and
 all, so "downgraded" and "never subscribed" are the same state.
 
-`seats` is the subscription's seat quantity, never below the born-with row's one seat: a plan
-that sells no seats still admits the owner it always admitted. The plugin reports that
-quantity on create and on every update, and a quantity that is not a whole number is read
-as absent rather than as a fractional ceiling. A member whose join would take the count past
-it is refused with `seat-refused` and `reason: seat-allowance-exhausted` before the row is
-written, so the plan is never silently oversold. No plan prices seats today, so the quantity
-is one and so is the row; the section above says why.
+`seats` is the larger of three numbers: the subscription's quantity, the tier table's
+allowance for the plan, and the born-with row's one seat. The quantity alone would be wrong,
+because no plan carries a `seatPriceId` and checkout therefore writes one; the table alone
+would ignore somebody who bought extra seats through the API. A quantity that is not a whole
+number is read as absent rather than as a fractional ceiling. A member whose join would take
+the count past the row is refused with `seat-refused` and `reason: seat-allowance-exhausted`
+before the row is written, so the plan is never silently oversold.
 
 Two limits are worth stating rather than hiding:
 

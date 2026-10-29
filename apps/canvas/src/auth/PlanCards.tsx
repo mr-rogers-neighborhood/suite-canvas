@@ -18,8 +18,8 @@ import { humanBytes } from "./entitlement";
 
 /** What a tier is for, in one sentence. Unknown tiers get a sentence built from their limits. */
 const PURPOSE: Readonly<Record<string, string>> = {
-  personal: "For one person and a few workspaces, on every device you sign in on.",
-  organization: "For a lot of projects and room to grow.",
+  personal: "For a few people and a few workspaces, on every device you sign in on.",
+  organization: "For a bigger team and a lot of workspaces, with room to grow.",
 };
 
 function purposeOf(plan: BillingPlan): string {
@@ -88,9 +88,18 @@ export function allowancesOf(plan: BillingPlan): Allowance[] {
     rows.push({
       id: "seats",
       label: "Members",
-      value: seats === 1 ? "1, you" : String(seats),
+      value: seats === 1 ? "just you" : `${String(seats)}, including you`,
     });
   }
+  // A member is an account inside the organization and counts against that allowance. A
+  // guest opens a share link: no account, no seat, and as many people as the link reaches.
+  // The row exists because "Members: 3" alone reads as "only three people may look", and
+  // the half of the answer a reader actually wants is that sharing asks for nothing.
+  rows.push({
+    id: "guests",
+    label: "Guests",
+    value: "by share link, not counted",
+  });
   return rows;
 }
 
@@ -191,12 +200,20 @@ export function PlanCaveats() {
         neither does self-hosting.
       </p>
       <p className="mt-1.5">
-        A plan is for one person today. Share links let other people edit or view a workspace
-        without one of their own.
+        <strong className="font-medium text-[var(--ink)]">And your support.</strong> A subscription
+        is what pays for the work while Suite is in alpha. Nothing is behind one, and the code stays
+        open source either way.
+      </p>
+      <p className="mt-1.5">
+        <strong className="font-medium text-[var(--ink)]">Members and guests.</strong> A member is
+        somebody with their own account in your organization, and a plan says how many can join. A
+        guest opens a share link instead: no account, no seat, editor or viewer, and a workspace
+        holds up to a hundred of them.
       </p>
       <p className="mt-1.5">
         Billed monthly, cancelled from the portal. Cancelling keeps the plan until the end of the
-        month you paid for.
+        month you paid for; after that the organization returns to the free tier and everyone keeps
+        what is already on their own device.
       </p>
     </div>
   );

@@ -167,13 +167,19 @@ function paidLicenceRow(
         : `stripe:${subscription.subscriptionId}`,
     tier: entitlement.tier,
     workspaces: limitOf(entitlement, "workspaces", free.workspaces),
-    // A plan that sells no seats still admits the owner the free tier admitted, so an
-    // upgrade can never take away a seat the organization already had. The number is a
-    // ceiling: `checkSeatAllowance` refuses the member whose join would take the count
-    // past it with `seat-allowance-exhausted`, which the auth hook reports as
-    // `seat-refused`. This build sells one seat per plan (ADR-0082), so a subscriber is
-    // the owner and no one else until per-seat pricing exists.
-    seats: Math.max(subscription.seats ?? 0, free.seats),
+    // A plan includes a number of people, and the number is the tier table's: `Personal`
+    // three, `Organization` eight. The subscription *quantity* is one of the three inputs
+    // and the least useful of them, because no plan carries a per-seat price, so checkout
+    // writes a quantity of one and `@better-auth/stripe` only ever moves it for a plan
+    // with a `seatPriceId`. Reading the quantity alone is what made a team plan admit a
+    // single member: the card said eight, the invitation check counted one.
+    //
+    // The free tier's floor stays in the maximum, so an upgrade can never take away the
+    // owner seat the free row admitted, and a plan that declares nothing still admits one.
+    // The number is a ceiling: `checkSeatAllowance` refuses the member whose join would
+    // take the count past it with `seat-allowance-exhausted`, which the auth hook reports
+    // as `seat-refused`.
+    seats: Math.max(subscription.seats ?? 0, limitOf(entitlement, "seats", 0), free.seats),
     documentBytes: limitOf(entitlement, "documentBytes", free.documentBytes),
     attachmentBytes: limitOf(entitlement, "attachmentBytes", free.attachmentBytes),
     // Safe: only a live subscription reaches here, and `licenceRowFor` refuses one with

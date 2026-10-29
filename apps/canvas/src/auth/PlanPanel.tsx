@@ -212,7 +212,9 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
       ) : (
         <p data-testid="plan-subscription" className="mt-1 leading-5">
           {subscription.plan ?? "A plan"} — {subscription.status}
-          {subscription.seats === null ? "" : `, ${subscription.seats} seat(s)`}
+          {subscription.seats === null
+            ? ""
+            : `, ${String(subscription.seats)} ${subscription.seats === 1 ? "member" : "members"}`}
         </p>
       )}
 

@@ -6,7 +6,7 @@
       "name": "Personal",
       "lookupKey": "suite_personal_monthly",
       "unitAmount": 900,
-      "seats": 1,
+      "seats": 3,
       "workspaces": 3,
       "documentBytes": 268435456,
       "attachmentBytes": 1073741824
@@ -16,7 +16,7 @@
       "name": "Organization",
       "lookupKey": "suite_organization_monthly",
       "unitAmount": 2400,
-      "seats": 1,
+      "seats": 10,
       "workspaces": 25,
       "documentBytes": 2147483648,
       "attachmentBytes": 8589934592

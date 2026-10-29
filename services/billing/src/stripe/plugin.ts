@@ -13,7 +13,7 @@ import {
   type PluginSubscription,
   subscriptionViewOf,
 } from "../licence/projection.ts";
-import { limitsOf, SEATS_PER_PLAN, type TierTable } from "./tiers.ts";
+import { limitsOf, type TierTable } from "./tiers.ts";
 
 /**
  * Billing as an auth plugin.
@@ -132,14 +132,13 @@ function licenceHooks(
  * name, so the first price in the table is the one checkout offers, exactly as the
  * hand-written front door did.
  *
- * A plan that declares more than one seat is refused rather than sold. Seats are a
- * ceiling on members (`checkSeatAllowance` in `@suite/auth` compares the organization's
- * member count plus the invitee against `organization_licences.seats`), and this build
- * writes that number from the subscription quantity, which the plugin sets to the member
- * count. So a plan priced for a team would admit exactly one person at a team price:
- * the second member is refused before the quantity could ever grow, and no per-seat price
- * exists to charge for the seats beyond it. Refusing the table is the honest answer until
- * that pricing exists (ADR-0082).
+ * A plan includes a fixed number of people, and the table says how many: `Personal`
+ * three, `Organization` eight. There is no per-seat price, so nothing is prorated and the
+ * subscription quantity stays one; the allowance reaches the invite check through
+ * `organization_licences.seats`, which the licence projection writes from this table
+ * (`paidLicenceRow`). A table that declares more seats than a plan can honour is a bigger
+ * failing than this function could catch, so the only check here is the one the table
+ * already enforces: a whole number of at least one.
  */
 export function planList(tiers: TierTable): StripePlan[] {
   const plans: StripePlan[] = [];
@@ -149,12 +148,6 @@ export function planList(tiers: TierTable): StripePlan[] {
     const key = name.toLowerCase();
     if (named.has(key)) continue;
     named.add(key);
-    if (plan.seats !== SEATS_PER_PLAN) {
-      throw new BillingError(
-        "invalid-config",
-        `plan "${name}" sells ${plan.seats} seats, and this build sells ${SEATS_PER_PLAN}: there is no per-seat price to charge for the rest (ADR-0082)`,
-      );
-    }
     plans.push({ name, priceId, limits: limitsOf(plan) });
   }
   return plans;

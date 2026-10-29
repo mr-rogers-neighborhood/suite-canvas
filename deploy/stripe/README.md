@@ -135,16 +135,20 @@ point turns the row `canceled`, and the entitlement read answers `free`.
 seats and caps, and the billing unit tests read the same file. A limit edited there is a
 limit the suite asserts.
 
-| Tier | Lookup key | Seats | Price |
+| Tier | Lookup key | Members | Price |
 | --- | --- | --- | --- |
-| `solo` | `suite_solo_monthly` | 1 | $12/month |
-| `solo-pro` | `suite_solo_pro_monthly` | 1 | $49/month |
+| `solo` | `suite_solo_monthly` | 3 | $12/month |
+| `solo-pro` | `suite_solo_pro_monthly` | 10 | $49/month |
 
-`seats` is how many people a plan admits. Both plans sell one, because the tier table
-carries no per-seat price and the licence keeps no headroom over the member count; a plan
-that claims more is refused when the plugin is built (ADR-0082). The lookup keys changed
-with the rename from `studio`, so `pnpm stripe` creates a new price the first time it runs
-after this and an existing `STRIPE_PRICE_TIERS` has to be regenerated.
+`seats` is how many people a plan admits, the owner included, and there is no per-seat
+price: a plan includes a fixed number, so nobody is prorated and the price does not move
+when a member joins. The number reaches the invitation check through the licence row
+(`paidLicenceRow` in `services/billing/src/licence/projection.ts`), not through the Stripe
+quantity, which checkout always sends as one because no plan carries a `seatPriceId`.
+Storage is what costs money, so the ladder grows on workspaces and bytes and is generous on
+people. The lookup keys changed with the rename from `studio`, so `pnpm stripe` creates a
+new price the first time it runs after this and an existing `STRIPE_PRICE_TIERS` has to be
+regenerated.
 
 ## When it does not work
 

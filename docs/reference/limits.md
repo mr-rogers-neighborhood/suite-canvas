@@ -42,10 +42,11 @@ from `FREE_LICENCE_TIER`.
 | Document bytes per workspace | 0 bytes | from the plan |
 | Attachment bytes per workspace | 0 bytes | from the plan |
 
-A plan sells one seat in this build (ADR-0082): there is no per-seat price, so a
-plan that declared more would bill one person and admit one person. The plan
-figures are in `deploy/stripe/fixtures.json` and are not repeated here, because
-they change with pricing rather than with code.
+A plan includes a fixed number of members and charges no per-seat price, so the
+price does not move when somebody joins: the plan figures are in
+`deploy/stripe/fixtures.json` and are not repeated here, because they change with
+pricing rather than with code. Storage is the dimension that costs money; a guest
+who opens a share link is not a member and is not counted against the allowance.
 
 The projection budget is also a serving ceiling. A projection room whose stored
 document is over it refuses a new join with `document-limit`, because

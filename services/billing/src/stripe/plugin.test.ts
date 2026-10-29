@@ -102,20 +102,21 @@ describe("planList", () => {
     );
   });
 
-  it("should refuse a plan that sells more than one seat", () => {
-    // Seats are a ceiling on members and this build writes it from the subscription
-    // quantity, which the plugin sets to the member count. A team plan priced at one
-    // person is the bug this refuses: it would charge for a team and admit an owner.
-    const team = { tier: "team", seats: 2, workspaces: 5, documentBytes: 1, attachmentBytes: 2 };
+  it("should sell a plan that includes several people, carrying its allowance", () => {
+    // A team plan is a fixed allowance, not a per-seat price: checkout writes a quantity
+    // of one because no plan carries a `seatPriceId`, so the number the invitation check
+    // counts comes from the table through `organization_licences.seats`. Refusing the
+    // table here is what made a plan priced for a team admit only its owner.
+    const team = { tier: "team", seats: 8, workspaces: 5, documentBytes: 1, attachmentBytes: 2 };
 
-    assert.throws(
-      () => planList(new Map([["price_team", team]])),
-      (error: unknown) =>
-        error instanceof BillingError &&
-        error.code === "invalid-config" &&
-        /"team" sells 2 seats/u.test(error.message) &&
-        /no per-seat price/u.test(error.message),
+    const plans = planList(new Map([["price_team", team]]));
+    assert.deepEqual(
+      plans.map((plan) => plan.name),
+      ["team"],
     );
+    const sold = plans[0];
+    assert.ok(sold !== undefined && sold.limits !== undefined);
+    assert.equal(sold.limits.seats, 8);
   });
 });
 

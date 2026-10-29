@@ -260,7 +260,7 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
                 zipPicker.current?.click();
               }}
             >
-              Import a zipped vault\u2026
+              Import from a zipped vault...
             </button>
             <hr className="my-1 border-[var(--hairline)]" />
             <button

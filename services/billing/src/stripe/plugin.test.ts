@@ -82,6 +82,7 @@ describe("planList", () => {
       priceId: "price_solo",
       limits: {
         workspaces: personal.workspaces,
+        seats: personal.seats,
         documentBytes: personal.documentBytes,
         attachmentBytes: personal.attachmentBytes,
       },

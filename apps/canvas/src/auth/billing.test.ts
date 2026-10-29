@@ -44,7 +44,8 @@ const SERVER_CATALOGUE = {
     {
       tier: "solo",
       priceId: "price_solo",
-      limits: { workspaces: 3, documentBytes: 1_000, attachmentBytes: 2_000 },
+      limits: { workspaces: 3, seats: 1, documentBytes: 1_000, attachmentBytes: 2_000 },
+      price: { amount: 900, currency: "usd", interval: "month" },
     },
   ],
 };
@@ -62,7 +63,8 @@ describe("plan list", () => {
           {
             name: "solo",
             priceId: "price_solo",
-            limits: { workspaces: 3, documentBytes: 1_000, attachmentBytes: 2_000 },
+            limits: { workspaces: 3, seats: 1, documentBytes: 1_000, attachmentBytes: 2_000 },
+            price: { amount: 900, currency: "usd", interval: "month" },
           },
         ],
       },
@@ -82,11 +84,35 @@ describe("plan list", () => {
       value: {
         mode: "test",
         plans: [
-          { name: "team", priceId: null, limits: { seats: 5 } },
-          { name: "solo", priceId: null, limits: {} },
+          { name: "team", priceId: null, limits: { seats: 5 }, price: null },
+          { name: "solo", priceId: null, limits: {}, price: null },
         ],
       },
     });
+  });
+
+  it("drops a price it cannot read rather than showing a number it invented", async () => {
+    const send = vi.fn(async () =>
+      json({
+        plans: [
+          { tier: "solo", priceId: "price_solo", limits: {}, price: { amount: "900" } },
+          {
+            tier: "team",
+            priceId: "price_team",
+            limits: {},
+            price: { amount: 2400, currency: "usd" },
+          },
+        ],
+      }),
+    );
+
+    const result = await listPlans({ base: BASE, serviceBase: SERVICE, fetch: send });
+
+    // A malformed amount is no amount: the card renders the allowances and no price.
+    expect(result.ok && result.value.plans.map((plan) => plan.price)).toEqual([
+      null,
+      { amount: 2400, currency: "usd", interval: null },
+    ]);
   });
 
   it("is an empty catalogue, not a failure, when the deployment sells nothing", async () => {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EntitlementView } from "./entitlement";
 import { useAccountStore } from "./useAccountStore";
@@ -85,7 +85,10 @@ describe("the plan surface", () => {
   it("says the cards are Stripe's test cards when the deployment is in test mode", async () => {
     listPlans.mockResolvedValue({
       ok: true,
-      value: { mode: "test", plans: [{ name: "personal", priceId: null, limits: {} }] },
+      value: {
+        mode: "test",
+        plans: [{ name: "personal", priceId: null, limits: {}, price: null }],
+      },
     });
     render(<PlanPanel />);
 
@@ -100,7 +103,10 @@ describe("the plan surface", () => {
   it("lists the plans a deployment sells", async () => {
     listPlans.mockResolvedValue({
       ok: true,
-      value: { mode: "live", plans: [{ name: "personal", priceId: null, limits: {} }] },
+      value: {
+        mode: "live",
+        plans: [{ name: "personal", priceId: null, limits: {}, price: null }],
+      },
     });
     render(<PlanPanel />);
 
@@ -117,7 +123,10 @@ describe("the plan surface", () => {
     // so the plan list was never fetched in the app at all.
     listPlans.mockResolvedValue({
       ok: true,
-      value: { mode: "test", plans: [{ name: "personal", priceId: "price_1", limits: {} }] },
+      value: {
+        mode: "test",
+        plans: [{ name: "personal", priceId: "price_1", limits: {}, price: null }],
+      },
     });
     render(<PlanPanel entitlement={FREE} />);
 
@@ -131,7 +140,10 @@ describe("the plan surface", () => {
   it("hides the plans when a subscription already exists", async () => {
     listPlans.mockResolvedValue({
       ok: true,
-      value: { mode: "test", plans: [{ name: "personal", priceId: "price_1", limits: {} }] },
+      value: {
+        mode: "test",
+        plans: [{ name: "personal", priceId: "price_1", limits: {}, price: null }],
+      },
     });
     readSubscription.mockResolvedValue({
       ok: true,
@@ -151,7 +163,10 @@ describe("the plan surface", () => {
     useAccountStore.setState({ phase: "signed-out" });
     listPlans.mockResolvedValue({
       ok: true,
-      value: { mode: "live", plans: [{ name: "personal", priceId: "price_1", limits: {} }] },
+      value: {
+        mode: "live",
+        plans: [{ name: "personal", priceId: "price_1", limits: {}, price: null }],
+      },
     });
     render(<PlanPanel />);
 
@@ -185,7 +200,10 @@ describe("the plan surface", () => {
 
     listPlans.mockResolvedValue({
       ok: true,
-      value: { mode: "test", plans: [{ name: "personal", priceId: null, limits: {} }] },
+      value: {
+        mode: "test",
+        plans: [{ name: "personal", priceId: null, limits: {}, price: null }],
+      },
     });
     fireEvent.click(screen.getByTestId("plan-retry"));
 
@@ -207,5 +225,91 @@ describe("the plan surface", () => {
 
     expect(await screen.findByTestId("plan-portal")).toHaveTextContent("Manage billing in Stripe");
     expect(screen.queryByTestId("plan-no-customer")).not.toBeInTheDocument();
+  });
+});
+
+describe("what a plan card says", () => {
+  const priced = {
+    name: "personal",
+    priceId: "price_1",
+    limits: { workspaces: 3, seats: 1, documentBytes: 268_435_456, attachmentBytes: 1_073_741_824 },
+    price: { amount: 900, currency: "usd", interval: "month" },
+  };
+
+  it("shows the price, what it buys, and who it covers", async () => {
+    listPlans.mockResolvedValue({ ok: true, value: { mode: "live", plans: [priced] } });
+    render(<PlanPanel />);
+
+    expect(await screen.findByTestId("plan-price-personal")).toHaveTextContent("$9 / month");
+    expect(screen.getByTestId("plan-allowance-personal-workspaces")).toHaveTextContent("3");
+    expect(screen.getByTestId("plan-allowance-personal-documentBytes")).toHaveTextContent("256 MB");
+    expect(screen.getByTestId("plan-allowance-personal-attachmentBytes")).toHaveTextContent(
+      "1.0 GB",
+    );
+    // A seat count is the member allowance, and one is the whole plan today.
+    expect(screen.getByTestId("plan-allowance-personal-seats")).toHaveTextContent("1, you");
+    expect(screen.getByTestId("plan-card-personal")).toHaveTextContent("one person and a few");
+  });
+
+  it("offers self-hosting beside the plans, because it costs nothing and asks for no licence", async () => {
+    listPlans.mockResolvedValue({ ok: true, value: { mode: "live", plans: [priced] } });
+    render(<PlanPanel />);
+
+    const card = await screen.findByTestId("plan-card-self-host");
+    expect(card).toHaveTextContent("Free, forever");
+    // A link, not a button: nothing about running it yourself charges anybody.
+    expect(card.querySelector("a")?.getAttribute("href")).toMatch(/\/how-to\/deploy\/$/u);
+    expect(within(card).queryByRole("button")).toBeNull();
+  });
+
+  it("says a plan admits one member, and how collaboration works without a seat", async () => {
+    listPlans.mockResolvedValue({ ok: true, value: { mode: "live", plans: [priced] } });
+    render(<PlanPanel />);
+
+    const caveats = await screen.findByTestId("plan-caveats");
+    expect(caveats).toHaveTextContent("admits one member today");
+    expect(caveats).toHaveTextContent("Share links");
+    expect(caveats).toHaveTextContent("cancelled from the portal");
+  });
+
+  it("renders no amount when Stripe did not answer, rather than guessing one", async () => {
+    listPlans.mockResolvedValue({
+      ok: true,
+      value: { mode: "live", plans: [{ ...priced, price: null }] },
+    });
+    render(<PlanPanel />);
+
+    expect(await screen.findByTestId("plan-price-personal")).toHaveTextContent("Price unavailable");
+    // The allowances are the tier table's, so they still say what the plan buys.
+    expect(screen.getByTestId("plan-allowance-personal-workspaces")).toHaveTextContent("3");
+  });
+
+  it("describes a tier it has never heard of from its own limits", async () => {
+    listPlans.mockResolvedValue({
+      ok: true,
+      value: {
+        mode: "live",
+        plans: [{ ...priced, name: "studio", limits: { workspaces: 7 } }],
+      },
+    });
+    render(<PlanPanel />);
+
+    expect(await screen.findByTestId("plan-card-studio")).toHaveTextContent(
+      "For 7 synced workspaces",
+    );
+  });
+
+  it("shows the portal and the self-host door to a subscriber, and no second checkout", async () => {
+    listPlans.mockResolvedValue({ ok: true, value: { mode: "live", plans: [priced] } });
+    readSubscription.mockResolvedValue({
+      ok: true,
+      value: { plan: "personal", status: "active", seats: 1, periodEnd: null },
+    });
+    render(<PlanPanel />);
+
+    expect(await screen.findByTestId("plan-portal")).toBeInTheDocument();
+    expect(screen.queryByTestId("plan-card-personal")).not.toBeInTheDocument();
+    // Running it yourself is still a reader's option after subscribing.
+    expect(screen.getByTestId("plan-card-self-host")).toBeInTheDocument();
   });
 });

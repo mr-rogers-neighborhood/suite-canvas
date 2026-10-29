@@ -49,6 +49,34 @@ export interface BillingPlan {
   priceId: string | null;
   /** Limits that come with the price, when the server sends them. */
   limits: Readonly<Record<string, number>>;
+  /**
+   * What Stripe says it costs, or null when the server could not ask.
+   *
+   * `amount` is minor units, because that is what Stripe returns and rounding a float into
+   * a display is how a price grows a cent. Null renders no amount rather than a guess.
+   */
+  price: PlanPrice | null;
+}
+
+/** A plan's cost as Stripe states it. */
+export interface PlanPrice {
+  amount: number;
+  currency: string;
+  interval: string | null;
+}
+
+function priceOf(raw: unknown): PlanPrice | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const record = raw as Record<string, unknown>;
+  const amount = record.amount;
+  const currency = record.currency;
+  if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) return null;
+  if (typeof currency !== "string" || currency.length === 0) return null;
+  return {
+    amount,
+    currency,
+    interval: typeof record.interval === "string" ? record.interval : null,
+  };
 }
 
 /** What the catalogue says about the deployment itself. */
@@ -170,7 +198,9 @@ export function listPlans(options: BillingTarget = {}): Promise<BillingResult<Pl
       // The plugin answers `{ subscriptions }`; a deployment may add `plans`.
       const plans = Array.isArray(raw)
         ? raw.flatMap((entry): BillingPlan[] => {
-            if (typeof entry === "string") return [{ name: entry, priceId: null, limits: {} }];
+            if (typeof entry === "string") {
+              return [{ name: entry, priceId: null, limits: {}, price: null }];
+            }
             if (typeof entry !== "object" || entry === null) return [];
             const plan = entry as Record<string, unknown>;
             // `tier` is what the control plane publishes and `name` is what an older
@@ -194,6 +224,7 @@ export function listPlans(options: BillingTarget = {}): Promise<BillingResult<Pl
                 name,
                 priceId: typeof plan.priceId === "string" ? plan.priceId : null,
                 limits,
+                price: priceOf(plan.price),
               },
             ];
           })

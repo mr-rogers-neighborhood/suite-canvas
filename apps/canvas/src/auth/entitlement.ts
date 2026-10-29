@@ -36,7 +36,7 @@ const LIMIT_LABELS: Readonly<Record<string, { label: string; unit: "count" | "by
   storageBytes: { label: "Storage", unit: "bytes" },
 };
 
-function humanBytes(bytes: number): string {
+export function humanBytes(bytes: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];
   let value = bytes;
   let index = 0;

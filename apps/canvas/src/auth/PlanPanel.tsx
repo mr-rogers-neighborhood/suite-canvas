@@ -18,6 +18,7 @@ import {
   quotaLines,
 } from "./entitlement";
 import { ensureOrganization, ORGANIZATION_NAME } from "./organization";
+import { PlanCard, PlanCaveats, SelfHostCard } from "./PlanCards";
 import { useAccountStore } from "./useAccountStore";
 
 /**
@@ -271,21 +272,26 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
           </p>
         ) : null
       ) : subscription === null ? (
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        // One card per plan, then the door that sells nothing. A price with no allowances is a
+        // number asking for trust; the allowances are what the person is actually buying.
+        <div className="mt-3 grid gap-2" data-testid="plan-cards">
           {plans.map((plan) => (
-            <button
+            <PlanCard
               key={plan.name}
-              type="button"
-              data-testid={`plan-checkout-${plan.name}`}
-              disabled={busy !== null}
-              onClick={() => void upgrade(plan.name)}
-              className="rounded-lg bg-[var(--ink)] px-3 py-1.5 text-[11px] font-medium text-[var(--surface)] disabled:opacity-50"
-            >
-              {busy === plan.name ? "Opening checkout…" : `Choose ${plan.name}`}
-            </button>
+              plan={plan}
+              busy={busy === plan.name}
+              onChoose={(name) => void upgrade(name)}
+            />
           ))}
+          <SelfHostCard />
         </div>
-      ) : null}
+      ) : (
+        <div className="mt-3">
+          <SelfHostCard />
+        </div>
+      )}
+
+      {signedOut ? null : <PlanCaveats />}
 
       {subscription === null ? (
         <p data-testid="plan-no-customer" className="mt-3 leading-5 text-[var(--ink-muted)]">

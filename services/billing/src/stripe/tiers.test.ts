@@ -91,12 +91,16 @@ describe("tierTableByTier", () => {
 });
 
 describe("limitsOf", () => {
-  it("should name the three caps the relay enforces, and no seat count", () => {
+  it("should name every allowance a plan sells, the member count included", () => {
+    // Seats travel with the limits because a surface that lists what a plan buys has to
+    // say how many people it covers. The relay reads the three caps it enforces and
+    // ignores the rest, so an extra key is additive rather than a change to enforcement.
     const plan = fixturePlans()[0];
     assert.ok(plan !== undefined);
 
     assert.deepEqual(limitsOf(plan), {
       workspaces: plan.workspaces,
+      seats: plan.seats,
       documentBytes: plan.documentBytes,
       attachmentBytes: plan.attachmentBytes,
     });

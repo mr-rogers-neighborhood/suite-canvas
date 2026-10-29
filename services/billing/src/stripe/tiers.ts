@@ -140,6 +140,10 @@ export function tierTableByTier(tiers: TierTable): ReadonlyMap<string, TierPlan>
 export function limitsOf(plan: TierPlan): Readonly<Record<string, number>> {
   return {
     workspaces: plan.workspaces,
+    // A plan is bought by an organization and admits its members; the count belongs with
+    // the other allowances because it is one, and because a surface that lists what a plan
+    // buys has to say how many people it covers.
+    seats: plan.seats,
     documentBytes: plan.documentBytes,
     attachmentBytes: plan.attachmentBytes,
   };

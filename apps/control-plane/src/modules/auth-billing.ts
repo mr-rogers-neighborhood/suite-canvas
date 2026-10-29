@@ -14,6 +14,7 @@ import {
 } from "@suite/billing";
 import type { Logger } from "../logging.js";
 import { createPool } from "../pool.js";
+import type { PlanPrice } from "./billing.js";
 
 /**
  * The one file that knows both `@suite/auth` and `@suite/billing` exist.
@@ -283,6 +284,82 @@ export async function verifyStripeProfile(
         } not exist in ${mode} mode. A price id belongs to one mode, so a table copied from the other mode has to be replaced with ${mode} prices.`
       : couponProblem;
   return { ...check, problem, ok: problem === null };
+}
+
+/**
+ * The price behind each id, for the catalogue to show.
+ *
+ * A catalogue that cannot say what a plan costs makes the reader open Stripe's page to find
+ * out, so the number belongs here. It is Stripe's answer rather than configuration: the
+ * tier table names price ids precisely so this process never holds a second price list, and
+ * a display amount typed beside an id would be that second list with no protection against
+ * drifting from what is actually charged.
+ *
+ * Cached per process for ten minutes, and the cache is keyed by the price ids asked for: a
+ * catalogue request is a page load, and a page load that spends one Stripe call per plan is
+ * a way to be rate limited for no reason. An unreachable Stripe returns what it has (an
+ * empty map on the first call), and a plan with no price renders without an amount.
+ */
+const PRICE_CACHE_MS = 10 * 60_000;
+
+interface CachedPrice {
+  at: number;
+  price: PlanPrice | null;
+}
+
+const priceCache = new Map<string, CachedPrice>();
+
+/** What one Stripe price says, or null when it says nothing usable. */
+function priceOf(body: unknown): PlanPrice | null {
+  if (typeof body !== "object" || body === null) return null;
+  const record = body as {
+    unit_amount?: unknown;
+    currency?: unknown;
+    recurring?: { interval?: unknown };
+  };
+  const amount = record.unit_amount;
+  const currency = record.currency;
+  if (typeof amount !== "number" || typeof currency !== "string") return null;
+  const interval = record.recurring?.interval;
+  return { amount, currency, interval: typeof interval === "string" ? interval : null };
+}
+
+export async function readPlanPrices(
+  env: Env,
+  priceIds: readonly string[],
+  options: { fetch?: typeof fetch; timeoutMs?: number; now?: number } = {},
+): Promise<ReadonlyMap<string, PlanPrice>> {
+  const credentials = stripeCredentials(env);
+  const fetcher = options.fetch ?? globalThis.fetch;
+  const timeoutMs = options.timeoutMs ?? 5000;
+  const now = options.now ?? Date.now();
+  const prices = new Map<string, PlanPrice>();
+  if (credentials.secretKey.length === 0) return prices;
+
+  for (const priceId of priceIds) {
+    const cached = priceCache.get(`${credentials.mode}:${priceId}`);
+    if (cached !== undefined && now - cached.at < PRICE_CACHE_MS) {
+      if (cached.price !== null) prices.set(priceId, cached.price);
+      continue;
+    }
+    try {
+      const answer = await stripeGet(
+        fetcher,
+        `/v1/prices/${encodeURIComponent(priceId)}`,
+        credentials.secretKey,
+        timeoutMs,
+      );
+      const price = answer.status >= 200 && answer.status < 300 ? priceOf(answer.body) : null;
+      priceCache.set(`${credentials.mode}:${priceId}`, { at: now, price });
+      if (price !== null) prices.set(priceId, price);
+    } catch {}
+  }
+  return prices;
+}
+
+/** For a test, and for a process that switched mode: the next read asks Stripe again. */
+export function forgetPlanPrices(): void {
+  priceCache.clear();
 }
 
 export function billingConfigured(env: Env): boolean {

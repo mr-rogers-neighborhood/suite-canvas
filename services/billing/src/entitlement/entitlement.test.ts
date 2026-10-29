@@ -13,6 +13,7 @@ const TIERS = tierTableFixture();
 const PERSONAL = fixtureLimits("personal");
 const PERSONAL_LIMITS = {
   workspaces: PERSONAL.workspaces,
+  seats: PERSONAL.seats,
   documentBytes: PERSONAL.documentBytes,
   attachmentBytes: PERSONAL.attachmentBytes,
 };

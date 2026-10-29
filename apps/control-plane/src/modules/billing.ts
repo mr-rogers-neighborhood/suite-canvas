@@ -16,7 +16,7 @@ import { envWithSettings } from "@suite/settings";
 import { type ConfigEnv, DATABASE_URL_VARIABLE } from "../config.js";
 import { createLogger, type Logger, REQUEST_ID_HEADER } from "../logging.js";
 import type { RouteModule } from "../routes.js";
-import { stripeCredentials } from "./auth-billing.js";
+import { readPlanPrices, stripeCredentials } from "./auth-billing.js";
 import { readStoredSettings } from "./settings.js";
 
 /**
@@ -43,9 +43,38 @@ export const PLANS_PATH = "/api/billing/plans";
 /** Longest organization id accepted: Better Auth's own ids are far shorter. */
 const MAX_ID_LENGTH = 128;
 
+/**
+ * What a plan costs, as Stripe states it.
+ *
+ * Amounts are minor units (`900` is $9.00) because that is what Stripe returns and
+ * rounding a float into a display is how a price grows a cent. `null` means the catalogue
+ * could not ask: a price is left out rather than guessed, since a wrong number beside a
+ * checkout button is worse than no number.
+ */
+export interface PlanPrice {
+  amount: number;
+  currency: string;
+  interval: string | null;
+}
+
+/** One plan, as the catalogue publishes it. */
+export interface CataloguePlan {
+  tier: string;
+  priceId: string;
+  limits: Readonly<Record<string, number>>;
+  price: PlanPrice | null;
+}
+
 export interface BillingModuleDeps {
   entitlements: OrganizationEntitlements;
   tiers: TierTable;
+  /**
+   * Prices by price id, or an empty map when Stripe could not answer.
+   *
+   * Resolved beside the tiers so the catalogue route stays a pure read: the call to Stripe
+   * happens once per resolution, behind a cache, not on every page load.
+   */
+  prices?: ReadonlyMap<string, PlanPrice> | undefined;
   /**
    * Which Stripe universe these tiers belong to.
    *
@@ -60,6 +89,22 @@ export interface BillingModuleOptions {
   /** Resolved on the first request, so an import never needs a database. */
   resolve: () => Promise<BillingModuleDeps>;
   logger: Logger;
+}
+
+/**
+ * The plan's limits as numbers.
+ *
+ * The plugin types them as `Record<string, unknown>` because the shape comes from a JSON
+ * body; everything this process writes into that field is a number, so a non-number is
+ * dropped rather than rendered as `NaN` on a plan card.
+ */
+function limitsNumbersOf(limits: unknown): Readonly<Record<string, number>> {
+  if (typeof limits !== "object" || limits === null) return {};
+  const out: Record<string, number> = {};
+  for (const [name, value] of Object.entries(limits)) {
+    if (typeof value === "number" && Number.isFinite(value)) out[name] = value;
+  }
+  return out;
 }
 
 function pathnameOf(target: string | undefined): string {
@@ -147,11 +192,21 @@ export function createBillingModule(options: BillingModuleOptions): RouteModule 
     if (path === PLANS_PATH) {
       sendJson(response, 200, {
         mode: resolved.mode,
-        plans: planList(resolved.tiers).map((plan) => ({
-          tier: plan.name,
-          priceId: plan.priceId,
-          limits: plan.limits,
-        })),
+        // A plan with no price id cannot be bought, so it is left out rather than
+        // published with a button that opens nothing. `planList` always sets one.
+        plans: planList(resolved.tiers).flatMap((plan): CataloguePlan[] =>
+          typeof plan.priceId === "string" && plan.priceId.length > 0
+            ? [
+                {
+                  tier: plan.name,
+                  priceId: plan.priceId,
+                  limits: limitsNumbersOf(plan.limits),
+                  // Absent from Stripe's answer means absent from the catalogue, not zero.
+                  price: resolved.prices?.get(plan.priceId) ?? null,
+                },
+              ]
+            : [],
+        ),
       });
       return true;
     }
@@ -229,9 +284,15 @@ export async function billingDepsFromEnvironment(
     throw new BillingError("not-configured", `${DATABASE_URL_VARIABLE} is not set`);
   }
   const subscriptions = await createPostgresSubscriptions({ connectionString });
+  // The ids the catalogue will publish, asked of Stripe once behind a ten-minute cache.
+  const priceIds = planList(tiers).flatMap((plan) =>
+    typeof plan.priceId === "string" && plan.priceId.length > 0 ? [plan.priceId] : [],
+  );
+  const prices = await readPlanPrices(env, priceIds).catch(() => new Map());
   return {
     tiers,
     mode: credentials.mode,
+    prices,
     entitlements: createEntitlementReader({ subscriptions, tiers }),
   };
 }

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { type ControlPlane, createControlPlane } from "../host.js";
 import { createLogger } from "../logging.js";
 import type { RouteModule } from "../routes.js";
+import { forgetPlanPrices, readPlanPrices } from "./auth-billing.js";
 import {
   type BillingModuleDeps,
   bootBillingEnvironment,
@@ -111,7 +112,9 @@ describe("billing module", () => {
         {
           tier: "solo",
           priceId: "price_solo",
-          limits: { workspaces: 3, documentBytes: 1_000, attachmentBytes: 2_000 },
+          limits: { workspaces: 3, seats: 1, documentBytes: 1_000, attachmentBytes: 2_000 },
+          // No Stripe in this test, so no amount: the card shows allowances and no price.
+          price: null,
         },
       ],
     });
@@ -225,5 +228,86 @@ describe("the environment the billing module reads", () => {
     });
 
     expect(env.SUITE_BILLING_MODE).toBe("test");
+  });
+});
+
+describe("the catalogue's prices", () => {
+  afterEach(() => {
+    forgetPlanPrices();
+  });
+
+  it("should publish what Stripe says each plan costs", async () => {
+    const fetched: string[] = [];
+    const fetcher = (async (input: string | URL | Request) => {
+      const path = new URL(String(input)).pathname;
+      fetched.push(path);
+      return new Response(
+        JSON.stringify({ unit_amount: 900, currency: "usd", recurring: { interval: "month" } }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+
+    const prices = await readPlanPrices({ STRIPE_SECRET_KEY: "sk_test_x" }, ["price_solo"], {
+      fetch: fetcher,
+    });
+
+    expect(fetched).toEqual(["/v1/prices/price_solo"]);
+    expect(prices.get("price_solo")).toEqual({ amount: 900, currency: "usd", interval: "month" });
+  });
+
+  it("should leave a plan without a price rather than guess one", async () => {
+    const fetcher = (async () =>
+      new Response(JSON.stringify({ error: { message: "No such price" } }), {
+        status: 404,
+      })) as unknown as typeof fetch;
+
+    const prices = await readPlanPrices({ STRIPE_SECRET_KEY: "sk_test_x" }, ["price_gone"], {
+      fetch: fetcher,
+    });
+
+    // Absent, not zero: the card shows the allowances and no amount.
+    expect(prices.has("price_gone")).toBe(false);
+  });
+
+  it("should ask Stripe once per price inside the cache window", async () => {
+    let calls = 0;
+    const fetcher = (async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ unit_amount: 2400, currency: "usd" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const env = { STRIPE_SECRET_KEY: "sk_test_x" };
+    const now = Date.now();
+
+    await readPlanPrices(env, ["price_team"], { fetch: fetcher, now });
+    await readPlanPrices(env, ["price_team"], { fetch: fetcher, now: now + 1000 });
+
+    expect(calls).toBe(1);
+  });
+
+  it("should not cache a failure as a permanent answer", async () => {
+    let calls = 0;
+    const fetcher = (async () => {
+      calls += 1;
+      throw new TypeError("Failed to fetch");
+    }) as unknown as typeof fetch;
+    const env = { STRIPE_SECRET_KEY: "sk_test_x" };
+
+    const first = await readPlanPrices(env, ["price_team"], { fetch: fetcher });
+    const second = await readPlanPrices(env, ["price_team"], { fetch: fetcher });
+
+    expect(first.size).toBe(0);
+    expect(second.size).toBe(0);
+    // Two attempts: a network that was down a second ago is worth asking again.
+    expect(calls).toBe(2);
+  });
+
+  it("should say nothing at all without a key to spend", async () => {
+    const fetcher = (async () => {
+      throw new Error("should not be called");
+    }) as unknown as typeof fetch;
+
+    const prices = await readPlanPrices({}, ["price_solo"], { fetch: fetcher });
+
+    expect(prices.size).toBe(0);
   });
 });

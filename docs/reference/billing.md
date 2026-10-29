@@ -220,9 +220,37 @@ the same: a blank space under "Subscription".
 | State | What it says |
 | --- | --- |
 | A plan-less organization (`tier: "free"`) | **Synced workspaces: none yet**, then one sentence: everything on this device is uncapped, and a plan adds the room |
-| Plans listed | one `Choose <plan>` button per price in `STRIPE_PRICE_TIERS` |
+| Plans listed | one card per price in `STRIPE_PRICE_TIERS`, and the self-host card beside them |
+| No session | a plan belongs to an account, with **Create an account**, because nothing else can follow |
 | Nothing listed | this deployment has no plans configured, and an operator sets `STRIPE_PRICE_TIERS` |
 | The catalogue failed | the account service's own message, with **Try again** |
+
+### The plan card
+
+A card carries what a person needs before pressing a button, and every number on it is the
+server's:
+
+| Element | Source |
+| --- | --- |
+| Name | the tier name from the price table, which is also the identifier checkout takes |
+| Amount | `price` in the catalogue, read from Stripe by price id and cached for ten minutes |
+| Synced workspaces, document storage, attachment storage | the tier table's limits, which are the caps the relay enforces |
+| Members | `seats`, one per plan in this build (ADR-0082) |
+| A sentence of purpose | a client map keyed by tier name, with a fallback built from the workspace count |
+
+`price` is `null` when Stripe could not be asked, and the card then renders **Price unavailable**
+rather than a number nobody can honour. A display amount typed beside a price id would be a second
+price list, and a second price list drifts from what is actually charged.
+
+**Self-host** is the third card and sells nothing: a dashed border, no price, and a link to
+`/how-to/deploy/` on the documentation host (`VITE_SUITE_DOCS_URL`, defaulting to
+`https://docs.suite.run`). It renders as a link rather than a button because nothing about running
+Suite yourself charges anybody, a relay with no `SUITE_LICENCE` enforces no limit, and a reader
+should be able to find that out without reading the source.
+
+Under the cards, one caveat block states what a plan buys (sync, collaboration, uploads), that it
+admits one member today with share links as the collaboration path, and that a cancellation holds
+to the end of the paid period.
 
 A zero is shown rather than dropped. The quota rows come from the limits the token carries,
 and filtering out every non-positive limit is how this panel once said "This server sets no

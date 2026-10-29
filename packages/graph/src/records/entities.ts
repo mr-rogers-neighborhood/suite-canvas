@@ -149,7 +149,12 @@ export function cardTypeFromMap(id: string, fields: LoroMap): CardType {
   const color = readString(fields, "color");
   const icon = readString(fields, "icon")?.trim();
   const pluralName = readString(fields, "pluralName")?.trim();
-  const templateCardId = readString(fields, "templateCardId")?.trim();
+  // Templates are stored as a map of card id to rank, the same shape fields use for
+  // their order: a map merges as a union, so two clients adding a template both keep
+  // theirs, and the rank is what makes "the first one is the default" a fact rather
+  // than a coincidence of key order.
+  const templateCardIds = readTemplateIds(fields);
+  const templateCardId = templateCardIds[0];
   const style = readSurfaceStyleValue(fields.get("style"));
   return cardTypeSchema.parse({
     id,
@@ -158,12 +163,43 @@ export function cardTypeFromMap(id: string, fields: LoroMap): CardType {
     createdAt: readNumber(fields, "createdAt") ?? 0,
     updatedAt: readNumber(fields, "updatedAt") ?? 0,
     fields: definitions,
+    ...(templateCardIds.length > 0 ? { templateCardIds } : {}),
     ...(templateCardId ? { templateCardId } : {}),
     ...(color ? { color } : {}),
     ...(icon ? { icon } : {}),
     ...(pluralName ? { pluralName } : {}),
     ...(style ? { style } : {}),
   });
+}
+
+/**
+ * The type's template cards, in the order the type editor shows them.
+ *
+ * A document written before the list existed carries one id as a string; that reads as a
+ * one-element list, so nothing is migrated and nothing is lost. A malformed entry is
+ * skipped rather than thrown: a template is a convenience, never a requirement.
+ */
+function readTemplateIds(fields: LoroMap): string[] {
+  const ranked = fields.get("templates");
+  if (isMap(ranked)) {
+    const entries: Array<{ id: string; order: number }> = [];
+    for (const id of ranked.keys()) {
+      const value = ranked.get(id);
+      const order =
+        typeof value === "number" && Number.isFinite(value)
+          ? value
+          : typeof value === "object" &&
+              value !== null &&
+              typeof (value as { order?: unknown }).order === "number"
+            ? (value as { order: number }).order
+            : Number.MAX_SAFE_INTEGER;
+      entries.push({ id, order });
+    }
+    entries.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+    if (entries.length > 0) return entries.map((entry) => entry.id);
+  }
+  const single = readString(fields, "templateCardId")?.trim();
+  return single ? [single] : [];
 }
 
 export function tagFromMap(id: string, fields: LoroMap): Tag {

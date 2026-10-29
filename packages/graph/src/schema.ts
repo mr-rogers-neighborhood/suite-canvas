@@ -171,10 +171,17 @@ export const cardTypeSchema = z.object({
   updatedAt: z.number().int().nonnegative(),
   fields: z.array(fieldDefinitionSchema),
   /**
-   * A card that new cards of this type are copied from: its title, body,
-   * properties, tags and connectors arrive together. A reference, not an owned
-   * copy — a deleted template simply means "no template" (ADR-0038).
+   * Cards that new cards of this type can be copied from: title, body,
+   * properties, tags and connectors arrive together. References, not owned
+   * copies — a trashed template simply drops out of the list (ADR-0038).
+   *
+   * Ordered, and the order is the whole rule: the first live template is what an
+   * ordinary "new card of this type" arrives written, and the rest are offered by
+   * name at creation. `templateCardId` is the single-template shape older
+   * documents carry; it is read as a one-element list and never written again.
    */
+  templateCardIds: z.array(entityIdSchema).optional(),
+  /** The pre-list shape. Read-only for compatibility; `templateCardIds` wins. */
   templateCardId: entityIdSchema.optional(),
 });
 

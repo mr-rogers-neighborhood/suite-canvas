@@ -127,8 +127,14 @@ export function cardMethods(ctx: DocContext) {
     createCard(input: CreateCardInput = {}): Card {
       const now = Date.now();
       const typeId = input.typeId ?? DEFAULT_TYPE_ID;
+      // A named template is the one the reader picked; without a name the first live
+      // template is what "new card of this type" means, which is the only ordering rule.
       const template =
-        input.fromTemplate === false ? undefined : ctx.api.cards.liveTemplateCard(typeId);
+        input.fromTemplate === false
+          ? undefined
+          : input.templateId === undefined
+            ? ctx.api.cards.liveTemplateCard(typeId)
+            : ctx.api.cards.liveTemplateCards(typeId).find((card) => card.id === input.templateId);
       const card = cardSchema.parse({
         id: input.id ?? crypto.randomUUID(),
         createdAt: now,
@@ -171,11 +177,24 @@ export function cardMethods(ctx: DocContext) {
       return ctx.api.cards.liveTemplateCard(typeId);
     },
 
+    /**
+     * Every template a type offers, in the order the editor lists them.
+     *
+     * A template whose card is missing or in the trash drops out here rather than at write
+     * time: a card the reader deleted must never break creating cards of that type, and a
+     * restore should bring the template back without a second write.
+     */
+    liveTemplateCards(typeId: string): Card[] {
+      const type = ctx.api.cardTypes.getType(typeId);
+      const ids = type?.templateCardIds ?? (type?.templateCardId ? [type.templateCardId] : []);
+      return ids.flatMap((id) => {
+        const template = ctx.api.cards.getCard(id);
+        return template && !template.deletedAt ? [template] : [];
+      });
+    },
+
     liveTemplateCard(typeId: string): Card | undefined {
-      const templateId = ctx.api.cardTypes.getType(typeId)?.templateCardId;
-      if (!templateId) return undefined;
-      const template = ctx.api.cards.getCard(templateId);
-      return template && !template.deletedAt ? template : undefined;
+      return ctx.api.cards.liveTemplateCards(typeId)[0];
     },
 
     /**

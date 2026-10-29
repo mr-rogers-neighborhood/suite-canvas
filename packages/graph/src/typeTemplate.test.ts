@@ -150,3 +150,96 @@ describe("title templates", () => {
     expect(hasTitleToken("{{ }}")).toBe(false);
   });
 });
+
+describe("a type's several templates", () => {
+  /** Two template cards, ordered: a plain one first, a "wild" one second. */
+  function ordered() {
+    const workspace = new WorkspaceDocument();
+    workspace.ensureDefaultTypes();
+    workspace.createType({ id: "recipe", name: "Recipe" });
+    const first = workspace.createCard({ typeId: "recipe", fromTemplate: false });
+    addParagraphs(workspace.getContent(first.id), "Sourdough method.");
+    const second = workspace.createCard({ typeId: "recipe", fromTemplate: false });
+    addParagraphs(workspace.getContent(second.id), "Focaccia method.");
+    workspace.updateType("recipe", { templateCardIds: [first.id, second.id] });
+    workspace.doc.commit({ origin: "test" });
+    return { workspace, first, second };
+  }
+
+  it("should read the list back in the order it was written", () => {
+    const { workspace, first, second } = ordered();
+    expect(workspace.getType("recipe")?.templateCardIds).toEqual([first.id, second.id]);
+    // The single field stays populated for anything still reading it, and names the first.
+    expect(workspace.getType("recipe")?.templateCardId).toBe(first.id);
+  });
+
+  it("should copy the named template rather than the first", () => {
+    const { workspace, first, second } = ordered();
+    const board = workspace.ensureBoard();
+
+    const plain = workspace.createCard({ typeId: "recipe", boardId: board.id });
+    const other = workspace.createCard({
+      typeId: "recipe",
+      boardId: board.id,
+      templateId: second.id,
+    });
+
+    expect(workspace.cardText(plain.id)).toContain("Sourdough");
+    expect(workspace.cardText(other.id)).toContain("Focaccia");
+    expect(other.id).not.toBe(first.id);
+  });
+
+  it("should copy nothing when the reader asks for a blank card", () => {
+    const { workspace } = ordered();
+    const card = workspace.createCard({ typeId: "recipe", fromTemplate: false });
+    expect(workspace.cardText(card.id)).not.toContain("method");
+  });
+
+  it("should promote the second template by rewriting the order", () => {
+    const { workspace, first, second } = ordered();
+    workspace.updateType("recipe", { templateCardIds: [second.id, first.id] });
+    expect(workspace.getType("recipe")?.templateCardId).toBe(second.id);
+
+    const board = workspace.ensureBoard();
+    const card = workspace.createCard({ typeId: "recipe", boardId: board.id });
+    expect(workspace.cardText(card.id)).toContain("Focaccia");
+  });
+
+  it("should drop a template whose card is in the trash, and keep the rest", () => {
+    const { workspace, first, second } = ordered();
+    workspace.trashCard(first.id);
+    expect(workspace.getType("recipe")?.templateCardIds).toEqual([first.id, second.id]);
+    expect(workspace.templateCard("recipe")?.id).toBe(second.id);
+
+    const board = workspace.ensureBoard();
+    const card = workspace.createCard({ typeId: "recipe", boardId: board.id });
+    expect(workspace.cardText(card.id)).toContain("Focaccia");
+  });
+
+  it("should keep the other templates when one is removed", () => {
+    const { workspace, second } = ordered();
+    workspace.updateType("recipe", { templateCardIds: [second.id] });
+    expect(workspace.getType("recipe")?.templateCardIds).toEqual([second.id]);
+    expect(workspace.getType("recipe")?.templateCardId).toBe(second.id);
+    workspace.updateType("recipe", { templateCardIds: null });
+    expect(workspace.getType("recipe")?.templateCardIds).toBeUndefined();
+  });
+
+  it("should read a document written before the list existed", () => {
+    const workspace = new WorkspaceDocument();
+    workspace.ensureDefaultTypes();
+    workspace.createType({ id: "recipe", name: "Recipe" });
+    const card = workspace.createCard({ typeId: "recipe", fromTemplate: false });
+    addParagraphs(workspace.getContent(card.id), "The old single template.");
+    // The pre-list shape, written straight into the record the way an old build did.
+    const fields = workspace.doc.getMap("types").ensureMergeableMap("recipe");
+    fields.set("templateCardId", card.id);
+    workspace.doc.commit({ origin: "test" });
+
+    expect(workspace.getType("recipe")?.templateCardIds).toEqual([card.id]);
+
+    const board = workspace.ensureBoard();
+    const copy = workspace.createCard({ typeId: "recipe", boardId: board.id });
+    expect(workspace.cardText(copy.id)).toContain("The old single template.");
+  });
+});

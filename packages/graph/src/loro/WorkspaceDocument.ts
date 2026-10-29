@@ -374,6 +374,8 @@ export class WorkspaceDocument extends CardsFacade {
       style?: SurfaceStyle | null;
       /** `null` clears the template; a card id points at the template card. */
       templateCardId?: string | null;
+      /** The whole ordered list; the first is what a new card copies. `null` empties it. */
+      templateCardIds?: string[] | null;
     },
   ): void {
     this.cardTypesApi.updateType(id, patch);

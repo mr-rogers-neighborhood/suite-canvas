@@ -42,6 +42,11 @@ export class CardsFacade {
     return this.cardsApi.templateCard(typeId);
   }
 
+  /** Every template a type offers, in order; the first is what a new card copies. */
+  templateCards(typeId: string): Card[] {
+    return this.cardsApi.liveTemplateCards(typeId);
+  }
+
   createPortalCard(input: CreatePortalCardInput): Card {
     return this.cardsApi.createPortalCard(input);
   }

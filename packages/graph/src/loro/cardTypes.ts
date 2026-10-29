@@ -87,8 +87,16 @@ export function cardTypesMethods(ctx: DocContext) {
       else if (fields.get("icon") !== undefined) fields.delete("icon");
       if (type.color) fields.set("color", type.color);
       else if (fields.get("color") !== undefined) fields.delete("color");
-      if (type.templateCardId) fields.set("templateCardId", type.templateCardId);
-      else if (fields.get("templateCardId") !== undefined) fields.delete("templateCardId");
+      const templates = type.templateCardIds ?? (type.templateCardId ? [type.templateCardId] : []);
+      const ranked = fields.ensureMergeableMap("templates");
+      // Rank by position, so the list a reader sees is the list the document stores. A
+      // removed template is deleted rather than left behind at rank 0: "the first one is
+      // the default" has to survive the first one being taken away.
+      const keep = new Set(templates);
+      for (const id of ranked.keys()) if (!keep.has(id)) ranked.delete(id);
+      for (const [index, id] of templates.entries()) ranked.set(id, index);
+      // The old single field is not written any more; it is read, never produced.
+      if (fields.get("templateCardId") !== undefined) fields.delete("templateCardId");
       fields.set("createdAt", type.createdAt);
       fields.set("updatedAt", type.updatedAt);
       fields.ensureMergeableMap("fields");
@@ -130,6 +138,12 @@ export function cardTypesMethods(ctx: DocContext) {
         style?: SurfaceStyle | null;
         /** `null` clears the template; a card id points at the template card. */
         templateCardId?: string | null;
+        /**
+         * The whole list, in order. Each id must name a card; a clearing `null` empties it.
+         * This is the field the editor writes; `templateCardId` stays for callers that
+         * mean "one template" and is applied as a one-element list.
+         */
+        templateCardIds?: string[] | null;
       },
     ): void {
       // A built-in type is virtual until something edits it: a card names `note`
@@ -171,11 +185,24 @@ export function cardTypesMethods(ctx: DocContext) {
           else fields.set("style", parsed);
         }
       }
-      if (patch.templateCardId !== undefined) {
-        const template = patch.templateCardId?.trim();
-        // A template must be a live card; clearing it is always allowed.
-        if (template && ctx.api.cards.getCard(template)) fields.set("templateCardId", template);
-        else if (fields.get("templateCardId") !== undefined) fields.delete("templateCardId");
+      if (patch.templateCardId !== undefined || patch.templateCardIds !== undefined) {
+        const asked =
+          patch.templateCardIds !== undefined
+            ? (patch.templateCardIds ?? [])
+            : patch.templateCardId === null || patch.templateCardId === undefined
+              ? []
+              : [patch.templateCardId];
+        // A template must be a card; clearing is always allowed. Unknown ids are dropped
+        // rather than thrown, because the alternative is a dialog that refuses to save a
+        // list because one card was deleted in another tab.
+        const known = [...new Set(asked.map((id) => id.trim()).filter(Boolean))].filter(
+          (id) => ctx.api.cards.getCard(id) !== undefined,
+        );
+        const ranked = fields.ensureMergeableMap("templates");
+        const keep = new Set(known);
+        for (const id of ranked.keys()) if (!keep.has(id)) ranked.delete(id);
+        for (const [index, id] of known.entries()) ranked.set(id, index);
+        if (fields.get("templateCardId") !== undefined) fields.delete("templateCardId");
       }
       fields.set("updatedAt", Date.now());
       ctx.typeCache.delete(id);

@@ -63,6 +63,14 @@ export interface CreateCardInput {
    * template itself, or when the caller wants an empty card.
    */
   fromTemplate?: boolean;
+  /**
+   * Which of the type's templates to copy, when it has more than one.
+   *
+   * Absent means the first live template, which is the one the editor marks as the default.
+   * An id that is not one of the type's live templates copies nothing, because a template
+   * from another type arrives wearing fields this card does not have.
+   */
+  templateId?: string;
 }
 
 /**

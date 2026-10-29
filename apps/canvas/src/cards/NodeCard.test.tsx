@@ -116,15 +116,6 @@ describe("NodeCard", () => {
     expect(onOpenInfo).toHaveBeenCalledOnce();
   });
 
-  it("starts body editing on a double click", () => {
-    const onStartEditing = vi.fn();
-    renderCard({ onStartEditing });
-
-    fireEvent.doubleClick(screen.getByTestId("card-body"));
-
-    expect(onStartEditing).toHaveBeenCalledWith("body");
-  });
-
   it("does not end a new edit when the previous field's blur timer fires", () => {
     vi.useFakeTimers();
     try {
@@ -161,16 +152,35 @@ describe("NodeCard", () => {
     expect(onStartEditing).not.toHaveBeenCalled();
   });
 
-  it("lets a card that is not a tour keep its double-click for editing", () => {
+  it("opens the body editor on one click, because that is the common gesture", () => {
     const onStartEditing = vi.fn();
-    const onDoubleClickPresent = vi.fn(() => false);
-    renderCard({ onDoubleClickPresent, onStartEditing });
+    renderCard({ onStartEditing });
 
-    // The owner said no, so the ordinary gesture stands: a note edits its body.
-    fireEvent.doubleClick(screen.getByTestId("card-body"));
+    fireEvent.click(screen.getByTestId("card-body"));
 
-    expect(onDoubleClickPresent).toHaveBeenCalledOnce();
     expect(onStartEditing).toHaveBeenCalledWith("body");
+  });
+
+  it("leaves a tour's click alone, so an ordinary press cannot start a presentation", () => {
+    const onStartEditing = vi.fn();
+    const onDoubleClickPresent = vi.fn(() => true);
+    renderCard({ presentable: true, onDoubleClickPresent, onStartEditing });
+
+    fireEvent.click(screen.getByTestId("card-body"));
+
+    expect(onStartEditing).not.toHaveBeenCalled();
+    expect(onDoubleClickPresent).not.toHaveBeenCalled();
+  });
+
+  it("does not edit when the press was really the start of a drag", () => {
+    const onStartEditing = vi.fn();
+    renderCard({ onStartEditing });
+    const body = screen.getByTestId("card-body");
+
+    fireEvent.pointerDown(body, { clientX: 10, clientY: 10 });
+    fireEvent.click(body, { clientX: 90, clientY: 10 });
+
+    expect(onStartEditing).not.toHaveBeenCalled();
   });
 
   it("ignores shift, ctrl and meta clicks so multi-select owns them", () => {

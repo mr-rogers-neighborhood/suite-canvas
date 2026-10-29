@@ -25,9 +25,7 @@ describe("the plan surface", () => {
 
   it("says nothing is limited here rather than showing zeroes", () => {
     render(<PlanPanel entitlement={{ ...ENTITLEMENT, limits: {}, quota: [] }} />);
-    expect(screen.getByTestId("plan-no-limits")).toHaveTextContent(
-      "Nothing is limited on this server",
-    );
+    expect(screen.getByTestId("plan-no-limits")).toHaveTextContent("sets no limits");
     expect(screen.queryByTestId("plan-quota")).not.toBeInTheDocument();
   });
 

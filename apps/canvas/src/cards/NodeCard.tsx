@@ -104,6 +104,15 @@ export interface NodeCardProps {
    * (ADR-0064 §11).
    */
   onDoubleClickPresent?: () => boolean;
+  /**
+   * Whether this card is a tour, asked at render time.
+   *
+   * A click on a card's text now starts editing, and that must not happen to a tour: its
+   * click means "show me this". The click answers from this flag and leaves *playing* to
+   * `onDoubleClickPresent`, which is still asked at the moment of the double-click so a
+   * step typed a second ago already counts.
+   */
+  presentable?: boolean;
   /** Double-clicking the card opens the full-canvas focus surface. */
   onFocusCard?: () => void;
   onTrash?: () => void;
@@ -177,6 +186,7 @@ export function NodeCard({
   onConnectorContextMenu,
   onStartEditing,
   onDoubleClickPresent,
+  presentable = false,
   onEditEnd,
   onRemoveFromBoard,
   linkCount = 0,
@@ -402,8 +412,8 @@ export function NodeCard({
         onOpenInfo?.();
       }}
       onDoubleClick={(event) => {
-        // A tour has nothing to edit by double-clicking: the gesture means "show me
-        // this", and the body handler below defers to the same reading.
+        // Editing is one click now, so the double-click is free for the one gesture
+        // that means "show me this": playing a tour.
         if (onDoubleClickPresent?.() !== true) return;
         event.stopPropagation();
       }}
@@ -477,14 +487,10 @@ export function NodeCard({
               type="button"
               aria-label="Edit card title"
               className="absolute inset-0 z-10 cursor-text"
-              // A pointer opens the title on double-click; a keyboard press fires
-              // `click` with no detail, and that is the same intent.
+              // One click, pointer or keyboard. Double-click-to-edit made the common
+              // action the harder one, and the click that did nothing was still
+              // consuming the gesture: the card looked inert until it was pressed twice.
               onClick={(event) => {
-                if (event.detail !== 0) return;
-                event.stopPropagation();
-                onStartEditing?.("title");
-              }}
-              onDoubleClick={(event) => {
                 event.stopPropagation();
                 onStartEditing?.("title");
               }}
@@ -587,17 +593,24 @@ export function NodeCard({
       {collapsed ? null : (
         <>
           {/* biome-ignore lint/a11y/noStaticElementInteractions: the nested ProseMirror editor owns keyboard interaction */}
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: the title overlay and the Inspector's Edit action are the keyboard path into this editor */}
           <div
             className={`card-body-scroll min-h-0 flex-1 overflow-auto ${
               editing === "body" ? "nodrag" : ""
             }`}
             data-testid="card-body"
-            onDoubleClick={(event) => {
-              if (onDoubleClickPresent?.() === true) {
-                event.stopPropagation();
-                return;
-              }
+            onClick={(event) => {
               if (!editContent || editing === "body") return;
+              // A tour's click is not an edit: the card means "show me this", and playing
+              // it stays on the double-click so a stray click cannot start a presentation.
+              if (presentable) return;
+              // A drag out of the body moves the card, so only a press that stayed put
+              // counts as "edit this". Same threshold as the card's own click handler.
+              const origin = pointerOrigin.current;
+              if (origin) {
+                const moved = Math.hypot(event.clientX - origin.x, event.clientY - origin.y);
+                if (moved > 4) return;
+              }
               event.stopPropagation();
               onStartEditing?.("body");
             }}

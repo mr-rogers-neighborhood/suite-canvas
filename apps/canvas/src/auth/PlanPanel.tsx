@@ -128,7 +128,7 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
       </h4>
       {quota.length === 0 ? (
         <p data-testid="plan-no-limits" className="mt-1 leading-5 text-[var(--ink-muted)]">
-          Nothing is limited on this server. Everything is available to you.
+          This server sets no limits. You have every feature, with no cap on workspaces.
         </p>
       ) : (
         <dl data-testid="plan-quota" className="mt-1 divide-y divide-[var(--hairline)]">

@@ -272,6 +272,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
               onSetType: (typeId: string) => workspace.setCardTypes(id, [typeId], typeId),
             }
           : {})}
+        presentable={isTutorialType(type) || hasTourSteps(workspace.doc, contentId)}
         // A tour is the way into a presentation: double-click it to play it
         // (ADR-0064 §11). Reading the store here matches `openCardFocus` beside it.
         onDoubleClickPresent={() => {

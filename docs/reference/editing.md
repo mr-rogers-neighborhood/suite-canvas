@@ -25,7 +25,11 @@ The schema lives in `apps/canvas/src/editor/cardEditorExtensions.ts`, apart from
 | `image` | `apps/canvas/src/editor/imageLinkNode.tsx` | A URL, alt text and a size |
 | `tourStep` | `apps/canvas/src/editor/TourStep.ts` | Step id, targets, camera, caption and advance rule |
 
-Marks are the Tiptap defaults: `bold`, `italic`, `strike`, `code`, `link`, `underline`. They are formatted from the `BubbleMenu` in `CardBodyEditor`, which reads its pressed state through `useEditorState` rather than re-rendering on every keystroke.
+Marks are the Tiptap defaults: `bold`, `italic`, `strike`, `code`, `link`, `underline`. They are formatted from `EditorToolbar`, which reads its pressed state through `useEditorState` rather than re-rendering on every keystroke.
+
+The toolbar is one component in two placements, and the split is a bug fix. On a canvas card it rides the selection as a `BubbleMenu`; in the inspector and the card panel, `toolbarPlacement="inline"` puts the same row above the text, because those columns are narrower than the floating row and its buttons ended up past the panel's edge, unreachable. The row also wraps, and it carries eight controls rather than eleven: bold, italic, strikethrough, three heading levels and two lists. H4–H6 stay in the schema and still answer to typed markdown, so nothing was removed from the document, only from a row that was too long to read.
+
+A click on a card's title or body starts editing, rather than a double-click. Double-click is now only the tour gesture: on a card that is a tour, a single click does nothing and a double-click plays it, so an ordinary press cannot start a presentation. A body click also requires the pointer to have stayed within four pixels of where it went down, so dragging a card by its text still moves it instead of opening the editor.
 
 `packages/graph/src/publish/validation/richTextSchema.ts` is the allowlist a published body is checked against: node names, mark names and the attributes each node may carry. Adding a node or an attribute to the editor without extending it fails `editorSchemaContract.test.ts`, which is the point.
 

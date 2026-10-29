@@ -70,6 +70,9 @@ export function CardBodySurface({
           editable={editContent && editing === "body"}
           readOnly={!editContent}
           ariaLabel="Note body"
+          // A column this narrow cannot hold a floating row: it used to overflow the
+          // panel and hide its own buttons. The toolbar sits above the text here.
+          toolbarPlacement="inline"
           onFocus={onFocus}
           onBlur={onBlur}
           onOpenCardPanel={onOpenCardPanel}

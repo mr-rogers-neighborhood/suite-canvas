@@ -15,20 +15,7 @@ import type { PresenceUser } from "../collab/presence";
 import { cardBodySchemaExtensions } from "../editor/cardEditorExtensions";
 import { LoroCollaboration } from "../editor/LoroCollaboration";
 import { Mention } from "../editor/Mention";
-
-interface ToolbarState {
-  bold: boolean;
-  italic: boolean;
-  strike: boolean;
-  heading1: boolean;
-  heading2: boolean;
-  heading3: boolean;
-  heading4: boolean;
-  heading5: boolean;
-  heading6: boolean;
-  bulletList: boolean;
-  orderedList: boolean;
-}
+import { EditorToolbar, type ToolbarState } from "./EditorToolbar";
 
 /** Empty-body copy, shared by the canvas card and the inspector. */
 export const BODY_PLACEHOLDER = "Begin writing, or type / for commands.";
@@ -61,6 +48,14 @@ export interface CardBodyEditorProps {
   onBlur?: (() => void) | undefined;
   /** Opens the card panel from a read-only property block. */
   onOpenCardPanel?: ((cardId: string) => void) | undefined;
+  /**
+   * Where the formatting controls go.
+   *
+   * `bubble` rides the selection, which suits a wide canvas card. `inline` puts one row
+   * above the text, which is what a narrow column needs: the floating row is wider than
+   * the inspector and its buttons ended up off the edge, unreachable.
+   */
+  toolbarPlacement?: "bubble" | "inline" | "none" | undefined;
 }
 
 /**
@@ -128,14 +123,6 @@ function useLocalMirrorSync(
   }, [cardDoc, containerId, editor]);
 }
 
-function buttonClass(active: boolean) {
-  return `rounded px-2 py-1 text-xs transition-colors ${
-    active
-      ? "bg-gray-300 font-semibold text-gray-900 dark:bg-white/25 dark:text-white"
-      : "text-gray-600 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-white/10"
-  }`;
-}
-
 /**
  * The one body editor implementation. The canvas card and the card panel both
  * bind it to the same Loro container; only the surface that owns the keystrokes
@@ -155,6 +142,7 @@ export function CardBodyEditor({
   onFocus,
   onBlur,
   onOpenCardPanel,
+  toolbarPlacement = "bubble",
 }: CardBodyEditorProps) {
   const placeholderText = placeholder === undefined ? BODY_PLACEHOLDER : placeholder;
   // The editor outlives renders, so the callback is read through a ref instead
@@ -207,9 +195,6 @@ export function CardBodyEditor({
       heading1: current.isActive("heading", { level: 1 }),
       heading2: current.isActive("heading", { level: 2 }),
       heading3: current.isActive("heading", { level: 3 }),
-      heading4: current.isActive("heading", { level: 4 }),
-      heading5: current.isActive("heading", { level: 5 }),
-      heading6: current.isActive("heading", { level: 6 }),
       bulletList: current.isActive("bulletList"),
       orderedList: current.isActive("orderedList"),
     }),
@@ -229,93 +214,26 @@ export function CardBodyEditor({
     return () => cancelAnimationFrame(frame);
   }, [editor, editable]);
 
+  if (toolbarPlacement === "inline") {
+    return (
+      <>
+        {/* Above the text, in the column's own flow: a floating row cannot fit here. */}
+        {toolbar ? (
+          <div className="mb-1.5">
+            <EditorToolbar editor={editor} state={toolbar} />
+          </div>
+        ) : null}
+        <EditorContent editor={editor} className={className} />
+      </>
+    );
+  }
+
   return (
     <>
       <EditorContent editor={editor} className={className} />
-      {toolbar ? (
-        <BubbleMenu editor={editor} data-testid="format-toolbar">
-          <div className="flex items-center gap-1 rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-lg">
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleBold().run()}
-              className={buttonClass(toolbar.bold)}
-            >
-              B
-            </button>
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleItalic().run()}
-              className={`${buttonClass(toolbar.italic)} italic`}
-            >
-              I
-            </button>
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleStrike().run()}
-              className={`${buttonClass(toolbar.strike)} line-through`}
-            >
-              S
-            </button>
-            <span className="mx-1 h-4 w-px bg-[var(--hairline)]" />
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
-              className={buttonClass(toolbar.heading1)}
-            >
-              H1
-            </button>
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
-              className={buttonClass(toolbar.heading2)}
-            >
-              H2
-            </button>
-            {/* Three to six are structural levels, not decorations: a note that quotes
-                a long document needs them, and the schema always had them. */}
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}
-              className={buttonClass(toolbar.heading3)}
-            >
-              H3
-            </button>
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleHeading({ level: 4 }).run()}
-              className={buttonClass(toolbar.heading4)}
-            >
-              H4
-            </button>
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleHeading({ level: 5 }).run()}
-              className={buttonClass(toolbar.heading5)}
-            >
-              H5
-            </button>
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleHeading({ level: 6 }).run()}
-              className={buttonClass(toolbar.heading6)}
-            >
-              H6
-            </button>
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleBulletList().run()}
-              className={buttonClass(toolbar.bulletList)}
-            >
-              {"\u2022"}
-            </button>
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleOrderedList().run()}
-              className={buttonClass(toolbar.orderedList)}
-            >
-              1.
-            </button>
-          </div>
+      {toolbar && toolbarPlacement === "bubble" ? (
+        <BubbleMenu editor={editor} data-testid="format-menu">
+          <EditorToolbar editor={editor} state={toolbar} />
         </BubbleMenu>
       ) : null}
     </>

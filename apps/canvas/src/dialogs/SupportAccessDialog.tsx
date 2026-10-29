@@ -119,10 +119,9 @@ export function SupportAccessDialog({
       >
         <h2 className="text-sm font-semibold">Support access and activity</h2>
         <p className="mt-2 text-xs leading-relaxed text-[var(--ink)]">
-          While this is on, someone running this deployment can open your account to see what you
-          see, so they can answer a question about your boards. They cannot start on their own: this
-          switch is yours, they are told when they do it, and turning it off needs nothing from
-          them.
+          While this is on, whoever runs this server can open your account to answer a question
+          about your boards. They cannot turn it on themselves. Only you can, they are told every
+          time they use it, and you can turn it off whenever you like.
         </p>
         {state === null ? (
           <p className="mt-3 text-xs text-[var(--ink-muted)]">

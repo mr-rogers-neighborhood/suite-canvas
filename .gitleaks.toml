@@ -24,6 +24,8 @@ description = "Gitignored local files and build output"
 paths = [
   '''(^|/)\.env(\..*)?$''',
   '''(^|/)\.artifacts/''',
+  '''(^|/)test-results/''',
+  '''(^|/)playwright-report/''',
   '''(^|/)coverage/''',
   '''(^|/)dist/''',
   '''(^|/)node_modules/''',

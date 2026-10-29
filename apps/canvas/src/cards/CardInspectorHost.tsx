@@ -42,6 +42,10 @@ export function CardInspectorHost() {
   const containerTarget = useUiStore((state) => state.containerInspector);
   const link = useLinkInspectorModel();
   const selectedEdgeIds = useUiStore((state) => state.selectedEdgeIds);
+  // Quiet is the mode that says "no drawer". A link keeps its selection there — a selected
+  // edge is what Delete acts on — but the panel that describes it stays shut, exactly as it
+  // does for a card.
+  const interactionMode = useUiStore((state) => state.interactionMode);
   const linkEndMove = useUiStore((state) => state.linkEndMove);
   const startLinkEndMove = useUiStore((state) => state.startLinkEndMove);
   const cancelLinkEndMove = useUiStore((state) => state.cancelLinkEndMove);
@@ -103,7 +107,7 @@ export function CardInspectorHost() {
 
   // One link, one panel. A link is selected by the edge selection it already has,
   // so the drawer needs no second open flag for it.
-  if (link && selectedEdgeIds.length === 1) {
+  if (link && selectedEdgeIds.length === 1 && interactionMode === "inspect") {
     const edgeId = link.edge.id;
     return (
       <LinkInspector

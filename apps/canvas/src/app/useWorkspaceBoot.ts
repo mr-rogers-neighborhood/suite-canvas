@@ -2,6 +2,7 @@ import { applyWorkspaceTemplate, defaultConnectors, type WorkspaceDocument } fro
 import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useRef } from "react";
 import { DEFAULT_CARD_WIDTH } from "../canvas/interactions/multiSelect";
+import { ensureWhiteboardType } from "../cards/whiteboard";
 import type { FocusState } from "../collab/presence";
 import { TAB_ID } from "../collab/tabId";
 import { markBoot, measureBoot } from "../dev/bootTiming";
@@ -99,6 +100,11 @@ export function useWorkspaceBoot(args: {
     // Starter types are structural, not sample data: every workspace has them,
     // and the note type is the fallback for cards with no type.
     workspace.ensureDefaultTypes();
+    // The sketch type is structural too, even though nothing in production can make one:
+    // a card of that type is how a drawing is stored, and a document that does not know
+    // the type renders one as a plain note. Idempotent, and it repairs the pre-rename
+    // label and the display field on the way past.
+    ensureWhiteboardType(workspace);
     if (!workspace.hasSeeded()) {
       const board = workspace.ensureBoard();
       // A direct URL can create the first document without the launcher, so

@@ -37,7 +37,12 @@ beforeAll(() => {
 
 beforeEach(() => {
   cleanup();
-  useUiStore.setState({ inspectorNodeId: null, inspectorFieldId: null, cardFocusId: null });
+  useUiStore.setState({
+    inspectorNodeId: null,
+    inspectorFieldId: null,
+    cardFocusId: null,
+    interactionMode: "inspect",
+  });
   useCanvasStore.setState({ ready: true, synced: true });
 });
 
@@ -82,6 +87,26 @@ describe("WhiteboardNode", () => {
     const node = renderSketch();
     fireEvent.pointerDown(node, { clientX: 100, clientY: 100 });
     fireEvent.click(node, { clientX: 100, clientY: 100, shiftKey: true });
+    expect(useUiStore.getState().inspectorNodeId).toBeNull();
+  });
+
+  it("answers the menu bar's mode like a note does", () => {
+    // The mode is read at render, so it is set before the sketch is drawn: a store write
+    // after the fact would land outside an act() and test stale props instead.
+    useUiStore.setState({ interactionMode: "locked" });
+    const lockedNode = renderSketch();
+    fireEvent.pointerDown(lockedNode, { clientX: 100, clientY: 100 });
+    fireEvent.click(lockedNode, { clientX: 100, clientY: 100 });
+    fireEvent.doubleClick(lockedNode);
+    expect(useUiStore.getState().inspectorNodeId).toBeNull();
+    expect(useUiStore.getState().cardFocusId).toBeNull();
+    cleanup();
+
+    useUiStore.setState({ inspectorNodeId: null, cardFocusId: null, interactionMode: "quiet" });
+    const quietNode = renderSketch();
+    fireEvent.pointerDown(quietNode, { clientX: 100, clientY: 100 });
+    fireEvent.click(quietNode, { clientX: 100, clientY: 100 });
+    // Quiet shuts the drawer, not the card: the press still counts, it just opens nothing.
     expect(useUiStore.getState().inspectorNodeId).toBeNull();
   });
 

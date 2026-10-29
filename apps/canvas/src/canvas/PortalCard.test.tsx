@@ -1,7 +1,8 @@
 import type { Placement, Section } from "@suite/graph";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { preloadIconSet } from "../icons/iconSets";
+import { useUiStore } from "../store/useUiStore";
 import { PortalCard } from "./PortalCard";
 import { boardMiniature } from "./portalMiniature";
 
@@ -149,5 +150,70 @@ describe("PortalCard", () => {
     render(<PortalCard boardName="Drafts" glyph={"\u25c9"} model={boardMiniature([], [])} />);
     expect(screen.getByTestId("portal-card-count")).toHaveTextContent("0 cards");
     expect(screen.getByText("Empty board")).toBeInTheDocument();
+  });
+});
+
+/**
+ * A portal is a card, and the menu bar's mode is a promise about every card.
+ *
+ * `locked` says the canvas is a picture to move, so a portal stops being a door and a
+ * panel; `quiet` keeps the panel shut while the press still counts. Both are checked here
+ * because a portal used to answer neither: it opened its panel whatever the mode said.
+ */
+describe("PortalCard under the interaction mode", () => {
+  const setMode = (mode: "inspect" | "quiet" | "locked") => {
+    useUiStore.setState({ interactionMode: mode });
+  };
+
+  afterEach(() => setMode("inspect"));
+
+  it("opens no panel when the canvas is locked", () => {
+    setMode("locked");
+    const onOpenInfo = vi.fn();
+    render(
+      <PortalCard boardName="Research" glyph={"\u25c9"} model={model} onOpenInfo={onOpenInfo} />,
+    );
+    fireEvent.click(screen.getByTestId("portal-node"));
+    expect(onOpenInfo).not.toHaveBeenCalled();
+  });
+
+  it("walks nowhere when the canvas is locked", () => {
+    setMode("locked");
+    const onOpen = vi.fn();
+    render(<PortalCard boardName="Research" glyph={"\u25c9"} model={model} onOpen={onOpen} />);
+    const card = screen.getByTestId("portal-node");
+    fireEvent.doubleClick(card);
+    fireEvent.keyDown(card, { key: "Enter" });
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("keeps the panel shut in quiet mode", () => {
+    setMode("quiet");
+    const onOpenInfo = vi.fn();
+    render(
+      <PortalCard boardName="Research" glyph={"\u25c9"} model={model} onOpenInfo={onOpenInfo} />,
+    );
+    fireEvent.click(screen.getByTestId("portal-node"));
+    expect(onOpenInfo).not.toHaveBeenCalled();
+  });
+
+  it("still opens the board from quiet mode", () => {
+    // Quiet is about the drawer, not about the door: walking through a portal is a
+    // navigation, and the mode that stops it is locked.
+    setMode("quiet");
+    const onOpen = vi.fn();
+    render(<PortalCard boardName="Research" glyph={"\u25c9"} model={model} onOpen={onOpen} />);
+    fireEvent.doubleClick(screen.getByTestId("portal-node"));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the panel in the reading mode", () => {
+    setMode("inspect");
+    const onOpenInfo = vi.fn();
+    render(
+      <PortalCard boardName="Research" glyph={"\u25c9"} model={model} onOpenInfo={onOpenInfo} />,
+    );
+    fireEvent.click(screen.getByTestId("portal-node"));
+    expect(onOpenInfo).toHaveBeenCalledTimes(1);
   });
 });

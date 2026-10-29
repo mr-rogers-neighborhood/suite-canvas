@@ -4,6 +4,7 @@ import { type CSSProperties, useRef } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { IconGlyph } from "../icons/IconGlyph";
 import { PresenceAvatars } from "../presence/PresenceAvatars";
+import { useUiStore } from "../store/useUiStore";
 import { BoardMiniature } from "./BoardMiniature";
 import type { BoardMiniatureModel, MiniatureDot } from "./portalMiniature";
 import { isShapedSurface, shapeInset, surfacePaintVars } from "./surfacePaint";
@@ -93,6 +94,10 @@ export function PortalCard({
 }: PortalCardProps) {
   const names = peers.map((peer) => peer.name).join(", ");
   const pointerOrigin = useRef<{ x: number; y: number } | null>(null);
+  // A portal is a card, so the menu bar's mode governs it too: locked means the whole
+  // surface is a picture to pan, and quiet means a press selects without opening a panel.
+  const interactionMode = useUiStore((state) => state.interactionMode);
+  const locked = interactionMode === "locked";
   const unavailable = boardName === null;
   const count = model.cardCount;
 
@@ -150,22 +155,25 @@ export function PortalCard({
       // a note has between its info click and its double click. Anywhere on the
       // card, not just the header: the miniature is what people aim at.
       onClick={(event) => {
+        if (locked) return;
         const origin = pointerOrigin.current;
         const moved = origin ? Math.hypot(event.clientX - origin.x, event.clientY - origin.y) : 0;
         // A drag moves the card; it does not also open a panel.
         if (moved > 4) return;
         // The second click of a double click is the doorway, not an inspection.
         if (event.detail > 1) return;
+        // Only the reading mode opens the panel; quiet is the mode that says "no drawer".
+        if (interactionMode !== "inspect") return;
         onOpenInfo?.();
       }}
       onDoubleClick={(event) => {
-        if (unavailable) return;
+        if (unavailable || locked) return;
         event.preventDefault();
         onOpen?.();
       }}
       onKeyDown={(event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
-        if (unavailable) return;
+        if (unavailable || locked) return;
         event.preventDefault();
         event.stopPropagation();
         onOpen?.();

@@ -90,3 +90,29 @@ describe("useWorkspaceBoot templates", () => {
     expect(workspace.hasSeeded()).toBe(true);
   });
 });
+
+describe("the types every workspace carries", () => {
+  it("knows the sketch type before anything has made a sketch", () => {
+    // Nothing in production can create a sketch today, but a document that does not know
+    // the type renders an existing one as a plain note. The boot effect is where the type
+    // is made structural, beside the note type.
+    const workspace = new WorkspaceDocument();
+    bootIn("/?workspace=ws-1&fresh=1", workspace);
+
+    const sketch = workspace.getType("whiteboard");
+    expect(sketch?.name).toBe("Sketch");
+    expect(sketch?.pluralName).toBe("Sketches");
+    // The display field the renderer reads, added once.
+    expect(sketch?.fields.filter((field) => field.name === "Display")).toHaveLength(1);
+  });
+
+  it("leaves an existing sketch type alone on the next boot", () => {
+    const workspace = new WorkspaceDocument();
+    const first = bootIn("/?workspace=ws-1&fresh=1", workspace);
+    const fields = workspace.getType("whiteboard")?.fields.length;
+    first.unmount();
+    bootIn("/?workspace=ws-1&fresh=1", workspace);
+
+    expect(workspace.getType("whiteboard")?.fields.length).toBe(fields);
+  });
+});

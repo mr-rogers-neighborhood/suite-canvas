@@ -1,6 +1,7 @@
 import type { Rect } from "@suite/graph";
 import { sectionMovePlan, unionRect } from "@suite/graph";
 import { useCallback, useMemo, useRef, useState } from "react";
+import type { InteractionMode } from "../../store/interactionMode";
 import { useUiStore } from "../../store/useUiStore";
 import { cardSectionOffsets, sectionOffsets } from "../sections/sectionLayout";
 import { DRAG_THROTTLE_MS } from "./boardSupport";
@@ -15,6 +16,22 @@ export const NEW_SECTION_SIZE = { width: 360, height: 260 } as const;
  * gestures publish, and the writes a finished gesture commits. A section is not
  * a React Flow node, so its gesture state is board-local.
  */
+/**
+ * What a press on a section means under the menu bar's mode.
+ *
+ * A section is selected by pressing its frame, and selecting one opens its panel — the same
+ * gesture that opens a card's. So it answers the mode the same way: `locked` is a picture to
+ * move and a press does nothing, `quiet` selects without the panel, `inspect` is both.
+ */
+export function sectionPressUnder(
+  mode: InteractionMode,
+  sectionId: string | null,
+): "clear" | "ignore" | "select" | "select-quietly" {
+  if (sectionId === null) return "clear";
+  if (mode === "locked") return "ignore";
+  return mode === "inspect" ? "select" : "select-quietly";
+}
+
 export function useBoardSections(
   ui: ReturnType<typeof useBoardUi>,
   input: { projection: ReturnType<typeof useBoardProjection> },
@@ -108,8 +125,17 @@ export function useBoardSections(
 
   const handleSelectSection = useCallback(
     (sectionId: string | null) => {
-      if (sectionId) store.getState().unselectNodesAndEdges();
+      const outcome = sectionPressUnder(useUiStore.getState().interactionMode, sectionId);
+      if (outcome === "ignore") return;
+      if (outcome === "clear") {
+        selectSection(null);
+        return;
+      }
+      store.getState().unselectNodesAndEdges();
       selectSection(sectionId);
+      // A panel is what the reading mode adds; the press still selects in quiet, because a
+      // selected section is what the next edit acts on.
+      if (outcome === "select-quietly") useUiStore.getState().closeContainerInspector();
     },
     [selectSection, store],
   );

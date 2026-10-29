@@ -18,6 +18,10 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
   const { card, placement } = data as CardNodeData;
   const workspace = useCanvasStore((state) => state.workspace);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
+  // A sketch is a card, so the mode reaches it: locked is a picture to move, quiet selects
+  // without a drawer.
+  const interactionMode = useUiStore((state) => state.interactionMode);
+  const locked = interactionMode === "locked";
   const openCardFocus = useUiStore((state) => state.openCardFocus);
   // A sketch is a card, so a click reads it in the one inspector, exactly as a
   // note does; the focus surface stays behind the double click.
@@ -75,16 +79,21 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
       // it, and the pointerdown is left alone so a drag can still start. A drag
       // moves the card and must not also open a panel.
       onClick={(event) => {
+        if (locked) return;
         // Multi-select owns modifier clicks; they must not open the drawer.
         if (event.shiftKey || event.metaKey || event.ctrlKey) return;
         const origin = pointerOrigin.current;
         const moved = origin ? Math.hypot(event.clientX - origin.x, event.clientY - origin.y) : 0;
         if (moved > 4) return;
+        if (interactionMode !== "inspect") return;
         openInspector(card.id);
       }}
       // Drawing is what a sketch is for, so the second click goes straight to the
       // surface; the first still reads the card, exactly as a note does.
-      onDoubleClick={() => openCardFocus(card.id)}
+      onDoubleClick={() => {
+        if (locked) return;
+        openCardFocus(card.id);
+      }}
     >
       <NodeResizer
         isVisible={canEditLayout && Boolean(selected)}
@@ -100,7 +109,12 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
         label={title || SKETCH_TYPE_NAME}
         display={display}
         editors={editors}
-        onOpen={() => openCardFocus(card.id)}
+        onOpen={() => {
+          // The face's own open button is the third way into this sketch, so it answers
+          // the mode too; otherwise a locked canvas still had a live door inside it.
+          if (locked) return;
+          openCardFocus(card.id);
+        }}
       />
       <NodeConnectors {...connectors} selected={Boolean(selected)} />
     </div>

@@ -31,7 +31,7 @@ import { useBootGate } from "./hooks/useBootGate";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "./hooks/useLibrarySearch";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
 import type { LibraryItem } from "./library/LibraryDrawer";
-import { toBoardItems, unopenedBoards } from "./library/libraryBoards";
+import { toBoardItems } from "./library/libraryBoards";
 import { createStarterBoard, templateCopyName } from "./library/TemplateGallery";
 import { isStandalone } from "./session/mode";
 import { getSession, type ShareSession } from "./session/session";
@@ -639,15 +639,11 @@ function WorkspaceShell({
   // Facet filtering lives in the drawer: it owns the section facet, and every
   // facet needs the counts computed against the others.
   const boardItems = useMemo(() => toBoardItems(snapshot), [snapshot]);
-  const inboxBoardItems = useMemo(() => unopenedBoards(boardItems), [boardItems]);
-  const inboxItems = [...unplaced.map(toItem), ...inboxBoardItems];
+  // A board is a row in the Cards tab and never in the inbox: it has no placement, so
+  // "loose" is not a state one can be in, and a list of both read as a list of neither.
+  const inboxItems = unplaced.map(toItem);
   const cardItems = [...allCards.map(toItem), ...boardItems];
   const trashItems = trashed.map(toItem);
-
-  /**
-   * The library's board rows: boards are items in the same list as cards, and one
-   * nothing points at waits in the inbox with the loose cards.
-   */
 
   /**
    * Locate pans to the object on the board in front of the reader. A card that

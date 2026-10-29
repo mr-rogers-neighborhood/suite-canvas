@@ -28,7 +28,6 @@ import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
 import type { SyncClaim, SyncRefusal } from "../feedback/syncState";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { LibraryDrawer, type LibraryItem } from "../library/LibraryDrawer";
-import { openedByPortal } from "../library/libraryBoards";
 import { BOARD_TYPE_FACET } from "../library/libraryTypes";
 import { BOARD_STARTERS } from "../library/TemplateGallery";
 import { TypeSettingsHost } from "../panels/TypeSettingsHost";
@@ -302,11 +301,6 @@ export function WorkspaceShellView({
     x: number;
     y: number;
   } | null>(null);
-  /** Boards nothing opens: they wait in the inbox with the loose cards. */
-  const inboxBoards = useMemo(
-    () => snapshot.boards.filter((board) => !openedByPortal(snapshot, board.id)).length,
-    [snapshot],
-  );
   // Read from the document rather than the projection. A board created through
   // the portal flow reached the document (the portal rendered it) but never
   // reached `snapshot.boards`, so the switcher offered one board and the other
@@ -669,7 +663,7 @@ export function WorkspaceShellView({
             // The badge and the inbox tab count the same rows: a board nothing opens
             // is an inbox row too, and a badge that leaves it out is a number the
             // drawer then contradicts (ADR-0063 §3).
-            inboxCount={unplaced.length + inboxBoards}
+            inboxCount={unplaced.length}
             libraryOpen={libraryOpen}
             onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
             types={snapshot.types}
@@ -677,7 +671,10 @@ export function WorkspaceShellView({
             activeBoardId={activeBoardId}
             onCreateCard={createCard}
             onCreatePortal={createPortal}
-            onCreateSketch={createSketch}
+            // A sketch does not save or render yet, so the dock's row is a
+            // development-only door: the registry hides the command in a production
+            // build, and passing no handler keeps the row out of it entirely.
+            {...(import.meta.env.DEV ? { onCreateSketch: createSketch } : {})}
             onCreateSection={createSection}
             onCreateBoardPortal={createBoardPortal}
             onManageTypes={openTypeSettings}
@@ -698,7 +695,7 @@ export function WorkspaceShellView({
             counts={{
               // Boards are rows in Cards (and in the inbox when nothing opens
               // them), so their number is already inside these two.
-              inbox: unplaced.length + inboxBoards,
+              inbox: unplaced.length,
               cards: allCards.length + snapshot.boards.length,
               trash: trashed.length,
             }}

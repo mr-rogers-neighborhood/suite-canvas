@@ -3,6 +3,15 @@ import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { BOARD_TYPE_FACET, type LibraryItem } from "./libraryTypes";
 
 /**
+ * A board as the library lists it: a row, plus the two numbers a board carries and a
+ * card does not.
+ *
+ * The row shape itself is shared, so a board is filtered, sorted and dragged by the same
+ * code as a card; these two fields are what the inbox rule and the date sort need.
+ */
+type LibraryBoardItem = LibraryItem & { cardCount: number; updatedAt: number };
+
+/**
  * Every board as a library row.
  *
  * A board has no type, no fields and no placement of its own, but in the library
@@ -16,9 +25,7 @@ import { BOARD_TYPE_FACET, type LibraryItem } from "./libraryTypes";
  * board is reachable only from the library (or by naming it as last-used), which
  * is exactly what the inbox is for.
  */
-export function toBoardItems(
-  snapshot: WorkspaceSnapshot,
-): Array<LibraryItem & { cardCount: number; updatedAt: number }> {
+export function toBoardItems(snapshot: WorkspaceSnapshot): LibraryBoardItem[] {
   const live = new Set(snapshot.cards.filter((card) => !card.deletedAt).map((card) => card.id));
   const names = new Map(snapshot.boards.map((board) => [board.id, board.name]));
 
@@ -56,16 +63,4 @@ export function toBoardItems(
     cardCount: placedOn.get(board.id) ?? 0,
     updatedAt: board.updatedAt,
   }));
-}
-
-/** Boards nothing points at: the inbox's board half. */
-export function unopenedBoards(items: readonly LibraryItem[]): LibraryItem[] {
-  return items.filter((item) => item.boards.length === 0);
-}
-
-/** Whether any portal anywhere names this board. */
-export function openedByPortal(snapshot: WorkspaceSnapshot, boardId: string): boolean {
-  return snapshot.cards.some(
-    (card) => !card.deletedAt && card.properties[PORTAL_BOARD_FIELD_ID] === boardId,
-  );
 }

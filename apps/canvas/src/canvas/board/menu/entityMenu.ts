@@ -147,6 +147,10 @@ const canvasRows: EntityMenuRow[] = [
     kinds: ["canvas"],
     render: (ctx) => {
       if (!ctx.canCreateContent) return [];
+      // A sketch does not save or render yet, so this row is a development-only
+      // door like the dock's and the palette's. The literal is inlined by Vite, so a
+      // production bundle drops the row and nothing else has to change.
+      if (!import.meta.env.DEV) return [];
       const position = ctx.menu.flowPosition ?? { x: 0, y: 0 };
       return [{ label: "New sketch", onSelect: () => ctx.createWhiteboardAt(position) }];
     },

@@ -526,7 +526,12 @@ export const commands: readonly CommandDefinition[] = [
     group: "create",
     owner: "canvas",
     capabilities: ["canCreateContent"],
-    available: onBoard,
+    // A sketch does not save or render yet, so the two places that offer one (the
+    // dock and this palette) hide it in a production build. `import.meta.env.DEV` is
+    // a literal Vite inlines, so the branch and the create handler behind it leave the
+    // bundle. Dropping this line publishes it; `docs/reference/ui.md` says why it is
+    // here and what turns it back on.
+    available: (context) => onBoard(context) && import.meta.env.DEV,
     // The canvas and the dock already own this action; the palette lists the
     // same command rather than growing a create menu of its own.
     palette: {

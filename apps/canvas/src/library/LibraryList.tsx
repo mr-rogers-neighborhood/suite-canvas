@@ -76,7 +76,7 @@ function emptyLabel({
   if (searching) return `No cards match \u201c${query.trim()}\u201d.`;
   if (filtering) return "No cards match these filters.";
   if (tab === "inbox") {
-    return "Nothing in the inbox. Cards off a board, and boards nothing opens, land here.";
+    return "Nothing in the inbox. A card that is on no board lands here.";
   }
   if (tab === "cards") return boardScope ? "Nothing on this board yet." : "Nothing here yet.";
   return "Trash is empty.";

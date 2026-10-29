@@ -14,7 +14,7 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history and outline buttons in `app/WorkspaceShellView.tsx` | Home, the open boards with their peer counts, undo, redo, version history and the outline, in one row |
 | Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface, plus the plan wall and the retry for whoever just paid |
 | Views bar | `apps/canvas/src/chrome/ViewsBar.tsx` | Saved views, applying one, renaming and deleting one. **Development only** (see below) |
-| Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new sketch, new section, new portal, type settings |
+| Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new section, new portal, type settings. **New sketch is development only** (see below) |
 | Outline rail | `apps/canvas/src/canvas/BoardOutline.tsx` | The active board's section tree, in reading order, with counts and presence. Hidden while the board has no sections |
 | Inspector | `apps/canvas/src/cards/CardInspectorHost.tsx` | The one panel for the selected card or container |
 | Blueprint install | `apps/canvas/src/app/BlueprintInstallHost.tsx` | The type a card's title and body declare, previewed before it is written |
@@ -55,9 +55,17 @@ write shows the notice on every visit, the harmless direction.
 
 ## The library
 
-The drawer has four tabs: `inbox` (cards on no board), `cards`, `boards` and `trash`. `apps/canvas/src/library/libraryFilters.ts` defines the facets: type, tag and section, with OR inside a facet and AND across facets. The section facet appears only when the drawer is scoped to one board, because a section title means nothing outside its board.
+The drawer has three tabs: `inbox` (cards on no board), `cards` (`apps/canvas/src/library/LibraryDrawer.tsx`) and `trash`. The inbox holds cards and only cards: a board has no placement, so "on no board" is not a state one can be in. A board is a row in the Cards tab rather than a tab of its own (`libraryBoards.ts`); the Boards facet beside the card types is how you narrow to one. `apps/canvas/src/library/libraryFilters.ts` defines the facets: type, tag and section, with OR inside a facet and AND across facets. The section facet appears only when the drawer is scoped to one board, because a section title means nothing outside its board.
 
 Search and facets feed the same list. A saved view fills those same controls through `applyView`, so there is one filtering model and no second query language (ADR-0037).
+
+### Sketches are a development-only door
+
+A sketch is a card of the built-in sketch type, and it does not save or render yet. Two entry points
+offer one: the dock's row and the palette's `card.createSketch`. Both are behind `import.meta.env.DEV`,
+so a production bundle has neither. The registry's `available` predicate drops the command, and
+`WorkspaceShellView` passes no handler, which is what keeps the dock row out. Removing both guards
+publishes it.
 
 ### Saved views are a development-only door
 

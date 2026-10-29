@@ -98,6 +98,11 @@ the document.
 | `apps/docs`, `apps/site` | The documentation and marketing sites |
 | `e2e`, `docs`, `deploy` | Playwright specs, the four documentation sections, deployment |
 
+It stands on other people's work, and each of these is worth a look on its own: [Loro](https://loro.dev)
+for the document, [React Flow](https://reactflow.dev) for the surface, [Tiptap](https://tiptap.dev) for
+the editor, [Zod](https://zod.dev) for the schema, [Better Auth](https://better-auth.com) and
+[Stripe](https://stripe.com) for accounts and payments.
+
 [Architecture](docs/reference/architecture.md) is the longer version.
 
 ## Documentation

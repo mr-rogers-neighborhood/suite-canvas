@@ -3,6 +3,7 @@ import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import { useEffect } from "react";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
+import { useDrawing } from "../hooks/useDrawing";
 import { PeerNameTag } from "../presence/PeerNameTag";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { CardTitleEditor } from "./CardBodyEditor";
@@ -176,6 +177,9 @@ export function CardInspector({
 }: CardInspectorProps) {
   const editContent = canEditContent ?? !readOnly;
   const sketch = isWhiteboardCard(card);
+  // A sketch's Content tab is the drawing, so the panel needs the scene the card
+  // face already reads. A non-sketch asks the document for nothing.
+  const drawing = useDrawing(sketch ? card.id : null);
   // The toggle above is the sketch's control; the generic property row would
   // be a second, worse copy of the same value.
   const panelFields = sketch
@@ -312,6 +316,15 @@ export function CardInspector({
           variant="inspector"
           bodyEmpty={bodyEmpty}
           editing={editing}
+          sketch={
+            sketch
+              ? {
+                  elements: drawing?.elements ?? [],
+                  onOpen: editContent ? onEdit : undefined,
+                  label: title || "Sketch",
+                }
+              : undefined
+          }
           cardDoc={cardDoc}
           contentId={contentId}
           titleId={titleId}

@@ -3,6 +3,7 @@ import {
   type Card,
   type CardFieldView,
   type CardType,
+  type DrawingElement,
   isTutorialCard,
   type PropertyValue,
   type Tag,
@@ -27,6 +28,7 @@ import { CardTitleSurface } from "./CardTitleSurface";
 import { CardTypeTagsSection } from "./CardTypeTagsSection";
 import type { CardLinks } from "./cardLinks";
 import type { CardWhere } from "./cardWhere";
+import { SketchPanel } from "./SketchPanel";
 import { TutorialStepsPanel } from "./TutorialStepsPanel";
 import { hasTourSteps } from "./tour";
 
@@ -41,6 +43,14 @@ export { cardLinks, EMPTY_CARD_LINKS, snippetAround } from "./cardLinks";
 export type { CardWhere, CardWhereEntry, CardWhereSection } from "./cardWhere";
 
 export type CardPanelEditingField = "title" | "body";
+
+/** The drawing a sketch card holds, and the way into the surface that edits it. */
+export interface CardPanelSketch {
+  elements: readonly DrawingElement[];
+  /** Absent for a session that may read the sketch but not open it. */
+  onOpen?: (() => void) | undefined;
+  label?: string | undefined;
+}
 
 /** Inspector tabs: metadata and relations, or the body itself. */
 export type CardPanelTab = "details" | "content" | "style";
@@ -72,6 +82,11 @@ export interface CardPanelProps {
   bodyEmpty?: boolean;
   /** Which field the panel currently owns; null keeps both read-only. */
   editing: CardPanelEditingField | null;
+  /**
+   * A sketch has no text body: what it holds is the drawing. When present, the
+   * Content tab is the drawing itself instead of the body editor.
+   */
+  sketch?: CardPanelSketch | undefined;
   cardDoc: LoroDoc;
   /** Null when the projection has no body yet; readers then see static text. */
   contentId: ContainerID | null;
@@ -134,6 +149,7 @@ export function CardPanel({
   variant = "inspector",
   bodyEmpty = false,
   editing,
+  sketch,
   cardDoc,
   contentId,
   titleId,
@@ -413,15 +429,25 @@ export function CardPanel({
             id={tabIds.content.panel}
             aria-labelledby={tabIds.content.tab}
           >
-            {tutorialCard ? (
-              <TutorialStepsPanel
-                cardId={card.id}
-                cardDoc={cardDoc}
-                contentId={contentId}
-                canEdit={editContent}
+            {sketch ? (
+              <SketchPanel
+                elements={sketch.elements}
+                onOpen={sketch.onOpen}
+                label={sketch.label ?? "Sketch"}
               />
-            ) : null}
-            {bodySurface}
+            ) : (
+              <>
+                {tutorialCard ? (
+                  <TutorialStepsPanel
+                    cardId={card.id}
+                    cardDoc={cardDoc}
+                    contentId={contentId}
+                    canEdit={editContent}
+                  />
+                ) : null}
+                {bodySurface}
+              </>
+            )}
           </div>
         ) : (
           <Section title="Body">{bodySurface}</Section>

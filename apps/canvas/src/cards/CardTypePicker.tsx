@@ -1,4 +1,4 @@
-import type { Card, CardType } from "@suite/graph";
+import { type Card, type CardType, isBehaviourType } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
 import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 
@@ -56,8 +56,16 @@ export function CardTypePicker({
     .filter((id) => id !== primaryId)
     .map((id) => byId.get(id))
     .filter((type): type is CardType => type !== undefined);
-  const addable = onAdd ? types.filter((type) => !orderedIds.includes(type.id)) : [];
-  const others = primary ? types.filter((type) => type.id !== primary.id) : types;
+  // A behaviour is not a kind of note to combine with other kinds: a sketch, a
+  // portal and a tour each own their renderer and their own record, so a card
+  // either is one or is not. Neither menu offers one here, and a card that is a
+  // behaviour is offered no member at all — converting it is the type glyph's
+  // job, which replaces the set rather than growing it.
+  const behaviour = isBehaviourType(card.primaryTypeId);
+  const combinable = types.filter((type) => !isBehaviourType(type.id));
+  const addable =
+    onAdd && !behaviour ? combinable.filter((type) => !orderedIds.includes(type.id)) : [];
+  const others = primary ? combinable.filter((type) => type.id !== primary.id) : combinable;
 
   const chipClass =
     "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors";
@@ -79,17 +87,19 @@ export function CardTypePicker({
             >
               <span aria-hidden="true">{primary.glyph}</span>
               {primary.name}
-              <button
-                type="button"
-                aria-haspopup="menu"
-                aria-expanded={menu === "primary"}
-                aria-label={`Change primary type (${primary.name})`}
-                data-testid="type-primary-menu"
-                className="rounded-full px-1 leading-none text-[var(--ink-muted)] hover:bg-black/10 dark:hover:bg-white/10"
-                onClick={() => setMenu(menu === "primary" ? null : "primary")}
-              >
-                {"\u25be"}
-              </button>
+              {behaviour ? null : (
+                <button
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={menu === "primary"}
+                  aria-label={`Change primary type (${primary.name})`}
+                  data-testid="type-primary-menu"
+                  className="rounded-full px-1 leading-none text-[var(--ink-muted)] hover:bg-black/10 dark:hover:bg-white/10"
+                  onClick={() => setMenu(menu === "primary" ? null : "primary")}
+                >
+                  {"\u25be"}
+                </button>
+              )}
             </span>
             {menu === "primary" ? (
               <div

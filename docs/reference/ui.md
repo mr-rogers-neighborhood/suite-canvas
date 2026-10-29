@@ -100,6 +100,15 @@ Two details at the boundary between Excalidraw and the graph are worth knowing:
   first, the relay second. `stampElements` applies those ids to every commit, so a stroke drawn after a
   picture does not drop the mapping.
 
+A sketch has no text body. Its inspector shows the drawing where a note shows its body: the Content tab
+paints `SketchPanel`, the same SVG the card face uses, and clicking it opens the surface that draws.
+There is nothing to type into, so the body editor is not mounted for a sketch at all.
+
+A sketch is a behaviour, and a behaviour is never an extra type. `CardTypePicker` reads
+`isBehaviourType`, which is why neither the member menu nor the primary menu offers a sketch, a portal
+or a tour: each owns its renderer and its own record, so a card either is one or is not. Converting a
+card is the type glyph's job, and that replaces the type set rather than growing it.
+
 Anyone whose session may edit the board may draw, which includes a share with the editor role: the
 surface takes `readOnly` from the session, and a viewer's or a selection share's session is read-only.
 A picture inserted on a share, or anywhere without an account session, is kept in this browser only and

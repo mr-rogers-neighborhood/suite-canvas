@@ -8,6 +8,12 @@ export interface WhiteboardPreviewProps {
   /** Accessible name; defaults to a neutral sketch description. */
   label?: string;
   className?: string;
+  /**
+   * Whether an empty scene paints "Empty sketch" inside the frame. A surface with
+   * its own words for an empty sketch — the inspector's panel does — turns this off
+   * rather than painting the same sentence twice.
+   */
+  showEmptyLabel?: boolean;
 }
 
 /** A lightweight SVG preview for a sketch card face. */
@@ -15,6 +21,7 @@ export function WhiteboardPreview({
   elements,
   label = "Sketch preview",
   className,
+  showEmptyLabel = true,
 }: WhiteboardPreviewProps) {
   const preview = useMemo(() => whiteboardPreview(elements), [elements]);
   const { width, height } = preview.viewBox;
@@ -107,7 +114,7 @@ export function WhiteboardPreview({
           />
         );
       })}
-      {preview.empty ? (
+      {preview.empty && showEmptyLabel ? (
         <text
           className="whiteboard-preview__empty"
           x={width / 2}

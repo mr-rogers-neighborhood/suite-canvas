@@ -1,4 +1,4 @@
-import type { Card, CardFieldView, CardType, FieldDefinition } from "@suite/graph";
+import type { Card, CardFieldView, CardType, DrawingElement, FieldDefinition } from "@suite/graph";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { LoroDoc } from "loro-crdt";
 import { describe, expect, it, vi } from "vitest";
@@ -923,5 +923,46 @@ describe("CardPanel multi-type picker", () => {
     expect(screen.getByTestId("type-view-project")).toHaveAttribute("data-primary", "true");
     expect(screen.getByTestId("type-view-film")).not.toHaveAttribute("data-primary");
     expect(screen.queryByTestId("type-add")).toBeNull();
+  });
+});
+
+/**
+ * A sketch is a card whose content is a drawing, not text. The Content tab has to
+ * show the drawing and nothing that offers to type into it.
+ */
+describe("CardPanel with a sketch", () => {
+  const stroke = {
+    id: "stroke-1",
+    type: "freedraw",
+    x: 10,
+    y: 10,
+    width: 40,
+    height: 20,
+    points: [
+      { x: 0, y: 0 },
+      { x: 40, y: 20 },
+    ],
+  } as unknown as DrawingElement;
+
+  it("shows the drawing in place of the body and opens it on click", () => {
+    const onOpen = vi.fn();
+    renderPanel({
+      sketch: { elements: [stroke], onOpen, label: "Sketch" },
+      bodyEmpty: true,
+    });
+
+    // The Content tab is the drawing: no plain-text body is mounted beside it.
+    expect(screen.getByTestId("sketch-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("card-panel-body")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("sketch-panel-open"));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows an empty sketch as empty, and offers no door a reader cannot open", () => {
+    renderPanel({ sketch: { elements: [] }, bodyEmpty: true });
+
+    expect(screen.getByTestId("sketch-panel")).toHaveTextContent("Empty");
+    expect(screen.queryByTestId("sketch-panel-open")).toBeNull();
   });
 });

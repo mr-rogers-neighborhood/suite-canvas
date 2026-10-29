@@ -164,6 +164,11 @@ test("a single click opens the sketch in the one inspector", async ({ page }) =>
   await expect(inspector.getByTestId("inspector-open-sketch")).toBeVisible();
   await expect(page.getByTestId("card-focus")).toHaveCount(0);
 
+  // A sketch has no text body: the Content tab is the drawing, and the body
+  // editor is not mounted anywhere in the panel.
+  await expect(inspector.getByTestId("sketch-panel")).toBeVisible();
+  await expect(inspector.getByTestId("card-panel-body")).toHaveCount(0);
+
   await inspector.getByTestId("inspector-close").click();
   await expect(inspector).toHaveCount(0);
 

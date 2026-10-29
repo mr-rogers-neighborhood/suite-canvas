@@ -1,0 +1,37 @@
+.sketch-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* A4-ish, so the drawing reads as a page rather than a strip. */
+.sketch-panel__frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--card-radius, 12px);
+  background: var(--surface);
+  cursor: zoom-in;
+}
+
+.sketch-panel__frame--static {
+  cursor: default;
+}
+
+.sketch-panel__frame:not(.sketch-panel__frame--static):hover {
+  border-color: color-mix(in srgb, var(--ink-muted) 60%, transparent);
+}
+
+.sketch-panel__frame:focus-visible {
+  outline: 2px solid var(--accent, var(--ink));
+  outline-offset: 1px;
+}
+
+.sketch-panel__hint {
+  color: var(--ink-muted);
+  font-size: 11px;
+}

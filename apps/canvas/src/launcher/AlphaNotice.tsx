@@ -92,8 +92,8 @@ export function AlphaNotice({ onSeePlans, forceOpen = false }: AlphaNoticeProps)
         </p>
 
         <p className="mt-2 text-[var(--ink-muted)]">
-          When something breaks, the feedback bubble in the corner sends it straight to us. That is
-          the most useful thing you can do with alpha software.
+          When something breaks, the feedback bubble in the corner sends it straight to me. That is
+          the most useful thing you can do with alpha software!
         </p>
 
         <div className="mt-4 flex flex-wrap items-center justify-end gap-2">

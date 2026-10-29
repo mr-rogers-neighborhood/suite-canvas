@@ -179,6 +179,9 @@ export function LibraryCardRow({
       key={item.id}
       className="library-entry"
       data-row-id={item.id}
+      // What a row is, so a reader (or a test) can tell a board from a card in a
+      // list that holds both.
+      data-row-kind={isBoardItem(item) ? "board" : "card"}
       data-active={current ? "true" : undefined}
       data-selected={selectedIds.includes(item.id) ? "true" : undefined}
       aria-current={current ? "true" : undefined}

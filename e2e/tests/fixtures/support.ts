@@ -51,6 +51,18 @@ export async function openBoard(page: Page, board: string): Promise<void> {
 
 export const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
+/**
+ * The library's rows, split by what they are.
+ *
+ * The Cards tab lists boards beside cards, because a board is a thing a reader
+ * searches for and opens the same way. A test that means "the first card" has to
+ * say so, or a board row sorts to the top and the click lands on the wrong thing.
+ */
+export const libraryCardRows = (page: Page) =>
+  page.locator('li[data-row-id][data-row-kind="card"]');
+export const libraryBoardRows = (page: Page) =>
+  page.locator('li[data-row-id][data-row-kind="board"]');
+
 export const cardByTitle = (page: Page, title: string): Locator =>
   cards(page).filter({ hasText: title });
 

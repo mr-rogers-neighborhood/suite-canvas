@@ -1,11 +1,13 @@
 import { expect, type Page, test } from "@playwright/test";
 import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
-import { libraryRowAction, newBoard, openLibraryBoards } from "../fixtures/support";
+import { libraryRowAction, newBoard, openLibraryBoards, selectCard } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-ws-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
+/** The library rows that are cards: the Cards tab lists boards beside them. */
+const cardRows = (page: Page) => page.locator('li[data-row-id][data-row-kind="card"]');
 
 async function createBoard(page: Page): Promise<string> {
   return newBoard(page);
@@ -17,11 +19,9 @@ async function createNoteFromDock(page: Page): Promise<void> {
 }
 
 async function createSectionAroundCard(page: Page, index: number, title: string): Promise<void> {
-  const card = cards(page).nth(index);
-  const box = await card.boundingBox();
-  if (!box) throw new Error("card not visible");
-  await page.mouse.click(box.x + 40, box.y + 60);
-  await expect(page.getByTestId("card-inspector")).toBeVisible();
+  // Selecting through the shared helper leaves edit mode, so the chord is read as
+  // a shortcut rather than as typing into whatever the click focused.
+  await selectCard(page, cards(page).nth(index));
   const before = await page.locator(".section-header").count();
   await page.keyboard.press("Control+g");
   await expect(page.locator(".section-header")).toHaveCount(before + 1);
@@ -56,7 +56,7 @@ async function addTextField(page: Page, name: string): Promise<void> {
   await expect(page.getByTestId("type-settings")).toHaveCount(0);
 }
 
-async function openLibrary(page: Page, tab: "inbox" | "cards" | "boards" | "trash"): Promise<void> {
+async function openLibrary(page: Page, tab: "inbox" | "cards" | "trash"): Promise<void> {
   if ((await page.getByTestId("library-drawer").count()) === 0) {
     await page.getByTestId("dock-library").click();
   }
@@ -136,11 +136,13 @@ test("shares one card across boards and lists both in the inspector", { tag: "@s
 
   // Place the same card on the new board from the Cards tab.
   await openLibrary(page, "cards");
-  await libraryRowAction(page.locator('[data-testid^="library-item-"]').first(), "Place on board");
+  await libraryRowAction(cardRows(page).first(), "Place on board");
   await expect(cards(page)).toHaveCount(1);
 
   const card = cards(page).first();
-  await card.getByTestId("card-type").click();
+  // The glyph opens the type menu, so the way into the panel is the card's own menu.
+  await card.getByTestId("card-menu").click();
+  await page.getByRole("menuitem", { name: "Card info" }).click();
   await page.getByTestId("card-panel-tab-details").click();
   const boards = page.getByTestId("inspector-boards");
   await expect(boards).toContainText("Board 1");
@@ -156,7 +158,7 @@ test("holds a card out of the drawer and drops it on the board", { tag: "@smoke"
   await expect(cards(page)).toHaveCount(0);
 
   await openLibrary(page, "cards");
-  const row = page.locator('[data-testid^="library-item-"]').first();
+  const row = cardRows(page).first();
   const box = await row.boundingBox();
   if (!box) throw new Error("library row not visible");
 
@@ -180,8 +182,9 @@ test("deletes a board from the library and asks once", { tag: "@smoke" }, async 
   const boardId = await createBoard(page);
   await expect(cards(page)).toHaveCount(0);
 
-  // Deletion lives in the library; the bar only goes places.
-  await openLibrary(page, "boards");
+  // Deletion lives in the library, where a board is a row in Cards; the bar only
+  // goes places.
+  await openLibraryBoards(page);
   await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Delete board\u2026");
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
@@ -201,7 +204,7 @@ test("asks before deleting a board with cards and keeps them in the library", {
 
   // Put a card on the board so the delete has consequences.
   await openLibrary(page, "cards");
-  await libraryRowAction(page.locator('[data-testid^="library-item-"]').first(), "Place on board");
+  await libraryRowAction(cardRows(page).first(), "Place on board");
   await expect(cards(page)).toHaveCount(1);
 
   await openLibraryBoards(page);
@@ -282,7 +285,7 @@ test("scopes the cards list to the active board", { tag: "@smoke" }, async ({ pa
   await page.getByRole("menuitem", { name: "Remove from board" }).click();
 
   await openLibrary(page, "cards");
-  const rows = page.locator('[data-testid^="library-item-"]');
+  const rows = cardRows(page);
   await expect(rows).toHaveCount(2);
 
   await expect(page.getByTestId("library-scope")).toBeVisible();
@@ -313,7 +316,7 @@ test("filters the board-scoped list by section subtree and unsorted", { tag: "@s
   await openLibrary(page, "cards");
   await page.getByTestId("library-scope-board").click();
 
-  const rows = page.locator('[data-testid^="library-item-"]');
+  const rows = cardRows(page);
   await expect(rows).toHaveCount(2);
   // Row meta names the card's own (deepest) section, then the board.
   await expect(page.getByTestId("library-row-meta").first()).toContainText("Sub \u00b7 Board 1");
@@ -352,9 +355,9 @@ test("groups board cards by section with unsorted last", { tag: "@smoke" }, asyn
   const groups = page.locator('section[data-testid^="library-group-"]');
   await expect(groups).toHaveCount(2);
   await expect(groups.first()).toContainText("Research");
-  await expect(groups.first().locator('[data-testid^="library-item-"]')).toHaveCount(1);
+  await expect(groups.first().locator('li[data-row-kind="card"]')).toHaveCount(1);
   await expect(groups.last()).toContainText("Unsorted");
-  await expect(groups.last().locator('[data-testid^="library-item-"]')).toHaveCount(1);
+  await expect(groups.last().locator('li[data-row-kind="card"]')).toHaveCount(1);
 });
 
 test("opens a library row in the inspector instead of expanding it", { tag: "@smoke" }, async ({
@@ -363,15 +366,20 @@ test("opens a library row in the inspector instead of expanding it", { tag: "@sm
   await page.goto(workspaceUrl("row-panel"));
   await expect(cards(page)).toHaveCount(2);
 
-  // A text field to edit from the inspector.
-  await cards(page).first().getByTestId("card-type").click();
+  // A text field to edit from the inspector. The card's glyph opens the type
+  // menu, so the panel is reached through the card's own menu.
+  await cards(page).first().getByTestId("card-menu").click();
+  await page.getByRole("menuitem", { name: "Card info" }).click();
   await expect(page.getByTestId("card-inspector")).toBeVisible();
   await addTextField(page, "Status");
   await page.getByTestId("inspector-close").click();
 
   await openLibrary(page, "cards");
   await page.getByTestId("library-scope-board").click();
-  await page.locator('[data-testid^="library-item-"]').first().click();
+  // The title is the row's own open affordance; the ⋯ beside it is the menu.
+  const firstRow = await cardRows(page).first().getAttribute("data-row-id");
+  if (!firstRow) throw new Error("the row has no id");
+  await page.getByTestId(`library-title-${firstRow}`).click();
 
   const panel = page.getByTestId("card-inspector");
   await expect(panel).toBeVisible();

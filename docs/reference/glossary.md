@@ -15,7 +15,7 @@ One definition per term, in the sense this repository uses it. The model behind 
 | field | One definition inside a type, with a kind and optional options | `types.<id>.fields`, `FieldDefinition` |
 | property | One card's value for one field | `cards.<id>.properties`, `PropertyValue` |
 | tag | A free label a card can carry, workspace-wide rather than owned by a type | `tags`, `tagIds` |
-| template | A card a type copies when it creates a new card | `CardType.templateCardId` |
+| template | A card a type copies when it creates a new card; the type's first live template is the default, the rest are chosen by name | `CardType.templateCardIds` |
 | reference | A mention or a `card` property pointing at another card. It is workspace truth and places nothing | `references`, `mention` |
 | link | A drawn arrow between two endpoints on a board. It carries no data beyond its label | `edges`, `GraphEdge` |
 | connector | A named point on a card's perimeter where a link attaches | `connectors`, `Connector` |

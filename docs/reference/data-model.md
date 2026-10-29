@@ -47,7 +47,7 @@ malformed value throws at the boundary that read it rather than reaching the can
 | Placement | `boardId`, `cardId`, `x`, `y`, `z`, `createdAt`, `width`, `height` | none |
 | Section | `boardId`, `title`, `x`, `y`, `width`, `height`, `z`, `color`, `style`, `createdAt`, `updatedAt` | `tags`, `connectors` |
 | Edge | `boardId`, `source`, `target`, `sourceKind`, `targetKind`, `sourceConnector`, `targetConnector`, `kind`, `path`, `bidirectional`, `label`, `labelOffset`, `bends`, `layer`, `style`, `createdAt`, `updatedAt` | none |
-| Card type | `name`, `pluralName`, `glyph`, `color`, `templateCardId`, `createdAt`, `updatedAt` | `fields`, a map keyed by field id |
+| Card type | `name`, `pluralName`, `glyph`, `color`, `templateCardIds`, `createdAt`, `updatedAt` | `fields`, a map keyed by field id; `templates`, a map of card id to rank |
 | Tag | `name`, `color`, `createdAt` | none |
 | Saved view | `name`, `position` | `query`, a map holding the query facets |
 

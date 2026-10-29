@@ -346,6 +346,8 @@ export function CardPanel({
             value={resolveCardIcon(card, typesById.get(card.primaryTypeId)?.icon)}
             canEdit={editLayout}
             testId="card-icon"
+            // The Details tab pads nothing; every row in it carries its own gutter.
+            inset
             onChange={(icon) => {
               const workspace = useCanvasStore.getState().workspace;
               if (workspace) setEntityIcon(workspace, { kind: "card", id: card.id }, icon);

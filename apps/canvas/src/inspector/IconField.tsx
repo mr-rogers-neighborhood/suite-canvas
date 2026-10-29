@@ -14,6 +14,7 @@ export function IconField({
   canEdit,
   onChange,
   testId = "icon",
+  inset = false,
 }: {
   /** The resolved icon: what the entity would draw right now. */
   value: string | null;
@@ -22,12 +23,33 @@ export function IconField({
   onChange: (icon: string | null) => void;
   /** Stem for the three test ids, so each panel keeps the name its specs know. */
   testId?: string;
+  /**
+   * Whether this row brings its own gutter, for a panel that does not pad its body.
+   *
+   * The card inspector's Details tab pads nothing (`card-panel-details` has no
+   * `px-3`), because each `Section` in it carries the gutter itself; this row sat
+   * flush against the panel edge while every row above and below it was inset, and
+   * that misalignment is the whole reason the flag exists. The container panel pads
+   * its own body, so it leaves the flag off rather than indenting twice.
+   */
+  inset?: boolean;
 }) {
   const [choosing, setChoosing] = useState(false);
   return (
-    <section className="mt-3" data-testid={testId}>
-      <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">Icon</h3>
-      <div className="mt-1 flex items-center gap-1.5">
+    <section
+      className={inset ? "border-t border-[var(--hairline)] px-3 py-3 first:border-t-0" : "mt-3"}
+      data-testid={testId}
+    >
+      <h3
+        className={
+          inset
+            ? "text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]"
+            : "text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]"
+        }
+      >
+        Icon
+      </h3>
+      <div className={inset ? "mt-2 flex items-center gap-1.5" : "mt-1 flex items-center gap-1.5"}>
         <button
           type="button"
           data-testid={`${testId}-pick`}

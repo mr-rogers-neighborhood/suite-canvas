@@ -533,6 +533,33 @@ docker compose start app
 - A dead or wrong admin token makes `alert.sh` exit `2` rather than `0`. Fix the credential; do not
   ignore the page.
 
+### A workspace the relay thinks belongs to another organization
+
+A signed-in join answers `workspace-owned-elsewhere` when the relay's `workspace_orgs` row names a
+different organization than the session's token. The relay keeps that row itself, with no Postgres
+credential and no control-plane call per join, so it can only ever be a copy: if the control plane's
+`workspaces.organization_id` says otherwise, the copy is what is wrong and the account is locked out
+of its own workspace.
+
+The relay's database is a file, so the repair is one statement, run on the host with the file
+stopped or the container's copy open read-write:
+
+```sh
+docker compose exec relay   node -e 'const {DatabaseSync}=require("node:sqlite");const db=new DatabaseSync(process.env.SUITE_WORKSPACES_DB??"/data/suite.workspaces.sqlite");db.prepare("UPDATE workspace_orgs SET organization_id = ?, opened_at = ? WHERE workspace_id = ?").run(process.argv[1], Date.now(), process.argv[2])' <organization id> <workspace id>
+```
+
+Confirm the control plane's answer before running it, because the row is the relay's only record of
+who may open the room:
+
+```sql
+select id, organization_id from workspaces where id = '<workspace id>';
+```
+
+Nothing writes that row automatically: the relay would have to ask the control plane on every join it
+refuses, and a wrong answer there is a stolen document rather than a refused one. A reconciliation
+call from the control plane after a successful claim is the fix that removes the statement, and it
+needs its own narrow credential, so it is not in this build.
+
 ## Prove the mail transport without a sign-up
 
 Settings → mail → **Send a test message** sends one message with the transport the saved

@@ -98,6 +98,12 @@ sandbox forgets quickly, so a missed one is easiest to reproduce with a fresh pu
 
 ## 5. Pay with a test card
 
+The Plan tab is only as alive as the control plane: if it says the account service did not
+answer, that process is not running (`pnpm dev` starts it on 1236) and nothing else on this page
+will work either. With it up, a deployment whose `.env` has `SUITE_BILLING_ENABLED=1` lists the
+plans from `STRIPE_PRICE_TIERS`, and a deployment without them says so instead of showing a
+blank space.
+
 A brand-new account should show **Local** with **See plans**, not Synced. The organization is born
 with a licence for zero workspaces, so the relay refuses the socket join and the control plane refuses
 the claim, both with `plan-required`. The workspace stays on the device and stays editable, which is

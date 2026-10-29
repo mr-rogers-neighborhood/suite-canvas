@@ -18,8 +18,10 @@ export interface QuotaLine {
   label: string;
   /** The plan's allowance, in the unit the label names. */
   limit: number;
-  /** How it reads in the panel: "10 workspaces", "2 GB". */
+  /** How it reads in the panel: "10 workspaces", "2 GB", or "none yet". */
   value: string;
+  /** True for an allowance the plan names and sets to zero. */
+  zero: boolean;
 }
 
 /** Human names and units for the limits the relay enforces. Unknown ones still show. */
@@ -52,15 +54,19 @@ function prettify(id: string): string {
 }
 
 /**
- * The plan's allowances as rows. An empty list is a real answer — a free tier
- * with nothing published — and the panel says so rather than showing a fake zero.
+ * The plan's allowances as rows.
+ *
+ * A zero is shown, not hidden. Dropping it is how this panel came to tell a free
+ * organization that the server "sets no limits": every entry was filtered out, the list
+ * came back empty, and the empty case was described as unlimited. A plan that names an
+ * allowance and sets it to zero is saying something, and the panel repeats it.
  */
 export function quotaLines(
   limits: Readonly<Record<string, number>> | null | undefined,
 ): QuotaLine[] {
   if (!limits) return [];
   return Object.entries(limits)
-    .filter(([, limit]) => typeof limit === "number" && Number.isFinite(limit) && limit > 0)
+    .filter(([, limit]) => typeof limit === "number" && Number.isFinite(limit) && limit >= 0)
     .map(([id, limit]) => {
       const known = LIMIT_LABELS[id];
       const unit = known?.unit ?? "count";
@@ -68,10 +74,30 @@ export function quotaLines(
         id,
         label: known?.label ?? prettify(id),
         limit,
-        value: unit === "bytes" ? humanBytes(limit) : String(limit),
+        value: limit === 0 ? "none yet" : unit === "bytes" ? humanBytes(limit) : String(limit),
+        zero: limit === 0,
       };
     })
     .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+/** The tier a hosted deployment gives an organization with no subscription. */
+export const FREE_TIER_ID = "free";
+
+/**
+ * What a plan-less organization gets, said once.
+ *
+ * The free licence grants no synced workspace and no bytes on the server, so the panel
+ * states that in one sentence and then offers the plans. Nothing local is capped by it:
+ * workspaces live in IndexedDB on the device whether or not an account exists, which is
+ * the product and not a consolation.
+ */
+export const FREE_PLAN_SENTENCE =
+  "Everything on this device is uncapped. A plan adds the room: syncing, sharing and opening it elsewhere.";
+
+/** The line a free tier shows, so the zero it carries is not invisible. */
+export function freeWorkspaceLine(): QuotaLine {
+  return { id: "workspaces", label: "Synced workspaces", limit: 0, value: "none yet", zero: true };
 }
 
 /** The account's plan, as the panel states it. `null` when no token is held yet. */

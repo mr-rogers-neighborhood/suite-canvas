@@ -8,7 +8,14 @@ import {
   type SubscriptionView,
   startCheckout,
 } from "./billing";
-import { currentEntitlement, type EntitlementView, quotaLines } from "./entitlement";
+import {
+  currentEntitlement,
+  type EntitlementView,
+  FREE_PLAN_SENTENCE,
+  FREE_TIER_ID,
+  freeWorkspaceLine,
+  quotaLines,
+} from "./entitlement";
 import { ensureOrganization, ORGANIZATION_NAME } from "./organization";
 
 /**
@@ -43,41 +50,49 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
   const [load, setLoad] = useState<Load>("idle");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [answered, setAnswered] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
+  /** One read, so the first paint and Retry cannot disagree about what happened. */
+  const read = useCallback(async (): Promise<void> => {
+    setLoad("loading");
+    setNotice(null);
+    const organization = await ensureOrganization(ORGANIZATION_NAME);
+    const listed = await listPlans();
+    const current = organization.ok
+      ? await readSubscription(organization.organizationId)
+      : ({ ok: true, value: null } as const);
+    // The entitlement read, not a second copy of the tier table: whatever it
+    // answers is what the relay will enforce on the next mint.
+    const entitlementRead = organization.ok
+      ? await readEntitlement(organization.organizationId)
+      : null;
+
+    if (entitlementRead?.ok) {
+      setView({
+        tier: entitlementRead.value.tier,
+        organizationId: organization.ok ? organization.organizationId : null,
+        role: null,
+        limits: entitlementRead.value.limits,
+        quota: quotaLines(entitlementRead.value.limits),
+        refreshesAt: null,
+      });
+    }
+    if (listed.ok) setPlans(listed.value);
+    if (current.ok) setSubscription(current.value);
+    // A refusal is worth a sentence, not an empty page: the account service being down
+    // and a deployment that sells nothing look identical once the list is just empty.
+    if (!listed.ok) setNotice(listed.message);
+    setAnswered(true);
+    setLoad(listed.ok || current.ok ? "done" : "failed");
+  }, []);
+
+  // `answered` is in the guard rather than the dependency list: StrictMode mounts twice,
+  // and a second read would spend the organization call for the same answer.
   useEffect(() => {
     if (entitlement !== undefined) return;
-    let live = true;
-    setLoad("loading");
-    void (async () => {
-      const organization = await ensureOrganization(ORGANIZATION_NAME);
-      const listed = await listPlans();
-      const current = organization.ok
-        ? await readSubscription(organization.organizationId)
-        : ({ ok: true, value: null } as const);
-      // The entitlement read, not a second copy of the tier table: whatever it
-      // answers is what the relay will enforce on the next mint.
-      const entitlementRead = organization.ok
-        ? await readEntitlement(organization.organizationId)
-        : null;
-      if (!live) return;
-      if (entitlementRead?.ok) {
-        setView({
-          tier: entitlementRead.value.tier,
-          organizationId: organization.ok ? organization.organizationId : null,
-          role: null,
-          limits: entitlementRead.value.limits,
-          quota: quotaLines(entitlementRead.value.limits),
-          refreshesAt: null,
-        });
-      }
-      if (listed.ok) setPlans(listed.value);
-      if (current.ok) setSubscription(current.value);
-      setLoad(listed.ok || current.ok ? "done" : "failed");
-    })();
-    return () => {
-      live = false;
-    };
-  }, [entitlement]);
+    void read();
+  }, [entitlement, read]);
 
   const redirect = useCallback((url: string) => {
     // The plan is bought on Stripe's page; the browser has to go there.
@@ -112,7 +127,20 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
     redirect(result.value);
   }, [onNotice, redirect]);
 
-  const quota = view === null ? [] : view.quota.length > 0 ? view.quota : quotaLines(view.limits);
+  // A plan-less organization is `tier: "free"` with no limits at all, so the one number
+  // that says what it holds has to come from the tier rather than from a missing entry.
+  const unpaid =
+    view !== null &&
+    (view.tier.trim().toLowerCase() === FREE_TIER_ID ||
+      (view.quota.length > 0 && view.quota.every((line) => line.zero)));
+  const quota =
+    view === null
+      ? []
+      : view.quota.length > 0
+        ? view.quota
+        : unpaid
+          ? [freeWorkspaceLine()]
+          : quotaLines(view.limits);
 
   return (
     <div data-testid="plan-panel" className="text-[12px]">
@@ -128,7 +156,7 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
       </h4>
       {quota.length === 0 ? (
         <p data-testid="plan-no-limits" className="mt-1 leading-5 text-[var(--ink-muted)]">
-          This server sets no limits. You have every feature, with no cap on workspaces.
+          This deployment keeps no entitlement to show.
         </p>
       ) : (
         <dl data-testid="plan-quota" className="mt-1 divide-y divide-[var(--hairline)]">
@@ -140,6 +168,11 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
           ))}
         </dl>
       )}
+      {unpaid ? (
+        <p data-testid="plan-free-sentence" className="mt-1 leading-5 text-[var(--ink-muted)]">
+          {FREE_PLAN_SENTENCE}
+        </p>
+      ) : null}
 
       <h4 className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
         Subscription
@@ -157,7 +190,9 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
         </p>
       )}
 
-      {plans.length > 0 ? (
+      {entitlement === undefined && load === "loading" ? (
+        <p className="mt-3 text-[var(--ink-muted)]">Reading the plans…</p>
+      ) : plans.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {plans.map((plan) => (
             <button
@@ -172,17 +207,43 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
             </button>
           ))}
         </div>
+      ) : answered && notice !== null ? (
+        // The account service not answering and a deployment that sells nothing used to
+        // look the same from here: both were an empty space where the plans go.
+        <div className="mt-3" data-testid="plan-unavailable">
+          <p className="leading-5 text-[var(--ink-muted)]">{notice}</p>
+          <button
+            type="button"
+            data-testid="plan-retry"
+            disabled={busy !== null}
+            onClick={() => void read()}
+            className="mt-1.5 rounded-lg border border-[var(--hairline)] px-3 py-1.5 text-[11px] text-[var(--ink)] disabled:opacity-50"
+          >
+            Try again
+          </button>
+        </div>
+      ) : answered ? (
+        <p data-testid="plan-catalogue-empty" className="mt-3 leading-5 text-[var(--ink-muted)]">
+          This deployment has no plans configured. An operator sets `STRIPE_PRICE_TIERS` and
+          restarts the control plane.
+        </p>
       ) : null}
 
-      <button
-        type="button"
-        data-testid="plan-portal"
-        disabled={busy !== null}
-        onClick={() => void portal()}
-        className="mt-3 rounded-lg border border-[var(--hairline)] px-3 py-1.5 text-[11px] text-[var(--ink)] disabled:opacity-50"
-      >
-        {busy === "portal" ? "Opening the portal…" : "Manage billing in Stripe"}
-      </button>
+      {subscription === null ? (
+        <p data-testid="plan-no-customer" className="mt-3 leading-5 text-[var(--ink-muted)]">
+          Choosing a plan creates the billing customer this deployment charges.
+        </p>
+      ) : (
+        <button
+          type="button"
+          data-testid="plan-portal"
+          disabled={busy !== null}
+          onClick={() => void portal()}
+          className="mt-3 rounded-lg border border-[var(--hairline)] px-3 py-1.5 text-[11px] text-[var(--ink)] disabled:opacity-50"
+        >
+          {busy === "portal" ? "Opening the portal…" : "Manage billing in Stripe"}
+        </button>
+      )}
 
       {error === null ? null : (
         <p

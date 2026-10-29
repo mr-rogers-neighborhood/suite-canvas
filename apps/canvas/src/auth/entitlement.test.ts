@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   currentEntitlement,
   entitlementView,
+  freeWorkspaceLine,
   quotaLines,
   refusalKind,
   upgradeMessage,
@@ -22,14 +23,32 @@ describe("quota lines", () => {
 
   it("still shows a limit it has never heard of, rather than hiding it", () => {
     expect(quotaLines({ customWidgets: 3 })).toEqual([
-      { id: "customWidgets", label: "Custom widgets", limit: 3, value: "3" },
+      { id: "customWidgets", label: "Custom widgets", limit: 3, value: "3", zero: false },
     ]);
   });
 
-  it("never invents a row: zero, negative and non-finite limits are not allowances", () => {
-    expect(quotaLines({ seats: 0, boards: -1, cards: Number.POSITIVE_INFINITY })).toEqual([]);
+  it("shows a zero as none yet, because hiding it is how this panel said no limits", () => {
+    expect(quotaLines({ workspaces: 0, seats: 1 })).toEqual([
+      { id: "seats", label: "Team members", limit: 1, value: "1", zero: false },
+      { id: "workspaces", label: "Workspaces", limit: 0, value: "none yet", zero: true },
+    ]);
+  });
+
+  it("never invents a row: a negative or non-finite limit is not an allowance", () => {
+    expect(quotaLines({ boards: -1, cards: Number.POSITIVE_INFINITY })).toEqual([]);
     expect(quotaLines(undefined)).toEqual([]);
     expect(quotaLines(null)).toEqual([]);
+  });
+
+  it("names the free tier's zero even when the server sends no limits at all", () => {
+    // The free licence is `limits: {}` — the tier is the only thing saying "no workspace".
+    expect(freeWorkspaceLine()).toEqual({
+      id: "workspaces",
+      label: "Synced workspaces",
+      limit: 0,
+      value: "none yet",
+      zero: true,
+    });
   });
 });
 

@@ -142,6 +142,32 @@ the customer keeps minting.
 the row turns `canceled` when it ends. `past_due` keeps the plan only until `periodEnd`,
 which bounds the grace window to the period Stripe last collected for.
 
+## What the Plan tab shows
+
+`apps/canvas/src/auth/PlanPanel.tsx` reads the entitlement, the catalogue and the subscription
+and states them. Four states, each with its own sentence, because three of them used to look
+the same: a blank space under "Subscription".
+
+| State | What it says |
+| --- | --- |
+| A plan-less organization (`tier: "free"`) | **Synced workspaces: none yet**, then one sentence: everything on this device is uncapped, and a plan adds the room |
+| Plans listed | one `Choose <plan>` button per price in `STRIPE_PRICE_TIERS` |
+| Nothing listed | this deployment has no plans configured, and an operator sets `STRIPE_PRICE_TIERS` |
+| The catalogue failed | the account service's own message, with **Try again** |
+
+A zero is shown rather than dropped. The quota rows come from the limits the token carries,
+and filtering out every non-positive limit is how this panel once said "This server sets no
+limits" directly under "You are on the free plan": the list came back empty and the empty
+case was described as unlimited. The free tier's own zero is added from the tier name, because
+the free entitlement carries no limit keys at all. The token's limits are not changed to suit
+the display: a `documentBytes: 0` claim would cap a free organization's saves at zero in the
+relay's quota service.
+
+**Manage billing in Stripe** appears only when a subscription exists. The portal needs a
+customer, and the customer is created by Checkout, so offering the button before that gives a
+refusal ("no customer exists") that reads like a broken button. Before a plan exists, the plans
+are the action.
+
 ## The born-with licence, and the wall
 
 The entitlement read answers `free` for an organization with no live subscription, and the

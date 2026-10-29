@@ -129,8 +129,8 @@ The Checkout page is Stripe's own, so no card detail reaches this origin. It als
 given, and a 100%-off code is the fastest way to test the whole flow without money moving. With a
 100% coupon the total is zero and Stripe asks for no card at all (`payment_method_collection` is
 `if_required`), so a comp needs neither the test card nor a card form. Setting
-`billing.checkout.coupon` to that coupon's id applies it for everybody and removes the field, which
-is how the alpha runs free.
+`billing.checkout.coupon` to that coupon's id applies it for everybody and removes the field; leaving
+it empty is what puts the field back, so a comp needs no configuration.
 
 ## 6. Check what the payment did
 

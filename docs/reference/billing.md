@@ -27,13 +27,14 @@ Two session parameters decide whether a free plan still asks for a card, and bot
 | `payment_method_collection` | `if_required` | Stripe asks for a card only when the amount due is above zero, so a fully discounted first invoice goes through without one |
 | `discounts` **or** `allow_promotion_codes` | one coupon id, or the field | Stripe refuses both on one session, so `billing.checkout.coupon` (`STRIPE_CHECKOUT_COUPON`) chooses: a coupon applies to every checkout with nothing to type, and an empty value leaves the code field |
 
-Setting the coupon is one request from the dashboard:
+Setting the coupon is one request from the dashboard, and clearing the row brings the code field
+back:
 
 ```sh
 stripe coupons create --percent-off 100 --duration forever --id alpha-free
 ```
 
-The catch has to be stated, because it is the difference between a free alpha and a paying one: a
+The catch has to be stated, because it is the difference between a free launch and a paying one: a
 subscription that collected no payment method has nothing to charge when the discount stops applying.
 Its renewal fails, Stripe marks it `past_due` and then `canceled`, and the licence read answers `free`
 at the next token mint. A coupon with `--duration forever` keeps working; a three-month launch coupon
@@ -42,6 +43,24 @@ becomes a three-month trial with no card to convert.
 `POST /admin/settings/billing/verify` checks the coupon in the mode being verified, next to the
 prices. A coupon made in test mode does not exist in live, which is the same trap as a copied price
 table and fails at a customer's checkout rather than at the switch.
+
+### Handing out a free plan
+
+A **coupon** is the discount; a **promotion code** is the string somebody types to claim it. Making
+the coupon reachable without a field on every checkout is two objects and no code here:
+
+```sh
+stripe coupons create --percent-off 100 --duration forever --id friends-and-family
+stripe promotion_codes create --coupon friends-and-family --code FRIENDS
+```
+
+With `billing.checkout.coupon` empty, Checkout carries the code field, so `FRIENDS` is redeemed on
+Stripe's page and nothing is charged. A redemption limit and an expiry belong on the promotion code
+(`--max-redemptions`, `--expires-at`), not in this process, which is the same reason the tier table
+holds price ids and no prices.
+
+The alpha deployment carries `suite-alpha-free` (100% off, forever) and the code `SUITE-ALPHA` in
+both universes, as a working example of that pair.
 
 A licence is a signed token. A self-hosted relay reads one from `SUITE_LICENCE` and verifies it
 at boot ([ADR-0081](../../internal/decisions/open/0081-a-self-host-licence-arrives-in-the-environment.md));

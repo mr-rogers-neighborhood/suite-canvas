@@ -27,10 +27,14 @@ describe("the alpha notice", () => {
     expect(notice).toHaveTextContent("Export is always available");
   });
 
-  it("says a card is never asked for while the total is zero", () => {
+  it("says where a discount code goes, since none is applied for you", () => {
     render(<AlphaNotice forceOpen />);
 
-    expect(screen.getByTestId("alpha-notice")).toHaveTextContent("no card is asked for");
+    const notice = screen.getByTestId("alpha-notice");
+    expect(notice).toHaveTextContent("somebody gave you a discount code");
+    expect(notice).toHaveTextContent("cancelled from the portal");
+    // Paying is offered as support, not as a condition of using the product.
+    expect(notice).toHaveTextContent("Paying is optional");
   });
 
   it("stays away once it has been read", () => {

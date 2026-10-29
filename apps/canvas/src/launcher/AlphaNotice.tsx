@@ -60,12 +60,13 @@ export function AlphaNotice({ onSeePlans, forceOpen = false }: AlphaNoticeProps)
 
         <p className="mt-2 text-[var(--ink)]">
           A subscription is early access to sync, collaboration and file uploads. The canvas, the
-          cards and export work without one, on this device.
+          cards and export work without one, on this device. Paying is optional and it is what funds
+          the work; nothing here pretends otherwise.
         </p>
 
         <p className="mt-2 text-[var(--ink-muted)]">
-          The source goes public within about two weeks. After that you can run it yourself, and a
-          subscription is a way to fund the work rather than the only way to use it.
+          The source goes public within about two weeks. After that you can run it yourself, so a
+          subscription is a way to support the project rather than the only way to use it.
         </p>
 
         <p className="mt-2 text-[var(--ink-muted)]">
@@ -75,9 +76,9 @@ export function AlphaNotice({ onSeePlans, forceOpen = false }: AlphaNoticeProps)
         </p>
 
         <p className="mt-2 text-[var(--ink-muted)]">
-          Payments are real: Stripe handles the card and this deployment never sees it. Nothing is
-          charged during the alpha, because a 100% discount is applied at checkout, and no card is
-          asked for while the total is zero.
+          Payments are real: Stripe handles the card on its own page and this deployment never sees
+          it. A monthly plan, cancelled from the portal at any time, and if somebody gave you a
+          discount code you enter it on that same page.
         </p>
 
         <p className="mt-2 text-[var(--ink-muted)]">

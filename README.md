@@ -3,15 +3,16 @@
 > **Suite is alpha software.** The hosted deployment at <https://app.suite.run> is real and the
 > paying path is real, but expect rough edges and expect the shape of things to change.
 >
-> A subscription is **early access** to sync, collaboration and file uploads. The canvas, the cards
-> and export work without one, on this device, with no account and no limit.
+> A subscription is **early access** to sync, collaboration and file uploads, and paying for one is
+> how the project is funded while it is alpha. It is optional: the canvas, the cards and export work
+> without one, on this device, with no account and no limit.
 >
 > The source goes public within about two weeks. After that you can run it yourself, and a
 > subscription is a way to fund the work rather than the only way to use it. A self-hosted relay
 > verifies a signed licence token at boot, so running one means asking for a licence; the
 > [self-host section](docs/reference/billing.md) has the shape. Until the source is public, the
-> hosted deployment is the only one, and every plan there is free: a 100% discount is applied at
-> checkout, so no money moves and no card is taken.
+> hosted deployment is the only one, and its plans are billed monthly through Stripe: a discount
+> code, if you have one, is entered on Stripe's own page, and the plan cancels from the portal.
 >
 > Two things that are easy to discover too late: **a workspace is this browser's copy until a plan
 > puts it in your account**, so clearing site data takes it with it, and export is always available.

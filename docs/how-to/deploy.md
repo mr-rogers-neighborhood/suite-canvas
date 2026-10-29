@@ -288,6 +288,13 @@ pnpm --filter @suite/collab-server licence sign \
 `SUITE_HOSTED=1` without a key refuses to boot, since a relay that cannot verify a licence is an
 unlimited one. `SUITE_HOSTED=0` is a self-host: no licences, and no quotas unless you set them.
 
+Hosted mode is what turns the paywall on, and it turns it on in two places that have to agree: the
+control plane's claim route and the relay's socket join. A deployment with `SUITE_HOSTED=1` on the
+control plane but not on the relay has a claim route that refuses and a door that opens, which reads as
+"Synced" for an account with no plan. `pnpm dev` sets it for both, so a local run has the deployment's
+shape: a fresh account stays local until a plan exists, and `pnpm drill:billing` is how a licence is
+written without a payment provider.
+
 `compose.yaml` puts all six stores on the one volume (`documents`, `shares`, `workspaces`, `settings`,
 `licences`, `attachments`) and sets `SUITE_REQUIRE_DURABLE_STORES=1`, so boot refuses any store that is
 unset, `:memory:`, relative, or outside the volume, naming each offender. Leave the flag unset for a

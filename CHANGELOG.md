@@ -22,6 +22,16 @@ release adds is everything somebody outside the project needs in order to trust 
   allowances, the member count, and the caveats that go with them.
 - A self-host card beside the two plans, linking to the deployment guide, because running it yourself
   costs nothing and asks for no licence.
+- The alpha notice comes back after ten minutes rather than never: while the product is early, a
+  reader who dismissed it last week is the one who most needs reminding.
+- The launcher offers the source and an account from the body of the screen, not only from a corner,
+  and the copyright line is a link to the repository.
+- `pnpm security:image` runs Trivy against the three images a deployment ships, and the first run
+  changed two of them: the runtime stages stop carrying the npm and pnpm CLIs (13 HIGH advisories in
+  a tooling tree the application never calls), and the Caddy image upgrades its Alpine packages over
+  a CRITICAL brotli decoder overflow. Six HIGH findings remain inside the Caddy binary, which no
+  change here can reach; they are named in
+  [docs/how-to/release.md](docs/how-to/release.md#the-image-scan).
 - `pnpm security:history` scans the whole commit history for credentials, and
   [docs/how-to/publish.md](docs/how-to/publish.md) records the result of the scan that preceded this
   release.

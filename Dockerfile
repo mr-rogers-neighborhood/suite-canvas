@@ -92,6 +92,19 @@ FROM base AS server-base
 RUN npm install --global tsx@4.23.15 \
   && mkdir -p /data \
   && chown node:node /data
+
+# The package managers are build tools, and this is the last stage that runs
+# them: the container starts `tsx` and nothing else, and `deploy/*.sh` runs
+# `pnpm` on the host rather than inside. Removing them takes the npm CLI's own
+# dependency tree (brace-expansion, picomatch, undici, sigstore, ip-address,
+# pacote) and pnpm's bundled copy out of the shipped image. That tree is 13
+# HIGH advisories in a Trivy scan of the runtime image (`pnpm security:image`),
+# none of it reachable from this application and none of it patchable from this
+# lockfile, because it belongs to the base image's tooling rather than to the
+# app. Deleting it is smaller than patching it.
+FROM server-base AS server-runtime
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/pnpm \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/pnpm
 ENV NODE_ENV=production \
     HOME=/home/node
 # The production dependency tree and the manifests that name it. Every workspace
@@ -103,7 +116,7 @@ USER node
 
 # The relay. It owns the six SQLite stores under /data and speaks Loro over
 # `PORT`; `/health` and the HTTP API share `HEALTH_PORT`.
-FROM server-base AS runtime
+FROM server-runtime AS runtime
 ARG SUITE_VERSION=0.0.0
 ENV PORT=1234 \
     HEALTH_PORT=1235 \
@@ -128,7 +141,7 @@ CMD ["tsx", "apps/collab-server/src/server.ts"]
 # It mounts route modules it does not import, so `apps/control-plane/src/modules`
 # is copied as it is, and a module that is absent is a health line, not a build
 # failure.
-FROM server-base AS control-plane
+FROM server-runtime AS control-plane
 ARG SUITE_VERSION=0.0.0
 ENV PORT=1236 \
     SUITE_VERSION=${SUITE_VERSION}
@@ -147,6 +160,13 @@ CMD ["tsx", "apps/control-plane/src/server.ts"]
 
 # TLS terminator and static host. The canvas build is baked in at /srv.
 FROM caddy:2-alpine AS web
+# The Alpine packages Caddy ships beside itself are ours to update, and a
+# `pnpm security:image` run is what notices: the pinned digest carried a
+# CRITICAL brotli decoder overflow and a HIGH curl use-after-free that the
+# distribution had already fixed. The Go half of that report is inside the
+# `caddy` binary and belongs to whatever Caddy release the tag names, so an
+# upgrade here cannot reach it and the release notes say so instead.
+RUN apk upgrade --no-cache
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/apps/canvas/dist /srv
 # The documentation tree, in the image that serves it. Caddy can only answer

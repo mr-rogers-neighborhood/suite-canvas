@@ -85,6 +85,34 @@ attachment, reload, open the same workspace in a second tab, and confirm the pub
 match what the server reports on a refusal ([reference/limits.md](../reference/limits.md)). A
 container that reports the wrong version is not a release, however healthy `/health` looks.
 
+## The image scan
+
+`pnpm security:image <tag>` is Trivy against the built image, HIGH and CRITICAL only and
+`--ignore-unfixed`, because a finding with no fixed version cannot be closed by rebuilding. Run it on
+all three targets a deployment ships:
+
+```sh
+docker build --target runtime       --build-arg SUITE_VERSION=v0.1.0-alpha.1 -t suite:scan-app .
+docker build --target control-plane --build-arg SUITE_VERSION=v0.1.0-alpha.1 -t suite:scan-cp .
+docker build --target web -t suite:scan-web .
+pnpm security:image suite:scan-app && pnpm security:image suite:scan-cp && pnpm security:image suite:scan-web
+```
+
+The two Node images scan clean. The first run of this did not, and what it found was worth the
+trouble twice over:
+
+- The npm and pnpm CLIs inside the base image carried 13 HIGH advisories between them
+  (`brace-expansion`, `picomatch`, `undici`, `sigstore`, `ip-address`, `pacote`), none reachable from
+  this application and none patchable from this lockfile. They were build tools that had no reason to
+  ship, so `server-runtime` deletes them.
+- The `caddy` image carried a CRITICAL brotli decoder overflow and a HIGH curl use-after-free in its
+  Alpine packages, which `RUN apk upgrade --no-cache` closes.
+
+What remains on `web` is six HIGH findings inside the `caddy` binary itself (go-jose, `x/net`, the Go
+stdlib). Nothing here can reach those: `caddy:2-alpine` is the newest tag, and the fixes are in Go
+modules Caddy has not released yet. A release records them in its notes rather than pretending they
+are absent, and the next image rebuild picks them up.
+
 ## Rollback
 
 Rollback restarts `app` on the tag taken before the upgrade. It needs no code change and no build, and

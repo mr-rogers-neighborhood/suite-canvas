@@ -9,7 +9,10 @@ const selectedNodes = (page: Page) => page.locator(".react-flow__node.selected")
 async function openCardInfo(page: Page): Promise<void> {
   const box = await cards(page).first().boundingBox();
   if (!box) throw new Error("card not visible");
-  await page.mouse.click(box.x + 80, box.y + 24);
+  // The gutter beside the type glyph, not the title: clicking the title starts
+  // editing it, and an editor owns the first Escape, which is the layer this test
+  // is not about.
+  await page.mouse.click(box.x + 24, box.y + 24);
   await expect(page.getByTestId("card-inspector")).toBeVisible();
   await expect(selectedNodes(page)).toHaveCount(1);
 }

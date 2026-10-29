@@ -49,6 +49,22 @@ export async function openBoard(page: Page, board: string): Promise<void> {
   await expect.poll(() => boardId(page)).toBe(board);
 }
 
+/**
+ * The launcher reads the alpha notice on the first visit and again after ten
+ * minutes (`alphaNotice.ts`), so a fresh browser meets a dialog before it can
+ * press anything. A test that is not about the notice starts past it; the one
+ * that is about the notice deliberately does not call this.
+ */
+export async function skipAlphaNotice(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem("suite.alpha-notice.v2", String(Date.now()));
+    } catch {
+      // Storage denied: the notice appears, which is the harmless direction.
+    }
+  });
+}
+
 export const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
 /**

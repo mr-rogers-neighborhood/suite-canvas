@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { expect, type Page, test } from "@playwright/test";
-import { leaveForLauncher } from "../fixtures/support";
+import { leaveForLauncher, skipAlphaNotice } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -18,6 +18,10 @@ async function createNote(page: Page, title: string): Promise<void> {
 }
 
 test.beforeEach(async ({ page }) => {
+  // The launcher greets a fresh browser with the alpha notice; this spec is about
+  // what the launcher offers once past it. `alpha-notice.spec.ts` is the one that
+  // tests the notice itself.
+  await skipAlphaNotice(page);
   await page.goto("/");
   await page.evaluate(() => window.localStorage.removeItem("suite.recentWorkspaces.v1"));
   await page.reload();

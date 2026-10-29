@@ -3,8 +3,10 @@ import {
   type AdminSetting,
   errorText,
   listSettings,
+  type ProfileCheck,
   resetSetting,
   sendTestMail,
+  verifyBillingProfile,
   writeSetting,
 } from "../api";
 import { Button, ErrorLine, Muted, PanelHeader, useLoad } from "../ui";
@@ -34,6 +36,8 @@ export function SettingsPanel() {
   const [mailTo, setMailTo] = useState("");
   const [mailResult, setMailResult] = useState<string | null>(null);
   const [mailBusy, setMailBusy] = useState(false);
+  const [checks, setChecks] = useState<Partial<Record<"test" | "live", ProfileCheck>>>({});
+  const [checkBusy, setCheckBusy] = useState<"test" | "live" | null>(null);
 
   const settings = data?.settings ?? [];
   const mode = settings.find((entry) => entry.key === "billing.mode")?.value;
@@ -49,6 +53,19 @@ export function SettingsPanel() {
       setFailure(errorText(cause));
     } finally {
       setBusy(null);
+    }
+  };
+
+  const check = async (name: "test" | "live") => {
+    setCheckBusy(name);
+    setFailure(null);
+    try {
+      const answer = await verifyBillingProfile(name);
+      setChecks((current) => ({ ...current, [name]: answer }));
+    } catch (cause) {
+      setFailure(errorText(cause));
+    } finally {
+      setCheckBusy(null);
     }
   };
 
@@ -106,18 +123,39 @@ export function SettingsPanel() {
                         : "Prices do not parse"}
                   </Muted>
                   {profile.problem === null ? null : <Muted>{profile.problem}</Muted>}
+                  {checks[name] === undefined ? null : (
+                    <Muted>
+                      <span
+                        role="status"
+                        data-testid={`billing-check-${name}`}
+                        data-state={checks[name]?.ok ? "ok" : "problem"}
+                      >
+                        {checks[name]?.ok
+                          ? `Stripe accepted the ${name} key and found every price.`
+                          : (checks[name]?.problem ?? "The check did not finish.")}
+                      </span>
+                    </Muted>
+                  )}
+                  <Button disabled={checkBusy !== null} onClick={() => void check(name)}>
+                    {checkBusy === name ? "Asking Stripe…" : "Check with Stripe"}
+                  </Button>
                 </div>
               );
             })}
           </div>
+          <p className="admin-help">
+            A profile that reads complete has a key, a webhook secret and a price table. Whether
+            Stripe accepts them is the other question, and the one a copied price table fails: price
+            ids belong to one mode, so test ids do not exist in live. Check asks Stripe in that mode
+            before a checkout ever asks.
+          </p>
         </div>
       )}
 
       {mode === "live" ? (
         <p className="admin-warning" role="status" data-testid="billing-live-warning">
-          Billing is in <strong>live</strong> mode: checkouts charge real cards, and only the{" "}
-          <code>_LIVE</code> key, webhook secret and prices are read. Fill those in before
-          switching, or billing switches itself off.
+          This deployment is in <strong>live</strong> mode. Checkouts charge real cards, and only
+          the <code>_LIVE</code> key, webhook secret and prices are read.
         </p>
       ) : null}
 

@@ -61,7 +61,7 @@ beforeEach(() => {
 
 describe("the plan surface", () => {
   it("shows the tier the token carries and the limits that come with it", () => {
-    render(<PlanPanel entitlement={ENTITLEMENT} />);
+    render(<PlanPanel entitlement={ENTITLEMENT} readOnMount={false} />);
     expect(screen.getByTestId("plan-tier")).toHaveTextContent("team");
     expect(screen.getByTestId("plan-tier")).toHaveTextContent("as owner");
     expect(screen.getByTestId("plan-quota")).toHaveTextContent("Team members");
@@ -71,7 +71,7 @@ describe("the plan surface", () => {
   it("shows the free plan's zero rather than claiming the server sets no limits", () => {
     // The old copy said "This server sets no limits" under "You are on the free plan",
     // which is the opposite of what a free organization holds.
-    render(<PlanPanel entitlement={FREE} />);
+    render(<PlanPanel entitlement={FREE} readOnMount={false} />);
 
     expect(screen.getByTestId("plan-quota")).toHaveTextContent("Synced workspaces");
     expect(screen.getByTestId("plan-quota")).toHaveTextContent("none yet");
@@ -91,7 +91,7 @@ describe("the plan surface", () => {
   });
 
   it("says the plan appears once signed in", () => {
-    render(<PlanPanel entitlement={null} />);
+    render(<PlanPanel entitlement={null} readOnMount={false} />);
     expect(screen.getByTestId("plan-tier")).toHaveTextContent("once you are signed in");
   });
 
@@ -107,6 +107,40 @@ describe("the plan surface", () => {
     );
     // A live deployment charges cards, so nothing here may claim otherwise.
     expect(screen.queryByTestId("plan-test-mode")).not.toBeInTheDocument();
+  });
+
+  it("reads the catalogue even when the host seeds the token's claims", async () => {
+    // The regression this pins: `AccountPanel` passes `entitlement` so the tier is on
+    // screen before the server answers, and the panel used that prop as "do not ask",
+    // so the plan list was never fetched in the app at all.
+    listPlans.mockResolvedValue({
+      ok: true,
+      value: { mode: "test", plans: [{ name: "personal", priceId: "price_1", limits: {} }] },
+    });
+    render(<PlanPanel entitlement={FREE} />);
+
+    expect(screen.getByTestId("plan-tier")).toHaveTextContent("free plan");
+    expect(await screen.findByTestId("plan-checkout-personal")).toHaveTextContent(
+      "Choose personal",
+    );
+    expect(listPlans).toHaveBeenCalled();
+  });
+
+  it("hides the plans when a subscription already exists", async () => {
+    listPlans.mockResolvedValue({
+      ok: true,
+      value: { mode: "test", plans: [{ name: "personal", priceId: "price_1", limits: {} }] },
+    });
+    readSubscription.mockResolvedValue({
+      ok: true,
+      value: { plan: "personal", status: "active", seats: 1, periodEnd: null },
+    });
+    render(<PlanPanel />);
+
+    expect(await screen.findByTestId("plan-portal")).toBeInTheDocument();
+    // The portal is the door for a change to an existing plan; a second checkout is not.
+    expect(screen.queryByTestId("plan-checkout-personal")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("plan-catalogue-empty")).not.toBeInTheDocument();
   });
 
   it("names the price table when a deployment sells nothing", async () => {

@@ -35,14 +35,23 @@ import { ensureOrganization, ORGANIZATION_NAME } from "./organization";
  */
 
 export interface PlanPanelProps {
-  /** Overrides the entitlement read; tests pass one instead of minting a token. */
+  /**
+   * The first paint, before the server answers. The host passes the token's own claims so
+   * the tier is on screen immediately; it is a seed, not a substitute for the read.
+   */
   entitlement?: EntitlementView | null;
+  /**
+   * Whether to read the catalogue on mount. True everywhere except a test that is not
+   * about the read: the host used to pass `entitlement` and the panel took that as "do
+   * not ask", so the plan list was never fetched in the app at all.
+   */
+  readOnMount?: boolean;
   onNotice?: (message: string) => void;
 }
 
 type Load = "idle" | "loading" | "done" | "failed";
 
-export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
+export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPanelProps) {
   // The token's own claims are the fast answer; the control plane's read is the
   // authoritative one (a cancelled subscription answers `free` there immediately).
   const [view, setView] = useState<EntitlementView | null>(entitlement ?? currentEntitlement());
@@ -95,9 +104,9 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
   // `answered` is in the guard rather than the dependency list: StrictMode mounts twice,
   // and a second read would spend the organization call for the same answer.
   useEffect(() => {
-    if (entitlement !== undefined) return;
+    if (!readOnMount) return;
     void read();
-  }, [entitlement, read]);
+  }, [readOnMount, read]);
 
   const redirect = useCallback((url: string) => {
     // The plan is bought on Stripe's page; the browser has to go there.
@@ -207,9 +216,31 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
         </p>
       ) : null}
 
-      {entitlement === undefined && load === "loading" ? (
+      {load === "loading" ? (
         <p className="mt-3 text-[var(--ink-muted)]">Reading the plans…</p>
-      ) : plans.length > 0 ? (
+      ) : plans.length === 0 ? (
+        answered && notice !== null ? (
+          // The account service not answering and a deployment that sells nothing used to
+          // look the same from here: both were an empty space where the plans go.
+          <div className="mt-3" data-testid="plan-unavailable">
+            <p className="leading-5 text-[var(--ink-muted)]">{notice}</p>
+            <button
+              type="button"
+              data-testid="plan-retry"
+              disabled={busy !== null}
+              onClick={() => void read()}
+              className="mt-1.5 rounded-lg border border-[var(--hairline)] px-3 py-1.5 text-[11px] text-[var(--ink)] disabled:opacity-50"
+            >
+              Try again
+            </button>
+          </div>
+        ) : answered ? (
+          <p data-testid="plan-catalogue-empty" className="mt-3 leading-5 text-[var(--ink-muted)]">
+            This deployment has no plans configured. An operator sets `STRIPE_PRICE_TIERS` and
+            restarts the control plane.
+          </p>
+        ) : null
+      ) : subscription === null ? (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {plans.map((plan) => (
             <button
@@ -224,26 +255,6 @@ export function PlanPanel({ entitlement, onNotice }: PlanPanelProps) {
             </button>
           ))}
         </div>
-      ) : answered && notice !== null ? (
-        // The account service not answering and a deployment that sells nothing used to
-        // look the same from here: both were an empty space where the plans go.
-        <div className="mt-3" data-testid="plan-unavailable">
-          <p className="leading-5 text-[var(--ink-muted)]">{notice}</p>
-          <button
-            type="button"
-            data-testid="plan-retry"
-            disabled={busy !== null}
-            onClick={() => void read()}
-            className="mt-1.5 rounded-lg border border-[var(--hairline)] px-3 py-1.5 text-[11px] text-[var(--ink)] disabled:opacity-50"
-          >
-            Try again
-          </button>
-        </div>
-      ) : answered ? (
-        <p data-testid="plan-catalogue-empty" className="mt-3 leading-5 text-[var(--ink-muted)]">
-          This deployment has no plans configured. An operator sets `STRIPE_PRICE_TIERS` and
-          restarts the control plane.
-        </p>
       ) : null}
 
       {subscription === null ? (

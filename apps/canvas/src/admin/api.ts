@@ -425,6 +425,30 @@ export async function listSettings(organizationId?: string | null): Promise<{
   return requestUrl(`${SETTINGS_BASE}${scope}`);
 }
 
+/** What Stripe answered when a profile was checked, in the mode that would spend it. */
+export interface ProfileCheck {
+  mode: "test" | "live";
+  /** False when Stripe could not be reached at all, which decides nothing about the key. */
+  reachable: boolean;
+  keyWorks: boolean;
+  prices: { priceId: string; tier: string; exists: boolean }[];
+  problem: string | null;
+  ok: boolean;
+}
+
+/**
+ * Ask Stripe whether a mode can charge, without switching to it.
+ *
+ * Readiness in `listSettings` is shape. This is the question that catches a price table
+ * copied from the other mode, where every id parses and none of them exist.
+ */
+export async function verifyBillingProfile(mode: "test" | "live"): Promise<ProfileCheck> {
+  return requestUrl(`${SETTINGS_BASE}/billing/verify`, {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
+}
+
 export async function writeSetting(
   key: string,
   value: string | number | boolean,

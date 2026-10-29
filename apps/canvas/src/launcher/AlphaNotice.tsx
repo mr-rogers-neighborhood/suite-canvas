@@ -12,8 +12,10 @@ import { alphaNoticeSeen, rememberAlphaNotice } from "./alphaNotice";
  * the work actually lives. The last one is the least obvious and the most expensive to discover
  * late, because a workspace here is a browser's copy until a plan puts it in an account.
  *
- * It appears once per browser, and the dismissal is remembered here rather than in the account,
- * which is what makes it appear again on a new machine even for the same person.
+ * It appears on the launcher, and a dismissal stands for ten minutes (`alphaNotice.ts`): a reload
+ * a moment later is not a reason to show it again, and a visit tomorrow is. The dismissal is
+ * remembered in the browser rather than in the account, which is what makes it appear on a new
+ * machine even for the same person.
  */
 export interface AlphaNoticeProps {
   /** Opens the plan surface. Absent when this build has no account service to sell from. */

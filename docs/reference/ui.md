@@ -47,10 +47,11 @@ mount left the notice and every row describing the account as it was before a ch
 `apps/canvas/src/launcher/AlphaNotice.tsx` is the modal a first visit lands on, before the list
 is usable: what alpha means, what a subscription buys, that the source is public and can be run by
 its reader (with a link to the repository), and that an unclaimed workspace is this browser's
-copy. Dismissing it, or taking its **See plans** button, is
-remembered in `localStorage` under `suite.alpha-notice.v1` (`alphaNotice.ts`), so it appears once
-per browser rather than once per account. Storage that refuses to write shows it again, which is
-the harmless direction.
+copy. Dismissing it, or taking its **See plans** button, records a timestamp in `localStorage`
+under `suite.alpha-notice.v2` (`alphaNotice.ts`), and the notice returns once ten minutes have
+passed: a reload a moment later does not repeat it, and a visit the next day does, which is what
+alpha is worth. The record is per browser rather than per account, and storage that refuses to
+write shows the notice on every visit, the harmless direction.
 
 ## The library
 

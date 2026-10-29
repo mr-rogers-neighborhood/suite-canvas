@@ -881,9 +881,9 @@ export function WorkspaceLauncher() {
           leaving it to the board hid feedback from exactly the people most likely to
           send it. */}
       <SendFeedbackBubble surface="launcher" signedIn={account !== null} />
-      {/* Before the list is usable, once per browser: alpha, what paying buys, and the one
-          fact a new reader discovers too late, that an unclaimed workspace is this
-          browser's copy. */}
+      {/* Before the list is usable: alpha, what paying buys, and the one fact a new reader
+          discovers too late, that an unclaimed workspace is this browser's copy. A dismissal
+          stands for ten minutes, so a visit the next day reads it again. */}
       <AlphaNotice onSeePlans={() => useAccountStore.getState().openPanel("plan")} />
       {/* The import's report has nowhere else to go on this screen: the launcher
           is the whole page, so it mounts the one toast stack itself. */}

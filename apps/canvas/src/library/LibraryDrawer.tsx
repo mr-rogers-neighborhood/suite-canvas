@@ -60,6 +60,7 @@ export function LibraryDrawer({
   onUseBoardTemplate: _onUseBoardTemplate,
   onUseStarter: _onUseStarter,
   onSetBoardTemplate,
+  onManageTypes,
   starters = [],
   onTab,
   onClose,
@@ -535,6 +536,7 @@ export function LibraryDrawer({
         onToggleSection={onToggleSection}
         onToggleGroup={onToggleGroup}
         onClearFilters={onClearFilters}
+        onManageTypes={onManageTypes}
       />
 
       {locateMiss ? (

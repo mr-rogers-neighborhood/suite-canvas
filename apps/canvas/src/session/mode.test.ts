@@ -179,11 +179,11 @@ describe("standalone workspace actions", () => {
       }),
     );
 
-    render(createElement(WorkspaceActions, { workspaceId: "ws-1", boardId: null, title: "Local" }));
+    render(createElement(WorkspaceActions, { workspaceId: "ws-1", title: "Local" }));
 
     // Export is local, so the workspace menu survives the standalone profile.
     fireEvent.click(screen.getByTestId("workspace-menu"));
-    // No link management, so the share row and the delete row are both absent.
+    // Share is not a row in this menu any more, and the delete row needs link management.
     expect(screen.queryByTestId("workspace-menu-share")).toBeNull();
     expect(screen.getByTestId("workspace-export-backup")).toBeTruthy();
     expect(screen.getByTestId("workspace-export-json")).toBeTruthy();

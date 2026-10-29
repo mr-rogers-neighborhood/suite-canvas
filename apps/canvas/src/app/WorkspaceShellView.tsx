@@ -60,6 +60,11 @@ type CanvasState = ReturnType<typeof useCanvasStore.getState>;
  * relay clients. Loading them on demand keeps `/api` out of the standalone
  * build's app chunk entirely, rather than relying on a runtime guard.
  */
+const ShareAction = lazy(async () => {
+  const module = await import("../chrome/ShareAction");
+  return { default: module.ShareAction };
+});
+
 const WorkspaceActions = lazy(async () => {
   const module = await import("../chrome/WorkspaceActions");
   return { default: module.WorkspaceActions };
@@ -407,9 +412,13 @@ export function WorkspaceShellView({
                     <LoadingPlaceholder variant="inline" label="Loading workspace actions" />
                   }
                 >
-                  <WorkspaceActions
+                  <ShareAction
                     workspaceId={workspaceId}
                     boardId={activeBoardId}
+                    title={activeBoardName ?? "Workspace"}
+                  />
+                  <WorkspaceActions
+                    workspaceId={workspaceId}
                     title={activeBoardName ?? "Workspace"}
                     onLeave={requestLeave}
                   />
@@ -718,6 +727,7 @@ export function WorkspaceShellView({
                 }
               : {})}
             {...(canManageBoards ? { onSetBoardTemplate: setBoardTemplate } : {})}
+            onManageTypes={openTypeSettings}
             onTab={setLibraryTab}
             onClose={() => setLibraryOpen(false)}
             onPlace={placeCard}

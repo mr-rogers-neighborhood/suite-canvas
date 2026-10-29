@@ -4,18 +4,15 @@ import { credentialAuthorization } from "../auth/credential";
 import { DeleteWorkspaceDialog } from "../dialogs/DeleteWorkspaceDialog";
 import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { SupportAccessDialog } from "../dialogs/SupportAccessDialog";
-import { useCardTitle } from "../hooks/useCardContainers";
 import { importVaultIntoWorkspace, vaultFilesFromPicker } from "../launcher/vaultImport";
 import { readVaultZip } from "../launcher/vaultZip";
 import { isShareSession } from "../session/session";
-import type { ShareScope } from "../session/shares";
 import {
   downloadWorkspaceBackup,
   downloadWorkspaceJson,
   downloadWorkspaceMarkdown,
   navigateTo,
 } from "../session/workspaceTransfer";
-import { ShareDialog } from "../sharing/ShareDialog";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
@@ -31,7 +28,6 @@ import { SaveTemplateDialog } from "./SaveTemplateDialog";
  */
 export interface WorkspaceActionsProps {
   workspaceId: string;
-  boardId: string | null;
   title: string;
   /**
    * Leaving for the launcher, when the shell wants to intercept it
@@ -44,26 +40,23 @@ export interface WorkspaceActionsProps {
 }
 
 /**
- * The workspace-level actions that belong in the app bar: share the workspace, a
- * board or a card, import a vault, export the exact backup, and return to the
- * launcher.
+ * The workspace-level actions that belong in the app bar: import a vault, export the
+ * exact backup, save a starter template, and return to the launcher.
+ *
+ * Sharing is not here. It is its own control beside the sync pill (`ShareAction`), because a
+ * reader looking at a board should not have to open a menu about the document to hand the
+ * board to somebody.
  *
  * Import lives here as well as on the launcher. The launcher's drop is still the
  * quickest path, but a reader who is already in the workspace — or on a tablet, where
  * dragging a folder is not a gesture the OS offers — needs a picker, and the document
  * it merges into is the one they are looking at.
  */
-export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: WorkspaceActionsProps) {
+export function WorkspaceActions({ workspaceId, title, onLeave }: WorkspaceActionsProps) {
   const workspace = useCanvasStore((state) => state.workspace);
   const flush = useCanvasStore((state) => state.flush);
-  const inspectorNodeId = useUiStore((state) => state.inspectorNodeId);
-  const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
-  const shareRequest = useUiStore((state) => state.shareRequest);
-  const clearShareRequest = useUiStore((state) => state.clearShareRequest);
   const [menuOpen, setMenuOpen] = useState(false);
   useEscapeLayer(() => setMenuOpen(false), menuOpen);
-  const [shareOpen, setShareOpen] = useState(false);
-  const [shareScope, setShareScope] = useState<ShareScope>("workspace");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
@@ -74,6 +67,7 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
   const [notice, setNotice] = useState<string | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
   const canManageLinks = useUiStore((state) => state.canManageLinks);
+  const openTypeSettings = useUiStore((state) => state.openTypeSettings);
   // Read at render, not stored: the token is the operator panel's, written in
   // this tab's `sessionStorage`, and this menu is only drawn when it is opened.
   // Without one the action is not offered at all — "save a template" is not a
@@ -102,20 +96,6 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
       window.removeEventListener("keydown", onKey);
     };
   }, [menuOpen]);
-
-  // A canvas gesture asks for the dialog without lifting selection state.
-  useEffect(() => {
-    if (!shareRequest) return;
-    setShareScope(shareRequest);
-    setShareOpen(true);
-    clearShareRequest();
-  }, [shareRequest, clearShareRequest]);
-
-  // The dialog shares one card: the inspected one, or a lone selection.
-  const soleSelection = selectedNodeIds.length === 1 ? (selectedNodeIds[0] ?? null) : null;
-  const selectedCardId = inspectorNodeId ?? soleSelection;
-  const selectedCardIds = [...new Set(selectedNodeIds)];
-  const selectedCardTitle = useCardTitle(selectedCardId ?? "");
 
   const goHome = async () => {
     setMenuOpen(false);
@@ -218,24 +198,6 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
             onKeyDown={menuKeyDown}
             className="absolute right-0 top-full z-50 mt-1 w-60 overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
           >
-            {canManageLinks && import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
-              <>
-                <button
-                  type="button"
-                  role="menuitem"
-                  data-testid="workspace-menu-share"
-                  className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setShareScope("workspace");
-                    setShareOpen(true);
-                  }}
-                >
-                  Share this workspace…
-                </button>
-                <hr className="my-1 border-[var(--hairline)]" />
-              </>
-            ) : null}
             <button
               type="button"
               role="menuitem"
@@ -299,9 +261,27 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
             >
               Export Markdown…
             </button>
+            <hr className="my-1 border-[var(--hairline)]" />
+            {/*
+              The authoring door. Types were reachable only from the dock's settings menu,
+              which is where a reader looks for tool options, not for the shape of the
+              workspace; this menu is about the document, and a type is what the document's
+              cards are.
+            */}
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="workspace-card-types"
+              className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+              onClick={() => {
+                setMenuOpen(false);
+                openTypeSettings();
+              }}
+            >
+              Card types…
+            </button>
             {canSaveTemplate ? (
               <>
-                <hr className="my-1 border-[var(--hairline)]" />
                 {/* Authoring, not exporting: the workspace's own boards and
                     pictures become the thing a new workspace starts from. Only
                     an operator can write a template, so the row follows the
@@ -427,23 +407,6 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
             // The relay copy and this browser's copy are both gone; there is
             // nothing left to open, so the launcher is the only safe place.
             navigateTo("/");
-          }}
-        />
-      ) : null}
-      {/* Sharing is a relay surface: one build-time gate keeps the dialog — and
-          the relay client it imports — out of a standalone build. */}
-      {import.meta.env.VITE_SUITE_MODE !== "standalone" && canManageLinks && shareOpen ? (
-        <ShareDialog
-          workspaceId={workspaceId}
-          boardId={boardId}
-          boardName={boardId ? title : null}
-          cardId={selectedCardId}
-          cardTitle={selectedCardId ? selectedCardTitle : null}
-          selectedCardIds={selectedCardIds}
-          initialScope={shareScope}
-          onClose={() => {
-            setShareOpen(false);
-            setShareScope("workspace");
           }}
         />
       ) : null}

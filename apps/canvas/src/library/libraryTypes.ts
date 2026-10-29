@@ -119,6 +119,8 @@ export interface LibraryDrawerProps {
   onUseStarter?: (starterId: string) => void;
   /** Marks or unmarks a board as a template. Absent leaves the rows alone. */
   onSetBoardTemplate?: (boardId: string, template: boolean) => void;
+  /** Opens the type editor from the facet row. Absent where schema is read-only. */
+  onManageTypes?: (() => void) | undefined;
   /** Built-in shapes offered under the workspace's own templates. */
   starters?: readonly BoardStarter[];
   onTab: (tab: LibraryTab) => void;

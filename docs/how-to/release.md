@@ -1,7 +1,7 @@
 # Release and roll back
 
 A release is a tag, an image built from it on the host that serves it, the image id that identifies
-it, a smoke test against a host, and a rollback path. This page is written against `1.1.0`; every
+it, a smoke test against a host, and a rollback path. This page is written against `0.1.0-alpha.1`; every
 release edits the tag and the id recorded below.
 
 ## What a release is
@@ -9,9 +9,9 @@ release edits the tag and the id recorded below.
 | Thing | Value |
 | --- | --- |
 | Version | `1.1.0` in `package.json` and the newest `CHANGELOG.md` heading |
-| Git tag | `v1.1.0` on the release commit |
-| Image | `suite:v1.1.0`, built on the host that runs it and also tagged `suite:local` |
-| Identity | the image id from `docker image inspect --format '{{.Id}}' suite:v1.1.0` |
+| Git tag | `v0.1.0-alpha.1` on the release commit |
+| Image | `suite:v0.1.0-alpha.1`, built on the host that runs it and also tagged `suite:local` |
+| Identity | the image id from `docker image inspect --format '{{.Id}}' suite:v0.1.0-alpha.1` |
 | Change record | the matching `CHANGELOG.md` section |
 | Evidence | the `pnpm verify` run and the security scan output, quoted in the release notes |
 
@@ -29,8 +29,8 @@ The lead creates the tag after integration. A workstream does not push one.
 3. `pnpm verify` is green on the commit being tagged, and a full `pnpm e2e` passed on that same commit,
    in that order, with nothing already listening on `:5173` or `:1235`. A tag is the milestone where
    the full suite runs; the commands are in [test-and-verify.md](test-and-verify.md).
-4. `git tag -a v1.1.0 -m "Suite 1.1.0"`.
-5. `git push origin v1.1.0`.
+4. `git tag -a v0.1.0-alpha.1 -m "Suite 0.1.0-alpha.1"`.
+5. `git push origin v0.1.0-alpha.1`.
 
 If workflows can start, `.github/workflows/release.yml` runs three jobs:
 
@@ -49,10 +49,10 @@ image is built on the host that serves it.
 The build argument is the tag, and the two `-t` names are what the host later rolls back to and runs:
 
 ```sh
-git checkout v1.1.0
-docker build --target runtime --build-arg SUITE_VERSION=v1.1.0 \
-  -t suite:v1.1.0 -t suite:local .
-docker image inspect --format '{{.Id}}' suite:v1.1.0
+git checkout v0.1.0-alpha.1
+docker build --target runtime --build-arg SUITE_VERSION=v0.1.0-alpha.1 \
+  -t suite:v0.1.0-alpha.1 -t suite:local .
+docker image inspect --format '{{.Id}}' suite:v0.1.0-alpha.1
 ```
 
 Record the image id in the release notes. A host-built image has no `RepoDigests`, so the id is the
@@ -68,7 +68,7 @@ project can currently make.
 Against the host that will serve it, before announcing anything:
 
 ```sh
-sed -i -E 's|^#?[[:space:]]*SUITE_IMAGE=.*|SUITE_IMAGE=suite:v1.1.0|' .env
+sed -i -E 's|^#?[[:space:]]*SUITE_IMAGE=.*|SUITE_IMAGE=suite:v0.1.0-alpha.1|' .env
 docker compose up -d --no-build app                   # the new tag; Caddy keeps running
 docker compose ps                                     # app healthy, caddy up
 curl -fsS https://$SUITE_DOMAIN/health                # {"ok":true}
@@ -77,7 +77,7 @@ curl -fsS https://$SUITE_DOMAIN/health                # {"ok":true}
 curl -fsS http://127.0.0.1:1235/metrics | grep suite_build_info
 ```
 
-`/api/admin/status` must report `"version":"v1.1.0"` and `suite_build_info` must carry the same tag,
+`/api/admin/status` must report `"version":"v0.1.0-alpha.1"` and `suite_build_info` must carry the same tag,
 because `SUITE_VERSION` reaches the process verbatim. Then, by hand: open a workspace, upload an
 attachment, reload, open the same workspace in a second tab, and confirm the published limits still
 match what the server reports on a refusal ([reference/limits.md](../reference/limits.md)). A
@@ -94,8 +94,8 @@ tag is what names the previous image.
 2. Point `app` at it and recreate that service only:
 
    ```sh
-   deploy/deploy.sh --rollback suite:rollback-v1.1.0
-   # by hand: SUITE_IMAGE=suite:rollback-v1.1.0 docker compose up -d --no-build app
+   deploy/deploy.sh --rollback suite:rollback-v0.1.0-alpha.1
+   # by hand: SUITE_IMAGE=suite:rollback-v0.1.0-alpha.1 docker compose up -d --no-build app
    ```
 
 3. Confirm `/health` answers and `/api/admin/status` reports the expected `version`.

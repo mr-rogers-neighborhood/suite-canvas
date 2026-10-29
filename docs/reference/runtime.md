@@ -45,7 +45,7 @@ An inline rename writes the document, or the `suite.workspaceNames.v1` mirror wh
 ## Credentials
 
 A workspace syncs with two credentials: a session JWT for an account and a share token for a link. There
-is no owner key. [ADR-0076](../../internal/decisions/open/0076-the-owner-key-is-deleted.md) deleted it
+is no owner key. ADR-0076 deleted it
 outright, with no migration for keys already issued, so a `.suitekey` file from an earlier release is not
 read.
 

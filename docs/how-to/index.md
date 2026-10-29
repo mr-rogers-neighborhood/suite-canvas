@@ -6,6 +6,7 @@ One task at a time: the steps for a job you already know you need to do.
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
+| [Publish the source](publish.md) | This page is the runbook for the one transition a repository makes once: from a tree only its author reads to a repository anybody can clone, audit an… | 2026-10-29 |
 | [Try the paid flow on this machine](try-the-paid-flow.md) | The whole product runs in five containers on one machine: the relay, the control plane, Postgres, Caddy, and the docs site. This page walks the parts… | 2026-10-28 |
 | [Operate a deployment](operate.md) | Suite runs as a single Node process with six SQLite stores on one directory; there is no external database and no multi-replica mode. | 2026-10-28 |
 | [Deploy a server](deploy.md) | One small instance, one Docker host, one app container, six SQLite stores on one volume, Caddy in front, Cloudflare in front of Caddy. | 2026-10-28 |

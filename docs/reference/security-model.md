@@ -1,7 +1,7 @@
 # Security model
 
 Two credentials open a room: a session JWT for an account and a share token for a link. The owner key
-that used to be the third was deleted ([ADR-0076](../../internal/decisions/open/0076-the-owner-key-is-deleted.md)),
+that used to be the third was deleted (ADR-0076),
 with no migration for keys already issued.
 
 This page describes the current architecture. It is not a promise of end-to-end encryption.
@@ -104,7 +104,7 @@ collaboration runs the control plane beside it, which `compose.yaml` already doe
 ## Which organization owns a workspace
 
 The control plane's `workspaces` row is the authority: `workspaces.id` is the document id, and
-`workspaces.organization_id` is the tenant ([ADR-0065](../../internal/decisions/open/0065-accounts-own-workspaces.md)).
+`workspaces.organization_id` is the tenant (ADR-0065).
 The relay holds no Postgres credential, so it keeps its own copy in the `workspace_orgs` table of the file
 `SUITE_WORKSPACES_DB` names, and it writes that row when the first verified session opens the workspace.
 The first claim wins. A later join from another organization is refused with
@@ -130,7 +130,7 @@ facts bound the exposure rather than removing it:
 
 An unclaimed workspace is therefore as private as its id is. Treat an unopened workspace as unclaimed until
 its owner opens it, and do not paste a workspace URL into a channel you would not paste a document into.
-[ADR-0084](../../internal/decisions/open/0084-a-device-key-adopts-an-anonymous-workspace.md) records the
+ADR-0084 records the
 change that closes this: a key the browser holds, with no ceremony for the reader.
 
 ## Share links

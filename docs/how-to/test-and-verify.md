@@ -86,7 +86,7 @@ lightningcss, ten LGPL-3.0-or-later packages, two `UNKNOWN`) is a licensing deci
 not where that decision is made.
 
 `security:image` runs Trivy (`aquasec/trivy:0.76.1`) against `suite:local`, or against the image named
-as its argument (`pnpm security:image ghcr.io/<owner>/suite:v1.1.0`). It reports HIGH and CRITICAL
+as its argument (`pnpm security:image ghcr.io/<owner>/suite:v0.1.0-alpha.1`). It reports HIGH and CRITICAL
 only, and only findings with a fixed version, because a finding with no fix cannot be closed by
 rebuilding the image. It is a release-time command: `pnpm verify` leaves it out because it needs a
 built image. Build one with `docker build --target runtime -t suite:local .`.

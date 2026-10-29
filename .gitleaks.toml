@@ -51,3 +51,20 @@ regexes = [
   # token, but the generic rule reads the run of digits and letters as one.
   '''[0-9]{4}_[a-z0-9_]+\.sql''',
 ]
+# Files that no longer exist. `--history` walks every commit, and these six carried
+# fake credentials at the commit that added them: fixture keys, fixture owner keys and a
+# `sk_test_…` that Stripe refuses with 401. Their paths are allowed so the history scan
+# answers "nothing new" rather than repeating a known false positive; a live path is
+# still scanned, and re-adding a credential to one of these paths would be caught by the
+# working-tree scan that `pnpm verify` runs.
+[[allowlists]]
+description = "Deleted fixture files with fake credentials in history"
+paths = [
+  '''(^|/)apps/canvas/src/components/RecoveryKeyDialog\.test\.tsx$''',
+  '''(^|/)apps/canvas/src/components/WorkspaceProtected\.test\.tsx$''',
+  '''(^|/)apps/canvas/src/session/recoveryWords\.test\.ts$''',
+  '''(^|/)scripts/ice-scenarios/polish\.mjs$''',
+  '''(^|/)services/billing/checkout\.test\.ts$''',
+  '''(^|/)services/billing/email\.test\.ts$''',
+  '''(^|/)services/billing/testing\.ts$''',
+]

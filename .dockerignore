@@ -17,3 +17,7 @@ e2e/blob-report
 .env
 .env.*
 !.env.example
+# The maintainers' decision log, roadmap and design notes. Local-only and gitignored,
+# so a build context must not carry them into an image either: the published image is
+# pulled by people who never asked for the author's notes.
+internal

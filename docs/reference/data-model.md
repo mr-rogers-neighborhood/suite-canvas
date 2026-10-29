@@ -182,7 +182,7 @@ the reader's.
 boards, regions and cards with authored geometry, plus tags, colours and card types by name.
 `applyWorkspaceTemplate` copies one into a document through the same typed methods a person would use, in one
 batch, so the whole template is one undo step and nothing is written at boot. A starter is a copy of authored
-records, which is what [ADR-0068](../../internal/decisions/open/0068-a-system-workspace-authors-what-workspaces-start-with.md)
+records, which is what ADR-0068
 settled, rather than a code path that builds cards by hand.
 
 ## Files, backups and merge

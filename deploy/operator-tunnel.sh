@@ -11,7 +11,7 @@
 # changes, and port 22 stays the only extra rule.
 #
 #   deploy/operator-tunnel.sh                      # opens https://127.0.0.1:8443
-#   deploy/operator-tunnel.sh --host 3.22.161.41   # or SUITE_TUNNEL_HOST
+#   deploy/operator-tunnel.sh --host <instance public ip>   # or SUITE_TUNNEL_HOST
 #   deploy/operator-tunnel.sh --port 9443
 #   deploy/operator-tunnel.sh --print              # the curl to paste, without the tunnel
 #

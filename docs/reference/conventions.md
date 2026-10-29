@@ -88,6 +88,10 @@ Fix these when the file is already open. Each one has a failure mode.
 `pnpm docs:symbols` enforces that every backticked path, root script, and ADR reference in the docs
 resolves.
 
+An `ADR-NNNN` reference is shorthand for a decision record in the maintainers' decision log, which is
+not published with the source. The id is stable and quotable; the surrounding prose states the
+decision, so nothing here depends on reading the record itself.
+
 ## TypeScript
 
 Strict mode stays on, including `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,

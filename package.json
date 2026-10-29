@@ -1,6 +1,6 @@
 {
   "name": "suite",
-  "version": "1.1.0",
+  "version": "0.1.0-alpha.1",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.13.0",
@@ -58,6 +58,7 @@
     "security:image": "node scripts/security-image.mjs",
     "security:osv": "node scripts/security-osv.mjs",
     "security:secrets": "node scripts/security-secrets.mjs",
+    "security:history": "node scripts/security-secrets.mjs --history",
     "setup": "node scripts/dev-env.mjs",
     "shape": "node scripts/check-shape.mjs",
     "site:build": "pnpm --filter @suite/site build",
@@ -91,5 +92,6 @@
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc}": "biome check --write"
-  }
+  },
+  "license": "MIT"
 }

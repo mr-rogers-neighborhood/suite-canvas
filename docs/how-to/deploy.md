@@ -322,7 +322,7 @@ has to allow the widget. `deploy/Caddyfile` permits `challenges.cloudflare.com` 
 token is produced, and every sign-up fails forever while the page itself looks perfect (ADR-0077).
 
 ```sh
-deploy/deploy.sh --no-backup              # builds suite:v1.1.0, starts app, waits for health
+deploy/deploy.sh --no-backup              # builds suite:v0.1.0-alpha.1, starts app, waits for health
 docker compose build caddy control-plane  # the other two images, from the same checkout
 docker compose up -d --no-build           # Caddy, the control plane and Postgres
 docker compose ps && docker compose logs -f caddy     # wait for "certificate obtained successfully"
@@ -406,7 +406,7 @@ running now is tagged *before* the build starts; that tag is the whole rollback.
    sudo bash -c 'set -a; . /etc/suite/backup.env; set +a; /srv/suite/deploy/backup.sh /srv/backups'
    ```
 
-2. **Ask the running container which version it is.** The answer names the rollback tag; `v1.1.0`
+2. **Ask the running container which version it is.** The answer names the rollback tag; `v0.1.0-alpha.1`
    below stands for it.
 
    ```sh
@@ -417,7 +417,7 @@ running now is tagged *before* the build starts; that tag is the whole rollback.
 3. **Tag the running image before anything can replace it.**
 
    ```sh
-   docker tag "$(docker compose images -q app)" suite:rollback-v1.1.0
+   docker tag "$(docker compose images -q app)" suite:rollback-v0.1.0-alpha.1
    ```
 
    `docker compose images -q app` prints the image id the container runs from, so the tag names that
@@ -504,10 +504,10 @@ Rollback restarts on the tag taken in step 3. Nothing is compiled and no old che
 it takes as long as a container recreate.
 
 ```sh
-deploy/deploy.sh --rollback suite:rollback-v1.1.0
+deploy/deploy.sh --rollback suite:rollback-v0.1.0-alpha.1
 
 # the same thing by hand
-sed -i -E 's|^#?[[:space:]]*SUITE_IMAGE=.*|SUITE_IMAGE=suite:rollback-v1.1.0|' .env
+sed -i -E 's|^#?[[:space:]]*SUITE_IMAGE=.*|SUITE_IMAGE=suite:rollback-v0.1.0-alpha.1|' .env
 docker compose up -d --no-build app
 ```
 

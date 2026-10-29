@@ -14,7 +14,11 @@
  * Findings print redacted: the file, the line and the rule, never the secret,
  * because this output lands in terminals and issue comments.
  *
- * Usage: node scripts/security-secrets.mjs [--staged]
+ * `--history` walks every commit instead of the tree. A working-tree scan cannot see
+ * a key that was committed and deleted an hour later, and those are exactly the ones a
+ * public release has to answer for: the clone a reader gets contains them.
+ *
+ * Usage: node scripts/security-secrets.mjs [--staged|--history]
  */
 import {
   dockerIsAvailable,
@@ -28,6 +32,7 @@ const GITLEAKS_IMAGE = "zricethezav/gitleaks:v8.28.0";
 const CONFIG = `${REPO_MOUNT}/.gitleaks.toml`;
 
 const staged = process.argv.includes("--staged");
+const history = process.argv.includes("--history");
 const scanArguments = [
   "--config",
   CONFIG,
@@ -46,7 +51,9 @@ if (!dockerIsAvailable()) process.exit(reportMissingDocker("gitleaks"));
 // `detect --no-git` walks the tree, which also covers files not yet added.
 const toolArguments = staged
   ? ["git", "--staged", ...scanArguments, REPO_MOUNT]
-  : ["detect", "--no-git", `--source=${REPO_MOUNT}`, ...scanArguments];
+  : history
+    ? ["detect", `--source=${REPO_MOUNT}`, "--log-opts=--all", ...scanArguments]
+    : ["detect", "--no-git", `--source=${REPO_MOUNT}`, ...scanArguments];
 
 const status = runImage({
   image: GITLEAKS_IMAGE,
@@ -58,7 +65,9 @@ if (status === 0) {
   console.log(
     staged
       ? "gitleaks: no secrets in the staged changes"
-      : "gitleaks: no secrets in the working tree",
+      : history
+        ? "gitleaks: no secrets in the commit history"
+        : "gitleaks: no secrets in the working tree",
   );
 }
 process.exit(status);

@@ -163,7 +163,7 @@ It prints the customer and clock commands, including how to advance a month.
 ## 7. What this cannot test yet
 
 The account is still created by the sign-up form and the plan is bought afterwards.
-[ADR-0083](../../internal/decisions/open/0083-the-account-is-created-by-paying.md) records the door that
+ADR-0083 records the door that
 replaces it: anonymous Checkout, then the account created from the completed session. Its `Remaining`
 list is the work. Until that lands, "buy without an account" has no path, and step 5 starts
 from a signed-in page.

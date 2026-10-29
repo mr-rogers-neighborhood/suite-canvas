@@ -9,6 +9,44 @@ A release is the commit a `v*` tag points at. The image built for that tag is
 `ghcr.io/<owner>/suite:v<version>`; the digest recorded in the release notes is
 the artifact to roll back to. See [docs/how-to/release.md](docs/how-to/release.md).
 
+## [0.1.0-alpha.1] - 2026-10-29
+
+The first public release of Suite. The code is the same product the hosted deployment has been
+running; what changed is everything a reader outside the project needs in order to trust it.
+
+### Added
+
+- The source is public under MIT, with the local gate, the decision-free documentation and the
+  deployment scripts as they are used here.
+- Plan cards state what a subscription buys: the monthly price from Stripe, the workspace and storage
+  allowances, the member count, and the caveats that go with them.
+- A self-host card beside the two plans, linking to the deployment guide, because running it yourself
+  costs nothing and asks for no licence.
+- `pnpm security:history` scans the whole commit history for credentials, and
+  [docs/how-to/publish.md](docs/how-to/publish.md) records the result of the scan that preceded this
+  release.
+- A billing profile is checked against Stripe before the deployment switches to it, and a saved
+  secret is decrypted into the boot environment rather than handed over as ciphertext.
+
+### Changed
+
+- The version line restarts at `0.1.0-alpha.1`. The `v1.x` tags in the history predate the public
+  release and describe a private sequence; they are kept because rewriting them would rewrite the
+  record, not because they mean 1.0 stability.
+- The alpha notice on the launcher and the banner in this file say what is true: sync, collaboration
+  and file uploads are what a plan buys, the canvas and export never ask, and payments are real
+  monthly subscriptions cancelled from the Stripe portal.
+
+### Fixed
+
+- The plan catalogue is published from the mode the deployment is actually spending, so a live
+  deployment no longer serves test price ids beside a live checkout.
+- A saved Stripe key is decrypted before a process spends it; the panel had been storing the
+  ciphertext and handing it over unchanged.
+- The Plan tab reads the catalogue when the host seeds it, so the plans are listed at all.
+- The session's active organization decides which organization a page acts in, and a choice made on
+  the plan surface is made active.
+
 ## [1.1.0] - 2026-10-26
 
 The interface after a period of building. Nothing here is a new capability except

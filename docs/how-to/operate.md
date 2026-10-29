@@ -27,7 +27,7 @@ inside the container, never on the host:
 
 ```sh
 deploy/deploy.sh                                              # build, pin SUITE_IMAGE, restart, verify
-SUITE_IMAGE=suite:v1.1.0 docker compose up -d --no-build app  # start a tag that already exists
+SUITE_IMAGE=suite:v0.1.0-alpha.1 docker compose up -d --no-build app  # start a tag that already exists
 ```
 
 `compose.yaml` keeps both `image:` and `build:`, so the reference compose runs is a name for a local

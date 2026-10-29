@@ -6,7 +6,7 @@ trials and seat sync. This repository supplies the plan list, the organization r
 entitlement read.
 
 **Who can buy is a separate question from what buying unlocks.** Today an account is created by the
-sign-up form and a plan is bought afterwards; [ADR-0083](../../internal/decisions/open/0083-the-account-is-created-by-paying.md)
+sign-up form and a plan is bought afterwards; ADR-0083
 records the door that replaces it: anonymous Checkout, then the account, organization and membership
 created from the completed session, and lists what is still missing. Until that lands, the plan
 surface below is reachable only by an existing account, and the sync refusal is what tells a reader
@@ -63,7 +63,7 @@ The alpha deployment carries `suite-alpha-free` (100% off, forever) and the code
 both universes, as a working example of that pair.
 
 A licence is a signed token. A self-hosted relay reads one from `SUITE_LICENCE` and verifies it
-at boot ([ADR-0081](../../internal/decisions/open/0081-a-self-host-licence-arrives-in-the-environment.md));
+at boot (ADR-0081);
 a hosted relay reads none, because its proof is the session JWT the auth instance signs
 (ADR-0075). Local editing consults neither.
 

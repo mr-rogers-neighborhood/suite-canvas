@@ -4,26 +4,26 @@
 > paying path is real, but expect rough edges and expect the shape of things to change.
 >
 > A subscription is **early access** to sync, collaboration and file uploads, and paying for one is
-> how the project is funded while it is alpha. It is optional: the canvas, the cards and export work
-> without one, on this device, with no account and no limit.
+> how the project is funded while it is alpha. It is optional twice over: the canvas, the cards and
+> export work without one, on this device, with no account and no limit; and the source is public
+> under MIT, so you can run the whole thing yourself. A self-hosted relay needs no licence token and
+> enforces no limit ([self-hosting](docs/reference/billing.md)); a licence is only what a *seller*
+> issues to somebody else.
 >
-> The source goes public within about two weeks. After that you can run it yourself, and a
-> subscription is a way to fund the work rather than the only way to use it. A self-hosted relay
-> verifies a signed licence token at boot, so running one means asking for a licence; the
-> [self-host section](docs/reference/billing.md) has the shape. Until the source is public, the
-> hosted deployment is the only one, and its plans are billed monthly through Stripe: a discount
-> code, if you have one, is entered on Stripe's own page, and the plan cancels from the portal.
+> The hosted deployment bills monthly through Stripe, which holds the card while this deployment
+> never sees it. A discount code, if somebody gave you one, is entered on Stripe's own page, and a
+> plan cancels from the portal.
 >
-> Two things that are easy to discover too late: **a workspace is this browser's copy until a plan
-> puts it in your account**, so clearing site data takes it with it, and export is always available.
-> Payments run through Stripe, which holds the card; this deployment never sees it.
+> One thing that is easy to discover too late: **a workspace is this browser's copy until a plan puts
+> it in your account**, so clearing site data takes it with it. Export is always available and never
+> asks for a plan.
 
 Suite is a local-first, collaborative canvas for connected thinking. A workspace owns its cards and
 the boards they appear on: cards are objects first, and a board is a view that places them. Every edit
 lands in one Loro CRDT, `@suite/graph` validates each write with Zod before it reaches the document,
 and the canvas keeps working offline.
 
-**Status: alpha, `1.1.0`, MIT.** Hosted billing is live: accounts, organizations, invitations,
+**Status: alpha, `0.1.0-alpha.1`, MIT.** Hosted billing is live: accounts, organizations, invitations,
 checkout, the billing portal and the licence projection all run, in Stripe's test or live universe
 according to one setting. A free account is a local account, unlimited on this device; sync is the
 paid feature, and the same tier table prices it in both universes so a test run exercises what a live

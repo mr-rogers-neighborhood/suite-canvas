@@ -175,6 +175,19 @@ test price ids in `billing.stripe.prices.test`, and a webhook endpoint for
 `https://app.suite.run/api/auth/stripe/webhook`. The mode and the catalogue are on the
 operator panel's Settings tab, which is the answer to "are we live?" without an SSH session.
 
+Before the first checkout, press **Check with Stripe** on the profile the deployment is spending.
+It answers with one of three things, and each one is a different problem:
+
+- `Stripe accepted the test key and found every price.` The profile can charge.
+- `Stripe refused the test key: …` The key is wrong, revoked, or belongs to the other universe.
+- `price_… do not exist in test mode.` The table parses and names prices from the other universe,
+  which is what a copied table looks like. Create the prices in the mode you are checking and paste
+  those ids into the row.
+
+A saved secret is a mask in the panel and ciphertext in the table, and it is decrypted once, into the
+environment the control plane boots with. A profile can therefore read complete and still be refused
+by Stripe, which is why the check exists.
+
 1. Sign in at `https://app.suite.run` and open a workspace.
 2. The account menu, then Plan. Two plans, `personal` and `organization`, come from the
    deployment's `billing.stripe.prices.test`; a plan missing from that page is missing from the

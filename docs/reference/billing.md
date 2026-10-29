@@ -372,14 +372,37 @@ live mode can prove:
 | Anything about tax, disputes, payouts | No | Only here |
 
 Because the price ids differ between the universes, a price table cannot be moved across: each set
-names its own. `settingsBody` reports both profiles with what each one still lacks, and
+names its own, and the dashboard's copy action works on products in the other universe rather than
+on a price id. A table pasted from test mode into `billing.stripe.prices.live` parses, reports two
+plans, and is unspendable, because Stripe has never heard of those ids in live mode. Nothing about
+the table's shape reveals it.
+
+`settingsBody` reports both profiles with what each one still lacks, and
 `PUT /admin/settings/billing.mode` refuses a switch to a profile that is incomplete **while billing
 is enabled**, because a mode with no credentials boots billing off, and on a deployment that charges
 people that means everybody syncs for free while the panel says nothing is wrong. With billing off the mode
 is free to set, because nothing is charged either way.
 
-The order is therefore: fill the target profile's three rows, then switch, then restart the control
-plane (billing is read at boot). A row saved after boot shows **Restart to apply** beside it.
+Shape is only half the question, so the switch also asks Stripe. `verifyStripeProfile` calls
+`GET /v1/account` with the candidate mode's key and then each price id in that mode's table, and a
+mode whose key is refused or whose prices are missing is refused with the ids named. A network that
+cannot reach Stripe decides nothing, so it does not block the write. The same check runs on demand at
+`POST /admin/settings/billing/verify` with `{"mode":"test"|"live"}`, which is what the **Check with
+Stripe** button on each profile card calls: a profile can be checked without switching to it.
+
+The order is therefore: fill the target profile's three rows, check the profile, then switch, then
+restart the control plane (billing is read at boot). A row saved after boot shows **Restart to
+apply** beside it.
+
+### Secrets in the table
+
+A row of kind `secret` is encrypted before it is written, with AES-256-GCM under a key derived from
+`SUITE_SETTINGS_KEY`, and the API returns a mask instead of a value. The one place a value is
+decrypted is `envWithSettings`, which composes the environment billing and mail are built from, so
+the key this process hands to Stripe is the plaintext an operator typed. A `SUITE_SETTINGS_KEY` that
+cannot open the envelope leaves the variable empty, which the readiness read reports as a missing
+key rather than as a profile that looks ready and answers `401`. `SUITE_SETTINGS_KEY` itself cannot
+live in the table, because it is what decrypts it.
 
 ## Environment
 

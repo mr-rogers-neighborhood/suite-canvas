@@ -182,6 +182,32 @@ code {
   margin-top: 0;
 }
 
+/* The two Stripe profiles, side by side: the same plans are expected in each, so the
+   comparison is the point rather than a detail of the layout. */
+.admin-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.admin-profile {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+
+.admin-profile[data-state="active"] {
+  border-color: var(--ink);
+}
+
+/* Incomplete is not an error until it is chosen, so it reads as muted rather than red. */
+.admin-profile[data-state="incomplete"] {
+  border-style: dashed;
+}
+
 .admin-detail {
   margin-top: 8px;
 }

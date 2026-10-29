@@ -397,10 +397,28 @@ export interface AdminSetting {
   savedAt?: number | null;
 }
 
+/** What one Stripe profile holds, and what it is waiting for. */
+export interface StripeProfile {
+  complete: boolean;
+  /** Registry keys still holding nothing, named so the panel can say which to fill. */
+  missing: string[];
+  /** Plans the price table names, or null when it does not parse. */
+  plans: number | null;
+  problem: string | null;
+}
+
+export interface BillingProfiles {
+  /** The mode the settings row names, which is what the next boot will spend. */
+  active: "test" | "live";
+  profiles: Record<"test" | "live", StripeProfile>;
+}
+
 export async function listSettings(organizationId?: string | null): Promise<{
   organizationId: string | null;
   /** When the control plane that answered this started, for the restart marker. */
   bootedAt?: number;
+  /** Both Stripe profiles, so switching modes is a decision rather than a discovery. */
+  billing?: BillingProfiles;
   settings: AdminSetting[];
 }> {
   const scope = organizationId ? `?organization=${encode(organizationId)}` : "";

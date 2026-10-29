@@ -1,7 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { readJsonBody, sendJson } from "@suite/billing";
+import { parseTierTable, readJsonBody, sendJson } from "@suite/billing";
 import {
   encryptSetting,
+  envWithSettings,
   GLOBAL_SCOPE,
   orgScope,
   resolveAll,
@@ -17,6 +18,7 @@ import { createLogger, type Logger } from "../logging.js";
 import { createPool } from "../pool.js";
 import type { RouteModule } from "../routes.js";
 import { type AuditStore, auditSafely, createAuditStore } from "./audit.js";
+import { billingProfiles } from "./auth-billing.js";
 import { sessionReader } from "./context.js";
 
 /**
@@ -123,6 +125,11 @@ export function settingsBody(
   rows: readonly StoredSetting[],
   organizationId: string | null,
   bootedAt: number = Date.now() - Math.round(process.uptime() * 1000),
+  /*
+   * The process's own environment, which is where the `_LIVE` half of a Stripe profile is
+   * read from when nobody has typed it into a row yet. A test passes its own.
+   */
+  env: Readonly<Record<string, string | undefined>> = process.env,
 ) {
   const resolved = resolveAll({ rows, organizationId, env: process.env });
   const savedAt = new Map(
@@ -141,6 +148,15 @@ export function settingsBody(
      * happen that cannot happen until the process is restarted.
      */
     bootedAt,
+    /**
+     * Both Stripe profiles, with what each one still lacks.
+     *
+     * Billing is one of the two things read at boot, and the switch between test and live
+     * is the switch that decides whether anybody is charged at all. Reporting readiness
+     * here is what makes the switch safe to press: a profile that is incomplete is named
+     * before it is chosen rather than discovered by a deployment that went quiet.
+     */
+    billing: billingProfiles(envWithSettings({ env, rows })),
     settings: SETTINGS.map((definition) => {
       const entry = resolved.find((candidate) => candidate.key === definition.key);
       return {
@@ -246,7 +262,11 @@ export function createSettingsModule(options: SettingsModuleOptions): RouteModul
       const rawKey = url.pathname.slice(SETTINGS_PATH.length + 1);
 
       if (request.method === "GET" && rawKey.length === 0) {
-        sendJson(response, 200, settingsBody(await readRows(database()), organizationId));
+        sendJson(
+          response,
+          200,
+          settingsBody(await readRows(database()), organizationId, undefined, env),
+        );
         return true;
       }
 
@@ -294,6 +314,46 @@ export function createSettingsModule(options: SettingsModuleOptions): RouteModul
               "invalid-value",
               `${key} accepts ${definition.values.join(", ")}`,
             );
+            return true;
+          }
+        }
+        // A mode whose credentials are incomplete would boot with billing off, which on a
+        // deployment that charges people means everyone syncs for free. The order the
+        // panel states is the order this enforces: fill the profile, then switch.
+        if (key === "billing.mode") {
+          // The candidate mode, laid over the rows as they are now: the question is what
+          // the *next boot* would spend, not what this process is spending.
+          const candidate = envWithSettings({
+            env: { ...env, SUITE_BILLING_MODE: String(value) },
+            rows: await readRows(database()),
+          });
+          // The guard is only about the case with money in it. With billing off nothing is
+          // charged either way, so the mode is free to set; with it on, a mode whose
+          // credentials are incomplete boots billing off, which on a live deployment means
+          // everyone syncs for free while the panel says nothing is wrong.
+          const flag = (candidate.SUITE_BILLING_ENABLED ?? "").trim().toLowerCase();
+          const profile =
+            billingProfiles(candidate).profiles[String(value) === "live" ? "live" : "test"];
+          if ((flag === "1" || flag === "true") && !profile.complete) {
+            const missing = [
+              ...profile.missing,
+              ...(profile.problem === null ? [] : [profile.problem]),
+            ];
+            refuse(
+              response,
+              400,
+              "billing-profile-incomplete",
+              `The ${String(value)} profile is not ready: ${missing.join(", ")}`,
+            );
+            return true;
+          }
+        }
+        // A price table that does not parse is a checkout that fails for a customer, so it
+        // is refused at the write rather than at the next boot.
+        if (key.startsWith("billing.stripe.prices.")) {
+          const parsedTable = parseTierTable(String(value));
+          if (parsedTable.isErr()) {
+            refuse(response, 400, "invalid-value", parsedTable.error.message);
             return true;
           }
         }

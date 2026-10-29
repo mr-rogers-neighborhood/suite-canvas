@@ -52,8 +52,8 @@ export interface StripeCredentials {
   priceTiers: string;
 }
 
-export function stripeCredentials(env: Env): StripeCredentials {
-  const mode = stripeMode(env);
+/** One mode's credential set, named without needing to know which one it is. */
+export function credentialsFor(env: Env, mode: "test" | "live"): StripeCredentials {
   const read = (name: string): string => (env[name] ?? "").trim();
   return mode === "live"
     ? {
@@ -68,6 +68,60 @@ export function stripeCredentials(env: Env): StripeCredentials {
         webhookSecret: read("STRIPE_WEBHOOK_SECRET"),
         priceTiers: read("STRIPE_PRICE_TIERS"),
       };
+}
+
+export function stripeCredentials(env: Env): StripeCredentials {
+  return credentialsFor(env, stripeMode(env));
+}
+
+/** What one Stripe profile has, and what it is missing. */
+export interface ProfileReadiness {
+  /** A checkout, a portal and a webhook all have their credential. */
+  complete: boolean;
+  /** The registry keys that still hold nothing, in the order the panel shows them. */
+  missing: string[];
+  /** Plans the price table names; null when it does not parse. */
+  plans: number | null;
+  /** Why the price table does not parse, when it does not. */
+  problem: string | null;
+}
+
+/**
+ * Both profiles, side by side.
+ *
+ * The two credential sets exist so an operator can move the whole deployment between test
+ * and live without a redeploy, and the order matters: the new mode's set has to be complete
+ * *before* the switch, or billing boots with nothing and a deployment that charges nobody
+ * syncs everybody. This is the read that lets the panel say so, and the write guard in
+ * `settings.ts` refuses a switch that this would call incomplete.
+ */
+export interface BillingProfiles {
+  /** What the settings row says, which is what the next boot will spend. */
+  active: "test" | "live";
+  profiles: Record<"test" | "live", ProfileReadiness>;
+}
+
+function readinessOf(env: Env, mode: "test" | "live"): ProfileReadiness {
+  const credentials = credentialsFor(env, mode);
+  const suffix = mode === "live" ? ".live" : ".test";
+  const missing: string[] = [];
+  if (credentials.secretKey.length === 0) missing.push(`billing.stripe.secretKey${suffix}`);
+  if (credentials.webhookSecret.length === 0) missing.push(`billing.stripe.webhookSecret${suffix}`);
+  if (credentials.priceTiers.length === 0) missing.push(`billing.stripe.prices${suffix}`);
+  const table = credentials.priceTiers.length === 0 ? null : parseTierTable(credentials.priceTiers);
+  return {
+    complete: missing.length === 0 && table?.isOk() === true,
+    missing,
+    plans: table?.isOk() === true ? table.value.size : null,
+    problem: table?.isErr() === true ? table.error.message : null,
+  };
+}
+
+export function billingProfiles(env: Env): BillingProfiles {
+  return {
+    active: stripeMode(env),
+    profiles: { test: readinessOf(env, "test"), live: readinessOf(env, "live") },
+  };
 }
 
 /** True when a checkout, a portal and a webhook all have what the active mode needs. */

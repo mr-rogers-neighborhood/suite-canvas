@@ -82,10 +82,10 @@ afterEach(async () => {
 
 let trail: ReturnType<typeof memoryAuditStore> | null = null;
 
-async function start(): Promise<void> {
+async function start(overrides: Record<string, string> = {}): Promise<void> {
   trail = memoryAuditStore();
   const module = createSettingsModule({
-    env: { SUITE_CONTROL_PLANE_DATABASE_URL: "postgres://stub/suite" } as never,
+    env: { SUITE_CONTROL_PLANE_DATABASE_URL: "postgres://stub/suite", ...overrides } as never,
     logger: createLogger(),
     pool: poolDouble(rows) as never,
     audit: trail,
@@ -241,6 +241,76 @@ describe("the settings module", () => {
     expect(mode?.value).toBe("live");
     // Every row carries where a boot value would come from, so the panel can explain it.
     expect(mode?.env).toBe("SUITE_BILLING_MODE");
+  });
+});
+
+describe("the two Stripe profiles", () => {
+  /** A complete set for one mode, named the way the environment names it. */
+  const profile = (suffix: "" | "_LIVE") => ({
+    [`STRIPE_SECRET_KEY${suffix}`]: "sk_x",
+    [`STRIPE_WEBHOOK_SECRET${suffix}`]: "whsec_x",
+    [`STRIPE_PRICE_TIERS${suffix}`]: JSON.stringify({
+      [`price_${suffix === "" ? "test" : "live"}`]: {
+        tier: "personal",
+        workspaces: 3,
+        documentBytes: 1024,
+        attachmentBytes: 1024,
+      },
+    }),
+  });
+
+  it("reports what each profile has, so a switch is not a discovery", async () => {
+    await start(profile(""));
+    const response = await call("GET", SETTINGS_PATH);
+    const body = (await response.json()) as {
+      billing: {
+        active: string;
+        profiles: Record<string, { complete: boolean; missing: string[]; plans: number | null }>;
+      };
+    };
+
+    expect(body.billing.active).toBe("test");
+    expect(body.billing.profiles.test).toMatchObject({ complete: true, plans: 1, missing: [] });
+    // The live half is empty and says which three keys it is waiting for.
+    expect(body.billing.profiles.live?.complete).toBe(false);
+    expect(body.billing.profiles.live?.missing).toEqual([
+      "billing.stripe.secretKey.live",
+      "billing.stripe.webhookSecret.live",
+      "billing.stripe.prices.live",
+    ]);
+  });
+
+  it("refuses a switch to a profile that would boot billing off", async () => {
+    await start({ ...profile(""), SUITE_BILLING_ENABLED: "1" });
+
+    const refused = await call("PUT", `${SETTINGS_PATH}/billing.mode`, { value: "live" });
+
+    expect(refused.status).toBe(400);
+    const body = (await refused.json()) as { message?: string; error?: string };
+    expect(body.error).toBe("billing-profile-incomplete");
+    expect(body.message).toContain("billing.stripe.secretKey.live");
+    // Nothing was written: the deployment keeps the mode it is actually spending.
+    expect(rows).toHaveLength(0);
+  });
+
+  it("allows the switch once the other profile is complete", async () => {
+    await start({ ...profile(""), ...profile("_LIVE"), SUITE_BILLING_ENABLED: "1" });
+
+    const accepted = await call("PUT", `${SETTINGS_PATH}/billing.mode`, { value: "live" });
+
+    expect(accepted.status).toBe(200);
+    expect(rows[0]).toMatchObject({ key: "billing.mode", value: "live" });
+  });
+
+  it("refuses a price table that does not parse, rather than finding out at boot", async () => {
+    await start({ SUITE_BILLING_ENABLED: "1" });
+
+    const refused = await call("PUT", `${SETTINGS_PATH}/billing.stripe.prices.test`, {
+      value: '{"price_1":{"tier":"personal"}}',
+    });
+
+    expect(refused.status).toBe(400);
+    expect(rows).toHaveLength(0);
   });
 });
 

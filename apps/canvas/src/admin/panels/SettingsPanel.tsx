@@ -20,6 +20,11 @@ import { Button, ErrorLine, Muted, PanelHeader, useLoad } from "../ui";
  * The Stripe mode sits at the top because it is the one switch that changes what the
  * deployment *is*: test mode spends nothing and live mode charges people.
  */
+/** `billing.stripe.secretKey.live` reads as "secret key live", which is what a row is called. */
+function shortKey(key: string): string {
+  return key.replace(/^billing\.stripe\./u, "").replace(/\./gu, " ");
+}
+
 export function SettingsPanel() {
   const { data, error, loading, reload } = useLoad(() => listSettings());
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -32,6 +37,7 @@ export function SettingsPanel() {
 
   const settings = data?.settings ?? [];
   const mode = settings.find((entry) => entry.key === "billing.mode")?.value;
+  const billing = data?.billing;
 
   const save = async (setting: AdminSetting, value: string | number | boolean) => {
     setBusy(setting.key);
@@ -68,6 +74,44 @@ export function SettingsPanel() {
       />
       <ErrorLine message={error ?? failure} />
       {loading ? <Muted>Reading settings…</Muted> : null}
+
+      {billing === undefined ? null : (
+        <div className="admin-card" data-testid="billing-profiles">
+          <h2 className="admin-settings-heading">Stripe profiles</h2>
+          <p className="admin-help">
+            Both sets live here, and the mode decides which one this deployment spends. The same
+            plans, prices and limits are expected in each, so a test run exercises what a live one
+            will. A profile has to be complete before it can be chosen, because a mode with no
+            credentials boots billing off and a deployment that charges nobody syncs everybody.
+          </p>
+          <div className="admin-profile-grid">
+            {(["test", "live"] as const).map((name) => {
+              const profile = billing.profiles[name];
+              const active = billing.active === name;
+              return (
+                <div
+                  key={name}
+                  className="admin-profile"
+                  data-testid={`billing-profile-${name}`}
+                  data-state={active ? "active" : profile.complete ? "ready" : "incomplete"}
+                >
+                  <strong>
+                    {name} mode{active ? " · active" : ""}
+                  </strong>
+                  <Muted>
+                    {profile.complete
+                      ? `${String(profile.plans ?? 0)} plan${profile.plans === 1 ? "" : "s"} of prices`
+                      : profile.missing.length > 0
+                        ? `Waiting for ${profile.missing.map(shortKey).join(", ")}`
+                        : "Prices do not parse"}
+                  </Muted>
+                  {profile.problem === null ? null : <Muted>{profile.problem}</Muted>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {mode === "live" ? (
         <p className="admin-warning" role="status" data-testid="billing-live-warning">

@@ -186,6 +186,21 @@ organization the relay has itself watched reach it.
 What a free account keeps is everything local: as many workspaces as it likes, in IndexedDB on
 the device, with export. What a plan buys is the room.
 
+A free account is not cut off from other people's rooms, and both ways in are deliberate:
+
+- **A share link** is a capability, not a seat. `seatGate.ts` answers `{ ok: true, seat: "share" }`
+  for it, so a visitor with no plan, or no account at all, opens the shared workspace.
+- **An invitation** makes the account a member of the paying organization, and the plan that pays
+  for the room is that organization's. Accepting the invitation makes that organization the
+  session's active one (better-auth sets it), so the token that arrives at the relay names the tenant
+  that owns the workspace. `/api/account/workspaces` joins `member` to `workspaces`, so the shared
+  workspace appears in the launcher's list beside their own.
+
+The one shape that does not work is holding a plan-less organization as the *active* one while
+opening somebody else's workspace: the relay records one organization per workspace and answers
+`workspace-owned-elsewhere` rather than guessing. Accepting an invitation switches the active
+organization, which is the path a person actually takes.
+
 That row is a default, and it is replaced rather than joined. `organization_licences` is
 keyed by `organization_id`, so one organization holds exactly one licence: a second row
 that would outrank the free one cannot exist.
@@ -286,6 +301,36 @@ A session token and a licence do not compete on a self-hosted relay. Capacity co
 `SUITE_LICENCE`; a session token, when the operator runs a control plane as well, authenticates a
 person and raises no cap, because the per-workspace claim record is written only in hosted mode.
 
+## Test and live, side by side
+
+Stripe keeps two universes, and this deployment carries a credential set for each: the test set in
+`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `STRIPE_PRICE_TIERS`, and the live set in the same
+names with a `_LIVE` suffix. `billing.mode` (`SUITE_BILLING_MODE`) picks which one the process
+spends, and nothing from the other universe is read, so a test event that arrives while the
+deployment is live fails the signature check instead of writing a licence.
+
+Both sets are first-class, and the point is parity: the same plans, the same limits, the same
+checkout, portal and webhook, in whichever universe is active. What test mode proves and what only
+live mode can prove:
+
+| Flow | Test mode | Live mode |
+| --- | --- | --- |
+| Checkout, portal, webhook, projection | Yes, with a test card | Yes, with real money |
+| Renewal and cancellation | Yes, with a test clock | Yes, and slowly |
+| Price ids | Test-mode ids | Live-mode ids, a different table |
+| Webhook endpoint | Registered in the test dashboard | Registered separately, in live |
+| Anything about tax, disputes, payouts | No | Only here |
+
+Because the price ids differ between the universes, a price table cannot be moved across: each set
+names its own. `settingsBody` reports both profiles with what each one still lacks, and
+`PUT /admin/settings/billing.mode` refuses a switch to a profile that is incomplete **while billing
+is enabled**, because a mode with no credentials boots billing off, and on a deployment that charges
+people that means everybody syncs for free while the panel says nothing is wrong. With billing off the mode
+is free to set, because nothing is charged either way.
+
+The order is therefore: fill the target profile's three rows, then switch, then restart the control
+plane (billing is read at boot). A row saved after boot shows **Restart to apply** beside it.
+
 ## Environment
 
 | Variable | When | Meaning |
@@ -293,6 +338,8 @@ person and raises no cap, because the per-workspace claim record is written only
 | `STRIPE_SECRET_KEY` | always | Secret or restricted key. Absent, the deployment mounts no billing plugin |
 | `STRIPE_WEBHOOK_SECRET` | always | Endpoint secret (`whsec_…`) printed by `stripe listen`; never logged |
 | `STRIPE_PRICE_TIERS` | always | The tier table above, as JSON keyed by price id |
+| `STRIPE_SECRET_KEY_LIVE`, `STRIPE_WEBHOOK_SECRET_LIVE`, `STRIPE_PRICE_TIERS_LIVE` | live mode | The same three, in Stripe's live universe |
+| `SUITE_BILLING_MODE` | always | `test` (default) or `live`: which set is spent |
 | `SUITE_CONTROL_PLANE_DATABASE_URL` | entitlement read | The one Postgres holding `subscription` (ADR-0070) |
 | `SUITE_CONTROL_PLANE_PORT` | local runs | Listener port, `1236` by default |
 | `SUITE_LICENCE` | self-host relay | The signed token, verified at boot against the public key |

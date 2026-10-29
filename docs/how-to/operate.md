@@ -242,6 +242,12 @@ rather than an SSH session; it is read-only, because a plan is changed by the or
 the billing portal on its Plan tab, and ending somebody's subscription from an operator surface is a
 write with their money behind it.
 
+**Settings** shows both Stripe profiles at the top, side by side, with what each one still lacks.
+That read is what makes the test/live switch safe to press: a profile is filled in, then chosen, and a
+switch to an incomplete profile is refused while billing is enabled, because a mode with no
+credentials boots billing off and a deployment that charges nobody syncs everybody. Billing is read at
+boot, so the switch takes effect on the next control-plane restart.
+
 Half of the panel's views are answered by the relay and half by the control plane, and a route that is
 missing from either one reads as a broken feature rather than a misrouted request. A route the panel
 calls needs three things: a handler, a `deploy/Caddyfile` matcher in `@admin_api`, and a line in the

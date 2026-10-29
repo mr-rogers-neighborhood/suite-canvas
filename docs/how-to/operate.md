@@ -242,6 +242,13 @@ rather than an SSH session; it is read-only, because a plan is changed by the or
 the billing portal on its Plan tab, and ending somebody's subscription from an operator surface is a
 write with their money behind it.
 
+Half of the panel's views are answered by the relay and half by the control plane, and a route that is
+missing from either one reads as a broken feature rather than a misrouted request. A route the panel
+calls needs three things: a handler, a `deploy/Caddyfile` matcher in `@admin_api`, and a line in the
+Vite proxy in `apps/canvas/vite.config.ts` so the same view works on `localhost:5173`. The panel sends
+`/admin/accounts`, `/admin/activity`, `/admin/mail/*` and `/admin/subscriptions` to the control plane
+and everything else under `/api/admin/*` to the relay.
+
 ### Logs and alerts
 
 Every line on stdout is one JSON object:

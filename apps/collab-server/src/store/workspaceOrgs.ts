@@ -51,6 +51,14 @@ export interface WorkspaceOrgStore {
   claim: (workspaceId: string, organizationId: string, now?: number) => ClaimOutcome;
   /** True when the workspace has a recorded organization. */
   has: (workspaceId: string) => boolean;
+  /**
+   * How many workspaces this relay has recorded for one organization.
+   *
+   * A lower bound on what the organization holds: a workspace claimed in the control plane
+   * but never opened here is not counted. The join gate reads it as "at least this many",
+   * which is the only direction that cannot refuse somebody who is inside their plan.
+   */
+  countForOrganization: (organizationId: string) => number;
   /** Drops a workspace's row, for a workspace delete. Returns rows removed. */
   remove: (workspaceId: string) => number;
   close: () => void;
@@ -97,6 +105,9 @@ export function createWorkspaceOrgStore(path: string): WorkspaceOrgStore {
     "SELECT workspace_id, organization_id, opened_at FROM workspace_orgs WHERE workspace_id = ?",
   );
   const removeRow = db.prepare("DELETE FROM workspace_orgs WHERE workspace_id = ?");
+  const countByOrg = db.prepare(
+    "SELECT count(*) AS n FROM workspace_orgs WHERE organization_id = ?",
+  );
 
   const rowOf = (workspaceId: string): WorkspaceOrgRow | null =>
     (select.get(workspaceId) as WorkspaceOrgRow | undefined) ?? null;
@@ -130,6 +141,12 @@ export function createWorkspaceOrgStore(path: string): WorkspaceOrgStore {
     has: (workspaceId) => {
       if (!isText(workspaceId, MAX_ID_LENGTH)) return false;
       return rowOf(workspaceId.trim()) !== null;
+    },
+
+    countForOrganization: (organizationId) => {
+      if (!isText(organizationId, MAX_ID_LENGTH)) return 0;
+      const row = countByOrg.get(organizationId.trim()) as { n: number } | undefined;
+      return row === undefined ? 0 : Number(row.n);
     },
 
     remove: (workspaceId) => {

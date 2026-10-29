@@ -553,6 +553,32 @@ The build runs on the same box that serves, so these are facts about the deploym
   built it elsewhere, starts and then dies with `exec format error`. A build that has to happen
   off-instance needs `--platform linux/arm64` and a builder of that architecture.
 
+### Which image a change needs
+
+Three images serve the deployment and each one carries a different part of the tree, so a change that
+touches more than one needs more than one build:
+
+| Change | Image | Rebuild |
+| --- | --- | --- |
+| `apps/canvas`, `apps/docs`, `apps/site`, `deploy/Caddyfile` | `suite-caddy` | `docker compose build caddy` |
+| `apps/control-plane`, `services/auth`, `services/billing` | `suite:local-control-plane` | `docker compose build control-plane` |
+| `apps/collab-server` (the relay) | `suite:local` | `deploy/deploy.sh` |
+
+A single-service build leaves the others running the code from whenever they were last built. That
+does not fail: the process is healthy, the old routes answer, and a request for a route added since
+reads as **404 `not_found`** from the control plane's host, which looks like a missing feature rather
+than a missing build. When in doubt, build all three from the same checkout:
+
+```sh
+git pull --ff-only
+docker compose build app control-plane caddy
+docker compose up -d --no-build
+```
+
+`docker compose ps` shows how long each container has been up, and `docker images` shows when each
+image was built. A control-plane container older than the commit that added the route it is missing is
+the whole diagnosis.
+
 ### A Caddyfile change
 
 A `deploy/Caddyfile` change needs `docker compose build caddy && docker compose up -d caddy`, which

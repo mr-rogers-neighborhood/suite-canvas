@@ -35,7 +35,7 @@ export interface AccountPrincipal {
 
 /** The stores a workspace credential is recorded in. */
 export interface WorkspaceClaimDeps {
-  orgs: Pick<WorkspaceOrgStore, "get" | "claim">;
+  orgs: Pick<WorkspaceOrgStore, "get" | "claim" | "countForOrganization">;
   /**
    * The entitlement record, or null/absent on a self-host: a self-host has no
    * subscription, so it has nothing to record and no licence caps to apply.
@@ -44,8 +44,64 @@ export interface WorkspaceClaimDeps {
   now?: () => number;
 }
 
-/** What recording a session for a workspace found. */
-export type WorkspaceClaimOutcome = "claimed" | "owned" | "conflict" | "organization-required";
+/**
+ * What recording a session for a workspace found.
+ *
+ * `plan-required` and `workspace-limit` are refusals, not findings: the organization may
+ * not hold *this* workspace under its current licence. Neither is `conflict`, which is
+ * about a workspace that already belongs to somebody else.
+ */
+export type WorkspaceClaimOutcome =
+  | "claimed"
+  | "owned"
+  | "conflict"
+  | "organization-required"
+  | "plan-required"
+  | "workspace-limit";
+
+/**
+ * The workspace ceiling the token carries, or null when it carries none.
+ *
+ * A paid licence mints `workspaces` from the tier table. A free organization's token
+ * carries `tier: "free"` and no limits at all, which is why null here is not "no opinion":
+ * it is the zero-workspace licence that a subscription replaces.
+ */
+function workspaceCeiling(claims: SessionClaims): number | null {
+  const value = claims.limits.workspaces;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * Whether this organization's plan covers opening this workspace.
+ *
+ * Two things this deliberately does not do. It does not ask the control plane, because the
+ * relay holds no Postgres credential and a join must not wait on another process. And it
+ * does not touch a workspace the organization already holds: a licence that shrank ends new
+ * work, it does not take documents away from somebody mid-sentence.
+ *
+ * That leaves the case this exists for. The control plane refuses a fresh claim with
+ * `plan-required` and the app turns it into the plan picker, but the socket used to walk in
+ * regardless and record the organization anyway, which is how a free account came to read
+ * "Synced" with no plan at all. The door is a door from both sides or it is decoration.
+ */
+function planRefusal(
+  deps: WorkspaceClaimDeps,
+  claims: SessionClaims,
+  recorded: { organizationId: string } | null,
+): "plan-required" | "workspace-limit" | null {
+  // A self-host has no subscription, so it has nothing to enforce.
+  if (deps.licences === null || deps.licences === undefined) return null;
+  const organizationId = claims.organizationId;
+  if (organizationId === null) return null;
+  if (recorded !== null && recorded.organizationId === organizationId) return null;
+
+  const ceiling = workspaceCeiling(claims);
+  if (ceiling === null || ceiling <= 0) return "plan-required";
+  // The relay's own store is a lower bound on what the organization holds: a workspace
+  // claimed in the control plane but never opened here is not counted, so this can only
+  // refuse an organization the relay has itself watched reach its ceiling.
+  return deps.orgs.countForOrganization(organizationId) >= ceiling ? "workspace-limit" : null;
+}
 
 /**
  * Turns the signed claims into the shape the relay's licence bookkeeping stores.
@@ -92,6 +148,13 @@ export function claimWorkspaceForSession(
   if (organizationId === null) return "organization-required";
 
   const now = (deps.now ?? Date.now)();
+  // Ownership conflict first: a plan refusal must never mask a workspace that belongs to
+  // another organization, or the reader is told to pay for something they cannot have.
+  const recorded = deps.orgs.get(workspaceId);
+  if (recorded !== null && recorded.organizationId !== organizationId) return "conflict";
+  const refusal = planRefusal(deps, claims, recorded);
+  if (refusal !== null) return refusal;
+
   const outcome = deps.orgs.claim(workspaceId, organizationId, now);
   if (outcome === "conflict") return "conflict";
 
@@ -160,6 +223,12 @@ export function createWorkspaceAccess(deps: WorkspaceAccessDeps): WorkspaceAcces
       }
       if (outcome === "conflict") {
         throw HttpError.forbidden("This workspace belongs to a different organization.");
+      }
+      if (outcome === "plan-required") {
+        throw HttpError.forbidden("This workspace needs a plan before it can sync.");
+      }
+      if (outcome === "workspace-limit") {
+        throw HttpError.forbidden("This account's plan does not cover another workspace.");
       }
 
       return {

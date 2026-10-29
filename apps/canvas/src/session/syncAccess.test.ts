@@ -25,6 +25,10 @@ describe("asking the relay why", () => {
     expect(await ask(answer({ ok: false, reason: "licence-expired" }))).toBe("plan");
     expect(await ask(answer({ ok: false, reason: "workspace-owned-elsewhere" }))).toBe("elsewhere");
     expect(await ask(answer({ ok: false, reason: "organization-required" }))).toBe("unknown");
+    // The door's two answers. They are separate names because they are separate
+    // sentences: "choose a plan" and "your plan does not cover another workspace".
+    expect(await ask(answer({ ok: false, reason: "plan-required" }))).toBe("plan");
+    expect(await ask(answer({ ok: false, reason: "workspace-limit" }))).toBe("limit");
   });
 
   it("is silent when the connection would be allowed", async () => {

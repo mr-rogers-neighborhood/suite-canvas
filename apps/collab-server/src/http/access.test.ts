@@ -126,6 +126,48 @@ describe("claimWorkspaceForSession", () => {
     expect(orgs.has("ws-1")).toBe(false);
   });
 
+  it("refuses a workspace the plan does not cover, and writes nothing", async () => {
+    // A fresh organization: `tier: "free"` and no limits at all, which is exactly what the
+    // control plane mints before a subscription.
+    const verified = await sessions.verifier.verify(
+      await sessions.sign({ tier: "free", limits: {} }),
+    );
+    if (!verified.ok) throw new Error("expected a verified token");
+
+    const outcome = claimWorkspaceForSession({ orgs, licences }, "ws-1", verified.claims);
+
+    // The refusal is the door: without it the socket walks in, records the organization and
+    // the badge reads "Synced" for an account that has never paid for anything.
+    expect(outcome).toBe("plan-required");
+    expect(orgs.has("ws-1")).toBe(false);
+    expect(licences.get("ws-1")).toBeNull();
+  });
+
+  it("keeps a workspace the organization already holds, whatever the plan says now", async () => {
+    const paid = await sessions.verifier.verify(await sessions.sign());
+    const lapsed = await sessions.verifier.verify(
+      await sessions.sign({ tier: "free", limits: {} }),
+    );
+    if (!paid.ok || !lapsed.ok) throw new Error("expected verified tokens");
+
+    claimWorkspaceForSession({ orgs, licences }, "ws-1", paid.claims);
+    // A licence that shrank ends new work; it does not take documents away.
+    expect(claimWorkspaceForSession({ orgs, licences }, "ws-1", lapsed.claims)).toBe("owned");
+  });
+
+  it("refuses another workspace once the organization is at its ceiling", async () => {
+    const verified = await sessions.verifier.verify(
+      await sessions.sign({ limits: { workspaces: 1 } }),
+    );
+    if (!verified.ok) throw new Error("expected a verified token");
+
+    claimWorkspaceForSession({ orgs, licences }, "ws-1", verified.claims);
+    const outcome = claimWorkspaceForSession({ orgs, licences }, "ws-2", verified.claims);
+
+    expect(outcome).toBe("workspace-limit");
+    expect(orgs.has("ws-2")).toBe(false);
+  });
+
   it("records nothing when the deployment keeps no entitlement rows", async () => {
     const verified = await sessions.verifier.verify(await sessions.sign());
     if (!verified.ok) throw new Error("expected a verified token");

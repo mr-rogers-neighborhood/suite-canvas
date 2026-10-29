@@ -36,6 +36,19 @@ describe("workspace organizations", () => {
     expect(store.get("ws-1")?.organizationId).toBe("org-a");
   });
 
+  it("counts the workspaces it has recorded for one organization", () => {
+    store.claim("ws-1", "org-a");
+    store.claim("ws-2", "org-a");
+    store.claim("ws-3", "org-b");
+
+    expect(store.countForOrganization("org-a")).toBe(2);
+    expect(store.countForOrganization("org-b")).toBe(1);
+    // An organization this relay has never seen is at zero, which is not the same as
+    // "somebody else's" — the join gate reads the count with the token's ceiling.
+    expect(store.countForOrganization("org-c")).toBe(0);
+    expect(store.countForOrganization("")).toBe(0);
+  });
+
   it("stores the organization id and nothing that could act as a credential", () => {
     store.claim("ws-1", "org-a", 1_700_000_000_000);
 

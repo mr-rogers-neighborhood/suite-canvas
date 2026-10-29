@@ -24,9 +24,16 @@ export default defineConfig({
       "/api/templates": { target: "http://127.0.0.1:1236", changeOrigin: false },
       "/api/feedback": { target: "http://127.0.0.1:1236", changeOrigin: false },
       // The operator API, not the panel: `/admin.html` is a page Vite serves
-      // itself, so only the template routes are forwarded.
+      // itself, so only the control plane's own routes are forwarded. One that is
+      // missing here does not fail loudly — it falls through to the SPA and the
+      // panel reports a parse error — so every path the panel calls belongs in
+      // this list alongside the matching `deploy/Caddyfile` matcher.
       "/admin/templates": { target: "http://127.0.0.1:1236", changeOrigin: false },
       "/admin/settings": { target: "http://127.0.0.1:1236", changeOrigin: false },
+      "/admin/subscriptions": { target: "http://127.0.0.1:1236", changeOrigin: false },
+      "/admin/accounts": { target: "http://127.0.0.1:1236", changeOrigin: false },
+      "/admin/activity": { target: "http://127.0.0.1:1236", changeOrigin: false },
+      "/admin/mail": { target: "http://127.0.0.1:1236", changeOrigin: false },
       "/api/workspaces": { target: "http://127.0.0.1:1236", changeOrigin: false },
       "/api/invites": { target: "http://127.0.0.1:1236", changeOrigin: false },
       "/stripe": { target: "http://127.0.0.1:1236", changeOrigin: false },

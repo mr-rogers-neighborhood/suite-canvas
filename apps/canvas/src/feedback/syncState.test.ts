@@ -69,6 +69,19 @@ describe("the one status reading", () => {
     expect(reading.situation).toBe("capped");
   });
 
+  it("reads a refused room as the plan, with the button that fixes it", () => {
+    // The relay refuses the join for an account whose licence covers no workspace, and the
+    // workspace is exactly where it was. "Needs attention" would be a fault report; this is
+    // a prompt.
+    for (const reason of ["plan", "limit"] as const) {
+      const reading = syncPresentation({ ...base, reason, status: "unauthorized" });
+      expect(reading.situation).toBe("capped");
+      expect(reading.label).toBe("Local");
+      expect(reading.sentence).toBe(CAPPED_SENTENCE);
+      expect(reading.action).toBe("seePlans");
+    }
+  });
+
   it("sends an ended session to sign in rather than calling it a refusal", () => {
     const reading = syncPresentation({ ...base, reason: "session", status: "unauthorized" });
     expect(reading.situation).toBe("expired");

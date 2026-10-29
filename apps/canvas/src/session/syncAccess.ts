@@ -21,7 +21,7 @@ export interface AccessInput {
   authorization?: () => Promise<Record<string, string>>;
 }
 
-/** The relay's own names, narrowed to the four a reader can act on. */
+/** The relay's own names, narrowed to the five a reader can act on. */
 const REFUSAL: Readonly<Record<string, SyncRefusal>> = {
   "no-credential": "session",
   "session-invalid": "session",
@@ -30,6 +30,10 @@ const REFUSAL: Readonly<Record<string, SyncRefusal>> = {
   "licence-unprovisioned": "plan",
   "licence-missing": "plan",
   "licence-expired": "plan",
+  // The door's own two answers: the plan covers no workspace at all, or no further one.
+  // Both end at the plan picker, but they are different sentences in the panel.
+  "plan-required": "plan",
+  "workspace-limit": "limit",
   "workspace-owned-elsewhere": "elsewhere",
 };
 

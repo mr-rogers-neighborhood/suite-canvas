@@ -2,10 +2,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createLicenceClaimStore, type LicenceClaimStore } from "../store/licenceClaims.js";
 import { createShareStore, type ShareStore } from "../store/shares.js";
 import { createWorkspaceOrgStore, type WorkspaceOrgStore } from "../store/workspaceOrgs.js";
 import { createRelaySeatGate } from "../sync/seatGate.js";
-import { type AuthorizeDeps, authorize, resolveWorkerTokens } from "./auth.js";
+import { type AuthorizeDeps, authorize, decideAccess, resolveWorkerTokens } from "./auth.js";
 import { createSessionFixture, type SessionFixture } from "./sessionFixture.js";
 
 const encoder = new TextEncoder();
@@ -398,5 +399,54 @@ describe("authorize with the seat gate wired in", () => {
     await expect(
       authorize("share-abc", encode(PROJECTION_TOKEN), { ...deps, seats: enforced() }),
     ).resolves.toBe("write");
+  });
+});
+
+describe("the plan at the door", () => {
+  let licences: LicenceClaimStore;
+
+  beforeEach(() => {
+    licences = createLicenceClaimStore(join(directory, "licences.sqlite"));
+  });
+
+  afterEach(() => {
+    licences.close();
+  });
+
+  const hosted = (): AuthorizeDeps => ({ ...deps, workspaces: { orgs, licences } });
+
+  it("keeps a free organization out of a workspace it does not hold", async () => {
+    // The socket used to walk in and record the organization, which is how an account with
+    // no plan read "Synced" while the control plane had just refused the same workspace.
+    const token = await sessions.sign({ tier: "free", limits: {} });
+
+    const decision = await decideAccess("ws-1", encode(token), hosted());
+
+    expect(decision).toMatchObject({ ok: false, reason: "plan-required" });
+    expect(orgs.has("ws-1")).toBe(false);
+    await expect(authorize("ws-1", encode(token), hosted())).resolves.toBeNull();
+  });
+
+  it("keeps a workspace the organization already holds open after the licence lapses", async () => {
+    orgs.claim("ws-1", "org-a");
+    const token = await sessions.sign({ tier: "free", limits: {} });
+
+    await expect(authorize("ws-1", encode(token), hosted())).resolves.toBe("write");
+  });
+
+  it("names the ceiling when the plan covers workspaces but not another one", async () => {
+    orgs.claim("ws-1", "org-a");
+    const token = await sessions.sign({ limits: { workspaces: 1 } });
+
+    const decision = await decideAccess("ws-2", encode(token), hosted());
+
+    expect(decision).toMatchObject({ ok: false, reason: "workspace-limit" });
+  });
+
+  it("leaves a self-host alone, because it has no plan to check", async () => {
+    const token = await sessions.sign({ tier: "free", limits: {} });
+
+    // No entitlement store means no subscription and nothing to enforce.
+    await expect(authorize("ws-1", encode(token), deps)).resolves.toBe("write");
   });
 });

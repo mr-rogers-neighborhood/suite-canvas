@@ -162,11 +162,29 @@ The one number that is not zero is the seat, because a seat *is* a `member` row:
 organization whose owner cannot be a member cannot exist. Zero seats would repeat the
 provisioning bug `0009` fixed; zero workspaces is the intended wall.
 
-`POST /api/workspaces/claim` is the only door from a local workspace to an owned one, and
-it reads this row, so the wall sits there. The refusal is `plan-required` with a **402**: the
-request was well formed and the account is real, it just has no plan behind it. The app turns
-that code into the plan picker. `workspace-limit` (403) is the neighbouring case:
-a plan that names workspaces and has spent them.
+There are two doors from a local workspace to a synced one, and both read this row.
+
+`POST /api/workspaces/claim` is the control plane's door. The refusal is `plan-required`
+with a **402**: the request was well formed and the account is real, it just has no plan
+behind it. The app turns that code into the plan picker. `workspace-limit` (403) is the
+neighbouring case: a plan that names workspaces and has spent them.
+
+The relay's socket join is the other door, and it used to stand open. `claimWorkspaceForSession`
+in `apps/collab-server/src/http/access.ts` records the organization for a workspace on the
+first verified open, and it did so without reading the plan, so a free account connected,
+synced, and read "Synced" while the claim route was refusing the same workspace. It now asks
+the same question before it writes anything, with the token's `limits.workspaces` as the
+ceiling: absent or zero answers `plan-required`, and a count at the ceiling answers
+`workspace-limit`. A workspace the organization already holds is always allowed, so a licence
+that shrank ends new work rather than taking documents away from somebody mid-sentence.
+
+The relay counts workspaces in its own SQLite store, because it holds no Postgres credential.
+That count is a lower bound on what the organization owns, because a workspace claimed in the
+control plane but never opened on the relay is not counted, so the ceiling can only refuse an
+organization the relay has itself watched reach it.
+
+What a free account keeps is everything local: as many workspaces as it likes, in IndexedDB on
+the device, with export. What a plan buys is the room.
 
 That row is a default, and it is replaced rather than joined. `organization_licences` is
 keyed by `organization_id`, so one organization holds exactly one licence: a second row

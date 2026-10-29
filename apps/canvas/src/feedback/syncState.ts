@@ -151,7 +151,12 @@ function situationOf(facts: SyncFacts): SyncSituation {
     case "disconnected":
       return "offline";
     case "unauthorized":
-      return facts.reason === "session" ? "expired" : "problem";
+      if (facts.reason === "session") return "expired";
+      // The relay's door now answers the same question the claim route does, and it
+      // answers it with the plan. A refused room is not a fault to report: the workspace
+      // is safe on this device and one button fixes it, which is what `capped` means.
+      if (facts.reason === "plan" || facts.reason === "limit") return "capped";
+      return "problem";
   }
 }
 

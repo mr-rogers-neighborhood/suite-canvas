@@ -106,6 +106,10 @@ export type AccessRefusal =
   | "no-credential"
   | "session-invalid"
   | "organization-required"
+  /** This organization's plan does not cover opening this workspace. */
+  | "plan-required"
+  /** The plan covers workspaces, but not another one. */
+  | "workspace-limit"
   | "licence-unprovisioned"
   | "licence-missing"
   | "licence-expired"
@@ -221,6 +225,10 @@ export async function decideAccess(
     const outcome = claimWorkspaceForSession(deps.workspaces, baseRoom, claims);
     if (outcome === "conflict") return { ok: false, reason: "workspace-owned-elsewhere" };
     if (outcome === "organization-required") return { ok: false, reason: "organization-required" };
+    // The plan is checked before the room is recorded, so a refused join leaves no row
+    // behind and the next attempt asks the same question rather than finding itself owned.
+    if (outcome === "plan-required") return { ok: false, reason: "plan-required" };
+    if (outcome === "workspace-limit") return { ok: false, reason: "workspace-limit" };
   }
 
   return gated("write", {

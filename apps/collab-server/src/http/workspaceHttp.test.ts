@@ -264,7 +264,9 @@ describe("workspace delete API", () => {
   });
 
   it("is rate limited, because a delete is a destructive operation", async () => {
-    const token = await session("1");
+    // Plenty of workspace headroom, so every one of these unknown ids reaches the 404 the
+    // rate limiter sits behind rather than the plan's own refusal.
+    const token = await session("1", { limits: { workspaces: 100 } });
     for (let index = 0; index < 10; index += 1) {
       const response = await deleteRequest(`ws-limit-${index}`, token, {
         confirm: `ws-limit-${index}`,

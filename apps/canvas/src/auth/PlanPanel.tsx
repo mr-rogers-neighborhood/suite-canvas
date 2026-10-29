@@ -18,6 +18,7 @@ import {
   quotaLines,
 } from "./entitlement";
 import { ensureOrganization, ORGANIZATION_NAME } from "./organization";
+import { useAccountStore } from "./useAccountStore";
 
 /**
  * The plan surface: what this account may use, how to buy more, and how to reach
@@ -63,9 +64,19 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
   const [error, setError] = useState<string | null>(null);
   const [answered, setAnswered] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const phase = useAccountStore((state) => state.phase);
+  // A checkout belongs to an account and an organization, so a reader with no session
+  // has nothing to check out with. Offering the button anyway answered 401 and read as a
+  // broken plan list; the door they need is the one that makes an account.
+  const signedOut = phase === "signed-out";
 
   /** One read, so the first paint and Retry cannot disagree about what happened. */
   const read = useCallback(async (): Promise<void> => {
+    if (signedOut) {
+      setAnswered(true);
+      setLoad("done");
+      return;
+    }
     setLoad("loading");
     setNotice(null);
     const organization = await ensureOrganization(ORGANIZATION_NAME);
@@ -99,14 +110,14 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
     if (!listed.ok) setNotice(listed.message);
     setAnswered(true);
     setLoad(listed.ok || current.ok ? "done" : "failed");
-  }, []);
+  }, [signedOut]);
 
   // `answered` is in the guard rather than the dependency list: StrictMode mounts twice,
   // and a second read would spend the organization call for the same answer.
   useEffect(() => {
-    if (!readOnMount) return;
+    if (!readOnMount || signedOut) return;
     void read();
-  }, [readOnMount, read]);
+  }, [readOnMount, read, signedOut]);
 
   const redirect = useCallback((url: string) => {
     // The plan is bought on Stripe's page; the browser has to go there.
@@ -216,7 +227,26 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
         </p>
       ) : null}
 
-      {load === "loading" ? (
+      {signedOut ? (
+        // A plan is bought by an organization, and an organization belongs to an
+        // account, so there is nothing to sell to a visitor with no session. Asking
+        // anyway answered "this account could not open a workspace space yet", which
+        // reads as a fault rather than as the one missing step.
+        <div className="mt-3" data-testid="plan-needs-account">
+          <p className="leading-5 text-[var(--ink-muted)]">
+            A plan belongs to an account, so make one first. Everything already on this device stays
+            here, and signing in does not move it.
+          </p>
+          <button
+            type="button"
+            data-testid="plan-create-account"
+            onClick={() => useAccountStore.getState().openSignIn("sign-up")}
+            className="mt-1.5 rounded-lg bg-[var(--ink)] px-3 py-1.5 text-[11px] font-medium text-[var(--surface)]"
+          >
+            Create an account
+          </button>
+        </div>
+      ) : load === "loading" ? (
         <p className="mt-3 text-[var(--ink-muted)]">Reading the plans…</p>
       ) : plans.length === 0 ? (
         answered && notice !== null ? (

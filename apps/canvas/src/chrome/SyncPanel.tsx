@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { currentCredentialClaims } from "../auth/credential";
 import type { AccountPhase } from "../auth/useAccountStore";
 import { useSaveState } from "../feedback/saveState";
 import {
@@ -61,7 +62,19 @@ export function SyncPanel({
   onReclaim,
 }: SyncPanelProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const presentation = syncPresentation({ phase, status, peerCount, role, claim, reason });
+  // The ceiling the relay enforces is the one in the token this page holds, so the
+  // sentence can name the number instead of saying "the plan does not cover it" to
+  // somebody whose plan does cover it and is simply full. Never mints.
+  const ceiling = currentCredentialClaims()?.limits.workspaces ?? null;
+  const presentation = syncPresentation({
+    phase,
+    status,
+    peerCount,
+    role,
+    claim,
+    reason,
+    ceiling,
+  });
   const save = useSaveState();
   const quota = useDurabilityStore((store) => store.quota);
   const persist = useDurabilityStore((store) => store.persist);
@@ -106,9 +119,11 @@ export function SyncPanel({
           >
             {ACTION_LABEL[presentation.action]}
           </button>
-          {/* Only beside the plan wall: every other situation has an answer that is not
-              "ask again". */}
-          {presentation.action === "seePlans" && onReclaim !== undefined ? (
+          {/* Only beside the plan wall, and only when the plan is the obstacle: a full
+              plan answers a retry exactly as it answered the first time. */}
+          {presentation.action === "seePlans" &&
+          presentation.retryable &&
+          onReclaim !== undefined ? (
             <button
               type="button"
               data-testid="sync-reclaim"

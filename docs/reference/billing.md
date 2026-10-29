@@ -420,6 +420,31 @@ The order is therefore: fill the target profile's three rows, check the profile,
 restart the control plane (billing is read at boot). A row saved after boot shows **Restart to
 apply** beside it.
 
+### The customer id belongs to one universe too
+
+`organization.stripeCustomerId` is written by the plugin when a customer is created, and it records
+no mode. After a switch the deployment holds ids from the other universe, and Stripe answers
+`No such customer` for every one of them: the portal fails with "Unable to create billing portal
+session", and a checkout that names the stored customer fails before it renders. The subscription
+row has the same shape, which is why a test-mode subscription keeps granting a licence in live mode.
+
+The repair is one statement per organization whose id the active mode does not know. Ask Stripe
+first, then clear the ones it refuses:
+
+```sql
+-- one organization, after confirming the id is not in the active mode
+update organization set "stripeCustomerId" = null where id = '<organization id>';
+```
+
+A blank id is a supported state: the plugin searches the active universe for a customer carrying
+that organization's metadata and creates one when it finds none, so the next checkout (or portal
+open) makes a live customer and writes the id back. The cost is that switching back to test mode
+does not recover the old test customers; they are made again the same way.
+
+Recording the mode beside the id is the fix that removes the manual step, and it needs a column the
+identity tables do not have yet. Until then, this is an operator step in the mode switch, listed
+here rather than discovered through a customer's failed portal.
+
 ### Secrets in the table
 
 A row of kind `secret` is encrypted before it is written, with AES-256-GCM under a key derived from

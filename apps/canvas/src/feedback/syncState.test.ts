@@ -3,6 +3,7 @@ import {
   CAPPED_SENTENCE,
   EXPIRED_SENTENCE,
   LOCAL_SENTENCE,
+  limitSentence,
   OFFLINE_SENTENCE,
   refusalSentence,
   syncPresentation,
@@ -69,17 +70,43 @@ describe("the one status reading", () => {
     expect(reading.situation).toBe("capped");
   });
 
-  it("reads a refused room as the plan, with the button that fixes it", () => {
+  it("reads a licence that covers nothing as the plan, with the button that fixes it", () => {
     // The relay refuses the join for an account whose licence covers no workspace, and the
     // workspace is exactly where it was. "Needs attention" would be a fault report; this is
     // a prompt.
-    for (const reason of ["plan", "limit"] as const) {
-      const reading = syncPresentation({ ...base, reason, status: "unauthorized" });
-      expect(reading.situation).toBe("capped");
-      expect(reading.label).toBe("Local");
-      expect(reading.sentence).toBe(CAPPED_SENTENCE);
-      expect(reading.action).toBe("seePlans");
-    }
+    const reading = syncPresentation({ ...base, reason: "plan", status: "unauthorized" });
+
+    expect(reading.situation).toBe("capped");
+    expect(reading.label).toBe("Local");
+    expect(reading.sentence).toBe(CAPPED_SENTENCE);
+    expect(reading.action).toBe("seePlans");
+    expect(reading.retryable).toBe(true);
+  });
+
+  it("says a paid plan is full rather than unpaid, and offers no retry", () => {
+    // The report that produced this: a personal plan with three workspaces, three of them
+    // synced, and a fourth refused with "your plan does not cover this workspace" beside an
+    // "I have paid — retry" button that could not work.
+    const reading = syncPresentation({
+      ...base,
+      reason: "limit",
+      status: "unauthorized",
+      ceiling: 3,
+    });
+
+    expect(reading.situation).toBe("capped");
+    expect(reading.sentence).toBe(
+      "Saved here. This plan covers 3 synced workspaces and they are all in use, so this one stays on this device.",
+    );
+    expect(reading.retryable).toBe(false);
+    expect(reading.action).toBe("seePlans");
+  });
+
+  it("keeps a full plan's sentence usable when the token does not say the number", () => {
+    const reading = syncPresentation({ ...base, reason: "limit", status: "unauthorized" });
+
+    expect(reading.sentence).toBe(limitSentence(null));
+    expect(reading.sentence).not.toBe(CAPPED_SENTENCE);
   });
 
   it("sends an ended session to sign in rather than calling it a refusal", () => {

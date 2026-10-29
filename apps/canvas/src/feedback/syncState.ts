@@ -50,6 +50,13 @@ export interface SyncFacts {
   peerCount: number;
   claim?: SyncClaim;
   reason?: SyncRefusal | null;
+  /**
+   * The synced-workspace ceiling the session token carries, when it says.
+   *
+   * A ceiling refusal and a no-plan refusal read the same without it, and they need
+   * different answers: one is "buy a plan", the other is "this plan is already full".
+   */
+  ceiling?: number | null;
 }
 
 export interface SyncPresentation {
@@ -61,12 +68,29 @@ export interface SyncPresentation {
   sentence: string;
   tone: SyncTone;
   action: SyncAction;
+  /**
+   * Whether asking again could change the answer.
+   *
+   * It cannot when the plan is full: a person who has paid is not the obstacle, and an
+   * "I have paid — retry" button beside that sentence invites a press that cannot work.
+   */
+  retryable: boolean;
 }
 
 export const LOCAL_SENTENCE = "Saved on this device. Sign in to use it on your other devices.";
 
 export const CAPPED_SENTENCE =
   "Saved here. Your plan does not cover this workspace, so it is not syncing.";
+
+/** The plan is paid and full, which no amount of retrying changes. */
+export function limitSentence(ceiling: number | null | undefined): string {
+  if (typeof ceiling !== "number" || ceiling <= 0) {
+    return "Saved here. Every synced workspace this plan covers is in use, so this one stays on this device.";
+  }
+  return `Saved here. This plan covers ${ceiling} synced workspace${
+    ceiling === 1 ? "" : "s"
+  } and ${ceiling === 1 ? "it is" : "they are all"} in use, so this one stays on this device.`;
+}
 
 export const OFFLINE_SENTENCE = "Offline. Changes save here and sync when you are back.";
 
@@ -165,7 +189,9 @@ function sentenceOf(facts: SyncFacts, situation: SyncSituation): string {
     case "local":
       return LOCAL_SENTENCE;
     case "capped":
-      return CAPPED_SENTENCE;
+      // The relay distinguishes these two and the client kept only one word for both,
+      // which is how a full plan came to look like an unpaid one.
+      return facts.reason === "limit" ? limitSentence(facts.ceiling) : CAPPED_SENTENCE;
     case "offline":
       return OFFLINE_SENTENCE;
     case "expired":
@@ -201,6 +227,9 @@ export function syncPresentation(facts: SyncFacts): SyncPresentation {
     // A page that has not been told who it is yet offers nothing, so the first
     // paint cannot show a "Sign in" button to someone who already is.
     action: facts.phase === "unknown" && situation === "local" ? null : ACTION[situation],
+    // Only the unpaid refusal is worth re-asking. A full plan answers the same way
+    // however many times it is asked, and the person has already paid.
+    retryable: situation === "capped" && facts.reason !== "limit",
   };
 }
 

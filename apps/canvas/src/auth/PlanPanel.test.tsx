@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EntitlementView } from "./entitlement";
+import { useAccountStore } from "./useAccountStore";
 
 const listPlans = vi.fn();
 const readSubscription = vi.fn();
@@ -50,6 +51,7 @@ const FREE: EntitlementView = {
 };
 
 beforeEach(() => {
+  useAccountStore.setState({ phase: "signed-in", dialogOpen: false, dialogMode: "sign-in" });
   listPlans.mockReset();
   readSubscription.mockReset();
   readEntitlement.mockReset();
@@ -141,6 +143,24 @@ describe("the plan surface", () => {
     // The portal is the door for a change to an existing plan; a second checkout is not.
     expect(screen.queryByTestId("plan-checkout-personal")).not.toBeInTheDocument();
     expect(screen.queryByTestId("plan-catalogue-empty")).not.toBeInTheDocument();
+  });
+
+  it("asks for an account instead of a checkout when nobody is signed in", async () => {
+    // A plan belongs to an account. Offering `Choose personal` to a signed-out reader
+    // answered 401 and read as a broken plan list, which is the report this pins.
+    useAccountStore.setState({ phase: "signed-out" });
+    listPlans.mockResolvedValue({
+      ok: true,
+      value: { mode: "live", plans: [{ name: "personal", priceId: "price_1", limits: {} }] },
+    });
+    render(<PlanPanel />);
+
+    expect(await screen.findByTestId("plan-needs-account")).toHaveTextContent("make one first");
+    expect(screen.queryByTestId("plan-checkout-personal")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("plan-create-account"));
+    expect(useAccountStore.getState().dialogMode).toBe("sign-up");
+    expect(useAccountStore.getState().dialogOpen).toBe(true);
   });
 
   it("names the price table when a deployment sells nothing", async () => {

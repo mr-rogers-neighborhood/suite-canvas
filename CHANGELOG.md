@@ -11,8 +11,8 @@ the artifact to roll back to. See [docs/how-to/release.md](docs/how-to/release.m
 
 ## [0.1.0-alpha.1] - 2026-10-29
 
-The first public release of Suite. The code is the same product the hosted deployment has been
-running; what changed is everything a reader outside the project needs in order to trust it.
+The first public release of Suite. The product is the one the hosted deployment runs; what this
+release adds is everything somebody outside the project needs in order to trust and run it.
 
 ### Added
 
@@ -116,11 +116,6 @@ was built and nothing said how to reach it.
 - `docs/tutorials/run-locally.md` implied Stripe was part of getting started. Signing
   in needs none of it, so the page now separates the two paths.
 - `e2e-grep.txt`, a scratch file committed by accident, is gone.
-
-### Added (documentation)
-
-- `WHAT-CHANGED.md` lists the eight commits between `1722a65` and `1.0.1` with what
-  each did and what to read to verify it.
 
 ## [1.0.1] - 2026-10-26
 

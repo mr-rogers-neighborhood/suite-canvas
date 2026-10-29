@@ -4,8 +4,8 @@ Suite is a local-first, collaborative canvas. A workspace owns its cards; boards
 cards. The document is a Loro CRDT, every write is validated in `@suite/graph`, and the canvas works
 offline.
 
-Current line: **Beta, 1.0.0**. The release is real; the Beta exit gates are not all closed.
-The gate status is tracked in the internal roadmap.
+Current line: **alpha, 0.1.0-alpha.1**. The release is real and the product is early: expect rough
+edges. [CHANGELOG.md](../CHANGELOG.md) lists what each version changes.
 
 ## Four ways in
 

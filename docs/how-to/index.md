@@ -8,7 +8,7 @@ One task at a time: the steps for a job you already know you need to do.
 | --- | --- | --- |
 | [Operate a deployment](operate.md) | Suite runs as a single Node process with six SQLite stores on one directory; there is no external database and no multi-replica mode. | 2026-10-28 |
 | [Deploy a server](deploy.md) | One small instance, one Docker host, one app container, six SQLite stores on one volume, Caddy in front, Cloudflare in front of Caddy. | 2026-10-28 |
-| [Publish the source](publish.md) | This page is the runbook for the one transition a repository makes once: from a tree only its author reads to a repository anybody can clone, audit an… | 2026-10-28 |
+| [Publish a copy of the source](publish.md) | The repository is public, so this page is not a step anybody has to take today. It is the runbook for the other direction: you have a fork, a private… | 2026-10-28 |
 | [Release and roll back](release.md) | A release is a tag, an image built from it on the host that serves it, the image id that identifies it, a smoke test against a host, and a rollback pa… | 2026-10-28 |
 | [Test and verify a change](test-and-verify.md) | Suite runs three test runners: Vitest for the workspace projects, Playwright for end-to-end journeys, and node --test for @suite/billing, which sits o… | 2026-10-28 |
 | [Try the paid flow on this machine](try-the-paid-flow.md) | The whole product runs in five containers on one machine: the relay, the control plane, Postgres, Caddy, and the docs site. This page walks the parts… | 2026-10-28 |

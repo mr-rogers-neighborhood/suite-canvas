@@ -129,8 +129,8 @@ Schema and types in `@suite/graph` with unit tests, UI with a story where it is 
 behaviour is non-trivial, docs updated in the same change, and the local gate under [Verify](#verify)
 green. E2E is not part of it unless the owner asked for a run.
 
-Recorded decisions live in `internal/decisions/`, which is gitignored and local-only; ask the
-maintainer for the current copy before re-litigating one.
+Decision records are kept by the maintainers and are not published; an `ADR-NNNN` reference in a
+comment is shorthand, and the prose around it states the decision.
 
 ## Tools for the deployment
 

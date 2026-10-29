@@ -51,9 +51,10 @@ A user-visible change needs a test that fails without it:
 
 ## Document it in the same change
 
-A decision that changes behaviour, ownership or a published number gets a record in the internal
-decision log, with a one-line summary. The log and its template are not part of this repository; ask
-the maintainer for the current copy.
+A decision that changes behaviour, ownership or a published number is worth a decision record: one
+page saying what was chosen, what it costs and what it rules out. Records are kept by the maintainers
+and are not published with the source, so write the reasoning into the prose too rather than leaving
+an `ADR-NNNN` reference as the only explanation.
 
 A command, port, store path or default changes in the same commit as
 [operate.md](operate.md) or [deploy.md](deploy.md). A quota changes in the constants, then

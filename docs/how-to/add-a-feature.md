@@ -130,7 +130,7 @@ That is the whole per-change gate. `pnpm verify` runs it plus the billing tests,
 the build. Playwright runs when the owner asks for a run, and [test-and-verify.md](test-and-verify.md)
 has the area scripts.
 
-Then update the docs that describe the new fact. A user-visible capability is worth a line in
-the internal roadmap when it closes a gate, and a decision that changes
-ownership gets an ADR. The command list is in [test-and-verify.md](test-and-verify.md); the standards
-are in [reference/conventions.md](../reference/conventions.md).
+Then update the docs that describe the new fact, and say it in `CHANGELOG.md` under the version it
+lands in. A decision that changes ownership, or that a future reader would otherwise re-litigate,
+gets a decision record. The command list is in [test-and-verify.md](test-and-verify.md); the
+standards are in [reference/conventions.md](../reference/conventions.md).

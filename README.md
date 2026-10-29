@@ -1,5 +1,13 @@
 # Suite
 
+**A canvas for thinking in connections.** Cards, boards and writing live in one document that works
+offline, syncs when you want it, and exports to a file you own.
+
+[**Open the app**](https://app.suite.run) · [Documentation](https://docs.suite.run) ·
+[Run it yourself](#run-it-yourself)
+
+![Suite, a board of connected cards](assets/preview-dark.png)
+
 > **Suite is alpha software.** The hosted deployment at <https://app.suite.run> is real and the
 > paying path is real, but expect rough edges and expect the shape of things to change.
 >
@@ -18,141 +26,99 @@
 > it in your account**, so clearing site data takes it with it. Export is always available and never
 > asks for a plan.
 
-Suite is a local-first, collaborative canvas for connected thinking. A workspace owns its cards and
-the boards they appear on: cards are objects first, and a board is a view that places them. Every edit
-lands in one Loro CRDT, `@suite/graph` validates each write with Zod before it reaches the document,
-and the canvas keeps working offline.
+## What it does
 
-**Status: alpha, `0.1.0-alpha.1`, MIT.** Hosted billing is live: accounts, organizations, invitations,
-checkout, the billing portal and the licence projection all run, in Stripe's test or live universe
-according to one setting. A free account is a local account, unlimited on this device; sync is the
-paid feature, and the same tier table prices it in both universes so a test run exercises what a live
-one will.
+- **Cards are objects, not text on a page.** Notes, images, links, tasks and files can appear on any
+  number of boards, with their own type, tags and connections, and one edit updates every place they
+  appear.
+- **Boards are views.** Arrange the same cards differently for different questions instead of copying
+  them. Links between cards survive being moved.
+- **Rich text where you want it.** Every card opens into a full editor, with mentions, checklists,
+  tables and images.
+- **Works offline.** Edits land in a local database and a reload resumes where you were, with or
+  without a network.
+- **Share without an account, or collaborate with one.** A share link grants one board, one card or a
+  whole workspace, as editor or viewer. Signing in adds live sync and presence.
+- **Nothing is trapped.** Export a workspace as a single `.suite` file, and keep the recovery key
+  beside it.
+- **Yours to run.** The whole thing is one compose file, a relay and a static app, with no vendor in
+  the path.
 
-![Suite](assets/preview-dark.png)
+## Try it
 
-## Quick start
+The hosted app is <https://app.suite.run>. Pick a template on the launcher, or open a `.suite` file
+somebody sent you. Nothing needs installing, and the canvas works signed out.
+
+## Run it locally
+
+Node 22 or newer, pnpm 12.13.0, and Docker for the optional database.
 
 ```sh
 pnpm install
 pnpm dev:env   # accounts on, session secret generated
-pnpm dev:db    # Postgres for accounts and billing
+pnpm dev:db    # Postgres, for accounts and billing
 pnpm dev
 ```
 
-Open <http://localhost:5173>. The canvas runs on 5173, the Loro relay on 1234, and the control plane
-that owns accounts and billing on 1236. A second window at the same URL shows live edits, titles and
-presence.
+Open <http://localhost:5173>. A second window at the same address shows live edits and presence.
+`pnpm dev:env` writes a `.env` and never overwrites one; without it the app runs local-only, with no
+accounts. `pnpm check:env` reports what is and is not set up, one line each, with the command that
+fixes the failing ones.
 
-`pnpm dev:env` writes a `.env` and never overwrites one. Without it, `pnpm dev` still serves the
-canvas and the relay, so the app is local-only. The control plane refuses to start and names the
-variable it needs, rather than pretending accounts work.
+[Run Suite locally](docs/tutorials/run-locally.md) covers the standalone bundle and custom ports.
 
-`pnpm check:env` reports what is set up and what is not, one line each, with the command that fixes
-the failing ones. Run it before opening an issue about the stack.
+## Run it yourself
 
-Node 22 or newer and pnpm 12.13.0, both pinned in `package.json`. [Run Suite
-locally](docs/tutorials/run-locally.md) covers the standalone bundle and custom ports.
+Same build, no licence token, no limits:
+
+```sh
+git clone https://github.com/mr-rogers-neighborhood/suite-canvas.git
+cd suite-canvas
+cp .env.example .env      # set the domain, then read the file
+docker compose up -d
+```
+
+[Deploy a server](docs/how-to/deploy.md) has the instance, the environment and the first boot.
+[Operate a deployment](docs/how-to/operate.md) covers watching, backups and restores.
+
+## How it is built
+
+React 19 on a React Flow surface, one Loro CRDT document per workspace, a typed object graph validated
+by Zod, and a WebSocket relay that flushes each room to SQLite. Zustand holds UI state only: document
+truth lives in the CRDT and nowhere else. Presence rides an ephemeral channel and is never written to
+the document.
+
+| Path | What lives there |
+| --- | --- |
+| `apps/canvas` | The app: launcher, boards, cards, editor, panels |
+| `apps/collab-server` | The sync relay, its stores and attachment serving |
+| `apps/control-plane` | Accounts, organizations, billing |
+| `packages/graph` | `@suite/graph`: the schema and the document layer |
+| `services/auth`, `services/billing` | Sign-in, organizations, invitations, Stripe |
+| `apps/docs`, `apps/site` | The documentation and marketing sites |
+| `e2e`, `docs`, `deploy` | Playwright specs, the four documentation sections, deployment |
+
+[Architecture](docs/reference/architecture.md) is the longer version.
 
 ## Documentation
 
 | | |
 | --- | --- |
-| [Tutorials](docs/tutorials/index.md)<br>Learn by doing: one guided path to a first workspace. | [How-to](docs/how-to/index.md)<br>One job at a time: add a feature, test, deploy, operate, release. |
-| [Reference](docs/reference/index.md)<br>Facts to look up: architecture, conventions, limits, security. | [Explanation](docs/explanation/index.md)<br>Why the product and the code are shaped this way. |
+| [Tutorials](docs/tutorials/index.md)<br>Learn by doing. | [How-to](docs/how-to/index.md)<br>One job at a time: add a feature, test, deploy, operate. |
+| [Reference](docs/reference/index.md)<br>Facts to look up: architecture, limits, security. | [Explanation](docs/explanation/index.md)<br>Why the product and the code are shaped this way. |
 
-[docs/README.md](docs/README.md) is the dashboard for the four sections.
-
-## Commands
-
-| Command | What it runs |
-| --- | --- |
-| `pnpm check` | Biome, `tsc` across the workspace, the Vitest files your change reaches, docs symbols, shape |
-| `pnpm lint`, `pnpm typecheck`, `pnpm test` | Biome, `tsc` across the workspace, and every Vitest project |
-| `pnpm docs:check` | Links, fences, banned prose, generated indexes, limits |
-| `pnpm docs:symbols` | Backticked paths, root scripts, ADR references |
-| `pnpm shape` | File length, observe sites, raw Loro writes |
-| `pnpm verify` | The local gate plus the billing tests, the story tests and the build |
-| `pnpm build` | `@suite/graph` dist, then the canvas bundle |
-| `pnpm storybook` | Component workshop on :6006 |
-| `pnpm docs:site` | The docs site on :3001 |
-| `pnpm e2e:smoke` | The `@smoke` Playwright specs, the narrowest e2e run |
-| `pnpm e2e:canvas` / `e2e:collab` / `e2e:views` | One e2e area |
-| `pnpm e2e` | Every Playwright spec, a milestone action |
-| `pnpm e2e:doctor` | Report processes holding the e2e ports before a run |
-| `pnpm limits:check` | `docs/reference/limits.md` still matches the code |
-
-The gate is local: `pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check && pnpm docs:symbols &&
-pnpm shape`. Playwright runs when the owner asks for it, not on every change, and no workflow gates
-`main`. [Test and verify a change](docs/how-to/test-and-verify.md) has the tiers and the e2e area
-scripts.
-
-## Repository layout
-
-```
-apps/canvas          React 19 canvas: React Flow surface, Tiptap editors, Zustand UI store
-apps/collab-server   Loro WebSocket relay, six SQLite stores, attachment serving
-apps/docs            The documentation site (Astro, Starlight)
-apps/site            The marketing site (Astro)
-apps/control-plane   Accounts, organizations and billing on Postgres, beside the relay
-packages/graph       @suite/graph: Zod schema and the typed WorkspaceDocument layer
-packages/licence     The licence token format and its Ed25519 verifier
-services/auth        Better Auth: sign-up, sessions, passkeys, organizations, invitations
-services/billing     Stripe through @better-auth/stripe, plus the entitlement read
-e2e                  Playwright specs, tagged for the smoke tier
-docs                 Tutorials, how-to, reference, explanation
-deploy               Caddyfile, backup and restore scripts, drill records
-```
-
-## How it works
-
-One `LoroDoc` per workspace holds boards, cards, placements, sections, types, tags, edges, the
-derived reference index and per-card rich text. `WorkspaceDocument` is the only write path, and it
-validates with Zod before touching Loro. `LoroIndexeddbPersistence` stores a snapshot plus an update
-log in the browser, so a reload resumes offline; the `loro-websocket` provider syncs the same document
-when a relay is reachable, and the relay flushes each room to SQLite. Presence and live drag positions
-ride `EphemeralStore` channels and are never written to the document. Zustand holds UI state only.
-
-[Architecture](docs/reference/architecture.md) has the data flow, layer by layer.
-
-## Sharing
-
-`Share` opens one dialog for the workspace, the active board or the selected card. Every grant is a
-bearer capability: the owner link is the workspace URL plus an owner-key fragment, and editor, viewer,
-board and card links arrive as `?share=<token>`. The relay stores only hashes and authorizes each join
-per room as `read` or `write`. [Security model](docs/reference/security-model.md) lists what each link
-grants and what it withholds.
-
-## Workspace files
-
-`File → Export a backup` writes a `.suite` file; the launcher opens one. `File → Recovery key` saves
-the `.suitekey` file, the way back into a workspace when the relay is gone. The key is never inside a
-`.suite` backup, because that file gets copied and shared, so keep both.
-
-## Running a server
-
-One `Dockerfile`, one `compose.yaml`, one domain: Caddy terminates TLS and proxies `/api/*` and `/ws`
-to the single app container, whose six SQLite stores sit on one volume.
-
-- [Deploy a server](docs/how-to/deploy.md): the instance, the environment and the first boot.
-- [Operate a deployment](docs/how-to/operate.md): watch, back up, restore and tune a running host.
-- [Security model](docs/reference/security-model.md): every credential, what the relay can read, and
-  what the account layer will add.
-
-`.github/workflows/release.yml` defines the tag release and sits unrun on this account;
-[Release and roll back](docs/how-to/release.md) has the manual build path and the rollback that
-re-pins the previous digest.
-
-## Supporting the project
-
-A subscription pays for the work. <https://app.suite.run> sells two hosted plans, monthly, with
-Stripe holding the card; what a plan buys and what it does not is on the Plan tab, beside the
-button. Nothing here is behind it: the canvas, export, sharing by file and self-hosting are all
-free, and the source stays MIT however that goes.
+The same pages, rendered and searchable, are at <https://docs.suite.run>.
 
 ## Contributing
 
-[CONTRIBUTING.md](CONTRIBUTING.md) is the short version and
-[docs/how-to/contribute.md](docs/how-to/contribute.md) the full one. [AGENTS.md](AGENTS.md) holds the
-rules for human and AI contributors. Report a vulnerability per [SECURITY.md](SECURITY.md);
-participation is covered by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) is the short version and
+[docs/how-to/contribute.md](docs/how-to/contribute.md) the full one; `pnpm check` is the gate a change
+runs against, and [AGENTS.md](AGENTS.md) holds the rules for human and AI contributors.
+
+Report a vulnerability per [SECURITY.md](SECURITY.md). Participation is covered by
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
+## Licence
+
+MIT, © Suite contributors. The hosted service and the name are not part of what you get to resell:
+run the code, under your own name, and you have all of it.

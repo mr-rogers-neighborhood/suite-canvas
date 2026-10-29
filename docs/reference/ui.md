@@ -45,9 +45,9 @@ mount left the notice and every row describing the account as it was before a ch
 ### The alpha notice
 
 `apps/canvas/src/launcher/AlphaNotice.tsx` is the modal a first visit lands on, before the list
-is usable: what alpha means, what a subscription buys, that the source goes public and can then
-be run by its reader, that an unclaimed workspace is this browser's copy, and that a card is
-never asked for while the total is zero. Dismissing it, or taking its **See plans** button, is
+is usable: what alpha means, what a subscription buys, that the source is public and can be run by
+its reader (with a link to the repository), and that an unclaimed workspace is this browser's
+copy. Dismissing it, or taking its **See plans** button, is
 remembered in `localStorage` under `suite.alpha-notice.v1` (`alphaNotice.ts`), so it appears once
 per browser rather than once per account. Storage that refuses to write shows it again, which is
 the harmless direction.

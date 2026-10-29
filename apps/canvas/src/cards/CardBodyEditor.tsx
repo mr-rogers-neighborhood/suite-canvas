@@ -15,7 +15,8 @@ import type { PresenceUser } from "../collab/presence";
 import { cardBodySchemaExtensions } from "../editor/cardEditorExtensions";
 import { LoroCollaboration } from "../editor/LoroCollaboration";
 import { Mention } from "../editor/Mention";
-import { EditorToolbar, type ToolbarState } from "./EditorToolbar";
+import { EditorToolbar } from "./EditorToolbar";
+import { activeCommands } from "./formatCommands";
 
 /** Empty-body copy, shared by the canvas card and the inspector. */
 export const BODY_PLACEHOLDER = "Begin writing, or type / for commands.";
@@ -186,18 +187,11 @@ export function CardBodyEditor({
 
   useLocalMirrorSync(cardDoc, contentId, editor);
 
+  // One selector over the shared command table: the toolbar, the bubble and the `/` menu
+  // draw the same set, so the pressed state is derived from it rather than listed again.
   const toolbar = useEditorState({
     editor,
-    selector: ({ editor: current }): ToolbarState => ({
-      bold: current.isActive("bold"),
-      italic: current.isActive("italic"),
-      strike: current.isActive("strike"),
-      heading1: current.isActive("heading", { level: 1 }),
-      heading2: current.isActive("heading", { level: 2 }),
-      heading3: current.isActive("heading", { level: 3 }),
-      bulletList: current.isActive("bulletList"),
-      orderedList: current.isActive("orderedList"),
-    }),
+    selector: ({ editor: current }) => activeCommands(current),
   });
 
   // Layout effect so the editor is editable and focused before the browser
@@ -220,7 +214,7 @@ export function CardBodyEditor({
         {/* Above the text, in the column's own flow: a floating row cannot fit here. */}
         {toolbar ? (
           <div className="mb-1.5">
-            <EditorToolbar editor={editor} state={toolbar} />
+            <EditorToolbar editor={editor} active={toolbar} />
           </div>
         ) : null}
         <EditorContent editor={editor} className={className} />
@@ -233,7 +227,13 @@ export function CardBodyEditor({
       <EditorContent editor={editor} className={className} />
       {toolbar && toolbarPlacement === "bubble" ? (
         <BubbleMenu editor={editor} data-testid="format-menu">
-          <EditorToolbar editor={editor} state={toolbar} />
+          {/* Capped so the row wraps instead of stretching past a narrow card or a
+              phone-width window; the bubble floats, so nothing else constrains it. */}
+          <EditorToolbar
+            editor={editor}
+            active={toolbar}
+            className="w-max max-w-[min(calc(100vw-2rem),18rem)]"
+          />
         </BubbleMenu>
       ) : null}
     </>

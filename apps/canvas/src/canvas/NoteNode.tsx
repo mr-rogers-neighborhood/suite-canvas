@@ -54,6 +54,8 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const editingField = useUiStore((state) => state.editingField);
   const editingSurface = useUiStore((state) => state.editingSurface);
   const startEditing = useUiStore((state) => state.startEditing);
+  const interactionMode = useUiStore((state) => state.interactionMode);
+  const locked = interactionMode === "locked";
   const stopEditing = useUiStore((state) => state.stopEditing);
   const openInspector = useUiStore((state) => state.openInspector);
   const openTypeMenu = useUiStore((state) => state.openTypeMenu);
@@ -258,13 +260,17 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         canEditContent={canEditContent}
         canEditLayout={canEditLayout}
         canManageTrash={canManageTrash}
-        onStartEditing={(field) => startEditing(id, field, "canvas")}
+        onStartEditing={(field) => {
+          if (locked) return;
+          startEditing(id, field, "canvas");
+        }}
         onEditEnd={stopEditing}
         {...(canEditLayout
           ? { onRemoveFromBoard: () => workspace.unplaceCard(placement.boardId, id) }
           : {})}
         linkCount={linkCount}
         onOpenInfo={() => openInspector(id)}
+        interactionMode={interactionMode}
         onOpenTypeMenu={(anchor) => openTypeMenu(id, anchor)}
         typeTargets={typeTargets}
         {...(canEditContent

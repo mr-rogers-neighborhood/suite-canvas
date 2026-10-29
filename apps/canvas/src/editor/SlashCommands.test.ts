@@ -1,6 +1,7 @@
 import { Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { afterEach, describe, expect, it } from "vitest";
+import { FORMAT_COMMANDS } from "../cards/formatCommands";
 import {
   filterSlashItems,
   SLASH_ITEMS,
@@ -67,6 +68,17 @@ describe("filterSlashItems", () => {
   it("should return nothing when no block matches", () => {
     expect(filterSlashItems("zzz")).toEqual([]);
   });
+
+  it("should offer every formatting command the toolbar draws", () => {
+    const ids = filterSlashItems("").map((entry) => entry.id);
+    for (const command of FORMAT_COMMANDS) expect(ids).toContain(command.id);
+  });
+
+  it("should not offer the tour step while tours are paused", () => {
+    expect(filterSlashItems("step")).toEqual([]);
+    expect(filterSlashItems("tour")).toEqual([]);
+    expect(SLASH_ITEMS.map((entry) => entry.id)).not.toContain("step");
+  });
 });
 
 describe("slash commands", () => {
@@ -77,6 +89,16 @@ describe("slash commands", () => {
     expect(firstNode(current)?.type.name).toBe("heading");
     expect(firstNode(current)?.attrs.level).toBe(1);
     expect(current.state.doc.textContent).toBe("");
+  });
+
+  it("should apply a quotation and a divider from the menu too", () => {
+    const cited = createEditor("/quo");
+    item("quote").run(cited, { from: 1, to: 5 });
+    expect(firstNode(cited)?.type.name).toBe("blockquote");
+
+    const ruled = createEditor("/div");
+    item("divider").run(ruled, { from: 1, to: 5 });
+    expect(firstNode(ruled)?.type.name).toBe("horizontalRule");
   });
 
   it("should insert a divider", () => {

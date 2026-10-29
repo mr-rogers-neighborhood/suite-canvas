@@ -98,6 +98,20 @@ A modifier click belongs to multi-select and must not open the inspector; the ca
 
 While a link is being drawn, the inspector fades. The preview passes under the panel and the destination is usually the thing the panel covers, so `linkingInProgress` exists for that one layout decision and nothing about the draft is written to the document.
 
+## What a press on a card does
+
+Reading a board and editing it are the same click, so the click needs a mode. `InteractionModeToggle` sits beside undo and redo and cycles `interactionMode` in `apps/canvas/src/store/interactionMode.ts`:
+
+| Mode | A press on a card | Neighbours |
+| --- | --- | --- |
+| `inspect` (default) | Focuses the text and opens the inspector | Everything as before |
+| `quiet` | Focuses the text, the panel stays shut | The link count and the context menu's Card info still open it: a deliberate door is not the click |
+| `locked` | Nothing | Cards cannot be dragged, selected, connected or edited, a double-click on the pane adds no card, and the board's key actions are silent; the canvas still pans and zooms, and Escape still works |
+
+The mode is UI state, never document state, and it never touches a capability. A viewer was already restricted by the session matrix; the lock is a reader's own choice on top of what they may write, which is why `nodesDraggable` reads `canEditLayout && !locked` rather than replacing it.
+
+`interactionModePatch` closes what the previous mode opened: leaving `inspect` puts the panel away, and `locked` also drops the caret and the selection, so a canvas being panned does not keep a card armed for the next keystroke. The control names the current mode rather than the next one, because an accidental press under `locked` reads as a broken card otherwise.
+
 ## Presence surfaces
 
 Presence is drawn above the board and below the chrome. `PresenceCursor` shows a peer's pointer with their name, in flow coordinates so it stays on the right card at every zoom. `PeerNameTag` labels the thing a peer is manipulating and picks its own ink, because a presence colour is chosen by a person and a chip cannot assume white text clears the floor. `PresenceAvatars` stacks the people on a card and collapses the overflow.

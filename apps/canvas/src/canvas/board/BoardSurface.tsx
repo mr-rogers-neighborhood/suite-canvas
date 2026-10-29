@@ -97,6 +97,7 @@ export function BoardSurface({
     openContextMenu,
     canEditContent,
     canEditLayout,
+    locked,
     canCreateContent,
     canManageTrash,
     canManageStructure,
@@ -214,7 +215,9 @@ export function BoardSurface({
 
   usePaneDoubleClick({
     store: ui.store,
-    enabled: canCreateContent && activeBoardId !== null,
+    // A locked canvas is a picture to move: a double-click on the pane must not leave a
+    // new card behind in the middle of what the reader was only looking at.
+    enabled: canCreateContent && activeBoardId !== null && !locked,
     onDoubleClick: createCardOnPane,
   });
 
@@ -302,9 +305,14 @@ export function BoardSurface({
       // Selection, panning, zoom and the inspector stay for every role.
       // Layout writes follow the session capabilities: an editor share may
       // move and reconnect what exists, but never draw a new link.
-      nodesDraggable={canEditLayout}
-      nodesConnectable={canCreateContent}
-      edgesReconnectable={canEditLayout}
+      // Locked is the reader's own choice on top of the role: the capability says what
+      // may be written, the lock says "not while I am looking at the shape of this".
+      nodesDraggable={canEditLayout && !locked}
+      nodesConnectable={canCreateContent && !locked}
+      edgesReconnectable={canEditLayout && !locked}
+      // Panning and zooming stay: a locked canvas is the one you drag around to see the
+      // whole picture. Selection goes with the drag, so a box cannot arm a move either.
+      elementsSelectable={!locked}
       // Shift, Ctrl and Cmd all toggle membership; Shift also starts the
       // marquee (React Flow's `selectionKeyCode` default). `Partial` selects a
       // card the box merely touches, which is what a card board should do.

@@ -1,6 +1,7 @@
 import { PluginKey } from "@tiptap/pm/state";
 import { type Editor, Extension } from "@tiptap/react";
 import Suggestion from "@tiptap/suggestion";
+import { FORMAT_COMMANDS, type FormatCommand } from "../cards/formatCommands";
 import { openImageUrlPrompt } from "./imageUrlPrompt";
 import { createSlashRenderer } from "./SlashMenu";
 
@@ -26,95 +27,30 @@ function consumeQuery(editor: Editor, range: SlashRange) {
   return editor.chain().focus().deleteRange(range);
 }
 
-export const SLASH_ITEMS: SlashItem[] = [
-  {
-    id: "heading-1",
-    title: "Heading 1",
-    hint: "Section title",
-    glyph: "H1",
-    keywords: ["h1", "heading", "title"],
-    run: (editor, range) => consumeQuery(editor, range).setHeading({ level: 1 }).run(),
-  },
-  {
-    id: "heading-2",
-    title: "Heading 2",
-    hint: "Subsection title",
-    glyph: "H2",
-    keywords: ["h2", "heading", "subtitle"],
-    run: (editor, range) => consumeQuery(editor, range).setHeading({ level: 2 }).run(),
-  },
-  {
-    id: "heading-3",
-    title: "Heading 3",
-    hint: "Third level",
-    glyph: "H3",
-    keywords: ["h3", "heading", "subsubtitle"],
-    run: (editor, range) => consumeQuery(editor, range).setHeading({ level: 3 }).run(),
-  },
-  {
-    id: "heading-4",
-    title: "Heading 4",
-    hint: "Fourth level",
-    glyph: "H4",
-    keywords: ["h4", "heading"],
-    run: (editor, range) => consumeQuery(editor, range).setHeading({ level: 4 }).run(),
-  },
-  {
-    id: "heading-5",
-    title: "Heading 5",
-    hint: "Fifth level",
-    glyph: "H5",
-    keywords: ["h5", "heading"],
-    run: (editor, range) => consumeQuery(editor, range).setHeading({ level: 5 }).run(),
-  },
-  {
-    id: "heading-6",
-    title: "Heading 6",
-    hint: "Sixth level",
-    glyph: "H6",
-    keywords: ["h6", "heading"],
-    run: (editor, range) => consumeQuery(editor, range).setHeading({ level: 6 }).run(),
-  },
-  {
-    id: "bullet-list",
-    title: "Bulleted list",
-    hint: "Unordered list",
-    glyph: "\u2022",
-    keywords: ["ul", "bullet", "list", "unordered"],
-    run: (editor, range) => consumeQuery(editor, range).toggleBulletList().run(),
-  },
-  {
-    id: "ordered-list",
-    title: "Numbered list",
-    hint: "Ordered list",
-    glyph: "1.",
-    keywords: ["ol", "number", "numbered", "list", "ordered"],
-    run: (editor, range) => consumeQuery(editor, range).toggleOrderedList().run(),
-  },
-  {
-    id: "quote",
-    title: "Quote",
-    hint: "Blockquote",
-    glyph: "\u201c",
-    keywords: ["quote", "blockquote", "citation"],
-    run: (editor, range) => consumeQuery(editor, range).toggleBlockquote().run(),
-  },
-  {
-    id: "code-block",
-    title: "Code block",
-    hint: "Preformatted text",
-    glyph: "</>",
-    keywords: ["code", "codeblock", "pre", "snippet"],
-    run: (editor, range) => consumeQuery(editor, range).toggleCodeBlock().run(),
-  },
-  {
-    id: "divider",
-    title: "Divider",
-    hint: "Horizontal rule",
-    glyph: "\u2014",
-    keywords: ["divider", "hr", "horizontal", "rule", "separator", "line"],
-    run: (editor, range) => consumeQuery(editor, range).setHorizontalRule().run(),
-  },
+/** A formatting command, as a row of the `/` menu. */
+function toSlashItem(command: FormatCommand): SlashItem {
+  return {
+    id: command.id,
+    title: command.title,
+    hint: command.hint,
+    glyph: command.glyph,
+    keywords: command.keywords,
+    run: (editor, range) => {
+      const chain = consumeQuery(editor, range);
+      (command.slashRun ?? command.run)(chain).run();
+    },
+  };
+}
+
+/**
+ * The rows that only insert. No toolbar draws these: it changes the look of what is
+ * selected, and a picture, a mention or a property block puts something new in.
+ *
+ * The tour step block is not here. Tours are paused, so the row advertised a feature that
+ * led nowhere; the node, the schema entry and `presentTour` stay, and the block can be
+ * brought back by inserting it directly.
+ */
+const INSERT_ITEMS: SlashItem[] = [
   {
     id: "image-url",
     title: "Image from URL",
@@ -138,24 +74,6 @@ export const SLASH_ITEMS: SlashItem[] = [
     run: (editor, range) => consumeQuery(editor, range).insertContent("@").run(),
   },
   {
-    id: "step",
-    title: "Tour step",
-    hint: "One stop of a tour, anchored to a target",
-    glyph: "\u25b8",
-    // "tutorial" too: an author looking for the step block is writing a tour.
-    keywords: ["step", "tour", "tutorial", "walkthrough", "spotlight", "present"],
-    run: (editor, range) => {
-      // Inserted without a target: picking one is a click on the canvas, which
-      // the block itself arms (ADR-0054 §3).
-      consumeQuery(editor, range)
-        .insertContent({
-          type: "tourStep",
-          attrs: { stepId: crypto.randomUUID(), targets: [], advance: "next" },
-        })
-        .run();
-    },
-  },
-  {
     id: "property",
     title: "Property",
     hint: "Show one of this card's fields",
@@ -165,6 +83,13 @@ export const SLASH_ITEMS: SlashItem[] = [
     run: (editor, range) => consumeQuery(editor, range).insertContent("@").run(),
   },
 ];
+
+/**
+ * The `/` menu: every formatting command the toolbar and the bubble menu offer, plus the
+ * insert-only rows. One table feeds all three surfaces, so a command cannot exist in one
+ * and be missing from another.
+ */
+export const SLASH_ITEMS: SlashItem[] = [...FORMAT_COMMANDS.map(toSlashItem), ...INSERT_ITEMS];
 
 /** Title and keyword matches, in menu order; an empty query shows everything. */
 export function filterSlashItems(query: string): SlashItem[] {

@@ -13,6 +13,7 @@ import { ContextMenu, type ContextMenuItem } from "../dialogs/ContextMenu";
 import { IconGlyph } from "../icons/IconGlyph";
 import { PeerNameTag } from "../presence/PeerNameTag";
 import { PresenceAvatars } from "../presence/PresenceAvatars";
+import type { InteractionMode } from "../store/interactionMode";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import type { CardMeta } from "./cardMeta";
 
@@ -113,6 +114,13 @@ export interface NodeCardProps {
    * step typed a second ago already counts.
    */
   presentable?: boolean;
+  /**
+   * What a press on the card means. `inspect` opens the inspector beside the caret,
+   * `quiet` only puts the caret in, `locked` makes the card inert so the canvas can be
+   * dragged without moving or editing anything. The explicit doors on the card — the
+   * link count, the context menu's Card info — keep their own meaning in every mode.
+   */
+  interactionMode?: InteractionMode;
   /** Double-clicking the card opens the full-canvas focus surface. */
   onFocusCard?: () => void;
   onTrash?: () => void;
@@ -187,6 +195,7 @@ export function NodeCard({
   onStartEditing,
   onDoubleClickPresent,
   presentable = false,
+  interactionMode = "inspect",
   onEditEnd,
   onRemoveFromBoard,
   linkCount = 0,
@@ -251,6 +260,19 @@ export function NodeCard({
       if (editingRef.current !== fieldAtBlur) return;
       onEditEnd?.();
     }, 120);
+  };
+
+  /**
+   * A click on the text is one gesture with two halves: the caret goes where it was
+   * clicked, and the inspector opens beside it. The edit used to stop the click from
+   * reaching the card, so the second half stopped happening and the panel only appeared
+   * from a press on the card's frame.
+   */
+  const locked = interactionMode === "locked";
+  const editAndInspect = (field: EditingField) => {
+    if (locked) return;
+    onStartEditing?.(field);
+    if (interactionMode === "inspect") onOpenInfo?.();
   };
 
   const hasMeta = meta.properties.length > 0 || meta.tags.length > 0;
@@ -402,18 +424,21 @@ export function NodeCard({
         pointerOrigin.current = { x: event.clientX, y: event.clientY };
       }}
       onClick={(event) => {
-        if (editing) return;
+        if (editing || locked) return;
         // Multi-select owns modifier clicks; they must not open the inspector.
         if (event.shiftKey || event.metaKey || event.ctrlKey) return;
         const origin = pointerOrigin.current;
         const moved = origin ? Math.hypot(event.clientX - origin.x, event.clientY - origin.y) : 0;
-        // A drag moves the card; a click without movement opens its info.
+        // A drag moves the card; a click without movement opens its info, unless the
+        // reader has asked the inspector to stay shut.
         if (moved > 4) return;
+        if (interactionMode !== "inspect") return;
         onOpenInfo?.();
       }}
       onDoubleClick={(event) => {
         // Editing is one click now, so the double-click is free for the one gesture
         // that means "show me this": playing a tour.
+        if (locked) return;
         if (onDoubleClickPresent?.() !== true) return;
         event.stopPropagation();
       }}
@@ -482,7 +507,7 @@ export function NodeCard({
         )}
 
         <div className="card-title relative min-w-0 flex-1">
-          {editing === "title" || !editContent ? null : (
+          {editing === "title" || !editContent || locked ? null : (
             <button
               type="button"
               aria-label="Edit card title"
@@ -492,7 +517,7 @@ export function NodeCard({
               // consuming the gesture: the card looked inert until it was pressed twice.
               onClick={(event) => {
                 event.stopPropagation();
-                onStartEditing?.("title");
+                editAndInspect("title");
               }}
             />
           )}
@@ -612,7 +637,7 @@ export function NodeCard({
                 if (moved > 4) return;
               }
               event.stopPropagation();
-              onStartEditing?.("body");
+              editAndInspect("body");
             }}
           >
             <CardBodyEditor

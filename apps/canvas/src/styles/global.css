@@ -2202,7 +2202,9 @@ html[data-inspector-linking] .card-inspector {
 
 .slash-menu {
   z-index: 60;
-  max-height: 300px;
+  /* Short windows (a laptop at 150% zoom, a phone in landscape) get the list, not a
+     menu taller than the screen. */
+  max-height: min(300px, 60vh);
   overflow-y: auto;
   padding: 4px;
   border: 1px solid var(--hairline);

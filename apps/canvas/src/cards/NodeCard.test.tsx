@@ -172,6 +172,45 @@ describe("NodeCard", () => {
     expect(onDoubleClickPresent).not.toHaveBeenCalled();
   });
 
+  it("focuses the text and opens the inspector from one click", () => {
+    const onStartEditing = vi.fn();
+    const onOpenInfo = vi.fn();
+    renderCard({ onStartEditing, onOpenInfo });
+
+    fireEvent.click(screen.getByTestId("card-body"));
+
+    // One gesture, two halves: the caret lands where it was clicked, and the panel opens
+    // beside it. The edit used to stop the click before the second half happened.
+    expect(onStartEditing).toHaveBeenCalledWith("body");
+    expect(onOpenInfo).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the inspector shut in quiet mode and the whole card inert when locked", () => {
+    const quietStart = vi.fn();
+    const quietInfo = vi.fn();
+    const quiet = renderCard({
+      interactionMode: "quiet",
+      onStartEditing: quietStart,
+      onOpenInfo: quietInfo,
+    });
+    fireEvent.click(screen.getByTestId("card-body"));
+    expect(quietStart).toHaveBeenCalledWith("body");
+    expect(quietInfo).not.toHaveBeenCalled();
+    quiet.unmount();
+
+    const lockedStart = vi.fn();
+    const lockedInfo = vi.fn();
+    renderCard({
+      interactionMode: "locked",
+      onStartEditing: lockedStart,
+      onOpenInfo: lockedInfo,
+    });
+    fireEvent.click(screen.getByTestId("card-body"));
+    fireEvent.click(screen.getByTestId("node-card"));
+    expect(lockedStart).not.toHaveBeenCalled();
+    expect(lockedInfo).not.toHaveBeenCalled();
+  });
+
   it("does not edit when the press was really the start of a drag", () => {
     const onStartEditing = vi.fn();
     renderCard({ onStartEditing });

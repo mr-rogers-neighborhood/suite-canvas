@@ -17,19 +17,26 @@ export interface SlashMenuProps {
 const MENU_WIDTH = 260;
 const MENU_ESTIMATED_HEIGHT = 300;
 const GAP = 6;
+const EDGE = 8;
 
 /**
- * Anchors the menu to the caret and keeps it on screen, picking above the caret
- * when there is no room below. Mirrors the mention picker, without Floating UI.
+ * Anchors the menu to the caret and keeps it on screen, picking above the caret when
+ * there is no room below. Mirrors the mention picker, without Floating UI.
+ *
+ * The menu is fixed to the viewport, so its width has to give way on a narrow screen: a
+ * card in a two-column board can be 200px wide and the window not much wider, and a fixed
+ * 260px menu would run off the edge with its hints cut in half.
  */
 function menuStyle(rect: DOMRect | null): CSSProperties {
   const viewportWidth = typeof window === "undefined" ? MENU_WIDTH : window.innerWidth;
   const viewportHeight = typeof window === "undefined" ? 0 : window.innerHeight;
-  const left = rect ? Math.max(8, Math.min(rect.left, viewportWidth - MENU_WIDTH - 8)) : 8;
-  const base: CSSProperties = { position: "fixed", left, width: MENU_WIDTH };
-  if (!rect) return { ...base, top: 8 };
+  const width = Math.max(180, Math.min(MENU_WIDTH, viewportWidth - EDGE * 2));
+  const height = Math.min(MENU_ESTIMATED_HEIGHT, Math.round(viewportHeight * 0.6));
+  const left = rect ? Math.max(EDGE, Math.min(rect.left, viewportWidth - width - EDGE)) : EDGE;
+  const base: CSSProperties = { position: "fixed", left, width };
+  if (!rect) return { ...base, top: EDGE };
   const below = rect.bottom + GAP;
-  if (below + MENU_ESTIMATED_HEIGHT > viewportHeight && rect.top > MENU_ESTIMATED_HEIGHT) {
+  if (below + height > viewportHeight && rect.top > height) {
     return { ...base, bottom: viewportHeight - rect.top + GAP };
   }
   return { ...base, top: below };

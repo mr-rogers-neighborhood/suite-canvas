@@ -25,11 +25,29 @@ The schema lives in `apps/canvas/src/editor/cardEditorExtensions.ts`, apart from
 | `image` | `apps/canvas/src/editor/imageLinkNode.tsx` | A URL, alt text and a size |
 | `tourStep` | `apps/canvas/src/editor/TourStep.ts` | Step id, targets, camera, caption and advance rule |
 
-Marks are the Tiptap defaults: `bold`, `italic`, `strike`, `code`, `link`, `underline`. They are formatted from `EditorToolbar`, which reads its pressed state through `useEditorState` rather than re-rendering on every keystroke.
+Marks are the Tiptap defaults: `bold`, `italic`, `strike`, `code`, `link`, `underline`.
 
-The toolbar is one component in two placements, and the split is a bug fix. On a canvas card it rides the selection as a `BubbleMenu`; in the inspector and the card panel, `toolbarPlacement="inline"` puts the same row above the text, because those columns are narrower than the floating row and its buttons ended up past the panel's edge, unreachable. The row also wraps, and it carries eight controls rather than eleven: bold, italic, strikethrough, three heading levels and two lists. H4–H6 stay in the schema and still answer to typed markdown, so nothing was removed from the document, only from a row that was too long to read.
+## One table, three surfaces
+
+`apps/canvas/src/cards/formatCommands.ts` holds `FORMAT_COMMANDS`, and every formatting control draws from it: bold, italic, strikethrough, six heading levels, two lists, quote, code block and divider. Each entry carries its glyph, its name, its `/` keywords, its Tiptap command and the predicate that decides whether it is pressed where the caret sits.
+
+The table exists because the three surfaces had drifted. The `/` menu offered six heading levels, a quote, a code block and a divider; the toolbar offered three levels and no quote; the bubble inherited whatever the toolbar had. A command available in one place and missing from another is a question the reader has to answer twice, so the renderers became readers of the table instead:
+
+| Surface | File | Placement |
+| --- | --- | --- |
+| Bubble | `EditorToolbar` inside a `BubbleMenu` | Rides the selection on a canvas card |
+| Inline row | `EditorToolbar` with `toolbarPlacement="inline"` | Above the text in the inspector and the card panel |
+| `/` menu | `SLASH_ITEMS` in `SlashCommands.ts` | Under the caret, filtered by the typed query |
+
+`activeCommands(editor)` turns the table into the pressed state the toolbar reads through `useEditorState`, so neither surface keeps its own list of `isActive` calls.
+
+Insert-only rows are the exception, and only the `/` menu has them: image from URL, mention and property. They add content rather than change the look of what is selected, so a toolbar button for one would be a second way to do something that already has a gesture.
+
+All three surfaces wrap. The inline row wraps inside its column, the bubble is capped at `min(100vw - 2rem, 18rem)` so a narrow card gets two rows instead of a row past its edge, and the `/` menu narrows with the window (`min(260px, 100vw - 16px)`) and shortens to `min(300px, 60vh)`.
 
 A click on a card's title or body starts editing, rather than a double-click. Double-click is now only the tour gesture: on a card that is a tour, a single click does nothing and a double-click plays it, so an ordinary press cannot start a presentation. A body click also requires the pointer to have stayed within four pixels of where it went down, so dragging a card by its text still moves it instead of opening the editor.
+
+That one press does two things: it puts the caret where it landed and opens the inspector beside it. The edit used to stop the click before the second half happened, which left the panel reachable only from a press on the card's frame. The toolbar's `interactionMode` decides between the halves — see [ui.md](./ui.md#what-a-press-on-a-card-does).
 
 `packages/graph/src/publish/validation/richTextSchema.ts` is the allowlist a published body is checked against: node names, mark names and the attributes each node may carry. Adding a node or an attribute to the editor without extending it fails `editorSchemaContract.test.ts`, which is the point.
 
@@ -61,7 +79,11 @@ Three row kinds exist. A card inserts a `mention`; a field of the card being edi
 
 ## The `/` menu
 
-`/` opens the block menu from `apps/canvas/src/editor/SlashCommands.ts`. Its rows are Heading 1, Heading 2, Bulleted list, Numbered list, Quote, Code block, Divider, Image from URL, Mention, Tour step and Property.
+`/` opens the block menu from `apps/canvas/src/editor/SlashCommands.ts`. Every row of `FORMAT_COMMANDS` appears in it, in table order, followed by the three insert-only rows: Image from URL, Mention and Property.
+
+There is no Tour step row while tours are paused. The `tourStep` node, its schema entry and `presentTour` all stay; only the menu row that advertised a paused feature is gone, and the block can still be inserted directly.
+
+A heading row converts rather than toggles: `/h1` inside an H1 keeps it an H1, where the toolbar button removes the level. That is the one place the two behaviours differ, and it is `slashRun` on the table entry.
 
 Each row runs a command against the current block after deleting the typed `/query`, so the query never becomes text. The menu keeps the editor's selection while a row is clicked: `onMouseDown` on the list calls `preventDefault`, because a focus change would collapse the range the command needs.
 

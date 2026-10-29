@@ -5,6 +5,9 @@ import type { CanvasPurpose } from "../canvas/purpose";
 import { useRecordRunStore } from "../canvas/recordRun";
 import { getSession, type SessionCapabilities, sessionCapabilities } from "../session/session";
 import type { ShareScope } from "../session/shares";
+import { type InteractionMode, interactionModePatch, nextInteractionMode } from "./interactionMode";
+
+export type { InteractionMode } from "./interactionMode";
 
 export interface ContextMenuState {
   x: number;
@@ -354,6 +357,11 @@ interface UiState extends SessionCapabilities {
    */
   mode: CanvasMode;
   setMode: (mode: CanvasMode) => void;
+  /** What a press on a card does: open the inspector, edit only, or nothing. */
+  interactionMode: InteractionMode;
+  setInteractionMode: (mode: InteractionMode) => void;
+  /** Walks `inspect` -> `quiet` -> `locked` -> `inspect`. */
+  cycleInteractionMode: () => void;
   contextMenu: ContextMenuState | null;
   dropOffer: DropOffer | null;
   setDropOffer: (offer: DropOffer | null) => void;
@@ -487,6 +495,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   editingSurface: "canvas",
   focusTarget: null,
   linkingInProgress: false,
+  interactionMode: "inspect",
   inspectorNodeId: null,
   inspectorFieldId: null,
   expandedCardMeta: {},
@@ -769,6 +778,14 @@ export const useUiStore = create<UiState>((set, get) => ({
   setPaletteOpen: (paletteOpen) =>
     set((state) => (state.paletteOpen === paletteOpen ? state : { paletteOpen })),
   setMode: (mode) => set((state) => (state.mode === mode ? state : { mode })),
+  setInteractionMode: (interactionMode) =>
+    set((state) =>
+      state.interactionMode === interactionMode
+        ? state
+        : interactionModePatch(state, interactionMode),
+    ),
+  cycleInteractionMode: () =>
+    set((state) => interactionModePatch(state, nextInteractionMode(state.interactionMode))),
   closeTypeSettings: () => set({ typeSettingsOpen: false }),
   toggleLibraryType: (id) =>
     set((state) => ({

@@ -48,6 +48,9 @@ export function useBoardUi() {
   const setLinkingInProgress = useUiStore((state) => state.setLinkingInProgress);
   const mode = useUiStore((state) => state.mode);
   const setMode = useUiStore((state) => state.setMode);
+  const interactionMode = useUiStore((state) => state.interactionMode);
+  // Locked is about the gesture, not the document: nothing here touches a capability.
+  const locked = interactionMode === "locked";
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const closeContextMenu = useUiStore((state) => state.closeContextMenu);
   const stopEditing = useUiStore((state) => state.stopEditing);
@@ -117,6 +120,8 @@ export function useBoardUi() {
     setLinkingInProgress,
     mode,
     setMode,
+    interactionMode,
+    locked,
     openContextMenu,
     closeContextMenu,
     stopEditing,

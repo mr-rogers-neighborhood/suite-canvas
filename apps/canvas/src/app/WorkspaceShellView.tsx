@@ -15,6 +15,7 @@ import { BoardGlyph } from "../chrome/BoardGlyph";
 import type { BoardPresence } from "../chrome/BoardSwitcher";
 import { BoardSwitcher } from "../chrome/BoardSwitcher";
 import { Dock } from "../chrome/Dock";
+import { InteractionModeToggle } from "../chrome/InteractionModeToggle";
 import { StartPage } from "../chrome/StartPage";
 import { TitleBar } from "../chrome/TitleBar";
 import { UndoRedo } from "../chrome/UndoRedo";
@@ -549,6 +550,7 @@ export function WorkspaceShellView({
               {workspaceSurface && !readOnly ? (
                 <span className="flex shrink-0 items-center gap-0.5" data-testid="board-nav">
                   <UndoRedo />
+                  <InteractionModeToggle />
                   <button
                     type="button"
                     data-testid="history-toggle"

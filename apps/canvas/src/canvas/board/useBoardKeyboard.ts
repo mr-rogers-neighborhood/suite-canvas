@@ -280,6 +280,7 @@ export function useBoardKeyboard(
     activeBoardId,
     store,
     screenToFlowPosition,
+    locked,
     canCreateContent,
     canEditContent,
     canEditLayout,
@@ -322,6 +323,10 @@ export function useBoardKeyboard(
     // Order is the contract: capture runs before the Escape ladder, and a chord
     // runs before the bare-key actions that share its key.
     const handleKeyDown = (event: KeyboardEvent) => {
+      // A locked canvas answers nothing but the browser's own keys: no nudging the
+      // selection, no Delete, no new card. Escape still has to work, or a reader who
+      // locked the canvas during a peek could not dismiss it.
+      if (locked && event.key !== "Escape") return;
       const ctx: KeyContext = {
         event,
         typing: isTextEntry(event.target),
@@ -389,6 +394,7 @@ export function useBoardKeyboard(
     store,
     screenToFlowPosition,
     activeBoardId,
+    locked,
     canCreateContent,
     canEditContent,
     canEditLayout,

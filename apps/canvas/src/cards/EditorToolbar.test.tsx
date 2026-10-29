@@ -1,53 +1,51 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { EditorToolbar, type EditorToolbarProps } from "./EditorToolbar";
+import { EditorToolbar } from "./EditorToolbar";
+import { buttonName, FORMAT_COMMANDS, type FormatCommand } from "./formatCommands";
 
 /**
- * The toolbar is one component in two places, and the reason is a bug: the floating row was
- * eleven buttons wide and the inspector is narrower than that, so its own controls sat off
- * the edge of the panel. It is now eight buttons, it wraps, and the narrow surfaces place it
- * in the column instead of over it.
+ * The toolbar is one component in three places, and the reason is a bug: the floating row
+ * was eleven buttons wide and the inspector is narrower than that, so its own controls sat
+ * off the edge of the panel. It wraps now, and it draws `FORMAT_COMMANDS` — the same table
+ * the `/` menu reads — so the two can no longer disagree about what a card body offers.
  */
-const IDLE = {
-  bold: false,
-  italic: false,
-  strike: false,
-  heading1: false,
-  heading2: false,
-  heading3: false,
-  bulletList: false,
-  orderedList: false,
-};
-
-function renderToolbar(overrides: Partial<EditorToolbarProps> = {}) {
+function renderToolbar(active: Record<string, boolean> = {}) {
   // The chain proxy returns itself, so a command is recorded by name.
   const recorded: string[] = [];
-  const editor = { chain: () => undefined };
-  const spy = new Proxy(editor, {
-    get: (target, name) => {
-      if (name !== "chain") return Reflect.get(target, name);
-      return () => {
-        const builder = new Proxy(
-          {},
-          {
-            get: (_t, command: string) => () => {
-              recorded.push(command);
-              return builder;
-            },
-          },
-        );
-        return builder;
-      };
+  const spy = new Proxy(
+    {},
+    {
+      get: (_target, name) => {
+        if (name === "chain") {
+          return () => {
+            const builder: object = new Proxy(
+              {},
+              {
+                get: (_t, command: string) => () => {
+                  recorded.push(command);
+                  return builder;
+                },
+              },
+            );
+            return builder;
+          };
+        }
+        return () => false;
+      },
     },
-  });
+  );
   render(
     <EditorToolbar
       // biome-ignore lint/suspicious/noExplicitAny: a stand-in for a Tiptap editor, not one
       editor={spy as any}
-      state={{ ...IDLE, ...(overrides.state ?? {}) }}
+      active={active}
     />,
   );
   return recorded;
+}
+
+function byName(command: FormatCommand) {
+  return screen.getByRole("button", { name: buttonName(command) });
 }
 
 describe("the formatting toolbar", () => {
@@ -56,33 +54,41 @@ describe("the formatting toolbar", () => {
     expect(screen.getByRole("toolbar", { name: "Formatting" })).toBeInTheDocument();
   });
 
-  it("should offer the eight controls a card body needs and no others", () => {
+  it("should draw every command in the shared table, in its order", () => {
     renderToolbar();
-    const names = screen
-      .getAllByRole("button")
-      .map((button) => button.getAttribute("aria-label") ?? button.textContent);
-    expect(names).toEqual([
-      "Bold",
-      "Italic",
-      "Strikethrough",
-      "H1 heading",
-      "H2 heading",
-      "H3 heading",
-      "Bulleted list",
-      "1. numbered list",
-    ]);
+    const names = screen.getAllByRole("button").map((button) => button.getAttribute("aria-label"));
+    expect(names).toEqual(FORMAT_COMMANDS.map(buttonName));
+  });
+
+  it("should keep each visible glyph inside its accessible name", () => {
+    renderToolbar();
+    for (const command of FORMAT_COMMANDS) {
+      expect(buttonName(command)).toContain(command.glyph);
+    }
   });
 
   it("should say which formats are on, so the state is not only a colour", () => {
-    renderToolbar({ state: { ...IDLE, bold: true } });
-    expect(screen.getByRole("button", { name: "Bold" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Italic" })).toHaveAttribute("aria-pressed", "false");
+    renderToolbar({ bold: true });
+    expect(byName(FORMAT_COMMANDS[0] as FormatCommand)).toHaveAttribute("aria-pressed", "true");
+    expect(byName(FORMAT_COMMANDS[1] as FormatCommand)).toHaveAttribute("aria-pressed", "false");
   });
 
   it("should run the command the button names", () => {
     const recorded = renderToolbar();
-    fireEvent.click(screen.getByRole("button", { name: "H2 heading" }));
+    const heading2 = FORMAT_COMMANDS.find((command) => command.id === "heading-2");
+    if (!heading2) throw new Error("heading-2 missing from the table");
+    fireEvent.click(byName(heading2));
     expect(recorded).toContain("toggleHeading");
+  });
+
+  it("should run every command it draws, so none is a decorative glyph", () => {
+    const recorded = renderToolbar();
+    const buttons = screen.getAllByRole("button");
+    expect(buttons).toHaveLength(FORMAT_COMMANDS.length);
+    for (const button of buttons) fireEvent.click(button);
+    // `focus` and `run` are the chain's own ends, recorded like any other link in it.
+    const commands = recorded.filter((name) => name !== "focus" && name !== "run");
+    expect(commands).toHaveLength(FORMAT_COMMANDS.length);
   });
 
   it("should wrap rather than overflow the column it is in", () => {

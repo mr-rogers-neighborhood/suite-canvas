@@ -21,6 +21,18 @@ describe("whiteboardPreview", () => {
     expect(preview.viewBox.width).toBe(100);
   });
 
+  it("should keep a picture as its frame, so a sketch of images is not empty", () => {
+    const preview = whiteboardPreview([
+      element({ id: "img", type: "image", fileId: "excalidraw-file", width: 400, height: 300 }),
+    ]);
+
+    // The face cannot draw the bytes, and it does not need to: the picture's
+    // bounds are what tells a reader there is something there.
+    expect(preview.empty).toBe(false);
+    expect(preview.shapes).toHaveLength(1);
+    expect(preview.shapes[0]?.kind).toBe("rect");
+  });
+
   it("should keep rectangles, ellipses, diamonds, lines and text", () => {
     const preview = whiteboardPreview([
       element({ id: "r", type: "rectangle", strokeColor: "#111111", backgroundColor: "#eeeeee" }),

@@ -1,5 +1,6 @@
 import type { Drawing } from "@suite/graph";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
+import { relayUploader } from "../editor/pasteImages";
 import { useDrawing } from "../hooks/useDrawing";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { type WhiteboardCommit, WhiteboardSurface } from "./WhiteboardSurface";
@@ -14,6 +15,9 @@ export function WhiteboardFocus({
 }) {
   const workspace = useCanvasStore((state) => state.workspace);
   const drawing = useDrawing(cardId);
+  // One uploader for the surface's life: it is a pure function of the session the
+  // tab booted with, and null where a picture has nowhere to go.
+  const upload = useMemo(() => relayUploader(), []);
 
   const commit = useCallback(
     ({ elements, order }: WhiteboardCommit) => {
@@ -34,5 +38,7 @@ export function WhiteboardFocus({
     updatedAt: 0,
   };
 
-  return <WhiteboardSurface drawing={effective} readOnly={readOnly} onCommit={commit} />;
+  return (
+    <WhiteboardSurface drawing={effective} readOnly={readOnly} onCommit={commit} upload={upload} />
+  );
 }

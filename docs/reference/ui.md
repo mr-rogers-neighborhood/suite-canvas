@@ -14,7 +14,7 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history and outline buttons in `app/WorkspaceShellView.tsx` | Home, the open boards with their peer counts, undo, redo, version history and the outline, in one row |
 | Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface, plus the plan wall and the retry for whoever just paid |
 | Views bar | `apps/canvas/src/chrome/ViewsBar.tsx` | Saved views, applying one, renaming and deleting one. **Development only** (see below) |
-| Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new section, new portal, type settings. **New sketch is development only** (see below) |
+| Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new sketch, new section, new portal, type settings |
 | Outline rail | `apps/canvas/src/canvas/BoardOutline.tsx` | The active board's section tree, in reading order, with counts and presence. Hidden while the board has no sections |
 | Inspector | `apps/canvas/src/cards/CardInspectorHost.tsx` | The one panel for the selected card or container |
 | Blueprint install | `apps/canvas/src/app/BlueprintInstallHost.tsx` | The type a card's title and body declare, previewed before it is written |
@@ -75,18 +75,35 @@ The drawer has three tabs: `inbox` (cards on no board), `cards` (`apps/canvas/sr
 
 Search and facets feed the same list. A saved view fills those same controls through `applyView`, so there is one filtering model and no second query language (ADR-0037).
 
-### Sketches are a development-only door
+### Sketches
 
-A sketch is a card of the built-in sketch type. Two entry points offer one: the dock's row and the
-palette's `card.createSketch`, and both are behind `import.meta.env.DEV`, so a production bundle has
-neither. The registry's `available` predicate drops the command, and `WorkspaceShellView` passes no
-handler, which is what keeps the dock row out. Removing both guards publishes it.
+A sketch is a card of the built-in sketch type, and three doors make one: the dock's **New sketch**,
+the canvas menu, and the palette's `card.createSketch`. All three read the one command in the registry,
+so they cannot drift apart. `creatableTypes` in the dock excludes every behaviour type, which is why
+Sketch and Tour are not rows in **New card**: boot creates those types so a document always knows them,
+and a type that exists is not a type a reader authors. A tour has no door at all yet, and the type
+stays where it is until it has one (`apps/canvas/src/cards/tour.ts`).
 
-Making one is the part that is unfinished; **rendering one is not**. The type is created at boot
-(`ensureWhiteboardType` beside `ensureDefaultTypes` in `useWorkspaceBoot.ts`) so a document always
-knows it, and a card of that type routes to `WhiteboardNode` wherever it appears. Without the boot
-call a workspace that never held a sketch had no type at all, and a drawing already in the document
-painted as a plain note.
+Rendering and saving are one path. `WhiteboardFocus` subscribes to the document through `useDrawing`,
+`WhiteboardSurface` commits one scene per pause or gesture (`createSketchCommitBatcher`), and the write
+goes through `applyDrawing`, which merges element by element so two people drawing at once keep both
+strokes. The face paints `whiteboardPreview`, a dependency-free SVG of the geometry, so a board of
+sketches costs no Excalidraw.
+
+Two details at the boundary between Excalidraw and the graph are worth knowing:
+
+- Excalidraw builds an element with every optional key present and `undefined` for the ones it did not
+  use. The drawing schema refuses an explicit `undefined`, because the CRDT cannot store one, so
+  `toDrawingElement` drops those keys once at the boundary.
+- A picture's bytes never enter the document. The element carries an id under
+  `customData.suiteFile.id`, and the bytes go where a pasted image's bytes go: this browser's IndexedDB
+  first, the relay second. `stampElements` applies those ids to every commit, so a stroke drawn after a
+  picture does not drop the mapping.
+
+Anyone whose session may edit the board may draw, which includes a share with the editor role: the
+surface takes `readOnly` from the session, and a viewer's or a selection share's session is read-only.
+A picture inserted on a share, or anywhere without an account session, is kept in this browser only and
+is not visible to a peer until it uploads.
 
 ### Saved views are a development-only door
 

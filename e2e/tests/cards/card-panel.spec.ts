@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
+import { selectCard } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-panel-${name}-${Date.now()}-${++sequence}`;
@@ -14,12 +15,9 @@ async function showDetails(page: Page): Promise<void> {
   await expect(page.getByTestId("card-panel-details")).toBeVisible();
 }
 
-/** Opens the inspector with a click on the card header, not the editors. */
+/** Opens the inspector with a click on the card header, and leaves nothing focused. */
 async function openCardInfo(page: Page, card = cards(page).first()): Promise<void> {
-  const box = await card.boundingBox();
-  if (!box) throw new Error("card not visible");
-  await page.mouse.click(box.x + 80, box.y + 24);
-  await expect(page.getByTestId("card-inspector")).toBeVisible();
+  await selectCard(page, card);
 }
 
 /** Creates a section around the first card; the inspector stays open. */

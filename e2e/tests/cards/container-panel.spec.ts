@@ -9,6 +9,7 @@ import {
   newBoard,
   openBoard,
   openLibraryBoards,
+  selectCard,
 } from "../fixtures/support";
 
 /**
@@ -93,15 +94,21 @@ test("a portal's header opens the container panel, and its board is one action a
   await expect(page.getByTestId("card-inspector")).toHaveCount(0);
   await expect(page.getByTestId("card-focus")).toHaveCount(0);
 
-  // The colour is the board's, and setting it survives a reload.
-  await page.getByTestId("container-color-rose").click();
-  await expect(page.getByTestId("container-color-rose")).toHaveAttribute("aria-pressed", "true");
+  // A portal is a card, so its paint is a card's: the Style tab of the same panel, and
+  // the swatch survives a reload. The colour row in Details is a section's own, and a
+  // portal deliberately has none there rather than a second control for one value.
+  await page.getByTestId("container-tab-style").click();
+  await page.getByTestId("style-swatch-rose").click();
+  await expect(page.getByTestId("style-swatch-rose")).toHaveAttribute("data-checked", "true");
   await page.reload();
   await expect(cards(page)).toHaveCount(2);
   await page.getByTestId("portal-node").click();
-  await expect(page.getByTestId("container-color-rose")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("container-tab-style").click();
+  await expect(page.getByTestId("style-swatch-rose")).toHaveAttribute("data-checked", "true");
 
-  // Open board is the panel's primary action: it steps through the portal.
+  // Open board is the panel's primary action: it steps through the portal. It sits in
+  // Details, so the tab comes back before the button is looked for.
+  await page.getByTestId("container-tab-details").click();
   await page.getByTestId("container-open-board").click();
 });
 
@@ -112,7 +119,7 @@ test("a section's selection opens the container panel with its members and links
   await expect(cards(page)).toHaveCount(2);
 
   // A section around the second card, then a link drawn from the first card into it.
-  await cards(page).last().click();
+  await selectCard(page, cards(page).last());
   await page.keyboard.press("Control+g");
   await expect(page.locator(".section-header")).toHaveCount(1);
   await page.keyboard.press("Enter");
@@ -157,7 +164,7 @@ test("tags a section without moving a card in or out of it", async ({ page }) =>
   await page.goto(workspaceUrl("section-tags"));
   await expect(cards(page)).toHaveCount(2);
 
-  await cards(page).last().click();
+  await selectCard(page, cards(page).last());
   await page.keyboard.press("Control+g");
   await expect(page.locator(".section-header")).toHaveCount(1);
   await page.keyboard.press("Enter");
@@ -187,7 +194,7 @@ test("tags a section without moving a card in or out of it", async ({ page }) =>
 test("closing the container panel leaves nothing open", async ({ page }) => {
   await page.goto(workspaceUrl("close"));
   await expect(cards(page)).toHaveCount(2);
-  await cards(page).last().click();
+  await selectCard(page, cards(page).last());
   await page.keyboard.press("Control+g");
   await page.keyboard.press("Enter");
   await expect(panel(page)).toBeVisible();
@@ -251,11 +258,13 @@ test("a section member row navigates to the card it names", async ({ page }) => 
   await page.goto(workspaceUrl("member-row"));
   await expect(cards(page)).toHaveCount(2);
 
-  await cards(page).last().click();
+  await selectCard(page, cards(page).last());
   await page.keyboard.press("Control+g");
   await expect(page.locator(".section-header")).toHaveCount(1);
   await page.keyboard.press("Enter");
   await expect(panel(page)).toBeVisible();
+  // The panel opens on Details; a section's members are on its Contents tab.
+  await page.getByTestId("container-tab-content").click();
   const row = page.getByTestId("container-member-row");
   await expect(row).toHaveCount(1);
 

@@ -16,7 +16,6 @@ test("the theme switcher opens Appearance, and a change sticks", async ({ page }
   await expect(cards(page)).toHaveCount(2);
 
   const root = page.locator("html");
-  await expect(root).toHaveAttribute("data-density", /comfortable|compact/);
 
   await page.getByTestId("theme-toggle").click();
   await page.getByTestId("theme-appearance").click();
@@ -27,12 +26,11 @@ test("the theme switcher opens Appearance, and a change sticks", async ({ page }
     "These change this device only",
   );
 
-  await page.getByTestId("appearance-density").selectOption("compact");
-  await page.getByTestId("appearance-canvas").selectOption("plain");
+  await page.getByTestId("appearance-canvas-plain").click();
+  await expect(page.getByTestId("appearance-canvas-plain")).toHaveAttribute("data-checked", "true");
   await page.getByTestId("appearance-radius").fill("4");
 
   // Applied to the root, which is what makes the canvas behind the dialog the preview.
-  await expect(root).toHaveAttribute("data-density", "compact");
   await expect(root).toHaveAttribute("data-canvas", "plain");
   await expect(page.locator("html")).toHaveCSS("--reader-card-radius", "4px");
 
@@ -57,6 +55,5 @@ test("the theme switcher opens Appearance, and a change sticks", async ({ page }
   // Persisted per device: a reload keeps what the reader chose.
   await page.reload();
   await expect(cards(page)).toHaveCount(2);
-  await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
   await expect(page.locator("html")).toHaveAttribute("data-canvas", "plain");
 });

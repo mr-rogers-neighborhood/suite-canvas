@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
+import { selectCard } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -20,11 +21,7 @@ async function createSection(
   title: string,
   total: number,
 ): Promise<void> {
-  const card = cards(page).nth(cardIndex);
-  const box = await card.boundingBox();
-  if (!box) throw new Error("card not visible");
-  await page.mouse.click(box.x + 40, box.y + 60);
-  await expect(page.getByTestId("card-inspector")).toBeVisible();
+  await selectCard(page, cards(page).nth(cardIndex));
   await page.keyboard.press("Control+g");
   await expect(page.locator(".section-header")).toHaveCount(total);
   await page.keyboard.type(title);

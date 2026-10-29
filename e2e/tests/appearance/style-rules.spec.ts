@@ -1,109 +1,99 @@
-import { expect, type Page, test } from "@playwright/test";
-import { cards, createNote, workspaceIdFactory } from "../fixtures/support";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+import { cards, createNote, selectCard, workspaceIdFactory } from "../fixtures/support";
 
 const id = workspaceIdFactory("e2e-style-rules");
 const workspaceUrl = (name: string) => `/?workspace=${id(name)}`;
 
 /**
- * Style rules you can write (ADR-0071
- * amendment).
+ * The type default, and what it does and does not reach.
  *
- * The feature is one promise: the controls in the inspector reach every rung of the ladder, so "every
- * Concept looks like this" is the same gesture as "this card is rounded". These prove it through the UI,
- * including the two ways it could quietly be a lie — creating a rule just by *looking* at a scope, and a
- * promotion that overstates how many cards it changes.
+ * One control, `style-make-default`, writes a card's style onto its type. That is the
+ * promise a reader hears as "every Note looks like this", and there are two ways it could
+ * quietly be a lie: a new card that ignores it, and an existing card that loses a choice
+ * its owner made. Both are checked here, through the panel a reader uses.
  */
 
-async function openStyleTab(page: Page) {
-  const card = cards(page).first();
-  const box = await card.boundingBox();
-  if (!box) throw new Error("the card is not measurable");
-  await page.mouse.click(box.x + 140, box.y + 90);
-  await page.getByTestId("card-panel-tab-style").click();
-  await expect(page.getByTestId("style-scope-select")).toBeVisible();
+/** One paint custom property as the browser resolved it on a card. */
+async function clipOf(card: Locator): Promise<string> {
+  return card.evaluate((element) =>
+    getComputedStyle(element).getPropertyValue("--paint-clip").trim(),
+  );
 }
 
-test("a rule created from the inspector repaints every card of that type", async ({ page }) => {
-  await page.goto(workspaceUrl("type-rule"));
-  await expect(cards(page)).toHaveCount(2);
-  await createNote(page, "Third note");
-  await expect(cards(page)).toHaveCount(3);
-
-  await openStyleTab(page);
-
-  // Choosing a scope is free: it must not litter the document with a rule that names nothing.
-  await page.getByTestId("style-scope-select").selectOption({ label: "every Note" });
-  await expect(page.getByTestId("style-scope-note")).toContainText(
-    "Choosing a scope on its own changes nothing",
-  );
-  await expect(page.getByTestId("style-shape-diamond")).toBeVisible();
-
-  await page.getByTestId("style-shape-diamond").click();
-  // The scope note flips from "will create" to "editing", which is what tells the reader the rule exists.
-  await expect(page.getByTestId("style-scope-note")).toContainText("Editing a rule: Every Note");
-
-  // Every note wears the rule, including the two that were never opened.
-  for (let index = 0; index < 3; index += 1) {
-    await expect(cards(page).nth(index)).toHaveClass(/is-painted/);
-  }
-
-  // And the card's own style is untouched: this edited the rule, not the card.
-  await page.getByTestId("style-scope-select").selectOption({ label: "this card" });
-  await expect(page.getByTestId("style-reset")).toBeDisabled();
-});
-
-test("the Styles list shows the rule, reorders it and deletes it", async ({ page }) => {
-  await page.goto(workspaceUrl("list"));
-  await expect(cards(page)).toHaveCount(2);
-  await openStyleTab(page);
-
-  await page.getByTestId("style-scope-select").selectOption({ label: "every card" });
-  await page.getByTestId("style-shape-pill").click();
-  await expect(page.getByTestId("style-scope-note")).toContainText("Editing a rule");
-
-  // The door from the picker to the list.
-  await page.getByTestId("style-scope-manage").click();
-  await expect(page.getByTestId("styles-dialog")).toBeVisible();
-  await expect(page.getByTestId("styles-group-kind")).toContainText("Every card");
-
-  await page.getByTestId("styles-add-global").click();
-  await expect(page.getByTestId("styles-group-global")).toContainText("Everywhere");
-
-  // Deleting is the list's verb, and the editor follows the list rather than naming what is gone.
-  await page.getByTestId("styles-close").click();
-  await expect(page.getByTestId("styles-dialog")).toHaveCount(0);
-});
-
-test("a promotion names what changes and leaves exceptions alone", async ({ page }) => {
-  await page.goto(workspaceUrl("promote"));
-  await expect(cards(page)).toHaveCount(2);
-  await createNote(page, "Second bare note");
-  await expect(cards(page)).toHaveCount(3);
-
-  // Give one card an exception of its own.
-  const exception = cards(page).nth(1);
-  const box = await exception.boundingBox();
-  if (!box) throw new Error("the card is not measurable");
-  await page.mouse.click(box.x + 100, box.y + 70);
+async function openStyleTab(page: Page): Promise<void> {
   await page.getByTestId("card-panel-tab-style").click();
-  await page.getByTestId("style-shape-circle").click();
-  await page.getByTestId("inspector-close").click();
-  // The exception's own paint, as the document gave it to the element.
-  const exceptionPaint = await cards(page).nth(1).getAttribute("style");
+  await expect(page.getByTestId("style-tab")).toBeVisible();
+}
 
-  // Now paint the first card and promote it.
+test("a card makes its style the type default, and a later card wears it", async ({ page }) => {
+  await page.goto(workspaceUrl("inherits"));
+  await expect(cards(page)).toHaveCount(2);
+
+  await selectCard(page);
   await openStyleTab(page);
   await page.getByTestId("style-shape-diamond").click();
-  await page.getByTestId("style-promote").click();
+  await expect.poll(() => clipOf(cards(page).first())).toContain("polygon");
 
-  // The sentence counts the cards that will actually move, which excludes the exception *and* the card
-  // being promoted (it already looks like this).
-  await expect(page.getByTestId("dialog")).toContainText("card");
-  await expect(page.getByTestId("dialog")).toContainText("keep it");
-  // Scoped to the confirm: "Apply to every Note…" is also a button whose name starts with Apply.
-  await page.getByTestId("dialog").getByRole("button", { name: "Apply", exact: true }).click();
+  const makeDefault = page.getByTestId("style-make-default");
+  await expect(makeDefault).toContainText("Make this the default for Note cards");
+  await makeDefault.click();
+  // The label flips once the type states it, which is the only confirmation there is.
+  await expect(makeDefault).toContainText("Replace the default for Note cards");
 
-  // The exception is untouched — a card beats a rule — and a card that had nothing now wears the rule.
-  expect(await cards(page).nth(1).getAttribute("style")).toBe(exceptionPaint);
-  await expect(cards(page).nth(2)).toHaveClass(/is-painted/);
+  // A card with no style of its own reads its type, so the card nobody opened changes too.
+  // That is the promise a reader hears, and it would be easy to ship a button that only
+  // reached cards made after it.
+  await expect(cards(page).nth(1)).toHaveClass(/is-painted/);
+  await expect.poll(() => clipOf(cards(page).nth(1))).toContain("polygon");
+
+  await createNote(page, "Made later");
+  const later = cards(page).filter({ hasText: "Made later" });
+  await expect.poll(() => clipOf(later)).toContain("polygon");
+});
+
+test("writing a default leaves a card's own exception alone", async ({ page }) => {
+  await page.goto(workspaceUrl("exception"));
+  await expect(cards(page)).toHaveCount(2);
+
+  const exception = cards(page).nth(1);
+  await selectCard(page, exception);
+  await openStyleTab(page);
+  await page.getByTestId("style-shape-circle").click();
+  const circled = await clipOf(exception);
+  expect(circled).not.toContain("polygon");
+
+  await selectCard(page);
+  await openStyleTab(page);
+  await page.getByTestId("style-shape-diamond").click();
+  await page.getByTestId("style-make-default").click();
+
+  // A card beats a type, so the exception still wears what its owner chose.
+  expect(await clipOf(cards(page).nth(1))).toBe(circled);
+});
+
+test("reset drops a card's own style, and the type default shows through", async ({ page }) => {
+  await page.goto(workspaceUrl("reset"));
+  await expect(cards(page)).toHaveCount(2);
+
+  // The plain card first, so the second half of the test never has to click a card that
+  // is already drawn as a diamond: a clipped silhouette leaves the header's corner
+  // outside the shape, and a click meant for the card lands on the pane instead.
+  const plain = cards(page).nth(1);
+  await selectCard(page, plain);
+  await openStyleTab(page);
+  // Nothing of its own yet, so there is nothing to reset.
+  await expect(page.getByTestId("style-reset")).toBeDisabled();
+  await page.getByTestId("style-shape-circle").click();
+  await expect(page.getByTestId("style-reset")).toBeEnabled();
+  await page.getByTestId("style-reset").click();
+  await expect(page.getByTestId("style-reset")).toBeDisabled();
+  await expect.poll(() => clipOf(plain)).not.toContain("polygon");
+
+  // Now the type states a diamond. The card that just dropped its own style has nothing
+  // left to say, so it reads the type and changes with it.
+  await selectCard(page);
+  await openStyleTab(page);
+  await page.getByTestId("style-shape-diamond").click();
+  await page.getByTestId("style-make-default").click();
+  await expect.poll(() => clipOf(plain)).toContain("polygon");
 });

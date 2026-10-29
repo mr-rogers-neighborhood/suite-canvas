@@ -60,6 +60,22 @@ export async function cardId(page: Page, title: string): Promise<string> {
   return value;
 }
 
+/**
+ * Selects a card with a click on its header and leaves nothing focused.
+ *
+ * The header is where a reader clicks to mean "this one", but the title under the pointer is
+ * a field in its own right: one click starts an edit, and every key after it is read as
+ * typing, so a canvas chord such as `Control+g` is ignored. Escape ends that edit and keeps
+ * the selection, which is what lets a spec click where a reader clicks and still type a chord.
+ */
+export async function selectCard(page: Page, card: Locator = cards(page).first()): Promise<void> {
+  const box = await card.boundingBox();
+  if (!box) throw new Error("card not visible");
+  await page.mouse.click(box.x + 80, box.y + 24);
+  await expect(page.getByTestId("card-inspector")).toBeVisible();
+  await page.keyboard.press("Escape");
+}
+
 /** A note from the dock, titled and out of edit mode. */
 export async function createNote(page: Page, title: string): Promise<void> {
   await page.getByTestId("dock-new-card").click();

@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { selectCard } from "../fixtures/support";
 
 /**
  * The paint system (ADR-0051): one style record over every surface, written
@@ -57,7 +58,8 @@ test("a card keeps its silhouette and side paint across a reload", async ({ page
   await cards(page).first().click();
   await openStyleTab(page);
   await page.getByTestId("style-shape-diamond").click();
-  await page.getByTestId("style-side-top").selectOption("dashed");
+  await page.getByTestId("style-side-top-dashed").click();
+  await expect(page.getByTestId("style-side-top-dashed")).toHaveAttribute("data-checked", "true");
 
   await expect
     .poll(() => paintVar(page, '[data-testid="node-card"]', "--paint-clip"))
@@ -101,7 +103,8 @@ test("a link keeps its own stroke, and paints it in the document, across a reloa
 
   // A link has one stroke, so the drawer offers a line style rather than sides.
   await expect(page.getByTestId("style-shape-diamond")).toHaveCount(0);
-  await page.getByTestId("style-line-paint").selectOption("dashed");
+  await page.getByTestId("style-line-paint-dashed").click();
+  await expect(page.getByTestId("style-line-paint-dashed")).toHaveAttribute("data-checked", "true");
   await expect
     .poll(() => paintVar(page, ".react-flow__edge-path", "stroke-dasharray"))
     .not.toBe("none");
@@ -120,10 +123,7 @@ test("a section is painted from its own panel", async ({ page }) => {
 
   // A section is an identity, so its paint lives in the container panel
   // (ADR-0040), one tab away from its members and links.
-  const card = await cards(page).first().boundingBox();
-  if (!card) throw new Error("card not visible");
-  await page.mouse.click(card.x + 40, card.y + 60);
-  await expect(page.getByTestId("card-inspector")).toBeVisible();
+  await selectCard(page);
   await page.keyboard.press("Control+g");
   const section = page.locator(".section-region").first();
   await expect(section).toBeVisible();
@@ -138,7 +138,8 @@ test("a section is painted from its own panel", async ({ page }) => {
   await expect(page.getByTestId("container-inspector")).toBeVisible();
 
   await page.getByTestId("container-tab-style").click();
-  await page.getByTestId("style-side-left").selectOption("dotted");
+  await page.getByTestId("style-side-left-dotted").click();
+  await expect(page.getByTestId("style-side-left-dotted")).toHaveAttribute("data-checked", "true");
 
   await expect
     .poll(() => paintVar(page, ".section-region", "--paint-border-left"))

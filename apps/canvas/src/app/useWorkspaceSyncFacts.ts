@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { refreshCredential } from "../auth/credential";
 import type { AccountPhase } from "../auth/useAccountStore";
 import type { SyncClaim, SyncRefusal } from "../feedback/syncState";
 import { readSyncRefusal } from "../session/syncAccess";
@@ -63,6 +64,12 @@ export function useWorkspaceSyncFacts(input: SyncFactsInput): WorkspaceSyncFacts
   // handing back: every other outcome leaves the local copy exactly where it was.
   const runClaim = useCallback(async (): Promise<void> => {
     if (!claimable) return;
+    // The claims in the token are the limits the relay enforces, so a token minted before
+    // a payment argues with the account that has just bought one: the claim says the
+    // workspace is held, and the join is refused for want of a ceiling that is now there.
+    // Asking for a fresh one is the difference between "I have paid, retry" working and
+    // that button being unable to work for the rest of the token's five minutes.
+    await refreshCredential();
     const outcome = await claimWorkspaceForAccount({
       workspaceId,
       ...(workspaceName === undefined ? {} : { name: workspaceName }),

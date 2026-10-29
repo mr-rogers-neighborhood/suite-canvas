@@ -5,7 +5,11 @@ import type { ConnectionStatus } from "../store/useCanvasStore";
 
 const claim = vi.fn();
 const rejoin = vi.fn();
+const refreshCredential = vi.fn(async () => Promise.resolve("token"));
 
+vi.mock("../auth/credential", () => ({
+  refreshCredential: () => refreshCredential(),
+}));
 vi.mock("../session/workspaceClaim", () => ({
   claimWorkspaceForAccount: () => claim(),
 }));
@@ -24,6 +28,8 @@ const status: ConnectionStatus = "unauthorized";
 beforeEach(() => {
   claim.mockReset();
   rejoin.mockReset();
+  refreshCredential.mockReset();
+  refreshCredential.mockResolvedValue("token");
 });
 
 afterEach(() => {
@@ -41,6 +47,28 @@ describe("useWorkspaceSyncFacts", () => {
     rerender();
     await Promise.resolve();
     expect(claim).toHaveBeenCalledTimes(1);
+  });
+
+  it("should mint a token carrying the new plan before asking again", async () => {
+    // The relay enforces the token's own claims. A person who has just paid is still
+    // holding the ceiling from before, so a claim that lands and a join that is refused
+    // for want of a limit only disagree because nothing re-minted.
+    claim.mockResolvedValueOnce("capped").mockResolvedValueOnce("claimed");
+    const { result } = renderHook(() =>
+      useWorkspaceSyncFacts({ workspaceId: "w1", phase: signedIn, status }),
+    );
+    await waitFor(() => expect(result.current.claim).toBe("capped"));
+    refreshCredential.mockClear();
+
+    act(() => result.current.reclaim());
+
+    await waitFor(() => expect(rejoin).toHaveBeenCalled());
+    expect(refreshCredential).toHaveBeenCalledTimes(1);
+    // Before the claim, not after: the claim is an authenticated request too, and the
+    // join that follows it is the one the stale claims would have broken.
+    expect(refreshCredential.mock.invocationCallOrder[0]).toBeLessThan(
+      claim.mock.invocationCallOrder[1] as number,
+    );
   });
 
   it("should ask again when a person says they have paid", async () => {

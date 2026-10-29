@@ -50,6 +50,15 @@ let cached: Cached | null = null;
 let inflight: Promise<string | null> | null = null;
 
 /**
+ * Which mint is allowed to write the cache.
+ *
+ * Only the newest one is. A refresh starts minting while an older request may still be
+ * in the air, and the older answer carries the claims of a moment that has passed: without
+ * this, a token superseded a second ago could land last and put the old limits back.
+ */
+let epoch = 0;
+
+/**
  * Set when the deployment answered "there is no mint here" once.
  *
  * A self-host that runs only the relay has no account service, so
@@ -152,7 +161,7 @@ export interface MintCredentialInput {
   now?: () => number;
 }
 
-async function mintCredential(input: MintCredentialInput): Promise<string | null> {
+async function mintCredential(input: MintCredentialInput, ticket: number): Promise<string | null> {
   const base = input.base ?? authClientBase();
   const send = input.fetch ?? globalThis.fetch;
   if (typeof send !== "function") return null;
@@ -185,7 +194,7 @@ async function mintCredential(input: MintCredentialInput): Promise<string | null
     // mint as failed rather than presenting something of unknown age.
     if (claims === null) return null;
     const now = input.now?.() ?? Date.now();
-    cached = { token, expiresAt: claims.expiresAt };
+    if (ticket === epoch) cached = { token, expiresAt: claims.expiresAt };
     return credentialIsFresh(token, now) ? token : null;
   } catch {
     // No server, no session, no network, no time: all of them are "no token".
@@ -205,10 +214,33 @@ async function mintCredential(input: MintCredentialInput): Promise<string | null
 export async function relayCredential(input: MintCredentialInput = {}): Promise<string | null> {
   const fresh = cachedCredential();
   if (fresh !== null) return fresh;
-  inflight ??= mintCredential(input).finally(() => {
-    inflight = null;
+  const ticket = ++epoch;
+  inflight ??= mintCredential(input, ticket).finally(() => {
+    if (ticket === epoch) inflight = null;
   });
   return inflight;
+}
+
+/**
+ * A token minted now, discarding the one this page holds.
+ *
+ * The cache saves a mint per request, and that is right for a page asking twice in one
+ * breath. It is wrong for the one moment a token's own claims have changed underneath it:
+ * the claims carry the plan's limits, so a person who has just paid is still holding
+ * yesterday's ceiling until the five-minute TTL turns over, and every join in that window
+ * is refused. The window is the bug, so the way out of it is a mint rather than a wait.
+ *
+ * A mint already in flight was started before the caller learned what it knows, so it is
+ * not joined: it is superseded, and the newer ticket stops it from writing the cache.
+ */
+export async function refreshCredential(input: MintCredentialInput = {}): Promise<string | null> {
+  cached = null;
+  const ticket = ++epoch;
+  const mine = mintCredential(input, ticket);
+  inflight = mine.finally(() => {
+    if (ticket === epoch) inflight = null;
+  });
+  return mine;
 }
 
 /** The credential as the sync transport wants it: bytes, or nothing to present. */

@@ -5,12 +5,7 @@ import { useAccountStore } from "../auth/useAccountStore";
 import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
 import { ToastLayer } from "../feedback/ToastLayer";
 import { toast } from "../feedback/toast";
-import {
-  type AccountWorkspaces,
-  readAccountWorkspaces,
-  syncLabelOf,
-  syncStateOf,
-} from "../session/accountWorkspaces";
+import { syncLabelOf, syncStateOf } from "../session/accountWorkspaces";
 import {
   DEFAULT_WORKSPACE_NAME,
   forgetWorkspaceName,
@@ -41,6 +36,7 @@ import {
   rememberChosenTemplate,
   starterTemplateById,
 } from "./starterTemplates";
+import { useAccountWorkspaces } from "./useAccountWorkspaces";
 import { importVaultIntoWorkspace, vaultFilesFromPicker, vaultName } from "./vaultImport";
 import { readVaultZip } from "./vaultZip";
 
@@ -141,7 +137,7 @@ export function WorkspaceLauncher() {
   // A mail link names one invitation, and this page is where it lands.
   const [invitationId, setInvitationId] = useState<string | null>(null);
   // `null` until the account answers, and stays `null` when there is no session.
-  const [account, setAccount] = useState<AccountWorkspaces | null>(null);
+  const { account } = useAccountWorkspaces();
   const [bringDismissed, setBringDismissed] = useState(false);
 
   useEffect(() => {
@@ -150,17 +146,6 @@ export function WorkspaceLauncher() {
       const { invitationIdFromUrl } = await import("../auth/AcceptInvitation");
       setInvitationId(invitationIdFromUrl(window.location.href));
     })();
-  }, []);
-
-  useEffect(() => {
-    // `readAccountWorkspaces` answers null in a standalone build without asking.
-    let live = true;
-    void readAccountWorkspaces().then((result) => {
-      if (live) setAccount(result);
-    });
-    return () => {
-      live = false;
-    };
   }, []);
 
   useEffect(() => {

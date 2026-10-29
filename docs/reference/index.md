@@ -6,8 +6,8 @@ Facts to look up: the data model, the commands, the quotas, the security boundar
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Architecture](architecture.md) | Suite is a local-first collaborative canvas. One Loro document per workspace is the source of truth, @suite/graph validates every write, and the React… | 2026-10-28 |
 | [Billing and licences](billing.md) | Billing is @better-auth/stripe registered on the auth instance (ADR-0078). The plugin owns the Stripe customer, Checkout, the billing portal, the webh… | 2026-10-28 |
+| [Architecture](architecture.md) | Suite is a local-first collaborative canvas. One Loro document per workspace is the source of truth, @suite/graph validates every write, and the React… | 2026-10-28 |
 | [Interface](ui.md) | How the shell, the library, the panels, the styling surfaces and the command palette are assembled, and the focus, keyboard and theme rules they share… | 2026-10-28 |
 | [Editing](editing.md) | How card text, fields, templates and reference chips are stored and edited; the document model underneath is in architecture.md. | 2026-10-28 |
 | [Canvas](canvas.md) | apps/canvas/src/canvas turns the workspace document into a board you can point at: placements become nodes, edges become routes, and every gesture end… | 2026-10-28 |

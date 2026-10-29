@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAccountStore } from "../auth/useAccountStore";
 import { readAccountWorkspaces } from "../session/accountWorkspaces";
@@ -127,6 +127,10 @@ async function chooseFile(testId: string, text: string, name: string): Promise<v
 beforeEach(() => {
   window.localStorage.clear();
   configureSession(ownerSession());
+  // Each test states what the account holds; a leftover answer from the one before is
+  // how a launcher test starts passing for the wrong reason.
+  readAccount.mockReset();
+  readAccount.mockResolvedValue(null);
   exportWorkspace.mockClear();
   navigate.mockClear();
   renameCached.mockClear();
@@ -504,6 +508,51 @@ describe("WorkspaceLauncher recents", () => {
     expect(badge).toHaveTextContent("Synced");
     expect(badge.dataset.sync).toBe("synced");
     expect(screen.queryByTestId("launcher-bring-prompt")).toBeNull();
+  });
+
+  it("re-reads the account when the tab comes back, so a purchase elsewhere shows", async () => {
+    // Checkout lands in the tab that opened it, and the launcher is mounted here. One read
+    // at mount left the notice and every row describing the account as it was before.
+    seedRecent();
+    readAccount.mockResolvedValueOnce({ workspaces: [], organizations: [] });
+    render(<WorkspaceLauncher />);
+
+    expect(await screen.findByTestId("launcher-bring-prompt")).toBeInTheDocument();
+
+    readAccount.mockResolvedValueOnce({
+      workspaces: [
+        { id: WORKSPACE, organizationId: "org-1", name: TITLE, createdAt: 1, archivedAt: null },
+      ],
+      organizations: [{ id: "org-1", name: "Personal", role: "owner" }],
+    });
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("launcher-bring-prompt")).not.toBeInTheDocument(),
+    );
+    expect(await screen.findByTestId(`launcher-sync-${WORKSPACE}`)).toHaveTextContent("Synced");
+  });
+
+  it("re-reads the account when the account panel closes", async () => {
+    seedRecent();
+    readAccount.mockResolvedValue({ workspaces: [], organizations: [] });
+    useAccountStore.setState({ panelOpen: true, panelTab: "plan" });
+    render(<WorkspaceLauncher />);
+    await waitFor(() => expect(screen.getByTestId("launcher-bring-prompt")).toBeInTheDocument());
+
+    readAccount.mockResolvedValue({
+      workspaces: [
+        { id: WORKSPACE, organizationId: "org-1", name: TITLE, createdAt: 1, archivedAt: null },
+      ],
+      organizations: [{ id: "org-1", name: "Personal", role: "owner" }],
+    });
+    act(() => useAccountStore.getState().closePanel());
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("launcher-bring-prompt")).not.toBeInTheDocument(),
+    );
   });
 
   it("says nothing about sync when there is no account", async () => {

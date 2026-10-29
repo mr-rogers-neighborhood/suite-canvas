@@ -8,6 +8,7 @@ import {
   forgetCredential,
   NO_CREDENTIAL_MESSAGE,
   REFRESH_MARGIN_MS,
+  refreshCredential,
   relayCredential,
   relayCredentialBytes,
 } from "./credential";
@@ -145,6 +146,51 @@ describe("minting", () => {
     exp = 300;
     expect(await relayCredential()).not.toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("mints past the cache when a caller knows the claims have changed", async () => {
+    // The claims carry the plan's limits, so a token minted before a payment argues with
+    // the account that has just bought one. Waiting out the five minutes is the bug.
+    let limits: Record<string, number> = { workspaces: 0 };
+    const fetchMock = vi.fn(async () => mintResponse({ token: token({ limits }) }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await relayCredential();
+    expect(currentCredentialClaims()?.limits).toEqual({ workspaces: 0 });
+    limits = { workspaces: 3 };
+
+    const refreshed = await refreshCredential();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(credentialClaims(refreshed)?.limits).toEqual({ workspaces: 3 });
+    // And the cache now answers with the new one, so the join that follows sees it.
+    expect(currentCredentialClaims()?.limits).toEqual({ workspaces: 3 });
+  });
+
+  it("keeps a superseded mint from putting the old claims back", async () => {
+    // Two requests in the air, answered out of order: the one started first must not be
+    // the one that lands in the cache.
+    let releaseOld: () => void = () => {};
+    let calls = 0;
+    const fetchMock = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        await new Promise<void>((resolve) => {
+          releaseOld = resolve;
+        });
+        return mintResponse({ token: token({ limits: { workspaces: 0 } }) });
+      }
+      return mintResponse({ token: token({ limits: { workspaces: 3 } }) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const old = relayCredential();
+    await Promise.resolve();
+    const fresh = await refreshCredential();
+    releaseOld();
+    await old;
+
+    expect(credentialClaims(fresh)?.limits).toEqual({ workspaces: 3 });
+    expect(currentCredentialClaims()?.limits).toEqual({ workspaces: 3 });
   });
 
   it("answers null for every way a mint can fail", async () => {

@@ -70,7 +70,9 @@ async function addNote(page: Page, title: string): Promise<void> {
 /** Selects a card and wraps it in a section, then waits for the frame. */
 async function sectionAround(page: Page, title: string): Promise<void> {
   const card = await boxOf(cardByTitle(page, title));
-  await page.mouse.click(card.x + 40, card.y + 60);
+  // The gutter beside the type glyph: a press the card owns. A press in the body
+  // starts an editor, and the chord would be typed into it as a letter.
+  await page.mouse.click(card.x + 24, card.y + 20);
   await page.keyboard.press("Control+g");
   await expect(page.locator(".section-region")).toHaveCount(1);
   await expect(page.locator(".section-header")).toHaveCount(1);

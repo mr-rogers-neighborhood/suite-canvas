@@ -49,6 +49,32 @@ describe("useWorkspaceSyncFacts", () => {
     expect(claim).toHaveBeenCalledTimes(1);
   });
 
+  it("should post one claim while the first is still in flight", async () => {
+    // The effect runs twice in React's strict mode. Both runs used to read an
+    // unanswered control plane and both posted, so the loser was told its own
+    // workspace belonged to another organization and the badge said "elsewhere".
+    let release: (() => void) | undefined;
+    claim.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve("claimed");
+        }),
+    );
+    const { result } = renderHook(() =>
+      useWorkspaceSyncFacts({ workspaceId: "w1", phase: signedIn, status }),
+    );
+    await waitFor(() => expect(claim).toHaveBeenCalledTimes(1));
+
+    // A person pressing Retry while the first answer is still on its way joins that
+    // answer rather than racing it.
+    act(() => result.current.reclaim());
+    await Promise.resolve();
+    expect(claim).toHaveBeenCalledTimes(1);
+
+    release?.();
+    await waitFor(() => expect(rejoin).toHaveBeenCalled());
+  });
+
   it("should mint a token carrying the new plan before asking again", async () => {
     // The relay enforces the token's own claims. A person who has just paid is still
     // holding the ceiling from before, so a claim that lands and a join that is refused

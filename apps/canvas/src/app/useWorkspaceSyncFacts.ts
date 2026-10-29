@@ -51,6 +51,10 @@ export function useWorkspaceSyncFacts(input: SyncFactsInput): WorkspaceSyncFacts
   const [_attempt, setAttempt] = useState(0);
   // Set once the control plane has answered; a no-op claim is not worth repeating.
   const settled = useRef(false);
+  // Set for the duration of one claim. The effect runs twice in React's strict mode
+  // and the two runs race: both read an unanswered control plane, both post, and the
+  // loser is told its own workspace belongs to somebody else. One claim, one answer.
+  const claiming = useRef(false);
   const askedWhy = useRef(false);
 
   const claimable = phase === "signed-in" && !shared && workspaceId.length > 0;
@@ -63,27 +67,33 @@ export function useWorkspaceSyncFacts(input: SyncFactsInput): WorkspaceSyncFacts
   // returns whether the workspace is now in the account, which is the only answer worth
   // handing back: every other outcome leaves the local copy exactly where it was.
   const runClaim = useCallback(async (): Promise<void> => {
-    if (!claimable) return;
-    // The claims in the token are the limits the relay enforces, so a token minted before
-    // a payment argues with the account that has just bought one: the claim says the
-    // workspace is held, and the join is refused for want of a ceiling that is now there.
-    // Asking for a fresh one is the difference between "I have paid, retry" working and
-    // that button being unable to work for the rest of the token's five minutes.
-    await refreshCredential();
-    const outcome = await claimWorkspaceForAccount({
-      workspaceId,
-      ...(workspaceName === undefined ? {} : { name: workspaceName }),
-    });
-    if (outcome === "unavailable") return;
-    settled.current = true;
-    setClaim(outcome === "capped" ? "capped" : outcome === "elsewhere" ? "elsewhere" : "claimed");
-    if (outcome !== "claimed") return;
-    // The relay refused this room when there was no licence behind it. Now there is one,
-    // so the join that was refused has to be attempted again, or the badge says Synced
-    // over a socket that is still closed. Loaded on demand: the account store must not
-    // pull the document store in at import time.
-    const { useCanvasStore } = await import("../store/useCanvasStore");
-    useCanvasStore.getState().rejoin();
+    if (!claimable || claiming.current) return;
+    claiming.current = true;
+    try {
+      // The claims in the token are the limits the relay enforces, so a token minted
+      // before a payment argues with the account that has just bought one: the claim says
+      // the workspace is held, and the join is refused for want of a ceiling that is now
+      // there. Asking for a fresh one is the difference between "I have paid, retry"
+      // working and that button being unable to work for the rest of the token's five
+      // minutes.
+      await refreshCredential();
+      const outcome = await claimWorkspaceForAccount({
+        workspaceId,
+        ...(workspaceName === undefined ? {} : { name: workspaceName }),
+      });
+      if (outcome === "unavailable") return;
+      settled.current = true;
+      setClaim(outcome === "capped" ? "capped" : outcome === "elsewhere" ? "elsewhere" : "claimed");
+      if (outcome !== "claimed") return;
+      // The relay refused this room when there was no licence behind it. Now there is one,
+      // so the join that was refused has to be attempted again, or the badge says Synced
+      // over a socket that is still closed. Loaded on demand: the account store must not
+      // pull the document store in at import time.
+      const { useCanvasStore } = await import("../store/useCanvasStore");
+      useCanvasStore.getState().rejoin();
+    } finally {
+      claiming.current = false;
+    }
   }, [claimable, workspaceId, workspaceName]);
 
   // `_attempt` is the retry counter and the trigger, not an input the claim reads: bumping

@@ -224,7 +224,10 @@ test("shift-click toggles membership without opening the inspector", { tag: "@sm
   // click actually hits it.
   const nodes = page.locator(".react-flow__node");
   await expect(nodes).toHaveCount(2);
-  const inside = { x: 40, y: 60 } as const;
+  // The gutter beside the type glyph: a press the card itself owns. A press in the
+  // title or the body starts an editor, and a chord sent to a text field selects
+  // text rather than cards.
+  const inside = { x: 24, y: 20 } as const;
 
   await nodes.nth(0).click({ position: inside, modifiers: ["Shift"] });
   await expect(selectedNodes(page)).toHaveCount(1);
@@ -265,7 +268,10 @@ test("a modifier click survives a peer's edits landing mid-gesture", { tag: "@sm
 
   const nodes = pageA.locator(".react-flow__node");
   await expect(nodes).toHaveCount(2);
-  const inside = { x: 40, y: 60 } as const;
+  // The gutter beside the type glyph: a press the card itself owns. A press in the
+  // title or the body starts an editor, and a chord sent to a text field selects
+  // text rather than cards.
+  const inside = { x: 24, y: 20 } as const;
 
   // The peer edits a title, so page A is rebuilt between the Shift keydown and
   // the click — the echo of the first click is exactly what a rebuild used to

@@ -8,7 +8,7 @@ release edits the tag and the id recorded below.
 
 | Thing | Value |
 | --- | --- |
-| Version | `1.1.0` in `package.json` and the newest `CHANGELOG.md` heading |
+| Version | `0.1.0-alpha.1` in `package.json` and the newest `CHANGELOG.md` heading |
 | Git tag | `v0.1.0-alpha.1` on the release commit |
 | Image | `suite:v0.1.0-alpha.1`, built on the host that runs it and also tagged `suite:local` |
 | Identity | the image id from `docker image inspect --format '{{.Id}}' suite:v0.1.0-alpha.1` |
@@ -24,7 +24,7 @@ The lead creates the tag after integration. A workstream does not push one.
 
 ## Cut one
 
-1. `package.json` and the newest `CHANGELOG.md` heading both say `1.1.0`.
+1. `package.json` and the newest `CHANGELOG.md` heading both say `0.1.0-alpha.1`.
 2. `node scripts/docs-check.mjs` and `node scripts/generate-limits.mjs --check` are clean.
 3. `pnpm verify` is green on the commit being tagged, and a full `pnpm e2e` passed on that same commit,
    in that order, with nothing already listening on `:5173` or `:1235`. A tag is the milestone where
@@ -32,7 +32,9 @@ The lead creates the tag after integration. A workstream does not push one.
 4. `git tag -a v0.1.0-alpha.1 -m "Suite 0.1.0-alpha.1"`.
 5. `git push origin v0.1.0-alpha.1`.
 
-If workflows can start, `.github/workflows/release.yml` runs three jobs:
+`.github/workflows/release.yml` describes three jobs, and Actions is off on this repository, so none of
+them has ever run. They are kept for the day it is turned back on (the command is in
+[Test and verify a change](test-and-verify.md)); the manual path below is the release.
 
 | Job | Does | Fails when |
 | --- | --- | --- |

@@ -426,22 +426,22 @@ running now is tagged *before* the build starts; that tag is the whole rollback.
 4. **Move the checkout onto the release.** The build reads the working tree, not a tag.
 
    ```sh
-   git fetch --tags && git checkout v1.1.1 && git describe --tags --exact-match
+   git fetch --tags && git checkout v0.1.0-alpha.1 && git describe --tags --exact-match
    ```
 
 5. **Build the image with the tag baked in.** `SUITE_VERSION` is what `/metrics` and
-   `/api/admin/status` report. Both `-t` flags matter: `suite:v1.1.1` is the record you can come back
-   to, `suite:local` is what compose runs when `.env` names no image.
+   `/api/admin/status` report. Both `-t` flags matter: the version tag is the record you can come
+   back to, `suite:local` is what compose runs when `.env` names no image.
 
    ```sh
-   docker build --target runtime --build-arg SUITE_VERSION=v1.1.1 \
-     -t suite:v1.1.1 -t suite:local .
+   docker build --target runtime --build-arg SUITE_VERSION=v0.1.0-alpha.1 \
+     -t suite:v0.1.0-alpha.1 -t suite:local .
    ```
 
 6. **Pin the tag and restart `app` alone.**
 
    ```sh
-   sed -i -E 's|^#?[[:space:]]*SUITE_IMAGE=.*|SUITE_IMAGE=suite:v1.1.1|' .env
+   sed -i -E 's|^#?[[:space:]]*SUITE_IMAGE=.*|SUITE_IMAGE=suite:v0.1.0-alpha.1|' .env
    docker compose up -d --no-build app     # Caddy keeps running; 502 for the restart only
    ```
 
@@ -466,7 +466,7 @@ running now is tagged *before* the build starts; that tag is the whole rollback.
 and prints the rollback command.
 
 ```sh
-cd /srv/suite && git fetch --tags && git checkout v1.1.1 && deploy/deploy.sh
+cd /srv/suite && git fetch --tags && git checkout v0.1.0-alpha.1 && deploy/deploy.sh
 ```
 
 A host that writes its logs to CloudWatch carries a second compose file, and every `docker compose`

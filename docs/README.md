@@ -27,10 +27,9 @@ pnpm docs:site:build  # production build
 `/llms.txt` is the summary an agent reads first, `/llms-full.txt` is every page, and any page is
 available as Markdown by dropping the trailing slash from its URL and appending `.md`.
 
-## Outside this tree
+## Elsewhere in the repository
 
-`internal/` holds the decision records, the programme documents, and the design reference. It is
-local-only, not part of this tree, and not published.
-
-The root [README](../README.md), [AGENTS](../AGENTS.md), [CONTRIBUTING](../CONTRIBUTING.md), and
-[SECURITY](../SECURITY.md) cover setup, agent rules, contribution, and vulnerability reporting.
+The root [README](../README.md), [AGENTS](../AGENTS.md), [CONTRIBUTING](../CONTRIBUTING.md) and
+[SECURITY](../SECURITY.md) cover setup, contribution and vulnerability reporting. An `ADR-NNNN`
+reference is shorthand for a design decision; the reasoning is always restated in the prose beside it,
+so no page here needs the record to be readable.

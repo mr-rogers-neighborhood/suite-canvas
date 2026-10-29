@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { repositoryUrl } from "../../repository";
 import {
   buildDiagnosticBundle,
   copyText,
@@ -118,18 +119,14 @@ export function SupportPanel() {
         <h3>Talk to someone</h3>
         <ul className="admin-muted">
           <li>
-            <a
-              href="https://github.com/mr-rogers-neighborhood/suite/issues/new"
-              target="_blank"
-              rel="noreferrer noopener"
-            >
+            <a href={`${repositoryUrl()}/issues/new`} target="_blank" rel="noreferrer noopener">
               Open an issue
             </a>{" "}
             — for anything that is not a vulnerability.
           </li>
           <li>
             <a
-              href="https://github.com/mr-rogers-neighborhood/suite/blob/main/SECURITY.md"
+              href={`${repositoryUrl()}/blob/main/SECURITY.md`}
               target="_blank"
               rel="noreferrer noopener"
             >

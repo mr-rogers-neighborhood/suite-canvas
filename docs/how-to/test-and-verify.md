@@ -27,10 +27,30 @@ Playwright stays outside the gate. No contributor or agent starts it by default,
 on a run. E2E runs when the owner asks for it, or at a commit milestone the owner names. A full
 `pnpm e2e` is a milestone action; when a run is asked for, an area script is the cheaper evidence.
 
-`ci.yml` in `.github/workflows` runs the same commands on a runner, and it is a second opinion rather
-than the gate: the local command above is what a change is measured by, and what a contributor is
-asked for. The workflow keeps Playwright off a push. A pull request gets the smoke tier, and the full
-suite is a manual dispatch, which is the milestone run described above.
+### GitHub Actions is off
+
+`.github/workflows/ci.yml` holds the same commands, and the repository has Actions **disabled**: every
+run on this account stopped before a job started, with *"the job was not started because your account
+is locked due to a billing issue"*. A red cross that cannot be fixed by changing any code teaches a
+reader to ignore the one signal that would matter if it worked, so the workflow sits in the tree,
+unrun, and the local command above is the gate in fact as well as in name.
+
+Two things stand in for it:
+
+- **`pnpm verify`** is the workflow's own set: the gate, the story suite, the build and the two fast
+  security scans. Run it before a commit you want fully checked, and on a tag.
+- **`npx act -j quality`** runs `ci.yml` itself in Docker, if you want the runner's answer on your own
+  machine. It needs Docker and nothing else; the first run pulls a runner image.
+
+Turning Actions back on is one call, once the account's billing is in order, and needs no edit here:
+
+```sh
+gh api -X PUT repos/{owner}/{repo}/actions/permissions -F enabled=true
+```
+
+The workflow keeps Playwright off a push. A pull request gets the smoke tier, the full suite is a
+manual dispatch, and the branch protection that would require either is worth setting only after a run
+is visible in Actions.
 
 ## What each command runs
 

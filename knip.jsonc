@@ -1,9 +1,17 @@
 {
   // Dead-code and dependency-drift reporting. `pnpm knip` is a report, not a
-  // gate: it exits 1 while the findings below stand, and clearing them is a
-  // separate change. This file exists so the run resolves the same entry points
-  // the app actually starts from instead of guessing, which keeps the report
-  // free of false "unused file" noise.
+  // gate: it exits 1 on the unused-export list, which is deliberate. Most of that
+  // list is exported for a co-located test and imported by nothing else, and the
+  // rest is a vocabulary the modules share (mode names, constants that name a
+  // value the code compares against). Deleting either kind to satisfy a report
+  // makes the next change worse. What the report is trusted for is `Unused
+  // files` and `Unused devDependencies`: those were two real findings, and the
+  // two configuration entries below are the false ones, silenced where they are
+  // generated rather than deleted.
+  //
+  // This file exists so the run resolves the same entry points the app actually
+  // starts from instead of guessing, which keeps the report free of false
+  // "unused file" noise.
   //
   // Knip's own plugins (vite, tsx, playwright, vitest) already resolve most of
   // what is spelled out here, so it prints "Remove redundant entry pattern" and
@@ -25,6 +33,9 @@
     "apps/site/dist/**",
     "apps/site/.astro/**"
   ],
+  // Postgres client binaries the e2e harness shells out to; knip cannot see a
+  // `spawn`, so they would otherwise read as unlisted.
+  "ignoreBinaries": ["psql", "initdb"],
   "workspaces": {
     ".": {
       // The repo-root `.mjs` scripts are run by `pnpm <script>`, which knip does
@@ -71,6 +82,12 @@
       // Lambda handlers plus the local dry-run driver (`pnpm dry-run`).
       "entry": ["src/handler/handler.ts", "src/ops/dev.ts", "src/stripe/checkout.ts"],
       "project": ["src/**/*.ts"]
+    },
+    "apps/control-plane": {
+      // The `test-fixtures/*` trees are mounted or required by path by the boot
+      // tests, so no import edge exists for knip to follow.
+      "entry": ["src/**/*.ts", "src/modules/test-fixtures/**/*.js"],
+      "project": ["src/**/*.{ts,js}"]
     },
     "e2e": {
       "entry": ["tests/**/*.spec.ts"],

@@ -13,7 +13,7 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, sync and storage status, the workspace menu, the account slot, the theme toggle |
 | Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history and outline buttons in `app/WorkspaceShellView.tsx` | Home, the open boards with their peer counts, undo, redo, version history and the outline, in one row |
 | Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface, plus the plan wall and the retry for whoever just paid |
-| Views bar | `apps/canvas/src/chrome/ViewsBar.tsx` | Saved views, applying one, renaming and deleting one |
+| Views bar | `apps/canvas/src/chrome/ViewsBar.tsx` | Saved views, applying one, renaming and deleting one. **Development only** (see below) |
 | Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new sketch, new section, new portal, type settings |
 | Outline rail | `apps/canvas/src/canvas/BoardOutline.tsx` | The active board's section tree, in reading order, with counts and presence. Hidden while the board has no sections |
 | Inspector | `apps/canvas/src/cards/CardInspectorHost.tsx` | The one panel for the selected card or container |
@@ -58,6 +58,22 @@ write shows the notice on every visit, the harmless direction.
 The drawer has four tabs: `inbox` (cards on no board), `cards`, `boards` and `trash`. `apps/canvas/src/library/libraryFilters.ts` defines the facets: type, tag and section, with OR inside a facet and AND across facets. The section facet appears only when the drawer is scoped to one board, because a section title means nothing outside its board.
 
 Search and facets feed the same list. A saved view fills those same controls through `applyView`, so there is one filtering model and no second query language (ADR-0037).
+
+### Saved views are a development-only door
+
+`ViewsBar` is rendered behind `import.meta.env.DEV` in `WorkspaceShellView.tsx`, so a production bundle
+drops it and the component with it. The bar itself works: saving, renaming, deleting, applying. Its
+specs run too, because the e2e run serves a dev build. What is unfinished is the surface around it:
+there is no way back to the unfiltered list that reads as one, and an alpha is the wrong place to
+explain a half-built control.
+
+The guard is the whole switch. Removing it publishes the bar, and the release that does it should say so
+in its notes.
+
+**Why this note exists.** The bar was unmounted once already, by accident. `5f0a6da6` replaced the tab
+strip with the board switcher and deleted the app's only `<ViewsBar>`. Every unit test kept
+passing, because they render the component directly. The e2e specs noticed a day later. A component
+nobody mounts is a component nobody has; when one is deliberately un-mounted, say so here.
 
 Rows share one action menu, opened from the `⋯` button or a right-click, and one piece of state (`rowMenu`), so both entry points cannot show different actions for the same row. A card row can be dragged onto the canvas: the hold and drop run through `useLibraryHold`, and the drop places the card at the pointer instead of at the drawer.
 

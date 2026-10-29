@@ -496,14 +496,21 @@ export function WorkspaceShellView({
                 onTogglePin={pins.togglePin}
               />
               {/*
-                Saved views sit beside the board switcher because a view is a query
-                over the workspace rather than a property of one board: the bar writes
-                to `workspace.listViews()` and applying one fills the library's own
-                controls. It went missing when the tab strip became the switcher —
-                unmounted, while its unit tests kept passing — and the e2e specs that
-                save and reopen a view are what noticed.
+                Saved views are unfinished, so they are a development-only door.
+                The component is complete enough to drive and its specs run against
+                the dev server, but the surface around it is not: a reader who is
+                handed "Save view" today gets a control with no way back to what it
+                filtered, and an alpha is the wrong place to explain that.
+
+                `import.meta.env.DEV` is a literal Vite inlines, so a production
+                bundle drops this branch and the component with it. Removing the
+                guard is the whole change when the feature is ready, and
+                `docs/reference/ui.md` says so — an unmounted component with green
+                unit tests is how the bar went missing for a day (5f0a6da6).
               */}
-              {workspaceSurface ? <ViewsBar canManage={canManageSchema} /> : null}
+              {workspaceSurface && import.meta.env.DEV ? (
+                <ViewsBar canManage={canManageSchema} />
+              ) : null}
               {pinnedBoards.length === 0 ? null : (
                 /* A gap, because a tab touching the switcher reads as part of it. */
                 <span className="ml-1 flex shrink-0 items-center gap-0.5">

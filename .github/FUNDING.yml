@@ -1,0 +1,9 @@
+# The funding door this project actually has.
+#
+# There is no sponsorship account behind this file, and a fake sponsor button would be a
+# worse sign than none: GitHub only lists `github:` once an account is enrolled. What does
+# exist is a paid hosted deployment, where a subscription buys early access to sync,
+# collaboration and uploads, and the same source stays MIT and self-hostable without one.
+#
+# `custom` is a plain link, so it needs nothing from GitHub but a public https URL.
+custom: ["https://app.suite.run"]

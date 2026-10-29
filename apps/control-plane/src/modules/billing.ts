@@ -293,7 +293,7 @@ export async function billingDepsFromEnvironment(
     tiers,
     mode: credentials.mode,
     prices,
-    entitlements: createEntitlementReader({ subscriptions, tiers }),
+    entitlements: createEntitlementReader({ subscriptions, tiers, mode: credentials.mode }),
   };
 }
 

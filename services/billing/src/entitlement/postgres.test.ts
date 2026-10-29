@@ -43,7 +43,23 @@ describe("subscriptionRowOf", () => {
       status: "active",
       periodEnd: NOW + 3 * DAY,
       cancelAtPeriodEnd: true,
+      billingMode: null,
     });
+  });
+
+  it("should read the universe the row was stamped with", () => {
+    const row = subscriptionRowOf({ plan: "solo", status: "active", billing_mode: " Live " });
+
+    assert.equal(row?.billingMode, "live");
+  });
+
+  it("should treat a stamp it cannot recognise as unknown", () => {
+    // A value somebody typed into the column must not be able to refuse a paid plan, and
+    // the guard honours a null.
+    for (const value of ["prod", 2, null, undefined, ["live"]]) {
+      const row = subscriptionRowOf({ plan: "solo", status: "active", billing_mode: value });
+      assert.equal(row?.billingMode, null);
+    }
   });
 
   it("should keep an unset period and a missing cancel flag usable", () => {
@@ -54,6 +70,7 @@ describe("subscriptionRowOf", () => {
       status: "trialing",
       periodEnd: null,
       cancelAtPeriodEnd: false,
+      billingMode: null,
     });
   });
 
@@ -78,6 +95,7 @@ describe("postgresSubscriptions", () => {
       status: "active",
       periodEnd: NOW + DAY,
       cancelAtPeriodEnd: false,
+      billingMode: null,
     });
     assert.equal(recorded.calls.length, 1);
     assert.equal(recorded.calls[0]?.text, LIVE_SUBSCRIPTION_SQL);
@@ -94,5 +112,8 @@ describe("postgresSubscriptions", () => {
     assert.match(LIVE_SUBSCRIPTION_SQL, /"referenceId" = \$1/u);
     assert.match(LIVE_SUBSCRIPTION_SQL, /'active', 'trialing'/u);
     assert.match(LIVE_SUBSCRIPTION_SQL, /LIMIT 1/u);
+    // The guard reads the stamp from the same statement: a second query on the token mint
+    // path would be a second answer to one question.
+    assert.match(LIVE_SUBSCRIPTION_SQL, /"billing_mode"/u);
   });
 });

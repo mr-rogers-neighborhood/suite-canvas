@@ -26,7 +26,7 @@ export interface Queryable {
  * and `trialing` means a stale cancelled row can never shadow the one being paid for.
  */
 export const LIVE_SUBSCRIPTION_SQL = `
-  SELECT "plan", "status", "periodEnd", "cancelAtPeriodEnd"
+  SELECT "plan", "status", "periodEnd", "cancelAtPeriodEnd", "billing_mode"
   FROM "subscription"
   WHERE "referenceId" = $1
   ORDER BY
@@ -45,6 +45,13 @@ function millisOf(value: unknown): number | null {
   return null;
 }
 
+/** The stamp `0012_subscription_billing_mode.sql` added, or null when there is none. */
+function billingModeOf(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const mode = value.trim().toLowerCase();
+  return mode === "test" || mode === "live" ? mode : null;
+}
+
 /** Maps one row, or null when the row says nothing usable about plan and status. */
 export function subscriptionRowOf(value: Record<string, unknown>): SubscriptionRow | null {
   const plan = value.plan;
@@ -56,6 +63,9 @@ export function subscriptionRowOf(value: Record<string, unknown>): SubscriptionR
     status: status.trim().toLowerCase(),
     periodEnd: millisOf(value.periodEnd),
     cancelAtPeriodEnd: value.cancelAtPeriodEnd === true,
+    // An unrecognised or absent stamp reads as null, which the entitlement read honours:
+    // a value somebody typed into the column must not be able to refuse a paid plan.
+    billingMode: billingModeOf(value.billing_mode),
   };
 }
 

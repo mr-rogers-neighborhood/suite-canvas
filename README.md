@@ -143,6 +143,13 @@ to the single app container, whose six SQLite stores sit on one volume.
 [Release and roll back](docs/how-to/release.md) has the manual build path and the rollback that
 re-pins the previous digest.
 
+## Supporting the project
+
+A subscription pays for the work. <https://app.suite.run> sells two hosted plans, monthly, with
+Stripe holding the card; what a plan buys and what it does not is on the Plan tab, beside the
+button. Nothing here is behind it: the canvas, export, sharing by file and self-hosting are all
+free, and the source stays MIT however that goes.
+
 ## Contributing
 
 [CONTRIBUTING.md](CONTRIBUTING.md) is the short version and

@@ -472,8 +472,7 @@ apply** beside it.
 `organization.stripeCustomerId` is written by the plugin when a customer is created, and it records
 no mode. After a switch the deployment holds ids from the other universe, and Stripe answers
 `No such customer` for every one of them: the portal fails with "Unable to create billing portal
-session", and a checkout that names the stored customer fails before it renders. The subscription
-row has the same shape, which is why a test-mode subscription keeps granting a licence in live mode.
+session", and a checkout that names the stored customer fails before it renders.
 
 The repair is one statement per organization whose id the active mode does not know. Ask Stripe
 first, then clear the ones it refuses:
@@ -488,9 +487,30 @@ that organization's metadata and creates one when it finds none, so the next che
 open) makes a live customer and writes the id back. The cost is that switching back to test mode
 does not recover the old test customers; they are made again the same way.
 
-Recording the mode beside the id is the fix that removes the manual step, and it needs a column the
-identity tables do not have yet. Until then, this is an operator step in the mode switch, listed
-here rather than discovered through a customer's failed portal.
+### A subscription belongs to one universe too
+
+A test `cus_…` is not the only thing that does not survive a switch. A subscription taken out in
+test mode keeps its `active` status in the database, so without a record of which universe wrote it,
+the entitlement read would count it as paid: live sync bought with a test card, and a licence the
+deployment could neither bill nor cancel.
+
+`subscription.billing_mode` is that record (`sql/0012_subscription_billing_mode.sql`). The licence
+projection stamps it on every lifecycle event, from the mode the deployment was selling in when the
+event arrived: a webhook signed with the live secret can only describe a live subscription. The
+entitlement read refuses a row whose stamp is the other mode and answers the free tier, and because
+the seat check and the token claim come from the same function, they refuse together.
+
+A row written before that column existed carries no stamp and is honoured, because refusing it would
+cut off a paying customer over a migration rather than over a payment. After a switch, stamp the rows
+that predate it, having checked in Stripe that they exist in the active mode:
+
+```sql
+update subscription set billing_mode = 'live'
+ where billing_mode is null and status in ('active', 'trialing');
+```
+
+Nothing earlier than this needs the manual step: a subscription created after the change is stamped
+by the event that created it.
 
 ### Secrets in the table
 

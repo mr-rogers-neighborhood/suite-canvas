@@ -331,6 +331,87 @@ describe("createLicenceProjection", () => {
     assert.deepEqual(values[7], new Date(NOW + FREE.days * DAY));
   });
 
+  it("should stamp the universe beside the licence it projects", async () => {
+    const stamps: string[] = [];
+    const licence = createLicenceProjection({
+      rows: {
+        upsert: async () => {},
+        stampMode: async (organizationId, mode) => {
+          stamps.push(`${organizationId}:${mode}`);
+        },
+      },
+      tiers: TIERS,
+      free: FREE,
+      now: () => NOW,
+      billingMode: "live",
+    });
+
+    await licence.project(view());
+    assert.deepEqual(stamps, [`${ORG}:live`]);
+  });
+
+  it("should stamp nothing when the store records no universe", async () => {
+    let stamped = 0;
+    const licence = createLicenceProjection({
+      rows: {
+        upsert: async () => {},
+        stampMode: async () => {
+          stamped += 1;
+        },
+      },
+      tiers: TIERS,
+      free: FREE,
+      now: () => NOW,
+    });
+
+    await licence.project(view());
+    assert.equal(stamped, 0);
+  });
+
+  it("should stamp nothing when a licence is released", async () => {
+    // A released licence belongs to an organization whose subscription row is stale or
+    // gone, and stamping it would claim a universe for a subscription nobody pays for.
+    const stamps: string[] = [];
+    const licence = createLicenceProjection({
+      rows: {
+        upsert: async () => {},
+        stampMode: async (organizationId, mode) => {
+          stamps.push(`${organizationId}:${mode}`);
+        },
+      },
+      tiers: TIERS,
+      free: FREE,
+      now: () => NOW,
+      billingMode: "live",
+    });
+
+    await licence.release(ORG);
+    assert.deepEqual(stamps, []);
+  });
+
+  it("should report a failed stamp instead of throwing through the webhook", async () => {
+    const failures: string[] = [];
+    const licence = createLicenceProjection({
+      rows: {
+        upsert: async () => {},
+        stampMode: async () => {
+          throw new BillingError("invalid-config", "the stamp failed");
+        },
+      },
+      tiers: TIERS,
+      free: FREE,
+      now: () => NOW,
+      billingMode: "test",
+      onError: (error, context) => {
+        failures.push(`${context.organizationId}:${(error as Error).message}`);
+      },
+    });
+
+    const row = await licence.project(view());
+    assert.equal(row.tier, "personal");
+    assert.deepEqual(failures, [`${ORG}:the stamp failed`]);
+  });
+
   it("should report a failed write instead of throwing through the webhook", async () => {
     const failures: string[] = [];
     const licence = createLicenceProjection({

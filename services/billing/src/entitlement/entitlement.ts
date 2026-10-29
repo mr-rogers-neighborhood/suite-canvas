@@ -42,6 +42,15 @@ export interface SubscriptionRow {
    * already collected for, so the customer keeps it until the row turns `canceled`.
    */
   cancelAtPeriodEnd: boolean;
+  /**
+   * The Stripe universe this row was recorded in (`test` or `live`), or null when the
+   * row predates `0012_subscription_billing_mode.sql`.
+   *
+   * The two universes share no ids, so an `active` row from the other one is a
+   * subscription the current deployment cannot bill, cancel or open a portal for. It is
+   * not a plan.
+   */
+  billingMode?: string | null;
 }
 
 /** Where a subscription row comes from. One implementation today: Postgres. */
@@ -87,17 +96,46 @@ export function entitlementFor(
   row: SubscriptionRow | null,
   tiers: TierTable,
   now: number,
+  mode?: string | null,
 ): Entitlement {
   if (row === null || !isLive(row, now)) return freeEntitlement;
+  if (!recordedHere(row.billingMode, mode)) return freeEntitlement;
   const plan = tierTableByTier(tiers).get(row.plan.trim().toLowerCase());
   if (plan === undefined) return freeEntitlement;
   return { tier: plan.tier, limits: limitsOf(plan) };
+}
+
+/**
+ * Whether a row was recorded in the universe this process sells in.
+ *
+ * A row with no stamp, or a caller that names no mode, answers yes: the unknown case is
+ * every row written before the column existed, and refusing it would cut off a paying
+ * customer over a migration rather than over a payment. Only a stamp that disagrees with
+ * the mode is a refusal, and that case is exactly the one worth refusing: a test-mode
+ * subscription granting live sync.
+ */
+function recordedHere(
+  recorded: string | null | undefined,
+  mode: string | null | undefined,
+): boolean {
+  const stamp = typeof recorded === "string" ? recorded.trim().toLowerCase() : "";
+  const current = typeof mode === "string" ? mode.trim().toLowerCase() : "";
+  if (stamp.length === 0 || current.length === 0) return true;
+  return stamp === current;
 }
 
 export interface EntitlementReaderDeps {
   subscriptions: OrganizationSubscriptions;
   tiers: TierTable;
   now?: () => number;
+  /**
+   * The mode this process sells in, so a row from the other universe is not a plan.
+   *
+   * A value rather than a function: billing is read at boot and a process that has spent
+   * one mode cannot honestly describe another, which is what the panel's "restart to
+   * apply" marker says in the same words.
+   */
+  mode?: string | null;
 }
 
 /** Binds the row source and the table into the read the auth lane injects. */
@@ -105,6 +143,11 @@ export function createEntitlementReader(deps: EntitlementReaderDeps): Organizati
   const now = deps.now ?? Date.now;
   return {
     forOrganization: async (organizationId) =>
-      entitlementFor(await deps.subscriptions.forOrganization(organizationId), deps.tiers, now()),
+      entitlementFor(
+        await deps.subscriptions.forOrganization(organizationId),
+        deps.tiers,
+        now(),
+        deps.mode,
+      ),
   };
 }

@@ -214,6 +214,12 @@ export function licenceRowFor(input: LicenceRowInput): LicenceRow {
 /** Where a licence row goes. One implementation today: Postgres. */
 export interface LicenceRows {
   upsert: (row: LicenceRow) => Promise<void>;
+  /**
+   * Records the Stripe universe the subscription row was written in, so the entitlement
+   * read can refuse a row the current mode cannot bill. Optional because a store that
+   * only holds licences has nothing to stamp and every row then reads as unknown.
+   */
+  stampMode?: (organizationId: string, mode: string) => Promise<void>;
 }
 
 /**
@@ -241,6 +247,17 @@ export const UPSERT_LICENCE_SQL = `
         recorded_at = now()
 `;
 
+/**
+ * Writes the universe beside the subscription, so a later mode switch has something to
+ * compare. The plugin's own writes to the row do not name this column, so a stamp
+ * survives them; a plugin that later starts naming it would need this statement revisited.
+ */
+export const STAMP_SUBSCRIPTION_MODE_SQL = `
+  UPDATE "subscription"
+     SET "billing_mode" = $2
+   WHERE "referenceId" = $1
+`;
+
 /** The statement's parameters, in the order {@link UPSERT_LICENCE_SQL} binds them. */
 export function licenceRowValues(row: LicenceRow): readonly unknown[] {
   return [
@@ -260,6 +277,9 @@ export function postgresLicenceRows(query: Queryable): LicenceRows {
   return {
     upsert: async (row) => {
       await query.query(UPSERT_LICENCE_SQL, licenceRowValues(row));
+    },
+    stampMode: async (organizationId, mode) => {
+      await query.query(STAMP_SUBSCRIPTION_MODE_SQL, [organizationId, mode]);
     },
   };
 }
@@ -289,6 +309,15 @@ export interface LicenceProjectionDeps {
    * repairs the row.
    */
   onError?: (error: unknown, context: { organizationId: string }) => void;
+  /**
+   * The mode this process sells in, stamped beside every licence it projects.
+   *
+   * Absent means the store records no universe, and every row then reads as unknown,
+   * which the entitlement read honours. A test subscription granting live sync is what
+   * the stamp exists to stop, and it is stamped from the event's own universe: the
+   * webhook that delivered it was signed by the active one.
+   */
+  billingMode?: string | null;
 }
 
 /**
@@ -319,9 +348,30 @@ export function createLicenceProjection(deps: LicenceProjectionDeps): LicencePro
     return row;
   };
 
+  /**
+   * Stamps the universe on the subscription row, after the licence it just wrote.
+   *
+   * Not part of {@link write} because only a subscription has a universe: a released
+   * licence belongs to an organization whose row is stale or gone, and stamping that row
+   * would claim a mode for a subscription nobody is paying for.
+   */
+  const stamp = async (organizationId: string): Promise<void> => {
+    const mode = deps.billingMode;
+    if (mode === undefined || mode === null || deps.rows.stampMode === undefined) return;
+    try {
+      await deps.rows.stampMode(organizationId, mode);
+    } catch (error) {
+      deps.onError?.(error, { organizationId });
+    }
+  };
+
   return {
     rowFor,
-    project: async (subscription) => write(rowFor(subscription.organizationId, subscription)),
+    project: async (subscription) => {
+      const row = await write(rowFor(subscription.organizationId, subscription));
+      await stamp(subscription.organizationId);
+      return row;
+    },
     release: async (organizationId) => write(rowFor(organizationId, null)),
   };
 }

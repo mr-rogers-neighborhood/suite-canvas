@@ -90,6 +90,39 @@ describe("entitlementFor", () => {
     }
   });
 
+  it("should refuse a row recorded in the other Stripe universe", () => {
+    // The reported defect: a subscription taken out in test mode stayed `active` when the
+    // deployment switched to live, so the token granted live sync for a card Stripe live
+    // had never seen and a portal it could not open.
+    assert.deepEqual(entitlementFor(row({ billingMode: "test" }), TIERS, NOW, "live"), {
+      tier: FREE_TIER,
+      limits: {},
+    });
+  });
+
+  it("should grant a row recorded in the universe this process sells in", () => {
+    assert.deepEqual(entitlementFor(row({ billingMode: "live" }), TIERS, NOW, "live"), {
+      tier: "personal",
+      limits: PERSONAL_LIMITS,
+    });
+  });
+
+  it("should honour a row written before the column existed", () => {
+    // A null stamp is every row preceding `0012_subscription_billing_mode.sql`. Refusing
+    // it would cut off a paying customer over a migration rather than over a payment.
+    assert.deepEqual(entitlementFor(row({ billingMode: null }), TIERS, NOW, "live"), {
+      tier: "personal",
+      limits: PERSONAL_LIMITS,
+    });
+  });
+
+  it("should not compare when the caller names no mode", () => {
+    assert.deepEqual(entitlementFor(row({ billingMode: "test" }), TIERS, NOW), {
+      tier: "personal",
+      limits: PERSONAL_LIMITS,
+    });
+  });
+
   it("should match the plan name whatever case Stripe stored", () => {
     assert.equal(entitlementFor(row({ plan: "Personal" }), TIERS, NOW).tier, "personal");
   });
@@ -124,6 +157,17 @@ describe("createEntitlementReader", () => {
     const reader = createEntitlementReader({
       tiers: TIERS,
       subscriptions: { forOrganization: async () => null },
+    });
+
+    assert.deepEqual(await reader.forOrganization("org_1"), freeEntitlement);
+  });
+
+  it("should answer free for a row stamped in the other universe", async () => {
+    const reader = createEntitlementReader({
+      tiers: TIERS,
+      now: () => NOW,
+      mode: "live",
+      subscriptions: { forOrganization: async () => row({ billingMode: "test" }) },
     });
 
     assert.deepEqual(await reader.forOrganization("org_1"), freeEntitlement);

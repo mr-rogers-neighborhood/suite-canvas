@@ -46,6 +46,7 @@ export {
   licenceRowValues,
   type PluginSubscription,
   postgresLicenceRows,
+  STAMP_SUBSCRIPTION_MODE_SQL,
   type SubscriptionView,
   subscriptionViewOf,
   UPSERT_LICENCE_SQL,

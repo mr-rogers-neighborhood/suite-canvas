@@ -445,6 +445,15 @@ export interface TierPartsDeps {
   free: FreeLicenceTier;
   now?: () => number;
   onProjectionError?: (error: unknown, context: { organizationId: string }) => void;
+  /**
+   * The mode this process sells in.
+   *
+   * The token's read refuses a subscription row stamped in the other universe, and the
+   * projection stamps every row it writes with this one. Both readers come out of
+   * `entitlementFor`, so the seat check and the claim cannot disagree about a row the
+   * current mode could not bill.
+   */
+  mode?: string | null;
 }
 
 /**
@@ -461,6 +470,7 @@ export function tierParts(deps: TierPartsDeps): TierParts {
       subscriptions: postgresSubscriptions(deps.queryable),
       tiers: deps.tiers,
       ...(deps.now === undefined ? {} : { now: deps.now }),
+      ...(deps.mode === undefined ? {} : { mode: deps.mode }),
     }),
     licence: createLicenceProjection({
       rows: postgresLicenceRows(deps.queryable),
@@ -468,6 +478,7 @@ export function tierParts(deps: TierPartsDeps): TierParts {
       free: deps.free,
       ...(deps.now === undefined ? {} : { now: deps.now }),
       ...(deps.onProjectionError === undefined ? {} : { onError: deps.onProjectionError }),
+      ...(deps.mode === undefined ? {} : { billingMode: deps.mode }),
     }),
   };
 }
@@ -504,6 +515,7 @@ export async function composeBilling(env: Env, logger: Logger): Promise<BillingC
     queryable,
     tiers,
     free: FREE_LICENCE_TIER,
+    mode: stripeMode(env),
     onProjectionError: (error, { organizationId }) => {
       // The plugin answers the webhook 200 whatever a hook does, so this log line is the
       // only evidence a licence write failed. The next lifecycle event repairs it.

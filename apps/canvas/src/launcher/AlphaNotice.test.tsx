@@ -20,10 +20,12 @@ describe("the alpha notice", () => {
     const notice = screen.getByTestId("alpha-notice");
     expect(notice).toHaveTextContent("alpha software");
     expect(notice).toHaveTextContent("sync, collaboration and file uploads");
-    expect(notice).toHaveTextContent("public within about two weeks");
+    // The source is public now, so the sentence that promised it would be is gone; the door
+    // to it is a link instead, and it is checked below.
+    expect(notice).not.toHaveTextContent("within about two weeks");
     expect(notice).toHaveTextContent("run it yourself");
     // The expensive discovery: a workspace nobody claimed is in this browser only.
-    expect(notice).toHaveTextContent("lives in this browser");
+    expect(notice).toHaveTextContent("saved in this browser");
     expect(notice).toHaveTextContent("Export is always available");
   });
 
@@ -31,10 +33,22 @@ describe("the alpha notice", () => {
     render(<AlphaNotice forceOpen />);
 
     const notice = screen.getByTestId("alpha-notice");
-    expect(notice).toHaveTextContent("somebody gave you a discount code");
-    expect(notice).toHaveTextContent("cancelled from the portal");
+    expect(notice).toHaveTextContent("a discount code, if you have one");
+    expect(notice).toHaveTextContent("cancel from the portal");
     // Paying is offered as support, not as a condition of using the product.
-    expect(notice).toHaveTextContent("Paying is optional");
+    expect(notice).toHaveTextContent("paying is optional");
+  });
+
+  it("links to the source, opened away from the app", () => {
+    render(<AlphaNotice forceOpen />);
+
+    const links = screen.getAllByTestId(/alpha-notice-(github|repository)/u);
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link.getAttribute("href")).toMatch(/^https:\/\/github\.com\//u);
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noreferrer");
+    }
   });
 
   it("stays away once it has been read", () => {

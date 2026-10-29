@@ -92,7 +92,7 @@ describe("the plan surface", () => {
     });
     render(<PlanPanel />);
 
-    expect(await screen.findByTestId("plan-test-mode")).toHaveTextContent("no money moves");
+    expect(await screen.findByTestId("plan-test-mode")).toHaveTextContent("No money is taken");
   });
 
   it("says the plan appears once signed in", () => {
@@ -170,7 +170,9 @@ describe("the plan surface", () => {
     });
     render(<PlanPanel />);
 
-    expect(await screen.findByTestId("plan-needs-account")).toHaveTextContent("make one first");
+    expect(await screen.findByTestId("plan-needs-account")).toHaveTextContent(
+      "A plan belongs to an account. Make one first",
+    );
     expect(screen.queryByTestId("plan-checkout-personal")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("plan-create-account"));
@@ -178,13 +180,15 @@ describe("the plan surface", () => {
     expect(useAccountStore.getState().dialogOpen).toBe(true);
   });
 
-  it("names the price table when a deployment sells nothing", async () => {
+  it("says plans are unavailable, without naming a variable a reader cannot set", async () => {
     listPlans.mockResolvedValue({ ok: true, value: { mode: "test", plans: [] } });
     render(<PlanPanel />);
 
-    expect(await screen.findByTestId("plan-catalogue-empty")).toHaveTextContent(
-      "STRIPE_PRICE_TIERS",
-    );
+    const empty = await screen.findByTestId("plan-catalogue-empty");
+    expect(empty).toHaveTextContent("Plans are not available right now");
+    // The operator's own instructions belong in the runbook. A customer reading this panel
+    // can do nothing with a variable name except wonder whether the fault is theirs.
+    expect(empty).not.toHaveTextContent("STRIPE_PRICE_TIERS");
   });
 
   it("says the account service did not answer, and offers a retry", async () => {
@@ -262,12 +266,12 @@ describe("what a plan card says", () => {
     expect(within(card).queryByRole("button")).toBeNull();
   });
 
-  it("says a plan admits one member, and how collaboration works without a seat", async () => {
+  it("says a plan is for one person, and how collaboration works without one", async () => {
     listPlans.mockResolvedValue({ ok: true, value: { mode: "live", plans: [priced] } });
     render(<PlanPanel />);
 
     const caveats = await screen.findByTestId("plan-caveats");
-    expect(caveats).toHaveTextContent("admits one member today");
+    expect(caveats).toHaveTextContent("A plan is for one person today");
     expect(caveats).toHaveTextContent("Share links");
     expect(caveats).toHaveTextContent("cancelled from the portal");
   });

@@ -210,6 +210,31 @@ describe("WorkspaceLauncher identity", () => {
     const dialog = await screen.findByTestId("sign-in-dialog");
     expect(dialog).toHaveAttribute("data-mode", "sign-up");
   });
+
+  it("offers the same pair beside a list of local workspaces, with no account yet", async () => {
+    seedRecent();
+    render(<WorkspaceLauncher />);
+
+    const prompt = await screen.findByTestId("launcher-account-prompt");
+    expect(prompt).toHaveTextContent("Saved in this browser only.");
+
+    fireEvent.click(screen.getByTestId("launcher-account-prompt-create"));
+    const dialog = await screen.findByTestId("sign-in-dialog");
+    expect(dialog).toHaveAttribute("data-mode", "sign-up");
+  });
+
+  it("puts the source one press away, in a new tab, from the header and the notice", () => {
+    render(<WorkspaceLauncher />);
+
+    // The button beside the two workspace doors, and the copyright line, which is the
+    // spot somebody looks for "who made this".
+    for (const id of ["launcher-github", "launcher-repository"]) {
+      const link = screen.getByTestId(id);
+      expect(link.getAttribute("href")).toMatch(/^https:\/\/github\.com\//u);
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noreferrer");
+    }
+  });
 });
 
 describe("WorkspaceLauncher import", () => {

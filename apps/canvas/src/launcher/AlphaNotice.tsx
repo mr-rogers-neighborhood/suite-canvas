@@ -1,20 +1,19 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "../dialogs/useFocusTrap";
+import { repositoryUrl } from "../repository";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { alphaNoticeSeen, rememberAlphaNotice } from "./alphaNotice";
 
 /**
  * What a reader should know before they start working, on the first visit.
  *
- * The product is alpha and the page has to say so where somebody will read it rather than
- * in a footer or a changelog. Three facts, in the order they matter to a new reader: what
- * is rough, what money buys, and where the work actually lives. The last one is the least
- * obvious and the most expensive to discover late, because a workspace on this deployment
- * is a browser's copy until a subscription puts it in an account.
+ * Three facts, in the order they matter to a new reader: what is rough, what money buys, and where
+ * the work actually lives. The last one is the least obvious and the most expensive to discover
+ * late, because a workspace here is a browser's copy until a plan puts it in an account.
  *
- * It appears once per browser, and the dismissal is remembered here rather than in the
- * account, which is what makes it appear again on a new machine even for the same person.
+ * It appears once per browser, and the dismissal is remembered here rather than in the account,
+ * which is what makes it appear again on a new machine even for the same person.
  */
 export interface AlphaNoticeProps {
   /** Opens the plan surface. Absent when this build has no account service to sell from. */
@@ -60,33 +59,51 @@ export function AlphaNotice({ onSeePlans, forceOpen = false }: AlphaNoticeProps)
 
         <p className="mt-2 text-[var(--ink)]">
           A subscription is early access to sync, collaboration and file uploads. The canvas, the
-          cards and export work without one, on this device. Paying is optional and it is what funds
-          the work; nothing here pretends otherwise.
+          cards and export work without one, on this device, and paying is optional.
         </p>
 
         <p className="mt-2 text-[var(--ink-muted)]">
-          The source goes public within about two weeks. After that you can run it yourself, so a
-          subscription is a way to support the project rather than the only way to use it.
+          It is open source under the MIT licence, so you can also{" "}
+          <a
+            data-testid="alpha-notice-repository"
+            className="underline underline-offset-2 hover:text-[var(--ink)]"
+            href={repositoryUrl()}
+            target="_blank"
+            rel="noreferrer"
+          >
+            read the code or run it yourself
+          </a>
+          . That is free and needs no account.
         </p>
 
         <p className="mt-2 text-[var(--ink-muted)]">
-          <strong className="font-medium text-[var(--ink)]">Your work lives in this browser</strong>{" "}
-          until a plan puts it in your account, so clearing site data takes it with it. Export is
-          always available and never asks for a plan.
+          <strong className="font-medium text-[var(--ink)]">
+            Your work is saved in this browser
+          </strong>{" "}
+          until you sync it, so clearing site data removes it. Export is always available and never
+          asks for a plan.
         </p>
 
         <p className="mt-2 text-[var(--ink-muted)]">
-          Payments are real: Stripe handles the card on its own page and this deployment never sees
-          it. A monthly plan, cancelled from the portal at any time, and if somebody gave you a
-          discount code you enter it on that same page.
+          Cards are handled by Stripe on its own page. Plans are monthly and cancel from the portal,
+          and a discount code, if you have one, is entered there too.
         </p>
 
         <p className="mt-2 text-[var(--ink-muted)]">
-          When something breaks, the feedback bubble in the corner sends it straight here. That is
+          When something breaks, the feedback bubble in the corner sends it straight to us. That is
           the most useful thing you can do with alpha software.
         </p>
 
         <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+          <a
+            data-testid="alpha-notice-github"
+            className="mr-auto rounded-lg border border-[var(--hairline)] px-3 py-1.5 text-[11px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+            href={repositoryUrl()}
+            target="_blank"
+            rel="noreferrer"
+          >
+            View on GitHub
+          </a>
           {onSeePlans === undefined ? null : (
             <button
               type="button"

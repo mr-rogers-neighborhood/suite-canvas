@@ -182,7 +182,7 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
       </h4>
       {quota.length === 0 ? (
         <p data-testid="plan-no-limits" className="mt-1 leading-5 text-[var(--ink-muted)]">
-          This deployment keeps no entitlement to show.
+          Nothing to show yet.
         </p>
       ) : (
         <dl data-testid="plan-quota" className="mt-1 divide-y divide-[var(--hairline)]">
@@ -207,7 +207,7 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
         <p className="mt-1 text-[var(--ink-muted)]">Reading the subscription…</p>
       ) : subscription === null ? (
         <p data-testid="plan-no-subscription" className="mt-1 leading-5 text-[var(--ink-muted)]">
-          No subscription is attached to this workspace's organization yet.
+          You are on the free plan.
         </p>
       ) : (
         <p data-testid="plan-subscription" className="mt-1 leading-5">
@@ -224,7 +224,7 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
           data-testid="plan-test-mode"
           className="mt-3 rounded-lg border border-[var(--hairline)] px-2 py-1.5 text-[11px] text-[var(--ink-muted)]"
         >
-          Test mode: these are Stripe test cards and no money moves.
+          Test mode: pay with a Stripe test card. No money is taken.
         </p>
       ) : null}
 
@@ -235,8 +235,8 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
         // reads as a fault rather than as the one missing step.
         <div className="mt-3" data-testid="plan-needs-account">
           <p className="leading-5 text-[var(--ink-muted)]">
-            A plan belongs to an account, so make one first. Everything already on this device stays
-            here, and signing in does not move it.
+            A plan belongs to an account. Make one first, and everything already on this device
+            stays here: signing in does not move it.
           </p>
           <button
             type="button"
@@ -267,8 +267,7 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
           </div>
         ) : answered ? (
           <p data-testid="plan-catalogue-empty" className="mt-3 leading-5 text-[var(--ink-muted)]">
-            This deployment has no plans configured. An operator sets `STRIPE_PRICE_TIERS` and
-            restarts the control plane.
+            Plans are not available right now. Try again in a moment.
           </p>
         ) : null
       ) : subscription === null ? (
@@ -295,7 +294,7 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
 
       {subscription === null ? (
         <p data-testid="plan-no-customer" className="mt-3 leading-5 text-[var(--ink-muted)]">
-          Choosing a plan creates the billing customer this deployment charges.
+          Choosing a plan opens Stripe's checkout, where the card is entered.
         </p>
       ) : (
         <button

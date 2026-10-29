@@ -96,7 +96,7 @@ export async function ensureOrganization(
       return {
         ok: false,
         code: "unauthorized",
-        message: "A plan belongs to an account, so make one first.",
+        message: "A plan belongs to an account. Make one first.",
       };
     }
     if (session.activeOrganizationId !== null) {

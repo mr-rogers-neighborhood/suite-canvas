@@ -170,7 +170,7 @@ export function SyncPanel({
           {workspaceId ? (
             <div
               className="flex items-baseline justify-between gap-3"
-              title="The relay's name for this workspace"
+              title="The name this workspace has on the server"
             >
               <span className="shrink-0 text-[var(--ink-muted)]">Room</span>
               <span className="min-w-0 truncate text-right font-mono text-[10px] text-[var(--ink-muted)]">

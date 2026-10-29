@@ -19,7 +19,7 @@ function size(value: unknown): number | null {
 
 /** The words a local-only image shows. Collaboration must never be silently assumed. */
 export const PENDING_UPLOAD_NOTICE =
-  "Not uploaded yet — collaborators will see a placeholder until it reaches the relay.";
+  "Not uploaded yet. Collaborators see a placeholder until it is.";
 
 const FRAME_STYLE = {
   display: "inline-flex",

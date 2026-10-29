@@ -31,6 +31,7 @@ import {
 } from "../session/workspaceTransfer";
 import { AlphaNotice } from "./AlphaNotice";
 import { ImportMenu } from "./ImportMenu";
+import { RepositoryButton, RepositoryFooter, SavedLocallyPrompt } from "./LauncherChrome";
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
   loadStarterTemplates,
@@ -139,6 +140,12 @@ export function WorkspaceLauncher() {
   const [invitationId, setInvitationId] = useState<string | null>(null);
   // `null` until the account answers, and stays `null` when there is no session.
   const { account } = useAccountWorkspaces();
+  // The store's phase, not `account === null`: the account read starts empty, and an
+  // invitation's first paint is not a reason to tell a signed-in person to sign up. A
+  // standalone build has no account service at all, so it has no door to offer.
+  const signedOut =
+    useAccountStore((state) => state.phase) === "signed-out" &&
+    import.meta.env.VITE_SUITE_MODE !== "standalone";
   const [bringDismissed, setBringDismissed] = useState(false);
 
   useEffect(() => {
@@ -414,11 +421,9 @@ export function WorkspaceLauncher() {
             <div>
               <h1 className="text-[34px] font-semibold tracking-tight">Suite</h1>
               <p className="mt-1 max-w-[420px] text-[13px] leading-5 text-[var(--ink-muted)]">
-                <i>A structured, local-first, collaborative canvas.</i>
+                A local-first canvas for connected thinking.
                 <br />
-                <br />
-                You can open a workspace file, pick from a list of recent workspaces, or create a
-                new one.
+                Open a workspace file, pick up a recent one, or start something new.
               </p>
             </div>
             <span aria-hidden="true" className="hidden sm:block">
@@ -445,6 +450,7 @@ export function WorkspaceLauncher() {
             >
               Open workspace file…
             </button>
+            <RepositoryButton />
             <input
               ref={fileInput}
               type="file"
@@ -645,6 +651,8 @@ export function WorkspaceLauncher() {
               </button>
             </div>
           ) : null}
+
+          {signedOut && recents.length > 0 ? <SavedLocallyPrompt /> : null}
 
           {recents.length === 0 ? (
             <p className="mt-4 rounded-xl border border-dashed border-[var(--hairline)] px-4 py-8 text-center text-[13px] text-[var(--ink-muted)]">
@@ -848,9 +856,7 @@ export function WorkspaceLauncher() {
           )}
         </section>
 
-        <footer className="border-t border-[var(--hairline)] px-8 py-3 text-[11px] text-[var(--ink-muted)]">
-          Fully open-source and MIT Licensed (c) {new Date().getFullYear()} Suite
-        </footer>
+        <RepositoryFooter />
       </div>
       {deleteTarget ? (
         <Suspense fallback={null}>

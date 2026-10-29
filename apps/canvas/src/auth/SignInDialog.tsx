@@ -266,13 +266,13 @@ export function SignInDialog({
             data-testid="sign-in-checking"
             className="mt-2 text-[12px] leading-5 text-[var(--ink-muted)]"
           >
-            Asking this deployment whether it has accounts…
+            Checking whether accounts are available…
           </p>
         ) : null}
 
         {availability === "unavailable" ? (
           <div data-testid="auth-unavailable" className="mt-2 text-[12px] leading-5">
-            <p className="text-[var(--ink)]">Accounts are not available on this deployment.</p>
+            <p className="text-[var(--ink)]">Accounts are not available here.</p>
             <p className="mt-1.5 text-[var(--ink-muted)]">
               Nothing here changes: this workspace is saved in this browser, and editing, import and
               export keep working without an account.

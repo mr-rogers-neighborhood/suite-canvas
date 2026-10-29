@@ -197,7 +197,7 @@ function sentenceOf(facts: SyncFacts, situation: SyncSituation): string {
     case "expired":
       return EXPIRED_SENTENCE;
     case "syncing":
-      return "Catching up with the relay.";
+      return "Catching up.";
     case "problem":
       return refusalSentence(facts.reason);
     case "synced":

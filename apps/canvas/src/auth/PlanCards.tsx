@@ -19,7 +19,7 @@ import { humanBytes } from "./entitlement";
 /** What a tier is for, in one sentence. Unknown tiers get a sentence built from their limits. */
 const PURPOSE: Readonly<Record<string, string>> = {
   personal: "For one person and a few workspaces, on every device you sign in on.",
-  organization: "For a team and a lot of workspaces, with room to grow.",
+  organization: "For a lot of projects and room to grow.",
 };
 
 function purposeOf(plan: BillingPlan): string {
@@ -28,7 +28,7 @@ function purposeOf(plan: BillingPlan): string {
   const workspaces = plan.limits.workspaces;
   return typeof workspaces === "number" && workspaces > 0
     ? `For ${workspaces} synced ${workspaces === 1 ? "workspace" : "workspaces"}.`
-    : "A plan for this deployment.";
+    : "A plan for this server.";
 }
 
 const CURRENCY_SYMBOL: Readonly<Record<string, string>> = {
@@ -162,8 +162,8 @@ export function SelfHostCard() {
       <h4 className="text-[12px] font-semibold text-[var(--ink)]">Self-host</h4>
       <span className="mt-1 text-[12px] text-[var(--ink)]">Free, forever</span>
       <p className="mt-1 leading-5 text-[var(--ink-muted)]">
-        Run it on your own machine or server. No account, no plan and no licence: the compose file,
-        the proxy and the backup scripts are in the repository.
+        Run it on your own machine or server. No account, no plan and no licence, and the install is
+        one file.
       </p>
       <a
         data-testid="plan-self-host-link"
@@ -191,12 +191,12 @@ export function PlanCaveats() {
         neither does self-hosting.
       </p>
       <p className="mt-1.5">
-        A plan admits one member today. Share links let other people edit or view a workspace
-        without a seat, and member seats are not sold yet.
+        A plan is for one person today. Share links let other people edit or view a workspace
+        without one of their own.
       </p>
       <p className="mt-1.5">
-        Billed monthly through Stripe, cancelled from the portal. A cancellation holds the plan to
-        the end of the period you paid for.
+        Billed monthly, cancelled from the portal. Cancelling keeps the plan until the end of the
+        month you paid for.
       </p>
     </div>
   );

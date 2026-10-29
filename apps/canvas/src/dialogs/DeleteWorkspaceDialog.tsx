@@ -21,11 +21,11 @@ export interface DeleteWorkspaceDialogProps {
 }
 
 const RELAY_COPY =
-  "This deletes the relay's copy and this browser's copy: the document and its share links. Share links stop working.";
+  "This deletes the server's copy and this browser's copy: the document and its share links. Share links stop working.";
 const RELAY_LIMITS =
-  "Other devices that have already opened this workspace keep their offline copy until they next open it. The relay will have nothing to sync then, and they will be told this workspace no longer exists.";
+  "Other devices that have already opened this workspace keep their offline copy until they next open it. There will be nothing to sync then, and they will be told this workspace no longer exists.";
 const LOCAL_COPY =
-  "This deletes this browser's copy: the cached document and the licence key. There is no server copy — this browser is the only place this workspace exists.";
+  "This deletes this browser's copy of the document. There is no server copy, so this browser is the only place this workspace exists.";
 const LOCAL_LIMITS =
   "Export a backup first if you might want it again. Other browsers keep whatever they already have.";
 

@@ -17,7 +17,9 @@ const PNG_BASE64 =
 
 /** Pasts an 8x8 PNG into a card body, so the workspace has one image attachment. */
 async function pastePng(page: Page, card: Locator): Promise<void> {
-  await card.getByTestId("card-body").dblclick();
+  // One click: the body is where a reader writes, so pressing it starts the
+  // editor rather than selecting the card first.
+  await card.getByTestId("card-body").click();
   await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(1);
   await page.waitForTimeout(250);
   await page.evaluate((base64) => {

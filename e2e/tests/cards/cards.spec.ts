@@ -49,19 +49,23 @@ test("moves a card by dragging its header", { tag: "@smoke" }, async ({ page }) 
   await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(0);
 });
 
-test("opens card info on a click and edits the title on a double click", { tag: "@smoke" }, async ({
-  page,
-}) => {
+test("opens card info on a click, and the title edits on the same click", {
+  tag: "@smoke",
+}, async ({ page }) => {
   await page.goto(workspaceUrl("title"));
   const card = cards(page).first();
   const box = await card.boundingBox();
   if (!box) throw new Error("card not visible");
 
-  await page.mouse.click(box.x + 80, box.y + 24);
+  // The gutter beside the glyph reads the card: the drawer opens and nothing is
+  // being typed into.
+  await page.mouse.click(box.x + 24, box.y + 24);
   await expect(page.getByTestId("card-inspector")).toBeVisible();
   await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(0);
 
-  await page.mouse.dblclick(box.x + 80, box.y + 24);
+  // The title itself edits on one click: double-click-to-edit made the common
+  // action the harder one, and the press that did nothing still ate the gesture.
+  await page.mouse.click(box.x + 80, box.y + 24);
   await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
 
   await page.keyboard.type("Renamed card");
@@ -70,9 +74,7 @@ test("opens card info on a click and edits the title on a double click", { tag: 
   );
 });
 
-test("double-clicks the body to edit and drags the body to move", { tag: "@smoke" }, async ({
-  page,
-}) => {
+test("clicks the body to edit and drags the body to move", { tag: "@smoke" }, async ({ page }) => {
   await page.goto(workspaceUrl("body-click"));
   const card = cards(page).first();
   const body = card.getByTestId("card-body");
@@ -80,7 +82,9 @@ test("double-clicks the body to edit and drags the body to move", { tag: "@smoke
   if (!bodyBox) throw new Error("card body not visible");
   const point = { x: bodyBox.x + 40, y: bodyBox.y + 28 };
 
-  await page.mouse.dblclick(point.x, point.y);
+  // One click, like the title: the body is where a reader writes, so pressing it
+  // starts the editor rather than selecting the card first.
+  await page.mouse.click(point.x, point.y);
   await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(1);
   await page.keyboard.type("Body click");
   await expect(card.getByTestId("card-body")).toHaveText("Body click");
@@ -116,45 +120,51 @@ async function headerGrabPoint(card: Locator): Promise<Point> {
   return { x: header.x + header.width * 0.3, y: header.y + 3 };
 }
 
-test("drags from the header while the title or body is being edited", { tag: "@smoke" }, async ({
+/** Drags the card by its header padding and asserts it actually moved. */
+async function dragByHeader(page: Page, card: Locator): Promise<void> {
+  const before = await card.boundingBox();
+  if (!before) throw new Error("card not visible");
+  const point = await headerGrabPoint(card);
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  await page.mouse.move(point.x + 140, point.y + 80, { steps: 12 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => {
+      const after = await card.boundingBox();
+      return after ? Math.round(after.x - before.x) : 0;
+    })
+    .toBeGreaterThan(80);
+}
+
+test("drags from the header while the title is being edited", { tag: "@smoke" }, async ({
   page,
 }) => {
-  await page.goto(workspaceUrl("drag-while-editing"));
+  await page.goto(workspaceUrl("drag-title"));
   const card = cards(page).first();
-  const initial = await card.boundingBox();
-  if (!initial) throw new Error("card not visible");
+  const box = await card.boundingBox();
+  if (!box) throw new Error("card not visible");
 
-  await page.mouse.dblclick(initial.x + 80, initial.y + 24);
+  await page.mouse.click(box.x + 80, box.y + 24);
   await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
   await page.keyboard.type("Editing");
 
-  const headerPoint = await headerGrabPoint(card);
-  await page.mouse.move(headerPoint.x, headerPoint.y);
-  await page.mouse.down();
-  await page.mouse.move(headerPoint.x + 140, headerPoint.y + 80, { steps: 12 });
-  await page.mouse.up();
-  await expect
-    .poll(async () => {
-      const box = await card.boundingBox();
-      return box ? Math.round(box.x - initial.x) : 0;
-    })
-    .toBeGreaterThan(80);
+  // Typing owns the text, not the card: the header's padding still moves it.
+  await dragByHeader(page, card);
+});
 
-  const afterTitle = await card.boundingBox();
-  if (!afterTitle) throw new Error("card not visible");
-  await card.getByTestId("card-body").dblclick();
+test("drags from the header while the body is being edited", { tag: "@smoke" }, async ({
+  page,
+}) => {
+  await page.goto(workspaceUrl("drag-body"));
+  const card = cards(page).first();
+  const body = await card.getByTestId("card-body").boundingBox();
+  if (!body) throw new Error("card body not visible");
+
+  await page.mouse.click(body.x + 40, body.y + 28);
   await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(1);
-  const bodyHeader = await headerGrabPoint(card);
-  await page.mouse.move(bodyHeader.x, bodyHeader.y);
-  await page.mouse.down();
-  await page.mouse.move(bodyHeader.x + 140, bodyHeader.y + 80, { steps: 12 });
-  await page.mouse.up();
-  await expect
-    .poll(async () => {
-      const box = await card.boundingBox();
-      return box ? Math.round(box.x - afterTitle.x) : 0;
-    })
-    .toBeGreaterThan(80);
+
+  await dragByHeader(page, card);
 });
 
 test("resizes a card and projects the resize to a peer", { tag: "@smoke" }, async ({ browser }) => {

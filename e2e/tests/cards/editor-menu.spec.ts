@@ -87,8 +87,10 @@ test("turns `/h1` into a heading", async ({ page }) => {
   await page.keyboard.type("/h1");
   const menu = page.getByTestId("slash-menu");
   await expect(menu).toBeVisible();
+  // The row is named by the mark it makes and hints at what it is for, so `/h1`
+  // finds exactly one row.
   await expect(page.getByTestId("slash-option")).toHaveCount(1);
-  await expect(page.getByTestId("slash-option").first()).toContainText("Heading 1");
+  await expect(page.getByTestId("slash-option").first()).toContainText("H1 heading");
 
   await page.keyboard.press("Enter");
   await expect(menu).toHaveCount(0);
@@ -115,25 +117,27 @@ test("navigates the menu with the arrow keys", async ({ page }) => {
   const card = cards(page).filter({ hasText: "Arrow host" });
   await editBody(page, card);
 
-  // `/` lists every block in order; two downs from the first land on the
-  // bulleted list, which is why the count only guards that the menu is complete.
-  await page.keyboard.type("/");
-  await expect(page.getByTestId("slash-option")).toHaveCount(11);
+  // `/list` matches both lists, so one down is the numbered one: the keys move the
+  // selection, and the row they land on is the row Enter applies.
+  await page.keyboard.type("/list");
+  await expect(page.getByTestId("slash-option")).toHaveCount(2);
+  await expect(page.getByTestId("slash-option").first()).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
-  await expect(page.getByTestId("slash-option").nth(2)).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("slash-option").nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("slash-option").nth(1)).toContainText("Numbered list");
   await page.keyboard.press("Enter");
 
-  await expect(card.getByTestId("card-body").locator("ul li")).toHaveCount(1);
+  await expect(card.getByTestId("card-body").locator("ol li")).toHaveCount(1);
+  await expect(card.getByTestId("card-body").locator("ul li")).toHaveCount(0);
 
   const list = await card
     .getByTestId("card-body")
-    .locator("ul")
+    .locator("ol")
     .evaluate((element) => {
       const style = getComputedStyle(element);
       return { listStyleType: style.listStyleType, paddingLeft: style.paddingLeft };
     });
-  expect(list.listStyleType).toBe("disc");
+  expect(list.listStyleType).toBe("decimal");
   expect(Number.parseFloat(list.paddingLeft)).toBeGreaterThan(0);
 });
 

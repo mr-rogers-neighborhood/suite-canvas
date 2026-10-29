@@ -23,6 +23,9 @@ test("seeds a new card from its type template", async ({ page }) => {
   await expect(cards(page)).toHaveCount(2);
 
   const settings = await openTypes(page, "note");
+  // Template is the third disclosure and starts folded, because writing the
+  // fields is what a type is usually opened for.
+  await settings.getByTestId("type-template-section-toggle").click();
   await expect(settings.getByTestId("type-template-create")).toBeVisible();
   await settings.getByTestId("type-template-create").click();
 
@@ -39,6 +42,7 @@ test("seeds a new card from its type template", async ({ page }) => {
 
   // The editor now names the template instead of offering to create one.
   const reopened = await openTypes(page, "note");
+  await reopened.getByTestId("type-template-section-toggle").click();
   await expect(reopened.getByTestId("type-template-open")).toBeVisible();
   await page.keyboard.press("Escape");
 

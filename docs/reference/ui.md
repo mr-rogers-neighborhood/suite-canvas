@@ -323,7 +323,7 @@ State is never colour alone. The status cursor carries a glyph per purpose and n
 
 Motion is a preference before it is a style. `prefers-reduced-motion` removes the launcher slide, the peer cursor and name-tag entrances, the portal scrim and its own transitions, the tour spotlight travel and the live drag transitions. The reader's `data-motion="reduced"` attribute does the same for every element, including transitions a component declared for itself.
 
-Focus is always visible on interactive elements, and a focusable read-only control is avoided: a card title opens on double-click, and the same button also answers `Enter` and `Space`, so the gesture has a keyboard path.
+Focus is always visible on interactive elements, and a focusable read-only control is avoided: a card title opens on one click, and the same button also answers `Enter` and `Space`, so the gesture has a keyboard path.
 
 ## Tests
 

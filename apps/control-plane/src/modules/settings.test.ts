@@ -6,6 +6,7 @@ import { encryptSetting, isEncryptedSetting } from "@suite/settings";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createLogger } from "../logging.js";
 import { memoryAuditStore } from "./audit.js";
+import type { verifyStripeProfile } from "./auth-billing.js";
 import { publishSessionReader } from "./context.js";
 import { createSettingsModule, SETTINGS_PATH, settingsBody } from "./settings.js";
 
@@ -82,13 +83,30 @@ afterEach(async () => {
 
 let trail: ReturnType<typeof memoryAuditStore> | null = null;
 
-async function start(overrides: Record<string, string> = {}): Promise<void> {
+/**
+ * The Stripe check a test gets when it does not ask for one: nothing was learned, which is
+ * the answer that refuses no write. A test that wants a refusal passes its own.
+ */
+const unreachableCheck = async (env: never, mode: "test" | "live") => ({
+  mode,
+  reachable: false,
+  keyWorks: false,
+  prices: [],
+  problem: `Stripe could not be reached: stub (${String(env !== null)})`,
+  ok: false,
+});
+
+async function start(
+  overrides: Record<string, string> = {},
+  verify: typeof verifyStripeProfile = unreachableCheck as never,
+): Promise<void> {
   trail = memoryAuditStore();
   const module = createSettingsModule({
     env: { SUITE_CONTROL_PLANE_DATABASE_URL: "postgres://stub/suite", ...overrides } as never,
     logger: createLogger(),
     pool: poolDouble(rows) as never,
     audit: trail,
+    verifyProfile: verify,
   });
   const listening = createServer((request: IncomingMessage, response: ServerResponse) => {
     void Promise.resolve(module.handle(request, response))
@@ -109,7 +127,12 @@ async function start(overrides: Record<string, string> = {}): Promise<void> {
   baseUrl = `http://127.0.0.1:${address.port}`;
 }
 
-function call(method: "GET" | "PUT" | "DELETE", path: string, body?: unknown, token = "operator") {
+function call(
+  method: "GET" | "PUT" | "POST" | "DELETE",
+  path: string,
+  body?: unknown,
+  token = "operator",
+) {
   return fetch(`${baseUrl}${path}`, {
     method,
     headers: {
@@ -183,6 +206,113 @@ describe("the settings module", () => {
     const accepted = await call("PUT", `${SETTINGS_PATH}/billing.mode`, { value: "live" });
     expect(accepted.status).toBe(200);
     expect(rows[0]).toMatchObject({ key: "billing.mode", value: "live" });
+  });
+
+  it("refuses a mode whose prices Stripe has never heard of", async () => {
+    // The mistake a copied table makes: everything parses, the key works, and every price
+    // belongs to the other mode. Refusing here is the difference between a bad evening and
+    // a customer whose checkout cannot open.
+    await start(
+      {
+        SUITE_BILLING_ENABLED: "1",
+        SUITE_BILLING_MODE: "test",
+        STRIPE_SECRET_KEY: "sk_test_x",
+        STRIPE_WEBHOOK_SECRET: "whsec_test",
+        STRIPE_PRICE_TIERS:
+          '{"price_solo":{"tier":"solo","workspaces":1,"documentBytes":1,"attachmentBytes":1}}',
+        STRIPE_SECRET_KEY_LIVE: "sk_live_x",
+        STRIPE_WEBHOOK_SECRET_LIVE: "whsec_live",
+        STRIPE_PRICE_TIERS_LIVE:
+          '{"price_solo":{"tier":"solo","workspaces":1,"documentBytes":1,"attachmentBytes":1}}',
+      },
+      async (_env, mode) => ({
+        mode,
+        reachable: true,
+        keyWorks: true,
+        prices: [{ priceId: "price_solo", tier: "solo", exists: false }],
+        problem: "price_solo does not exist in live mode",
+        ok: false,
+      }),
+    );
+
+    const refused = await call("PUT", `${SETTINGS_PATH}/billing.mode`, { value: "live" });
+
+    expect(refused.status, await refused.clone().text()).toBe(400);
+    const body = (await refused.json()) as { error: string; message: string };
+    expect(body.error).toBe("billing-profile-unusable");
+    expect(body.message).toContain("price_solo does not exist in live mode");
+    expect(rows).toHaveLength(0);
+  });
+
+  it("switches when Stripe confirms the key and every price", async () => {
+    await start(
+      {
+        SUITE_BILLING_ENABLED: "1",
+        SUITE_BILLING_MODE: "test",
+        STRIPE_SECRET_KEY_LIVE: "sk_live_x",
+        STRIPE_WEBHOOK_SECRET_LIVE: "whsec_live",
+        STRIPE_PRICE_TIERS_LIVE:
+          '{"price_solo":{"tier":"solo","workspaces":1,"documentBytes":1,"attachmentBytes":1}}',
+      },
+      async (_env, mode) => ({
+        mode,
+        reachable: true,
+        keyWorks: true,
+        prices: [{ priceId: "price_solo", tier: "solo", exists: true }],
+        problem: null,
+        ok: true,
+      }),
+    );
+
+    const accepted = await call("PUT", `${SETTINGS_PATH}/billing.mode`, { value: "live" });
+
+    expect(accepted.status, await accepted.clone().text()).toBe(200);
+    expect(rows[0]).toMatchObject({ key: "billing.mode", value: "live" });
+  });
+
+  it("does not refuse a switch because the network was down", async () => {
+    await start(
+      {
+        SUITE_BILLING_ENABLED: "1",
+        SUITE_BILLING_MODE: "test",
+        STRIPE_SECRET_KEY_LIVE: "sk_live_x",
+        STRIPE_WEBHOOK_SECRET_LIVE: "whsec_live",
+        STRIPE_PRICE_TIERS_LIVE:
+          '{"price_solo":{"tier":"solo","workspaces":1,"documentBytes":1,"attachmentBytes":1}}',
+      },
+      unreachableCheck as never,
+    );
+
+    const accepted = await call("PUT", `${SETTINGS_PATH}/billing.mode`, { value: "live" });
+
+    expect(accepted.status, await accepted.clone().text()).toBe(200);
+  });
+
+  it("checks a profile without switching to it", async () => {
+    await start(
+      {
+        SUITE_BILLING_ENABLED: "1",
+        STRIPE_SECRET_KEY: "sk_test_x",
+        STRIPE_WEBHOOK_SECRET: "whsec_test",
+        STRIPE_PRICE_TIERS:
+          '{"price_solo":{"tier":"solo","workspaces":1,"documentBytes":1,"attachmentBytes":1}}',
+      },
+      async (_env, mode) => ({
+        mode,
+        reachable: true,
+        keyWorks: true,
+        prices: [{ priceId: "price_solo", tier: "solo", exists: true }],
+        problem: null,
+        ok: true,
+      }),
+    );
+
+    const checked = await call("POST", `${SETTINGS_PATH}/billing/verify`, { mode: "test" });
+
+    expect(checked.status, await checked.clone().text()).toBe(200);
+    expect(await checked.json()).toMatchObject({ mode: "test", keyWorks: true, ok: true });
+    // A check is not a choice: nothing was written.
+    expect(rows).toHaveLength(0);
   });
 
   it("refuses an organization override for a deployment-wide key", async () => {

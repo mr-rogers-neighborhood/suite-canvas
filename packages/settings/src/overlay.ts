@@ -1,5 +1,6 @@
 import { SETTINGS, type SettingDefinition } from "./registry.js";
 import { resolveSetting, type StoredSetting } from "./resolve.js";
+import { decryptSetting, isEncryptedSetting } from "./secrets.js";
 
 /**
  * An environment record with the panel's values laid over it.
@@ -36,6 +37,20 @@ export function envWithSettings(input: {
     });
     if (resolved === null || resolved.value === null) continue;
     if (resolved.source === "default" && (input.env[variable] ?? "") === "") continue;
+    // A secret is stored as the `v1.` envelope, so the row is decrypted here, with the
+    // deployment's own key, for the one consumer that has to spend it. A key that cannot
+    // open the envelope leaves the variable empty rather than handing Stripe the ciphertext:
+    // the readiness read then names the key instead of promising a profile that cannot
+    // charge.
+    if (definition.kind === "secret" && isEncryptedSetting(String(resolved.value))) {
+      const deploymentKey = (input.env.SUITE_SETTINGS_KEY ?? "").trim();
+      try {
+        overlay[variable] = decryptSetting(deploymentKey, String(resolved.value));
+      } catch {
+        overlay[variable] = "";
+      }
+      continue;
+    }
     // Booleans travel as `1`/`0`: every reader in this codebase tests for "on", and a
     // written `true` would be a second spelling each of them has to know.
     overlay[variable] =

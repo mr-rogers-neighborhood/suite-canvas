@@ -18,7 +18,7 @@ import { createLogger, type Logger } from "../logging.js";
 import { createPool } from "../pool.js";
 import type { RouteModule } from "../routes.js";
 import { type AuditStore, auditSafely, createAuditStore } from "./audit.js";
-import { billingProfiles } from "./auth-billing.js";
+import { billingProfiles, verifyStripeProfile } from "./auth-billing.js";
 import { sessionReader } from "./context.js";
 
 /**
@@ -51,6 +51,11 @@ export interface SettingsModuleOptions {
   pool?: Pick<Pool, "query"> | undefined;
   /** The audit trail. A test passes a memory store; the default shares this module's pool. */
   audit?: AuditStore | undefined;
+  /**
+   * The Stripe check behind a mode switch. A test passes a stub so the guard's `Stripe is
+   * unreachable` path and its refusal path are both reachable without a network.
+   */
+  verifyProfile?: typeof verifyStripeProfile | undefined;
 }
 
 interface SettingsRow {
@@ -186,6 +191,8 @@ export function createSettingsModule(options: SettingsModuleOptions): RouteModul
     return pool;
   };
 
+  const verifyProfile = options.verifyProfile ?? verifyStripeProfile;
+
   const refuse = (response: ServerResponse, status: number, error: string, message: string) => {
     sendJson(response, status, { ok: false, error, message });
   };
@@ -261,6 +268,42 @@ export function createSettingsModule(options: SettingsModuleOptions): RouteModul
       const organizationId = url.searchParams.get("organization")?.trim() || null;
       const rawKey = url.pathname.slice(SETTINGS_PATH.length + 1);
 
+      // A profile can be checked without switching to it: the question "will this charge?"
+      // belongs to the profile, not to the act of choosing it.
+      if (request.method === "POST" && rawKey === "billing/verify") {
+        const parsed = await readJsonBody(request);
+        if (parsed.isErr()) {
+          refuse(response, 400, "invalid-body", "the body must be JSON");
+          return true;
+        }
+        const body = parsed.value as { mode?: unknown } | null;
+        const requested = typeof body?.mode === "string" ? body.mode.trim() : "";
+        const target = requested === "live" ? "live" : requested === "test" ? "test" : null;
+        if (target === null) {
+          refuse(response, 400, "invalid-value", 'mode must be "test" or "live"');
+          return true;
+        }
+        const candidate = envWithSettings({
+          env: { ...env, SUITE_BILLING_MODE: target },
+          rows: await readRows(database()),
+        });
+        const check = await verifyProfile(candidate, target);
+        await record({
+          actor: session.userId,
+          action: "settings.verify",
+          target: `billing.${target}`,
+          outcome: check.ok ? "ok" : "failed",
+          details: { problem: check.problem, prices: check.prices.length },
+        });
+        logger.info("a billing profile was checked against Stripe", {
+          mode: target,
+          ok: check.ok,
+          reachable: check.reachable,
+        });
+        sendJson(response, 200, check);
+        return true;
+      }
+
       if (request.method === "GET" && rawKey.length === 0) {
         sendJson(
           response,
@@ -327,25 +370,42 @@ export function createSettingsModule(options: SettingsModuleOptions): RouteModul
             env: { ...env, SUITE_BILLING_MODE: String(value) },
             rows: await readRows(database()),
           });
+          const target = String(value) === "live" ? "live" : "test";
           // The guard is only about the case with money in it. With billing off nothing is
           // charged either way, so the mode is free to set; with it on, a mode whose
           // credentials are incomplete boots billing off, which on a live deployment means
           // everyone syncs for free while the panel says nothing is wrong.
           const flag = (candidate.SUITE_BILLING_ENABLED ?? "").trim().toLowerCase();
-          const profile =
-            billingProfiles(candidate).profiles[String(value) === "live" ? "live" : "test"];
-          if ((flag === "1" || flag === "true") && !profile.complete) {
-            const missing = [
-              ...profile.missing,
-              ...(profile.problem === null ? [] : [profile.problem]),
-            ];
-            refuse(
-              response,
-              400,
-              "billing-profile-incomplete",
-              `The ${String(value)} profile is not ready: ${missing.join(", ")}`,
-            );
-            return true;
+          if (flag === "1" || flag === "true") {
+            const profile = billingProfiles(candidate).profiles[target];
+            if (!profile.complete) {
+              const missing = [
+                ...profile.missing,
+                ...(profile.problem === null ? [] : [profile.problem]),
+              ];
+              refuse(
+                response,
+                400,
+                "billing-profile-incomplete",
+                `The ${target} profile is not ready: ${missing.join(", ")}`,
+              );
+              return true;
+            }
+            // Shape is not the whole question. A price table copied from the other mode
+            // parses and is still unspendable, and the failure would arrive at a
+            // customer's checkout. Stripe is asked while the switch is being made, and
+            // only an answer from Stripe refuses the write: a network that cannot be
+            // reached decides nothing about a key.
+            const check = await verifyProfile(candidate, target);
+            if (check.reachable && !check.ok) {
+              refuse(
+                response,
+                400,
+                "billing-profile-unusable",
+                `The ${target} profile cannot charge: ${check.problem ?? "Stripe refused it"}`,
+              );
+              return true;
+            }
           }
         }
         // A price table that does not parse is a checkout that fails for a customer, so it

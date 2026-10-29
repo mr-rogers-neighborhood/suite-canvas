@@ -177,6 +177,43 @@ describe("the environment overlay", () => {
     expect(env.SUITE_SMTP_PASSWORD).toBe("hunter2");
   });
 
+  it("decrypts a secret the panel saved before handing it to the process", async () => {
+    // The panel writes `v1.…`; a boot that copied the row through unchanged would give
+    // Stripe the ciphertext and every call would answer 401.
+    const { envWithSettings } = await import("./overlay.js");
+    const key = "a-deployment-key-long-enough";
+    const stored = encryptSetting(key, "sk_test_from_panel");
+    const env = envWithSettings({
+      env: { SUITE_SETTINGS_KEY: key, STRIPE_SECRET_KEY: "sk_test_from_env" },
+      rows: [{ scope: GLOBAL_SCOPE, key: "billing.stripe.secretKey.test", value: stored }],
+    });
+
+    expect(env.STRIPE_SECRET_KEY).toBe("sk_test_from_panel");
+  });
+
+  it("fails closed when the deployment key cannot open a saved secret", async () => {
+    const { envWithSettings } = await import("./overlay.js");
+    const stored = encryptSetting("a-deployment-key-long-enough", "sk_test_from_panel");
+    const env = envWithSettings({
+      env: { SUITE_SETTINGS_KEY: "a-different-deployment-key", STRIPE_SECRET_KEY: "sk_test_env" },
+      rows: [{ scope: GLOBAL_SCOPE, key: "billing.stripe.secretKey.test", value: stored }],
+    });
+
+    // Empty, not the envelope and not the variable it would otherwise have held: the
+    // readiness read names the key rather than promising a profile that cannot charge.
+    expect(env.STRIPE_SECRET_KEY).toBe("");
+  });
+
+  it("passes a plaintext row through, so a table written before encryption still works", async () => {
+    const { envWithSettings } = await import("./overlay.js");
+    const env = envWithSettings({
+      env: {},
+      rows: [{ scope: GLOBAL_SCOPE, key: "billing.stripe.secretKey.test", value: "sk_test_plain" }],
+    });
+
+    expect(env.STRIPE_SECRET_KEY).toBe("sk_test_plain");
+  });
+
   it("leaves an unset variable unset when nothing supplies a value", async () => {
     const { envWithSettings } = await import("./overlay.js");
     const env = envWithSettings({ env: {}, rows: [] });

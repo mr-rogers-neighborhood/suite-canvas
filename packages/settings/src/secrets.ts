@@ -15,10 +15,22 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:
 const ALGORITHM = "aes-256-gcm";
 const IV_BYTES = 12;
 
+const derived = new Map<string, Buffer>();
+
 function keyFrom(secret: string): Buffer {
   // A fixed salt is right here: the secret is per deployment, and rotating it re-encrypts
   // everything anyway. A random salt would have to be stored beside each value for no gain.
-  return scryptSync(secret, "suite.settings.v1", 32);
+  //
+  // scrypt is deliberately slow, and the overlay decrypts on every read that composes an
+  // environment, so the derived key is kept for the life of the process. There is one
+  // deployment secret, so the map holds one entry; a rotated secret adds a second and the
+  // old one is dropped rather than kept forever.
+  const cached = derived.get(secret);
+  if (cached !== undefined) return cached;
+  const key = scryptSync(secret, "suite.settings.v1", 32);
+  if (derived.size >= 4) derived.clear();
+  derived.set(secret, key);
+  return key;
 }
 
 /** Encrypts one value into the `v1.iv.tag.body` form the column stores. */

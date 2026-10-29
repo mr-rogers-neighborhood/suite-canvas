@@ -125,6 +125,134 @@ export function billingProfiles(env: Env): BillingProfiles {
 }
 
 /** True when a checkout, a portal and a webhook all have what the active mode needs. */
+/**
+ * What a Stripe call to one mode actually answers.
+ *
+ * Readiness above is shape: a key is present, a price table parses. That is not the same
+ * as a profile that can charge, and the difference is invisible until a customer presses
+ * the button. The case that costs money is a price table copied from test mode: the ids
+ * parse, every field is right, and Stripe answers "No such price" for all of them in live
+ * mode. So this asks Stripe, in the mode that would spend the key, and names what it found.
+ */
+export interface ProfileCheck {
+  mode: "test" | "live";
+  /** True when Stripe answered at all; false for a network failure, which decides nothing. */
+  reachable: boolean;
+  /** True when the key is accepted. */
+  keyWorks: boolean;
+  /** One row per price the table names, in table order. */
+  prices: { priceId: string; tier: string; exists: boolean }[];
+  /** The first thing wrong, in a sentence an operator can act on; null when nothing is. */
+  problem: string | null;
+  ok: boolean;
+}
+
+const STRIPE_API = "https://api.stripe.com";
+
+interface StripeErrorBody {
+  error?: { message?: string; type?: string };
+}
+
+/** One GET against Stripe, with the answer parsed and a deadline so a write cannot hang. */
+async function stripeGet(
+  fetcher: typeof fetch,
+  path: string,
+  secretKey: string,
+  timeoutMs: number,
+): Promise<{ status: number; body: unknown }> {
+  const response = await fetcher(`${STRIPE_API}${path}`, {
+    headers: { authorization: `Bearer ${secretKey}` },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const body: unknown = await response.json().catch(() => null);
+  return { status: response.status, body };
+}
+
+function stripeMessage(body: unknown): string | null {
+  const message = (body as StripeErrorBody | null)?.error?.message;
+  return typeof message === "string" && message.length > 0 ? message : null;
+}
+
+export async function verifyStripeProfile(
+  env: Env,
+  mode: "test" | "live",
+  options: { fetch?: typeof fetch; timeoutMs?: number } = {},
+): Promise<ProfileCheck> {
+  const credentials = credentialsFor(env, mode);
+  const fetcher = options.fetch ?? globalThis.fetch;
+  const timeoutMs = options.timeoutMs ?? 8000;
+  const check: ProfileCheck = {
+    mode,
+    reachable: false,
+    keyWorks: false,
+    prices: [],
+    problem: null,
+    ok: false,
+  };
+  if (credentials.secretKey.length === 0) {
+    return {
+      ...check,
+      problem: `no ${mode} secret key is saved (billing.stripe.secretKey.${mode})`,
+    };
+  }
+
+  try {
+    const account = await stripeGet(fetcher, "/v1/account", credentials.secretKey, timeoutMs);
+    check.reachable = true;
+    if (account.status < 200 || account.status >= 300) {
+      return {
+        ...check,
+        problem: `Stripe refused the ${mode} key: ${stripeMessage(account.body) ?? `HTTP ${account.status}`}`,
+      };
+    }
+  } catch (cause) {
+    // Nothing was learned: a network that cannot reach Stripe decides nothing about a key,
+    // so this is a check that did not run rather than a profile that failed.
+    return {
+      ...check,
+      problem: `Stripe could not be reached: ${cause instanceof Error ? cause.message : String(cause)}`,
+    };
+  }
+
+  check.keyWorks = true;
+  const table = parseTierTable(credentials.priceTiers);
+  if (table.isErr()) {
+    return { ...check, problem: table.error.message };
+  }
+
+  for (const [priceId, plan] of table.value) {
+    try {
+      const price = await stripeGet(
+        fetcher,
+        `/v1/prices/${encodeURIComponent(priceId)}`,
+        credentials.secretKey,
+        timeoutMs,
+      );
+      const exists = price.status >= 200 && price.status < 300;
+      check.prices.push({ priceId, tier: plan.tier, exists });
+    } catch (cause) {
+      check.prices.push({ priceId, tier: plan.tier, exists: false });
+      return {
+        ...check,
+        problem: `Stripe could not be reached while checking ${priceId}: ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`,
+      };
+    }
+  }
+
+  // A price id belongs to one mode. A table copied from test mode reads as complete here
+  // and fails at the first checkout, which is the mistake this names.
+  const missing = check.prices.filter((price) => !price.exists);
+  const problem =
+    missing.length === 0
+      ? null
+      : `${missing.map((price) => price.priceId).join(", ")} ${
+          missing.length === 1 ? "does" : "do"
+        } not exist in ${mode} mode. A price id belongs to one mode, so a table copied from the other mode has to be replaced with ${mode} prices.`;
+  return { ...check, problem, ok: problem === null };
+}
+
 export function billingConfigured(env: Env): boolean {
   const flag = env.SUITE_BILLING_ENABLED?.trim().toLowerCase();
   if (flag !== "1" && flag !== "true") return false;

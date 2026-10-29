@@ -12,6 +12,7 @@ import {
   stripeCredentials,
   stripeMode,
   tierParts,
+  verifyStripeProfile,
 } from "./auth-billing.js";
 
 /**
@@ -270,5 +271,105 @@ describe("billingConfigured", () => {
     // a boot that handed `authEnvironment(...)` to `composeBilling` reported billing off
     // whatever an operator set. This assertion is the reason `defaultBoot` reads `source`.
     expect(billingConfigured({ ...authEnvironment(stripe) })).toBe(false);
+  });
+});
+
+describe("verifyStripeProfile", () => {
+  const env = {
+    STRIPE_SECRET_KEY: "sk_test_x",
+    STRIPE_PRICE_TIERS: JSON.stringify({
+      price_solo: { tier: "solo", workspaces: 3, documentBytes: 1, attachmentBytes: 1 },
+      price_team: { tier: "team", workspaces: 9, documentBytes: 1, attachmentBytes: 1 },
+    }),
+    SUITE_BILLING_MODE: "live",
+    STRIPE_SECRET_KEY_LIVE: "sk_live_x",
+    STRIPE_PRICE_TIERS_LIVE: JSON.stringify({
+      price_solo: { tier: "solo", workspaces: 3, documentBytes: 1, attachmentBytes: 1 },
+      price_team: { tier: "team", workspaces: 9, documentBytes: 1, attachmentBytes: 1 },
+    }),
+  };
+
+  /** A Stripe that answers the way the real one does, keyed by path. */
+  const stripe = (answers: Record<string, { status: number; body?: unknown }>) => {
+    const seen: string[] = [];
+    const fetcher = (async (input: string | URL | Request) => {
+      const path = new URL(String(input)).pathname;
+      seen.push(path);
+      const answer = answers[path] ?? {
+        status: 404,
+        body: { error: { message: "no such thing" } },
+      };
+      return new Response(JSON.stringify(answer.body ?? {}), { status: answer.status });
+    }) as typeof fetch;
+    return { fetcher, seen };
+  };
+
+  it("should pass when the key works and every price exists in that mode", async () => {
+    const { fetcher } = stripe({
+      "/v1/account": { status: 200 },
+      "/v1/prices/price_solo": { status: 200 },
+      "/v1/prices/price_team": { status: 200 },
+    });
+
+    const check = await verifyStripeProfile(env, "live", { fetch: fetcher });
+
+    expect(check).toMatchObject({ mode: "live", reachable: true, keyWorks: true, ok: true });
+    expect(check.prices.map((price) => price.exists)).toEqual([true, true]);
+    expect(check.problem).toBeNull();
+  });
+
+  it("should name a price that does not exist in the mode being checked", async () => {
+    // The exact mistake a copied table makes: everything parses, and Stripe has never
+    // heard of the ids in this mode.
+    const { fetcher } = stripe({
+      "/v1/account": { status: 200 },
+      "/v1/prices/price_solo": { status: 404, body: { error: { message: "No such price" } } },
+      "/v1/prices/price_team": { status: 404, body: { error: { message: "No such price" } } },
+    });
+
+    const check = await verifyStripeProfile(env, "live", { fetch: fetcher });
+
+    expect(check.ok).toBe(false);
+    expect(check.keyWorks).toBe(true);
+    expect(check.problem).toContain("price_solo, price_team");
+    expect(check.problem).toContain("not exist in live mode");
+  });
+
+  it("should reject a key Stripe refuses, quoting what it said", async () => {
+    const { fetcher, seen } = stripe({
+      "/v1/account": {
+        status: 401,
+        body: { error: { message: "Invalid API Key provided: v1.abc" } },
+      },
+    });
+
+    const check = await verifyStripeProfile(env, "test", { fetch: fetcher });
+
+    expect(check).toMatchObject({ reachable: true, keyWorks: false, ok: false });
+    expect(check.problem).toContain("Stripe refused the test key");
+    // The key was refused, so there is nothing to ask about the prices.
+    expect(seen).toEqual(["/v1/account"]);
+  });
+
+  it("should say nothing was learned when Stripe cannot be reached", async () => {
+    const fetcher = (async () => {
+      throw new Error("getaddrinfo ENOTFOUND api.stripe.com");
+    }) as unknown as typeof fetch;
+
+    const check = await verifyStripeProfile(env, "test", { fetch: fetcher });
+
+    // Reachable false is what the caller reads to decide not to refuse a write over a
+    // network that happened to be down.
+    expect(check).toMatchObject({ reachable: false, ok: false });
+    expect(check.problem).toContain("could not be reached");
+  });
+
+  it("should name a missing key before it calls anything", async () => {
+    const { fetcher, seen } = stripe({});
+
+    const check = await verifyStripeProfile({}, "live", { fetch: fetcher });
+
+    expect(check.problem).toContain("no live secret key");
+    expect(seen).toEqual([]);
   });
 });

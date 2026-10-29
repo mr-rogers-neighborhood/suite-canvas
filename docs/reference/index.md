@@ -7,6 +7,7 @@ Facts to look up: the data model, the commands, the quotas, the security boundar
 | Article | What it covers | Updated |
 | --- | --- | --- |
 | [Billing and licences](billing.md) | Billing is @better-auth/stripe registered on the auth instance (ADR-0078). The plugin owns the Stripe customer, Checkout, the billing portal, the webh… | 2026-10-28 |
+| [Limits](limits.md) | What one Suite instance accepts, and what happens at the boundary. The numbers below are read from the code that enforces them, so they cannot drift f… | 2026-10-28 |
 | [Interface](ui.md) | How the shell, the library, the panels, the styling surfaces and the command palette are assembled, and the focus, keyboard and theme rules they share… | 2026-10-28 |
 | [Architecture](architecture.md) | Suite is a local-first collaborative canvas. One Loro document per workspace is the source of truth, @suite/graph validates every write, and the React… | 2026-10-28 |
 | [Coding conventions](conventions.md) | The rules as rules. The model they serve is architecture.md. The procedure that applies them is ../how-to/add-a-feature.md, and the gate is ../how-to/… | 2026-10-28 |
@@ -16,6 +17,5 @@ Facts to look up: the data model, the commands, the quotas, the security boundar
 | [Editing](editing.md) | How card text, fields, templates and reference chips are stored and edited; the document model underneath is in architecture.md. | 2026-10-28 |
 | [Canvas](canvas.md) | apps/canvas/src/canvas turns the workspace document into a board you can point at: placements become nodes, edges become routes, and every gesture end… | 2026-10-28 |
 | [Environment](environment.md) | Every variable the relay reads, its default, and what it changes. apps/collab-server/src/config/config.ts parses them once at boot and refuses to star… | 2026-10-28 |
-| [Limits](limits.md) | What one Suite instance accepts, and what happens at the boundary. The numbers below are read from the code that enforces them, so they cannot drift f… | 2026-10-28 |
 | [Capacity](capacity.md) | What one relay holds, what one more open room costs, and where the CPU stops keeping up. The numbers on this page are measured on this checkout by app… | 2026-10-27 |
 | [Glossary](glossary.md) | One definition per term, in the sense this repository uses it. The model behind them is architecture.md, and the code identifiers are listed beside ea… | 2026-10-26 |

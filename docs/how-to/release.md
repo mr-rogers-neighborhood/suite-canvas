@@ -113,6 +113,38 @@ stdlib). Nothing here can reach those: `caddy:2-alpine` is the newest tag, and t
 modules Caddy has not released yet. A release records them in its notes rather than pretending they
 are absent, and the next image rebuild picks them up.
 
+## The volume is the capacity ceiling
+
+Every plan promises bytes per workspace, and every byte lands on one volume. Before selling a plan,
+check that the volume can hold what the plans sell:
+
+| What | Where it is | What it costs |
+| --- | --- | --- |
+| Documents and attachments | the relay's volume, `suite_suite-data` | the gp3 price, about $0.08/GB-month |
+| Postgres | the RDS instance | its class, and its own storage |
+| Egress | attachments a guest downloads | $0.09/GB after the free tier |
+
+```sh
+df -h /                                            # free space on the volume
+docker system df                                   # what the images take
+sudo du -sh /var/lib/docker/volumes/*/_data        # what the data takes
+```
+
+An Organization plan entitles 25 workspaces x (2 GiB + 8 GiB), so one customer using its allowance
+is 250 GiB. Growing the volume is the cheap answer and does not need a rebuild:
+
+```sh
+aws ec2 modify-volume --volume-id <vol-id> --size 200 --volume-type gp3
+lsblk                                              # the new size is visible, the filesystem is not
+sudo growpart /dev/nvme0n1 1
+sudo resize2fs /dev/nvme0n1p1                      # xfs_growfs on an xfs root
+df -h /
+```
+
+The instance role cannot modify its own volumes, so this runs from an account that can. A disk that
+fills is a write failure in the relay and a 500 for every client, which is why the free space is worth
+watching rather than discovering: the alert script's disk check and `/api/admin/status` both report it.
+
 ## Rollback
 
 Rollback restarts `app` on the tag taken before the upgrade. It needs no code change and no build, and

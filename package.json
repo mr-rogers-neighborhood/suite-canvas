@@ -17,6 +17,8 @@
     "coverage": "vitest run --coverage",
     "coverage:graph": "vitest run --coverage --project=graph --coverage.include='packages/graph/src/**'",
     "db:verify": "node scripts/db-verify.mjs",
+    "deploy:docs": "node scripts/deploy-pages.mjs docs",
+    "deploy:site": "node scripts/deploy-pages.mjs site",
     "dev": "turbo run dev",
     "dev:db": "docker compose --profile local-db -f compose.yaml -f compose.dev.yaml up -d --wait postgres",
     "dev:db:stop": "docker compose --profile local-db -f compose.yaml -f compose.dev.yaml stop postgres",

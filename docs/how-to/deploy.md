@@ -840,17 +840,39 @@ do is create an organization or open a sync connection, which is what "waiting f
 with no server, so both belong on Cloudflare Pages rather than on the box: a page that is a file does
 not need a machine that can go down.
 
-Both projects are uploaded as a prebuilt directory, not built by Pages, so nothing about the workspace
-has to be reproduced in Cloudflare's builder:
+Pages builds nothing. The directory is built here, by the same command the gate runs, and uploaded,
+so Cloudflare never has to reproduce the workspace, the pnpm version or the Node version. A page that
+renders on Pages but not locally is a difference nobody can debug.
 
 ```sh
-pnpm docs:site:build && pnpm site:build          # apps/docs/dist and apps/site/dist
-npx wrangler pages deploy apps/docs/dist --project-name suite-docs
-npx wrangler pages deploy apps/site/dist   --project-name suite
+pnpm deploy:docs     # pnpm docs:site:build, then upload to the suite-docs project
+pnpm deploy:site     # pnpm site:build, then upload to the suite-site project
 ```
 
-Then add the custom domains in the Pages project, and leave those two `A` or `CNAME` records proxied:
-unlike the app, a static origin has no long-lived socket for the proxy's idle timeout to cut.
+Both scripts take `--no-build` when the tree in `apps/*/dist` is already what should ship. Each uploads
+to the project's production environment, so the custom domain picks the deploy up; without the branch
+flag an upload is a preview and the domain keeps serving the old tree.
+
+The credential is not in the repository, and it is one of two:
+
+| Credential | How the scripts get it | When it is right |
+| --- | --- | --- |
+| `CLOUDFLARE_API_TOKEN` plus `CLOUDFLARE_ACCOUNT_ID` | read from the environment, so a CI job or a shell with both set works unattended | anything repeatable |
+| `wrangler login` | an OAuth session in `~/.wrangler`, which the scripts pick up when neither variable is set | a person deploying from their own machine |
+
+The token needs **Cloudflare Pages: Edit** on the account, and **Zone: DNS: Edit** on `suite.run` only
+if the custom domains are being attached with the API rather than clicked in the dashboard.
+
+Then add the custom domains in each Pages project: `docs.suite.run` on `suite-docs`, and `suite.run` on
+`suite-site`. Leave those records proxied, because unlike the app a static origin has no long-lived
+socket for the proxy's idle timeout to cut. `app.suite.run` stays on the box and is not touched: it
+serves the canvas, the relay's socket and the control plane, none of which is a file.
+
+| Host | Serves | Where it is built |
+| --- | --- | --- |
+| `app.suite.run` | canvas, relay, control plane | the box, `docker compose` |
+| `docs.suite.run` | `docs/` as a Starlight site | `apps/docs/dist`, uploaded by `pnpm deploy:docs` |
+| `suite.run` | the marketing page | `apps/site/dist`, uploaded by `pnpm deploy:site` |
 
 `_headers` in each site's `public/` directory is the Cloudflare equivalent of the Caddy policy, and it
 is copied into `dist` at build time. Keep the two in step: the same page should not have a different

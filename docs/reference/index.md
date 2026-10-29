@@ -6,8 +6,8 @@ Facts to look up: the data model, the commands, the quotas, the security boundar
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Architecture](architecture.md) | Suite is a local-first collaborative canvas. One Loro document per workspace is the source of truth, @suite/graph validates every write, and the React… | 2026-10-28 |
 | [Billing and licences](billing.md) | Billing is @better-auth/stripe registered on the auth instance (ADR-0078). The plugin owns the Stripe customer, Checkout, the billing portal, the webh… | 2026-10-28 |
+| [Architecture](architecture.md) | Suite is a local-first collaborative canvas. One Loro document per workspace is the source of truth, @suite/graph validates every write, and the React… | 2026-10-28 |
 | [Coding conventions](conventions.md) | The rules as rules. The model they serve is architecture.md. The procedure that applies them is ../how-to/add-a-feature.md, and the gate is ../how-to/… | 2026-10-28 |
 | [Data model](data-model.md) | This page does not cover how the canvas draws these records or how a share link is authenticated; architecture.md and security-model.md own those. It… | 2026-10-28 |
 | [Runtime](runtime.md) | The browser process: boot order, persistence, the relay, sharing, and the diagnostics an operator can read. It does not cover the document model (data… | 2026-10-28 |

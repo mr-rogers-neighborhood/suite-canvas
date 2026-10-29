@@ -427,6 +427,17 @@ describe("the plan at the door", () => {
     await expect(authorize("ws-1", encode(token), hosted())).resolves.toBeNull();
   });
 
+  it("answers the access question with the same plan refusal and writes nothing", async () => {
+    // The client asks this route for the reason a join was refused. An "allowed" answer
+    // beside a shut door leaves the panel with nothing true to say.
+    const token = await sessions.sign({ tier: "free", limits: {} });
+
+    const decision = await decideAccess("ws-1", encode(token), hosted(), { claim: false });
+
+    expect(decision).toMatchObject({ ok: false, reason: "plan-required" });
+    expect(orgs.has("ws-1")).toBe(false);
+  });
+
   it("keeps a workspace the organization already holds open after the licence lapses", async () => {
     orgs.claim("ws-1", "org-a");
     const token = await sessions.sign({ tier: "free", limits: {} });

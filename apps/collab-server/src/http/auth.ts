@@ -2,7 +2,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Permission } from "loro-protocol";
 import { SHARE_ROOM_PREFIX, type ShareStore } from "../store/shares.js";
 import type { ConnectionPrincipal, RelaySeatGate } from "../sync/seatGate.js";
-import { claimWorkspaceForSession, type WorkspaceClaimDeps } from "./access.js";
+import { claimWorkspaceForSession, planRefusal, type WorkspaceClaimDeps } from "./access.js";
 import type { SessionVerifier } from "./sessionToken.js";
 
 export interface AuthorizeDeps {
@@ -221,6 +221,11 @@ export async function decideAccess(
     if (recorded !== null && recorded.organizationId !== claims.organizationId) {
       return { ok: false, reason: "workspace-owned-elsewhere" };
     }
+    // The plan is read here too, without writing: the client asks this route for the
+    // reason a join was refused, and an "allowed" answer beside a shut door would leave
+    // the panel with nothing to say and no button to offer.
+    const refusal = planRefusal(deps.workspaces, claims, recorded);
+    if (refusal !== null) return { ok: false, reason: refusal };
   } else {
     const outcome = claimWorkspaceForSession(deps.workspaces, baseRoom, claims);
     if (outcome === "conflict") return { ok: false, reason: "workspace-owned-elsewhere" };

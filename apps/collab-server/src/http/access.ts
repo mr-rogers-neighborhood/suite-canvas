@@ -84,7 +84,7 @@ function workspaceCeiling(claims: SessionClaims): number | null {
  * regardless and record the organization anyway, which is how a free account came to read
  * "Synced" with no plan at all. The door is a door from both sides or it is decoration.
  */
-function planRefusal(
+export function planRefusal(
   deps: WorkspaceClaimDeps,
   claims: SessionClaims,
   recorded: { organizationId: string } | null,

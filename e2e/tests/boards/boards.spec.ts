@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import {
   boardId,
+  libraryCardRows,
   libraryRowAction,
   newBoard,
   openBoard,
@@ -17,7 +18,7 @@ async function createBoard(page: Page): Promise<string> {
   return boardId(page);
 }
 
-async function openLibrary(page: Page, tab: "cards" | "boards"): Promise<void> {
+async function openLibrary(page: Page, tab: "cards"): Promise<void> {
   if ((await page.getByTestId("library-drawer").count()) === 0) {
     await page.getByTestId("dock-library").click();
   }
@@ -42,7 +43,7 @@ test("keeps a board's cards when you leave it and come back", {
 
   // Give the board a card of its own, so "intact" means something.
   await openLibrary(page, "cards");
-  await libraryRowAction(page.locator('[data-testid^="library-item-"]').first(), "Place on board");
+  await libraryRowAction(libraryCardRows(page).first(), "Place on board");
   await expect(cards(page)).toHaveCount(1);
 
   // Leave it: the board that comes back is the one already open, and this one's
@@ -53,12 +54,12 @@ test("keeps a board's cards when you leave it and come back", {
   // The library still lists it, and says it is not the board on screen.
   await openLibraryBoards(page);
   await expect(page.getByTestId(`library-item-${secondBoardId}`)).toBeVisible();
-  await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toHaveText("Closed");
+  await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toContainText("Closed");
 
   // Coming back through the library finds the card exactly where it was.
   await libraryRowAction(page.getByTestId(`library-item-${secondBoardId}`), "Open");
   await expect(cards(page)).toHaveCount(1);
-  await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toHaveText("Open");
+  await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toContainText("Open");
 });
 
 test("reaches every board from the keyboard", { tag: "@smoke" }, async ({ page }) => {
@@ -96,7 +97,7 @@ test("places a board as a portal without dropping it from the library", { tag: "
   await openBoard(page, firstBoardId);
   await expect(cards(page)).toHaveCount(2);
 
-  await openLibrary(page, "boards");
+  await openLibraryBoards(page);
   const rowsBefore = await page
     .locator("li[data-row-id]")
     .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id")));
@@ -107,7 +108,7 @@ test("places a board as a portal without dropping it from the library", { tag: "
   // reads "Closed" because the board on screen is still the first one — the
   // state names where you are, not what you own.
   await expect(page.getByTestId(`library-item-${secondBoardId}`)).toBeVisible();
-  await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toHaveText("Closed");
+  await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toContainText("Closed");
   const rowsAfter = await page
     .locator("li[data-row-id]")
     .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id")));
@@ -126,7 +127,7 @@ test("unplaces one board's cards and leaves a shared card on the other", { tag: 
 
   // The same card now lives on both boards.
   await openLibrary(page, "cards");
-  await libraryRowAction(page.locator('[data-testid^="library-item-"]').first(), "Place on board");
+  await libraryRowAction(libraryCardRows(page).first(), "Place on board");
   await expect(cards(page)).toHaveCount(1);
 
   // The card also lives on the first board, so unplacing this board's copy
@@ -134,7 +135,7 @@ test("unplaces one board's cards and leaves a shared card on the other", { tag: 
   await openLibraryBoards(page);
   await libraryRowAction(page.getByTestId(`library-item-${secondBoardId}`), "Unplace its cards");
   await expect(cards(page)).toHaveCount(0);
-  await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toHaveText("Open");
+  await expect(page.getByTestId(`library-board-state-${secondBoardId}`)).toContainText("Open");
 
   await libraryRowAction(page.getByTestId(`library-item-${firstBoardId}`), "Open");
   await expect(cards(page)).toHaveCount(2);

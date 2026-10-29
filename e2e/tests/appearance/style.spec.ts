@@ -58,15 +58,20 @@ test("a card keeps its silhouette and side paint across a reload", async ({ page
   await cards(page).first().click();
   await openStyleTab(page);
   await page.getByTestId("style-shape-diamond").click();
-  await page.getByTestId("style-side-top-dashed").click();
-  await expect(page.getByTestId("style-side-top-dashed")).toHaveAttribute("data-checked", "true");
+  // A diamond has no sides to paint one at a time, so the four rows collapse into
+  // one outline that paints all of them.
+  await expect(page.getByTestId("style-side-top")).toHaveCount(0);
+  await page.getByTestId("style-outline-dashed").click();
+  await expect(page.getByTestId("style-outline-dashed")).toHaveAttribute("data-checked", "true");
 
   await expect
     .poll(() => paintVar(page, '[data-testid="node-card"]', "--paint-clip"))
     .toContain("polygon");
-  // The stored value is a role, so the border is whatever the theme says it is.
-  expect(await paintVar(page, '[data-testid="node-card"]', "--paint-border-top")).toContain(
-    "dashed",
+  // A patterned edge is a strip rather than a border, and the colour it draws is a
+  // role, so the theme decides what the dash is made of.
+  expect(await paintVar(page, '[data-testid="node-card"]', "--paint-border-top")).toBe("0");
+  expect(await paintVar(page, '[data-testid="node-card"]', "--paint-dash-top")).toContain(
+    "repeating-linear-gradient",
   );
 
   await page.reload();
@@ -74,8 +79,8 @@ test("a card keeps its silhouette and side paint across a reload", async ({ page
   await expect
     .poll(() => paintVar(page, '[data-testid="node-card"]', "--paint-clip"))
     .toContain("polygon");
-  expect(await paintVar(page, '[data-testid="node-card"]', "--paint-border-top")).toContain(
-    "dashed",
+  expect(await paintVar(page, '[data-testid="node-card"]', "--paint-dash-top")).toContain(
+    "repeating-linear-gradient",
   );
 });
 
@@ -117,12 +122,12 @@ test("a link keeps its own stroke, and paints it in the document, across a reloa
     .not.toBe("none");
 });
 
-test("a section is painted from its own panel", async ({ page }) => {
+test("a section carries one colour, from its own panel, across a reload", async ({ page }) => {
   await page.goto(workspaceUrl("section"));
   await expect(cards(page)).toHaveCount(2);
 
-  // A section is an identity, so its paint lives in the container panel
-  // (ADR-0040), one tab away from its members and links.
+  // A section is an identity, so its one paint lives in the container panel
+  // (ADR-0040). It is a role, not a colour: the theme decides what the role paints.
   await selectCard(page);
   await page.keyboard.press("Control+g");
   const section = page.locator(".section-region").first();
@@ -137,15 +142,17 @@ test("a section is painted from its own panel", async ({ page }) => {
   await section.click({ position: { x: 4, y: 4 } });
   await expect(page.getByTestId("container-inspector")).toBeVisible();
 
-  await page.getByTestId("container-tab-style").click();
-  await page.getByTestId("style-side-left-dotted").click();
-  await expect(page.getByTestId("style-side-left-dotted")).toHaveAttribute("data-checked", "true");
+  const before = await paintVar(page, ".section-region", "background-color");
+  const swatch = page.getByTestId("container-color-violet");
+  await swatch.click();
+  await expect(swatch).toHaveAttribute("aria-pressed", "true");
 
-  await expect
-    .poll(() => paintVar(page, ".section-region", "--paint-border-left"))
-    .toContain("dotted");
+  // The wash is the role's, resolved by the theme, so the assertion is that it
+  // changed rather than that it is one particular number.
+  await expect.poll(() => paintVar(page, ".section-region", "background-color")).not.toBe(before);
+
+  // The colour is part of the section record, so a reload reads it back.
   await page.reload();
-  await expect
-    .poll(() => paintVar(page, ".section-region", "--paint-border-left"))
-    .toContain("dotted");
+  await expect(page.locator(".section-header")).toContainText("Painted");
+  await expect.poll(() => paintVar(page, ".section-region", "background-color")).not.toBe(before);
 });

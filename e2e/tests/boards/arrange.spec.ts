@@ -10,11 +10,14 @@ let sequence = 0;
 const workspaceUrl = (name: string) =>
   `/?workspace=e2e-arrange-${name}-${Date.now()}-${++sequence}`;
 
-/** Select every card by pressing one and Shift-pressing the other. */
+/**
+ * Select every card on the board the way a reader can: Control+A. A chord sent to
+ * a card is a chord sent to a text field, because a title and a body both edit on
+ * one click, so the board's own key is the selection that never lands in an editor.
+ */
 async function selectAll(page: Page): Promise<void> {
-  const all = cards(page);
-  await all.first().click();
-  await all.nth(1).click({ modifiers: ["Shift"] });
+  await page.keyboard.press("Control+a");
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(await cards(page).count());
 }
 
 async function cardY(page: Page, index: number): Promise<number> {
@@ -78,16 +81,10 @@ test("distribute spaces three cards evenly along a row", async ({ page }) => {
   );
   const spread = Math.max(...before) - Math.min(...before);
 
-  await cards(page).first().click();
-  await cards(page)
-    .nth(1)
-    .click({ modifiers: ["Shift"] });
-  await cards(page)
-    .nth(2)
-    .click({ modifiers: ["Shift"] });
-  await cards(page)
-    .nth(1)
-    .click({ button: "right", position: { x: 40, y: 14 } });
+  await selectAll(page);
+  const middleCard = await cards(page).nth(1).boundingBox();
+  if (!middleCard) throw new Error("the middle card is not measurable");
+  await page.mouse.click(middleCard.x + 40, middleCard.y + 14, { button: "right" });
   await page.getByRole("menuitem", { name: "Arrange" }).hover();
   await page.getByRole("menuitem", { name: "Distribute horizontally" }).click();
 

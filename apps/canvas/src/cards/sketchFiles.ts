@@ -1,5 +1,6 @@
 import type { DrawingElement } from "@suite/graph";
 import { ATTACHMENT_ID_PATTERN, attachmentUrl } from "../editor/attachmentNode";
+import { isStandalone } from "../session/mode";
 
 /**
  * A picture inside a sketch.
@@ -98,6 +99,9 @@ export async function fetchPicture(ref: SketchFileRef): Promise<{
   bytes: Uint8Array;
   mime: string;
 } | null> {
+  // A standalone build has no relay at all, and every picture there is already in
+  // this browser's own store, which is read first.
+  if (isStandalone()) return null;
   try {
     const response = await fetch(sketchFileUrl(ref.attachmentId));
     if (!response.ok) return null;

@@ -10,7 +10,7 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 
 | Surface | Component | What it owns |
 | --- | --- | --- |
-| Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, sync and storage status, the workspace menu, the account slot, the theme toggle |
+| Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, sync and storage status, **Share** (`ShareAction.tsx`, its own control beside the status pill), the workspace menu, the account slot, the theme toggle |
 | Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history and outline buttons in `app/WorkspaceShellView.tsx` | Home, the open boards with their peer counts, undo, redo, version history and the outline, in one row |
 | Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface, plus the plan wall and the retry for whoever just paid |
 | Views bar | `apps/canvas/src/chrome/ViewsBar.tsx` | Saved views, applying one, renaming and deleting one. **Development only** (see below) |
@@ -53,19 +53,40 @@ passed: a reload a moment later does not repeat it, and a visit the next day doe
 alpha is worth. The record is per browser rather than per account, and storage that refuses to
 write shows the notice on every visit, the harmless direction.
 
+Share is the one action that used to sit inside the workspace menu and no longer does: it is a verb about the thing on screen, so it sits beside the status control that already says who else is here, and the menu stays about the document (imports, exports, the starter template, the launcher and delete).
+
+## The type editor
+
+`apps/canvas/src/panels/TypeSettingsDialog.tsx` is the one dialog that edits a card type, opened from the dock's settings menu, from **Card types…** in the workspace menu and from **Edit types** at the end of the library's facet row. The list on the left holds the types a reader authors: the three runtime-owned ones (`portal`, `whiteboard`, `tutorial`, per `isBehaviourType`) are not offered, because their names, fields, looks and templates belong to the renderer that draws them (ADR-0040, ADR-0011 §3).
+
+The panel on the right is three disclosures in a fixed order: **Fields**, then **Appearance**, then **Template**. Fields starts open; the other two start collapsed on every open, because the fields are what the dialog is opened for and a template is set once. The order is load-bearing in the tests, not only in the eye: a type's fields decide what a card can hold, its appearance decides how it looks, and its templates decide where it starts.
+
+### Templates belong to the type
+
+A template is an ordinary card the type copies from: title, body, properties, tags and connectors arrive together (ADR-0038). A type holds an ordered list, `templateCardIds`, and the order is the only rule: **the first live template is what an ordinary new card arrives written**, and the section marks it *Used for new cards*. The rest are offered by name.
+
+Storage is a rank per card id under `templates`, the same shape a type's fields use for their order: a map merges as a union, so two clients adding a template both keep theirs, and the rank is what makes "the first one" a fact rather than a coincidence of key order. The pre-list `templateCardId` is still read as a one-element list and never written; a template whose card is in the trash drops out at read time, so deleting one cannot break creating cards of that type.
+
+`createCard` is the one place a new card is made, and it asks only when there is a real question: a type with two or more live templates opens `TemplateChoiceMenu` (`apps/canvas/src/cards/TemplateChoiceMenu.tsx`), which lists them by name and always offers **Blank card**. Zero templates and one template behave exactly as they did, which is what keeps the dock, the palette, the library and the card type picker from growing four different menus.
+
 ## The library
 
-The drawer has three tabs: `inbox` (cards on no board), `cards` (`apps/canvas/src/library/LibraryDrawer.tsx`) and `trash`. The inbox holds cards and only cards: a board has no placement, so "on no board" is not a state one can be in. A board is a row in the Cards tab rather than a tab of its own (`libraryBoards.ts`); the Boards facet beside the card types is how you narrow to one. `apps/canvas/src/library/libraryFilters.ts` defines the facets: type, tag and section, with OR inside a facet and AND across facets. The section facet appears only when the drawer is scoped to one board, because a section title means nothing outside its board.
+The drawer has three tabs: `inbox` (cards on no board), `cards` (`apps/canvas/src/library/LibraryDrawer.tsx`) and `trash`. The facet row ends with **Edit types**, the second door into the type editor, beside the filter a reader is already using to think about types and a **Card types…** row in the workspace menu. The inbox holds cards and only cards: a board has no placement, so "on no board" is not a state one can be in. A board is a row in the Cards tab rather than a tab of its own (`libraryBoards.ts`); the Boards facet beside the card types is how you narrow to one. `apps/canvas/src/library/libraryFilters.ts` defines the facets: type, tag and section, with OR inside a facet and AND across facets. The section facet appears only when the drawer is scoped to one board, because a section title means nothing outside its board.
 
 Search and facets feed the same list. A saved view fills those same controls through `applyView`, so there is one filtering model and no second query language (ADR-0037).
 
 ### Sketches are a development-only door
 
-A sketch is a card of the built-in sketch type, and it does not save or render yet. Two entry points
-offer one: the dock's row and the palette's `card.createSketch`. Both are behind `import.meta.env.DEV`,
-so a production bundle has neither. The registry's `available` predicate drops the command, and
-`WorkspaceShellView` passes no handler, which is what keeps the dock row out. Removing both guards
-publishes it.
+A sketch is a card of the built-in sketch type. Two entry points offer one: the dock's row and the
+palette's `card.createSketch`, and both are behind `import.meta.env.DEV`, so a production bundle has
+neither. The registry's `available` predicate drops the command, and `WorkspaceShellView` passes no
+handler, which is what keeps the dock row out. Removing both guards publishes it.
+
+Making one is the part that is unfinished; **rendering one is not**. The type is created at boot
+(`ensureWhiteboardType` beside `ensureDefaultTypes` in `useWorkspaceBoot.ts`) so a document always
+knows it, and a card of that type routes to `WhiteboardNode` wherever it appears. Without the boot
+call a workspace that never held a sketch had no type at all, and a drawing already in the document
+painted as a plain note.
 
 ### Saved views are a development-only door
 
@@ -158,6 +179,8 @@ Reading a board and editing it are the same click, so the click needs a mode. `I
 | `inspect` (default) | Focuses the text and opens the inspector | Everything as before |
 | `quiet` | Focuses the text, the panel stays shut | The link count and the context menu's Card info still open it: a deliberate door is not the click |
 | `locked` | Nothing | Cards cannot be dragged, selected, connected or edited, a double-click on the pane adds no card, and the board's key actions are silent; the canvas still pans and zooms, and Escape still works |
+
+Every canvas entity answers the mode, not only notes. A portal opens no panel under `quiet` and neither walks through nor opens one under `locked` (`PortalCard.tsx`, three doors: the card, the face button, the keyboard); a sketch does the same in `WhiteboardNode.tsx`; a press on a section goes through `sectionPressUnder` in `useBoardSections.ts`, which decides between clearing, ignoring, selecting and selecting without the panel; and a link keeps its selection under `quiet`, because a selected edge is what Delete acts on, while `CardInspectorHost` mounts the link panel only in `inspect`. Under `locked`, React Flow's `elementsSelectable` is off, so an edge cannot be selected either.
 
 The mode is UI state, never document state, and it never touches a capability. A viewer was already restricted by the session matrix; the lock is a reader's own choice on top of what they may write, which is why `nodesDraggable` reads `canEditLayout && !locked` rather than replacing it.
 

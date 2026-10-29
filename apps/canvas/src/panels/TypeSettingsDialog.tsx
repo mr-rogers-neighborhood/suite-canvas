@@ -16,6 +16,7 @@ import { IconPicker } from "../icons/IconPicker";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCards } from "../store/workspaceStore";
 import { StyleTab } from "../styles/surface/StyleTab";
+import { TypeTemplates } from "./TypeTemplates";
 
 export interface TypeSettingsDialogProps {
   types: CardType[];
@@ -45,13 +46,24 @@ export interface TypeSettingsDialogProps {
   onUpdateOption: (typeId: string, fieldId: string, optionId: string, label: string) => void;
   onRemoveOption: (typeId: string, fieldId: string, optionId: string) => void;
   /**
-   * Template wiring (ADR-0038). A template is an ordinary card, so these are
-   * card operations: create one in the inbox, point the type at it, or open it.
+   * Template wiring (ADR-0038). A template is an ordinary card, so these are card
+   * operations: create one in the inbox, point the type at it, or open it.
+   *
+   * `templatesFor` is ordered, and the order is the rule: the first is what an ordinary new
+   * card arrives written, and the others are chosen by name at creation.
    */
-  templateFor: (typeId: string) => { id: string; title: string } | undefined;
+  templatesFor: (typeId: string) => Array<{ id: string; title: string }>;
+  /**
+   * Cards that could be this type's template: the ones already carrying it.
+   *
+   * A card of another type is not offered, because a template is copied *as* a card of this
+   * type and a different one would arrive wearing fields the type does not have.
+   */
+  templateCandidatesFor: (typeId: string) => Array<{ id: string; title: string }>;
   onCreateTemplate: (typeId: string) => void;
   onOpenTemplate: (cardId: string) => void;
-  onClearTemplate: (typeId: string) => void;
+  /** The whole ordered list, for a removal, a promotion or a card picked by hand. */
+  onSetTemplates: (typeId: string, cardIds: string[]) => void;
 }
 
 const inputClass =
@@ -119,6 +131,48 @@ function FieldOptions({
   );
 }
 
+/**
+ * One group in the type editor, folded away until it is asked for.
+ *
+ * The dialog holds three answers of very different weight: the fields are what a reader came for,
+ * the look is set once, and a template is set even less often. All three expanded made the panel a
+ * long scroll with the least-used part at the top, so each is a heading that opens: fields start
+ * open, and the other two start shut on every open rather than remembering a state nobody asked to
+ * keep.
+ */
+function TypeSection({
+  title,
+  testId,
+  open: initialOpen,
+  children,
+}: {
+  title: string;
+  testId: string;
+  open: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(initialOpen);
+  return (
+    <section
+      className="mb-2 rounded-lg border border-[var(--hairline)]"
+      data-testid={testId}
+      data-open={open ? "true" : undefined}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        data-testid={`${testId}-toggle`}
+        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span aria-hidden="true">{open ? "\u25be" : "\u25b8"}</span>
+        {title}
+      </button>
+      {open ? <div className="px-2 pb-2">{children}</div> : null}
+    </section>
+  );
+}
+
 export function TypeSettingsDialog({
   types,
   onClose,
@@ -132,12 +186,23 @@ export function TypeSettingsDialog({
   onAddOption,
   onUpdateOption,
   onRemoveOption,
-  templateFor,
+  templatesFor,
+  templateCandidatesFor,
   onCreateTemplate,
   onOpenTemplate,
-  onClearTemplate,
+  onSetTemplates,
 }: TypeSettingsDialogProps) {
-  const [selectedId, setSelectedId] = useState(types[0]?.id ?? null);
+  /**
+   * The types this dialog offers.
+   *
+   * A behaviour type is drawn by the runtime, not authored by the reader: a sketch is a drawing
+   * surface, a portal is a door onto another board, and a tour is the walkthrough a recording makes.
+   * Their names, fields, looks and templates belong to the renderer, so offering them here was three
+   * rows that could only say "you cannot change this" (ADR-0040, ADR-0011 §3). They stay in the
+   * document and keep rendering; the authoring list stops naming them.
+   */
+  const authored = useMemo(() => types.filter((type) => !isBehaviourType(type.id)), [types]);
+  const [selectedId, setSelectedId] = useState(authored[0]?.id ?? null);
   const [newTypeName, setNewTypeName] = useState("");
   const [newTypeGlyph, setNewTypeGlyph] = useState("\u25c7");
   const [fieldName, setFieldName] = useState("");
@@ -156,20 +221,9 @@ export function TypeSettingsDialog({
   const cards = useCards();
 
   const selected = useMemo(
-    () => types.find((type) => type.id === selectedId) ?? types[0],
-    [types, selectedId],
+    () => authored.find((type) => type.id === selectedId) ?? authored[0],
+    [authored, selectedId],
   );
-
-  /**
-   * A behaviour type is drawn by the runtime, not authored by the reader.
-   *
-   * A sketch is a drawing surface and a portal is a door onto another board, so their name,
-   * their plural, their fields and their style all belong to the renderer: renaming the
-   * type a sketch wears, or giving it a field, would produce a card the canvas cannot
-   * draw. The editor still *shows* them — a reader should be able to see what the two
-   * runtime types are — but it does not offer to change them (ADR-0040).
-   */
-  const readOnlyType = isBehaviourType(selected?.id);
 
   const panel = useRef<HTMLDivElement | null>(null);
 
@@ -214,11 +268,14 @@ export function TypeSettingsDialog({
   };
 
   const displayField = selected?.fields.find((field) => field.id === displayFieldId);
-  const templateCard = selected ? templateFor(selected.id) : undefined;
+  const templates = selected ? templatesFor(selected.id) : [];
+  const templateCandidates = (selected ? templateCandidatesFor(selected.id) : []).filter(
+    (candidate) => !templates.some((template) => template.id === candidate.id),
+  );
   /** The type a deleted type's cards move to: note, or the first other type. */
   const fallbackFor = (typeId: string) =>
-    types.find((type) => type.id === "note" && type.id !== typeId) ??
-    types.find((type) => type.id !== typeId);
+    authored.find((type) => type.id === "note" && type.id !== typeId) ??
+    authored.find((type) => type.id !== typeId);
   const pendingDelete = types.find((type) => type.id === pendingDeleteId);
   const pendingMoveCount = pendingDeleteId
     ? cards.filter((card) => card.typeIds.includes(pendingDeleteId)).length
@@ -254,7 +311,7 @@ export function TypeSettingsDialog({
               Types
             </p>
             <div className="space-y-0.5">
-              {types.map((type) => (
+              {authored.map((type) => (
                 <button
                   key={type.id}
                   type="button"
@@ -323,9 +380,7 @@ export function TypeSettingsDialog({
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="border-b border-[var(--hairline)] px-3 py-2">
             <div className="flex items-center gap-2">
-              {selected ? (
-                <TypeIconButton type={selected} onUpdate={onUpdateType} disabled={readOnlyType} />
-              ) : null}
+              {selected ? <TypeIconButton type={selected} onUpdate={onUpdateType} /> : null}
               {/*
                 One row, two words: "Note / Notes" is one name in two numbers, and the
                 second field is the one the reader edits least — it sat under the first as a
@@ -339,11 +394,10 @@ export function TypeSettingsDialog({
                   type="text"
                   defaultValue={selected?.name ?? ""}
                   aria-label="Type name"
-                  readOnly={readOnlyType}
                   className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm font-semibold text-[var(--ink)] hover:border-[var(--hairline)] focus:border-[var(--ink-muted)] focus:outline-none read-only:hover:border-transparent"
                   onBlur={(event) => {
                     const name = event.target.value.trim();
-                    if (!selected || readOnlyType) return;
+                    if (!selected) return;
                     if (name && name !== selected.name) onUpdateType(selected.id, { name });
                     else event.target.value = selected.name;
                   }}
@@ -360,10 +414,8 @@ export function TypeSettingsDialog({
                       placeholder={typePluralName({ name: selected.name })}
                       aria-label="Type plural name"
                       data-testid="type-plural-name"
-                      readOnly={readOnlyType}
                       className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-[var(--ink)] placeholder:text-[var(--ink-muted)] hover:border-[var(--hairline)] focus:border-[var(--ink-muted)] focus:outline-none read-only:hover:border-transparent"
                       onBlur={(event) => {
-                        if (readOnlyType) return;
                         const pluralName = event.target.value.trim();
                         if (pluralName === (selected.pluralName ?? "")) return;
                         onUpdateType(selected.id, { pluralName: pluralName || null });
@@ -380,347 +432,286 @@ export function TypeSettingsDialog({
                 Done
               </button>
             </div>
-            {readOnlyType ? (
-              <p
-                className="mt-1 text-[11px] text-[var(--ink-muted)]"
-                data-testid="type-readonly-note"
-              >
-                Sketches and portals are how the canvas draws, not what it holds. Their names,
-                fields and style are fixed.
-              </p>
-            ) : null}
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            {/* A behaviour type has nothing here to edit: its template is the renderer's,
-                its style is the renderer's, and its fields are the ones the canvas reads.
-                Nothing is hidden that a reader could otherwise use. */}
-            {selected && !readOnlyType ? (
+            {selected ? (
               <>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
-                  Template
-                </p>
-                <div
-                  className="mb-4 rounded-lg border border-[var(--hairline)] p-2"
-                  data-testid="type-template"
-                >
-                  {templateCard ? (
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className="min-w-0 flex-1 truncate text-[12px]"
-                        title={templateCard.title}
+                <TypeSection title="Fields" testId="type-fields" open>
+                  <div className="space-y-2" data-testid="field-list">
+                    {selected.fields.length === 0 ? (
+                      <p className="text-[12px] text-[var(--ink-muted)]">No fields yet.</p>
+                    ) : null}
+                    {selected.fields.map((field, index) => (
+                      <div
+                        key={field.id}
+                        className="rounded-lg border border-[var(--hairline)] p-2"
+                        data-testid={`field-${field.id}`}
                       >
-                        {templateCard.title}
-                      </span>
-                      <button
-                        type="button"
-                        className={smallButton}
-                        data-testid="type-template-open"
-                        onClick={() => onOpenTemplate(templateCard.id)}
-                      >
-                        Open
-                      </button>
-                      <button
-                        type="button"
-                        className={smallButton}
-                        data-testid="type-template-clear"
-                        onClick={() => onClearTemplate(selected.id)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1.5">
-                      <p className="min-w-0 flex-1 text-[11px] leading-4 text-[var(--ink-muted)]">
-                        A new {selected.name.toLowerCase()} starts blank. A template gives it a
-                        title, a body and starting values.
-                      </p>
-                      <button
-                        type="button"
-                        className={smallButton}
-                        data-testid="type-template-create"
-                        onClick={() => onCreateTemplate(selected.id)}
-                      >
-                        Create
-                      </button>
-                    </div>
-                  )}
-                  <p className="mt-1.5 text-[10px] leading-4 text-[var(--ink-muted)]">
-                    The template is a card: edit it like any other, with the slash menu for
-                    properties. Use {"{{Field}}"} in a plain title to fill a value in.
-                  </p>
-                </div>
-
-                {/*
-                  The type is where a card's look starts. The same editor the
-                  inspector mounts, so "every Concept is a pill" is one place to
-                  say it and it stays true for cards made later.
-                */}
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
-                  Appearance
-                </p>
-                <div className="mb-4 rounded-lg border border-[var(--hairline)] p-2">
-                  <StyleTab
-                    targets={[{ kind: "type", id: selected.id }]}
-                    canEdit
-                    typeName={selected.name}
-                  />
-                </div>
-
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
-                  Fields
-                </p>
-                <div className="space-y-2" data-testid="field-list">
-                  {selected.fields.length === 0 ? (
-                    <p className="text-[12px] text-[var(--ink-muted)]">No fields yet.</p>
-                  ) : null}
-                  {selected.fields.map((field, index) => (
-                    <div
-                      key={field.id}
-                      className="rounded-lg border border-[var(--hairline)] p-2"
-                      data-testid={`field-${field.id}`}
-                    >
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="text"
-                          defaultValue={field.name}
-                          aria-label={`Field name ${field.name}`}
-                          className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-[12px] font-medium text-[var(--ink)] hover:border-[var(--hairline)] focus:border-[var(--ink-muted)] focus:outline-none"
-                          onBlur={(event) => {
-                            const name = event.target.value.trim();
-                            if (name && name !== field.name) {
-                              onUpdateField(selected.id, field.id, { name });
-                            } else {
-                              event.target.value = field.name;
-                            }
-                          }}
-                        />
-                        <span className="rounded bg-[var(--segmented-bg)] px-1.5 py-0.5 text-[10px] text-[var(--ink-muted)]">
-                          {field.kind}
-                        </span>
-                        <label className="flex items-center gap-1 text-[10px] text-[var(--ink-muted)]">
-                          <input
-                            type="checkbox"
-                            checked={field.required}
-                            aria-label={`Required ${field.name}`}
-                            onChange={(event) =>
-                              onUpdateField(selected.id, field.id, {
-                                required: event.target.checked,
-                              })
-                            }
-                          />
-                          req
-                        </label>
-                        <button
-                          type="button"
-                          className={smallButton}
-                          data-testid={`field-display-${field.id}`}
-                          title={field.display ?? "Value style"}
-                          aria-label={`Display style for ${field.name}`}
-                          onClick={() => setDisplayFieldId(field.id)}
-                        >
-                          {"\u25a4"}
-                        </button>
-                        <button
-                          type="button"
-                          className={smallButton}
-                          aria-label={`Move ${field.name} up`}
-                          disabled={index === 0}
-                          onClick={() => onMoveField(selected.id, field.id, index - 1)}
-                        >
-                          {"\u2191"}
-                        </button>
-                        <button
-                          type="button"
-                          className={smallButton}
-                          aria-label={`Move ${field.name} down`}
-                          disabled={index === selected.fields.length - 1}
-                          onClick={() => onMoveField(selected.id, field.id, index + 1)}
-                        >
-                          {"\u2193"}
-                        </button>
-                        <button
-                          type="button"
-                          className={smallButton}
-                          aria-label={`Delete field ${field.name}`}
-                          onClick={() => onRemoveField(selected.id, field.id)}
-                        >
-                          {"\u00d7"}
-                        </button>
-                      </div>
-                      {field.kind === "select" || field.kind === "multiSelect" ? (
-                        <FieldOptions
-                          typeId={selected.id}
-                          field={field}
-                          onAdd={onAddOption}
-                          onUpdate={onUpdateOption}
-                          onRemove={onRemoveOption}
-                        />
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-3 space-y-1 rounded-lg border border-dashed border-[var(--hairline)] p-2">
-                  <div className="flex gap-1">
-                    <input
-                      type="text"
-                      value={fieldName}
-                      placeholder="Field name"
-                      aria-label="New field name"
-                      className={inputClass}
-                      onChange={(event) => setFieldName(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          createField();
-                        }
-                      }}
-                    />
-                    <select
-                      value={fieldKind}
-                      aria-label="New field kind"
-                      className="rounded-md border border-[var(--hairline)] bg-transparent px-1 text-[12px]"
-                      onChange={(event) =>
-                        setFieldKind(event.target.value as CreateFieldInput["kind"])
-                      }
-                    >
-                      {fieldKinds.map((kind) => (
-                        <option key={kind} value={kind}>
-                          {kind}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {fieldKind === "select" || fieldKind === "multiSelect" ? (
-                    <input
-                      type="text"
-                      value={fieldOptions}
-                      placeholder="Options, comma separated"
-                      aria-label="New field options"
-                      className={inputClass}
-                      onChange={(event) => setFieldOptions(event.target.value)}
-                    />
-                  ) : null}
-
-                  {fieldKind === "rating" ? (
-                    <div className="flex items-center gap-2" data-testid="rating-shape">
-                      <label className="flex items-center gap-1 text-[12px]">
-                        Out of
-                        <input
-                          type="number"
-                          min={1}
-                          max={10}
-                          value={ratingScale}
-                          data-testid="rating-scale"
-                          className="w-12 rounded-md border border-[var(--hairline)] bg-transparent px-1 text-[12px]"
-                          onChange={(event) => setRatingScale(Number(event.target.value) || 5)}
-                        />
-                      </label>
-                      <label className="flex items-center gap-1 text-[12px]">
-                        <input
-                          type="checkbox"
-                          checked={ratingHalf}
-                          data-testid="rating-half"
-                          onChange={(event) => setRatingHalf(event.target.checked)}
-                        />
-                        Half marks
-                      </label>
-                    </div>
-                  ) : null}
-
-                  {fieldKind === "group" || fieldKind === "list" ? (
-                    <div className="space-y-1" data-testid="sub-field-editor">
-                      {fieldKind === "list" ? (
-                        <label className="flex items-center gap-1 text-[12px]">
-                          Each row is
-                          <select
-                            value={listItemKind}
-                            data-testid="list-item-kind"
-                            aria-label="List item shape"
-                            className="rounded-md border border-[var(--hairline)] bg-transparent px-1 text-[12px]"
-                            onChange={(event) =>
-                              setListItemKind(event.target.value as "scalar" | "group")
-                            }
-                          >
-                            <option value="scalar">one value</option>
-                            <option value="group">a group of values</option>
-                          </select>
-                        </label>
-                      ) : null}
-                      {subFields.map((entry, index) => (
-                        // biome-ignore lint/suspicious/noArrayIndexKey: sub-fields are edited in place and have no id yet.
-                        <div key={index} className="flex items-center gap-1">
+                        <div className="flex items-center gap-1">
                           <input
                             type="text"
-                            value={entry.name}
-                            aria-label={`Sub-field ${index + 1} name`}
-                            placeholder="Sub-field"
-                            className={inputClass}
-                            data-testid={`sub-field-name-${index}`}
-                            onChange={(event) =>
-                              setSubFields((current) =>
-                                current.map((item, at) =>
-                                  at === index ? { ...item, name: event.target.value } : item,
-                                ),
-                              )
-                            }
+                            defaultValue={field.name}
+                            aria-label={`Field name ${field.name}`}
+                            className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-[12px] font-medium text-[var(--ink)] hover:border-[var(--hairline)] focus:border-[var(--ink-muted)] focus:outline-none"
+                            onBlur={(event) => {
+                              const name = event.target.value.trim();
+                              if (name && name !== field.name) {
+                                onUpdateField(selected.id, field.id, { name });
+                              } else {
+                                event.target.value = field.name;
+                              }
+                            }}
                           />
-                          <select
-                            value={entry.kind}
-                            aria-label={`Sub-field ${index + 1} kind`}
-                            data-testid={`sub-field-kind-${index}`}
-                            className="rounded-md border border-[var(--hairline)] bg-transparent px-1 text-[12px]"
-                            onChange={(event) =>
-                              setSubFields((current) =>
-                                current.map((item, at) =>
-                                  at === index
-                                    ? { ...item, kind: event.target.value as SubField["kind"] }
-                                    : item,
-                                ),
-                              )
-                            }
-                          >
-                            {subFieldKinds.map((kind) => (
-                              <option key={kind} value={kind}>
-                                {kind}
-                              </option>
-                            ))}
-                          </select>
+                          <span className="rounded bg-[var(--segmented-bg)] px-1.5 py-0.5 text-[10px] text-[var(--ink-muted)]">
+                            {field.kind}
+                          </span>
+                          <label className="flex items-center gap-1 text-[10px] text-[var(--ink-muted)]">
+                            <input
+                              type="checkbox"
+                              checked={field.required}
+                              aria-label={`Required ${field.name}`}
+                              onChange={(event) =>
+                                onUpdateField(selected.id, field.id, {
+                                  required: event.target.checked,
+                                })
+                              }
+                            />
+                            req
+                          </label>
                           <button
                             type="button"
-                            aria-label={`Remove sub-field ${index + 1}`}
-                            className="rounded px-1 text-[12px] text-[var(--ink-muted)]"
-                            onClick={() =>
-                              setSubFields((current) => current.filter((_, at) => at !== index))
-                            }
+                            className={smallButton}
+                            data-testid={`field-display-${field.id}`}
+                            title={field.display ?? "Value style"}
+                            aria-label={`Display style for ${field.name}`}
+                            onClick={() => setDisplayFieldId(field.id)}
                           >
-                            ×
+                            {"\u25a4"}
+                          </button>
+                          <button
+                            type="button"
+                            className={smallButton}
+                            aria-label={`Move ${field.name} up`}
+                            disabled={index === 0}
+                            onClick={() => onMoveField(selected.id, field.id, index - 1)}
+                          >
+                            {"\u2191"}
+                          </button>
+                          <button
+                            type="button"
+                            className={smallButton}
+                            aria-label={`Move ${field.name} down`}
+                            disabled={index === selected.fields.length - 1}
+                            onClick={() => onMoveField(selected.id, field.id, index + 1)}
+                          >
+                            {"\u2193"}
+                          </button>
+                          <button
+                            type="button"
+                            className={smallButton}
+                            aria-label={`Delete field ${field.name}`}
+                            onClick={() => onRemoveField(selected.id, field.id)}
+                          >
+                            {"\u00d7"}
                           </button>
                         </div>
-                      ))}
-                      <button
-                        type="button"
-                        data-testid="add-sub-field"
-                        className="text-[12px] text-[var(--ink-muted)] underline"
-                        onClick={() =>
-                          setSubFields((current) => [...current, { name: "", kind: "text" }])
+                        {field.kind === "select" || field.kind === "multiSelect" ? (
+                          <FieldOptions
+                            typeId={selected.id}
+                            field={field}
+                            onAdd={onAddOption}
+                            onUpdate={onUpdateOption}
+                            onRemove={onRemoveOption}
+                          />
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-3 space-y-1 rounded-lg border border-dashed border-[var(--hairline)] p-2">
+                    <div className="flex gap-1">
+                      <input
+                        type="text"
+                        value={fieldName}
+                        placeholder="Field name"
+                        aria-label="New field name"
+                        className={inputClass}
+                        onChange={(event) => setFieldName(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            createField();
+                          }
+                        }}
+                      />
+                      <select
+                        value={fieldKind}
+                        aria-label="New field kind"
+                        className="rounded-md border border-[var(--hairline)] bg-transparent px-1 text-[12px]"
+                        onChange={(event) =>
+                          setFieldKind(event.target.value as CreateFieldInput["kind"])
                         }
                       >
-                        Add a sub-field
-                      </button>
+                        {fieldKinds.map((kind) => (
+                          <option key={kind} value={kind}>
+                            {kind}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  ) : null}
-                  <button
-                    type="button"
-                    disabled={!fieldName.trim()}
-                    data-testid="create-field"
-                    className="w-full rounded-md bg-[var(--ink)] px-2 py-1 text-[12px] text-[var(--surface)] disabled:opacity-40"
-                    onClick={createField}
-                  >
-                    Add field
-                  </button>
-                </div>
+                    {fieldKind === "select" || fieldKind === "multiSelect" ? (
+                      <input
+                        type="text"
+                        value={fieldOptions}
+                        placeholder="Options, comma separated"
+                        aria-label="New field options"
+                        className={inputClass}
+                        onChange={(event) => setFieldOptions(event.target.value)}
+                      />
+                    ) : null}
+
+                    {fieldKind === "rating" ? (
+                      <div className="flex items-center gap-2" data-testid="rating-shape">
+                        <label className="flex items-center gap-1 text-[12px]">
+                          Out of
+                          <input
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={ratingScale}
+                            data-testid="rating-scale"
+                            className="w-12 rounded-md border border-[var(--hairline)] bg-transparent px-1 text-[12px]"
+                            onChange={(event) => setRatingScale(Number(event.target.value) || 5)}
+                          />
+                        </label>
+                        <label className="flex items-center gap-1 text-[12px]">
+                          <input
+                            type="checkbox"
+                            checked={ratingHalf}
+                            data-testid="rating-half"
+                            onChange={(event) => setRatingHalf(event.target.checked)}
+                          />
+                          Half marks
+                        </label>
+                      </div>
+                    ) : null}
+
+                    {fieldKind === "group" || fieldKind === "list" ? (
+                      <div className="space-y-1" data-testid="sub-field-editor">
+                        {fieldKind === "list" ? (
+                          <label className="flex items-center gap-1 text-[12px]">
+                            Each row is
+                            <select
+                              value={listItemKind}
+                              data-testid="list-item-kind"
+                              aria-label="List item shape"
+                              className="rounded-md border border-[var(--hairline)] bg-transparent px-1 text-[12px]"
+                              onChange={(event) =>
+                                setListItemKind(event.target.value as "scalar" | "group")
+                              }
+                            >
+                              <option value="scalar">one value</option>
+                              <option value="group">a group of values</option>
+                            </select>
+                          </label>
+                        ) : null}
+                        {subFields.map((entry, index) => (
+                          // biome-ignore lint/suspicious/noArrayIndexKey: sub-fields are edited in place and have no id yet.
+                          <div key={index} className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              value={entry.name}
+                              aria-label={`Sub-field ${index + 1} name`}
+                              placeholder="Sub-field"
+                              className={inputClass}
+                              data-testid={`sub-field-name-${index}`}
+                              onChange={(event) =>
+                                setSubFields((current) =>
+                                  current.map((item, at) =>
+                                    at === index ? { ...item, name: event.target.value } : item,
+                                  ),
+                                )
+                              }
+                            />
+                            <select
+                              value={entry.kind}
+                              aria-label={`Sub-field ${index + 1} kind`}
+                              data-testid={`sub-field-kind-${index}`}
+                              className="rounded-md border border-[var(--hairline)] bg-transparent px-1 text-[12px]"
+                              onChange={(event) =>
+                                setSubFields((current) =>
+                                  current.map((item, at) =>
+                                    at === index
+                                      ? { ...item, kind: event.target.value as SubField["kind"] }
+                                      : item,
+                                  ),
+                                )
+                              }
+                            >
+                              {subFieldKinds.map((kind) => (
+                                <option key={kind} value={kind}>
+                                  {kind}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              aria-label={`Remove sub-field ${index + 1}`}
+                              className="rounded px-1 text-[12px] text-[var(--ink-muted)]"
+                              onClick={() =>
+                                setSubFields((current) => current.filter((_, at) => at !== index))
+                              }
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          data-testid="add-sub-field"
+                          className="text-[12px] text-[var(--ink-muted)] underline"
+                          onClick={() =>
+                            setSubFields((current) => [...current, { name: "", kind: "text" }])
+                          }
+                        >
+                          Add a sub-field
+                        </button>
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={!fieldName.trim()}
+                      data-testid="create-field"
+                      className="w-full rounded-md bg-[var(--ink)] px-2 py-1 text-[12px] text-[var(--surface)] disabled:opacity-40"
+                      onClick={createField}
+                    >
+                      Add field
+                    </button>
+                  </div>
+                </TypeSection>
+
+                <TypeSection title="Appearance" testId="type-appearance" open={false}>
+                  <div className="rounded-lg border border-[var(--hairline)] p-2">
+                    <StyleTab
+                      targets={[{ kind: "type", id: selected.id }]}
+                      canEdit
+                      typeName={selected.name}
+                    />
+                  </div>
+                </TypeSection>
+
+                <TypeSection title="Template" testId="type-template-section" open={false}>
+                  <TypeTemplates
+                    typeId={selected.id}
+                    typeName={selected.name}
+                    templates={templates}
+                    candidates={templateCandidates}
+                    onCreate={onCreateTemplate}
+                    onOpen={onOpenTemplate}
+                    onSet={onSetTemplates}
+                  />
+                </TypeSection>
               </>
             ) : (
               <p className="text-[12px] text-[var(--ink-muted)]">Create a type to begin.</p>
@@ -736,7 +727,7 @@ export function TypeSettingsDialog({
                 onClick={() => setPendingDeleteId(selected.id)}
               >
                 Delete type (cards move to{" "}
-                {types.find((type) => type.id !== selected.id)?.name ?? "Note"})
+                {authored.find((type) => type.id !== selected.id)?.name ?? "Note"})
               </button>
             </footer>
           ) : null}
@@ -796,12 +787,9 @@ export function TypeSettingsDialog({
 function TypeIconButton({
   type,
   onUpdate,
-  disabled = false,
 }: {
   type: CardType;
   onUpdate: (id: string, patch: { icon?: string | null }) => void;
-  /** A behaviour type's mark belongs to the runtime that draws it. */
-  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -812,8 +800,7 @@ function TypeIconButton({
         aria-haspopup="dialog"
         aria-expanded={open}
         data-testid="type-icon"
-        disabled={disabled}
-        className="flex h-6 w-6 items-center justify-center rounded border border-[var(--hairline)] text-[13px] text-[var(--ink)] hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"
+        className="flex h-6 w-6 items-center justify-center rounded border border-[var(--hairline)] text-[13px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
         onClick={() => setOpen((value) => !value)}
       >
         {type.icon ? (

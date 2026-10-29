@@ -13,13 +13,28 @@ export function TypeSettingsHost() {
 
   if (!open) return null;
 
-  /** The template the dialog should show for whichever type it has selected. */
-  const templateFor = (typeId: string) => {
-    const templateId = types.find((candidate) => candidate.id === typeId)?.templateCardId;
-    if (!templateId) return undefined;
-    const card = cards.find((candidate) => candidate.id === templateId);
-    return card ? { id: card.id, title: workspace.displayTitle(card.id) } : undefined;
+  /**
+   * The templates the dialog should show for whichever type it has selected, in order.
+   *
+   * A template whose card is missing or trashed is left out here rather than removed from the
+   * document: the list is what the type offers, and a deleted card offers nothing.
+   */
+  const templatesFor = (typeId: string) => {
+    const type = types.find((candidate) => candidate.id === typeId);
+    const ids = type?.templateCardIds ?? (type?.templateCardId ? [type.templateCardId] : []);
+    return ids.flatMap((id) => {
+      const card = cards.find((candidate) => candidate.id === id);
+      return card && !card.deletedAt
+        ? [{ id: card.id, title: workspace.displayTitle(card.id) }]
+        : [];
+    });
   };
+
+  /** The cards a type's template could be: the ones already carrying that type. */
+  const templateCandidatesFor = (typeId: string) =>
+    cards
+      .filter((card) => !card.deletedAt && card.typeIds.includes(typeId))
+      .map((card) => ({ id: card.id, title: workspace.displayTitle(card.id) }));
 
   return (
     <TypeSettingsDialog
@@ -41,13 +56,17 @@ export function TypeSettingsHost() {
       onRemoveOption={(typeId, fieldId, optionId) =>
         workspace.removeSelectOption(typeId, fieldId, optionId)
       }
-      templateFor={templateFor}
+      templatesFor={templatesFor}
+      templateCandidatesFor={templateCandidatesFor}
       onCreateTemplate={(typeId) => {
         // The template is a real card, so it is created like one and left in the
         // inbox until someone places it. `fromTemplate: false` keeps a template
         // from copying itself.
         const card = workspace.createCard({ typeId, fromTemplate: false });
-        workspace.updateType(typeId, { templateCardId: card.id });
+        // Appended, not replacing: a type can hold several templates, and Create is how
+        // another one is added rather than how the existing one is overwritten.
+        const existing = templatesFor(typeId).map((entry) => entry.id);
+        workspace.updateType(typeId, { templateCardIds: [...existing, card.id] });
         // The editor would sit on top of the card it just opened, so it closes:
         // the next thing the user does is write the template.
         close();
@@ -57,7 +76,9 @@ export function TypeSettingsHost() {
         close();
         openCardFocus(cardId);
       }}
-      onClearTemplate={(typeId) => workspace.updateType(typeId, { templateCardId: null })}
+      onSetTemplates={(typeId, cardIds) =>
+        workspace.updateType(typeId, { templateCardIds: cardIds })
+      }
     />
   );
 }

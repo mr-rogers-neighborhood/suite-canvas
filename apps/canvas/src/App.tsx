@@ -5,6 +5,7 @@ import { shellPaletteItems } from "./app/palette";
 import { StaleBuildNotice } from "./app/StaleBuildNotice";
 import { useBoardDerivations } from "./app/useBoardDerivations";
 import { useBoardPaletteActions } from "./app/useBoardPaletteActions";
+import { useCreateCard } from "./app/useCreateCard";
 import { useLeaveTransition } from "./app/useLeaveTransition";
 import { useStaleBuild } from "./app/useStaleBuild";
 import { useWorkspaceBoot } from "./app/useWorkspaceBoot";
@@ -20,6 +21,7 @@ import { usePlaceStackStore } from "./canvas/placeStack";
 import type { CanvasPurpose } from "./canvas/purpose";
 import { useRecordEngine } from "./canvas/useRecordEngine";
 import { zoomBand } from "./canvas/zoomRange";
+import { TemplateChoiceMenu } from "./cards/TemplateChoiceMenu";
 import { ensureTutorialType, tutorialCardOnBoard } from "./cards/tour";
 import { ensureWhiteboardType } from "./cards/whiteboard";
 import type { BoardPresence } from "./chrome/BoardSwitcher";
@@ -303,17 +305,13 @@ function WorkspaceShell({
     [activeBoardId, canvasPoint, workspace],
   );
 
-  /** Returns the new card's id, so a caller can open what it just made. */
-  const createCard = useCallback(
-    (typeId: string, point?: { x: number; y: number }) => {
-      if (!activeBoardId) return undefined;
-      const position = point ? canvasPoint(point) : canvasPoint();
-      const card = workspace.createCard({ typeId, boardId: activeBoardId, position });
-      startEditing(card.id, "title");
-      return card.id;
-    },
-    [activeBoardId, canvasPoint, workspace, startEditing],
-  );
+  /** Every "new card of this type" comes through here; see `useCreateCard`. */
+  const {
+    createCard,
+    choice: templateChoice,
+    pick: pickTemplate,
+    cancel: cancelTemplateChoice,
+  } = useCreateCard({ workspace, activeBoardId, canvasPoint, startEditing });
 
   /** Clicks become steps, so recording has one engine beside the placement one. */
   const recordEngine = useRecordEngine();
@@ -768,120 +766,130 @@ function WorkspaceShell({
   if (boot.show) return <BootSkeleton exiting={boot.exiting} />;
 
   return (
-    <WorkspaceShellView
-      shellRef={shellRef}
-      boardRef={boardRef}
-      ready={ready}
-      synced={synced}
-      leaving={leaving}
-      palette={workspacePalette}
-      roles={palette}
-      mode={theme}
-      requestLeave={requestLeave}
-      setPaletteOpen={setPaletteOpen}
-      standalone={standalone}
-      status={status}
-      share={share}
-      peerCount={peerCount}
-      workspaceId={workspaceId}
-      workspace={workspace}
-      workspaceName={workspaceName}
-      setWorkspaceName={setWorkspaceName}
-      phase={accountPhase}
-      claim={syncFacts.claim}
-      reason={syncFacts.reason}
-      onSeePlans={() => openPanel("plan")}
-      onReclaim={syncFacts.reclaim}
-      inRoom={inRoom}
-      openSignIn={openSignIn}
-      readOnly={readOnly}
-      activeBoardId={activeBoardId}
-      activeBoardName={activeBoardName}
-      canManageSchema={canManageSchema}
-      workspaceSurface={workspaceSurface}
-      canEditLayout={canEditLayout}
-      canCreateContent={canCreateContent}
-      canCreateBoards={canCreateBoards}
-      canManageBoards={canManageBoards}
-      canManageTrash={canManageTrash}
-      setLibraryOpen={setLibraryOpen}
-      libraryOpen={libraryOpen}
-      historyOpen={historyOpen}
-      toggleHistory={toggleHistory}
-      outlineOpen={outlineOpen}
-      toggleOutline={toggleOutline}
-      libraryTab={libraryTab}
-      snapshot={snapshot}
-      boardRecency={boardRecency}
-      newTab={newTab}
-      openNewTab={openNewTab}
-      boardHistory={boardHistory}
-      goBackBoard={goBackBoard}
-      peersByBoard={peersByBoard}
-      createBoard={() => {
-        const board = workspace.createBoard();
-        activateBoard(board.id);
-      }}
-      activateBoard={activateBoard}
-      boardPainted={boardPainted}
-      boardPaint={boardPaint}
-      boardEmpty={boardEmpty}
-      sharedEmpty={sharedEmpty}
-      createCard={createCard}
-      createPortal={createPortal}
-      createSketch={createSketch}
-      createSection={createSection}
-      createBoardPortal={createBoardPortal}
-      openTypeSettings={openTypeSettings}
-      paletteItems={paletteItems}
-      unplaced={unplaced}
-      trashed={trashed}
-      allCards={allCards}
-      trashItems={trashItems}
-      cardFocusId={cardFocusId}
-      inboxItems={inboxItems}
-      cardItems={cardItems}
-      boardEntries={boardItems}
-      unplaceBoardCards={unplaceBoardCards}
-      deleteBoard={deleteBoard}
-      locateCard={locateCard}
-      locateBoard={locateBoard}
-      useBoardTemplate={useBoardTemplate}
-      useStarter={useStarter}
-      setBoardTemplate={setBoardTemplate}
-      setLibraryTab={setLibraryTab}
-      placeCard={placeCard}
-      startPlaceStack={(cardIds) => {
-        // Only what is not already here goes in the hand: the count on the stack is
-        // then the number of presses the reader will actually make.
-        const lookup = placementLookup(workspace);
-        const missing = cardIds.filter(
-          (id) =>
-            lookup.isBoard(id) ||
-            activeBoardId === null ||
-            workspace.getPlacement(activeBoardId, id) === undefined,
-        );
-        // The macro's seed is the card the reader had selected, which is the hub a fan
-        // keeps; a thread moves its anchor on with each placement.
-        const seed = useUiStore.getState().selectedNodeIds[0] ?? null;
-        usePlaceStackStore.getState().start(missing, seed);
-      }}
-      onDropSelection={onDropSelection}
-      toggleLibraryType={toggleLibraryType}
-      toggleLibraryTag={toggleLibraryTag}
-      clearLibraryFilters={clearLibraryFilters}
-      libraryTypeFilter={libraryTypeFilter}
-      libraryTagFilter={libraryTagFilter}
-      libraryScope={libraryScope}
-      setLibraryScope={setLibraryScope}
-      libraryFull={libraryFull}
-      setLibraryFull={setLibraryFull}
-      librarySectionFilter={librarySectionFilter}
-      toggleLibrarySection={toggleLibrarySection}
-      sectionOrder={sectionOrder}
-      libraryGroupBySection={libraryGroupBySection}
-      toggleLibraryGroupBySection={toggleLibraryGroupBySection}
-      openInspector={openInspector}
-    />
+    <>
+      <WorkspaceShellView
+        shellRef={shellRef}
+        boardRef={boardRef}
+        ready={ready}
+        synced={synced}
+        leaving={leaving}
+        palette={workspacePalette}
+        roles={palette}
+        mode={theme}
+        requestLeave={requestLeave}
+        setPaletteOpen={setPaletteOpen}
+        standalone={standalone}
+        status={status}
+        share={share}
+        peerCount={peerCount}
+        workspaceId={workspaceId}
+        workspace={workspace}
+        workspaceName={workspaceName}
+        setWorkspaceName={setWorkspaceName}
+        phase={accountPhase}
+        claim={syncFacts.claim}
+        reason={syncFacts.reason}
+        onSeePlans={() => openPanel("plan")}
+        onReclaim={syncFacts.reclaim}
+        inRoom={inRoom}
+        openSignIn={openSignIn}
+        readOnly={readOnly}
+        activeBoardId={activeBoardId}
+        activeBoardName={activeBoardName}
+        canManageSchema={canManageSchema}
+        workspaceSurface={workspaceSurface}
+        canEditLayout={canEditLayout}
+        canCreateContent={canCreateContent}
+        canCreateBoards={canCreateBoards}
+        canManageBoards={canManageBoards}
+        canManageTrash={canManageTrash}
+        setLibraryOpen={setLibraryOpen}
+        libraryOpen={libraryOpen}
+        historyOpen={historyOpen}
+        toggleHistory={toggleHistory}
+        outlineOpen={outlineOpen}
+        toggleOutline={toggleOutline}
+        libraryTab={libraryTab}
+        snapshot={snapshot}
+        boardRecency={boardRecency}
+        newTab={newTab}
+        openNewTab={openNewTab}
+        boardHistory={boardHistory}
+        goBackBoard={goBackBoard}
+        peersByBoard={peersByBoard}
+        createBoard={() => {
+          const board = workspace.createBoard();
+          activateBoard(board.id);
+        }}
+        activateBoard={activateBoard}
+        boardPainted={boardPainted}
+        boardPaint={boardPaint}
+        boardEmpty={boardEmpty}
+        sharedEmpty={sharedEmpty}
+        createCard={createCard}
+        createPortal={createPortal}
+        createSketch={createSketch}
+        createSection={createSection}
+        createBoardPortal={createBoardPortal}
+        openTypeSettings={openTypeSettings}
+        paletteItems={paletteItems}
+        unplaced={unplaced}
+        trashed={trashed}
+        allCards={allCards}
+        trashItems={trashItems}
+        cardFocusId={cardFocusId}
+        inboxItems={inboxItems}
+        cardItems={cardItems}
+        boardEntries={boardItems}
+        unplaceBoardCards={unplaceBoardCards}
+        deleteBoard={deleteBoard}
+        locateCard={locateCard}
+        locateBoard={locateBoard}
+        useBoardTemplate={useBoardTemplate}
+        useStarter={useStarter}
+        setBoardTemplate={setBoardTemplate}
+        setLibraryTab={setLibraryTab}
+        placeCard={placeCard}
+        startPlaceStack={(cardIds) => {
+          // Only what is not already here goes in the hand: the count on the stack is
+          // then the number of presses the reader will actually make.
+          const lookup = placementLookup(workspace);
+          const missing = cardIds.filter(
+            (id) =>
+              lookup.isBoard(id) ||
+              activeBoardId === null ||
+              workspace.getPlacement(activeBoardId, id) === undefined,
+          );
+          // The macro's seed is the card the reader had selected, which is the hub a fan
+          // keeps; a thread moves its anchor on with each placement.
+          const seed = useUiStore.getState().selectedNodeIds[0] ?? null;
+          usePlaceStackStore.getState().start(missing, seed);
+        }}
+        onDropSelection={onDropSelection}
+        toggleLibraryType={toggleLibraryType}
+        toggleLibraryTag={toggleLibraryTag}
+        clearLibraryFilters={clearLibraryFilters}
+        libraryTypeFilter={libraryTypeFilter}
+        libraryTagFilter={libraryTagFilter}
+        libraryScope={libraryScope}
+        setLibraryScope={setLibraryScope}
+        libraryFull={libraryFull}
+        setLibraryFull={setLibraryFull}
+        librarySectionFilter={librarySectionFilter}
+        toggleLibrarySection={toggleLibrarySection}
+        sectionOrder={sectionOrder}
+        libraryGroupBySection={libraryGroupBySection}
+        toggleLibraryGroupBySection={toggleLibraryGroupBySection}
+        openInspector={openInspector}
+      />
+      {/* One chooser for every "new card of this type" that has a real choice to make. */}
+      {templateChoice ? (
+        <TemplateChoiceMenu
+          choice={templateChoice}
+          onPick={pickTemplate}
+          onClose={cancelTemplateChoice}
+        />
+      ) : null}
+    </>
   );
 }

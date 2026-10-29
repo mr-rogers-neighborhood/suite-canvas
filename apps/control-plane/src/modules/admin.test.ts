@@ -221,6 +221,8 @@ describe("the subscription list", () => {
     periodEnd: new Date("2026-11-28T00:00:00.000Z"),
     cancelAtPeriodEnd: false,
     seats: 1,
+    stripeCustomerId: "cus_test_1",
+    stripeSubscriptionId: "sub_test_1",
   };
 
   it("refuses a caller with no session, before it reads anything", async () => {
@@ -263,8 +265,12 @@ describe("the subscription list", () => {
         periodEnd: Date.parse("2026-11-28T00:00:00.000Z"),
         cancelAtPeriodEnd: false,
         seats: 1,
+        stripeCustomerId: "cus_test_1",
+        stripeSubscriptionId: "sub_test_1",
       },
     ]);
+    // The mode rides along so the panel links to the dashboard the row came from.
+    expect(JSON.parse(out.body).mode).toBe("test");
   });
 
   it("reads as an empty list where billing has never run, rather than an error", async () => {

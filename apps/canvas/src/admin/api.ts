@@ -467,13 +467,39 @@ export interface AdminSubscription {
   periodEnd: number | null;
   cancelAtPeriodEnd: boolean;
   seats: number | null;
+  /** Stripe's own ids, for the dashboard link. Null before the customer exists. */
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
 }
 
 export function listSubscriptions(): Promise<{
   ok: boolean;
+  /** Which credential pair is active, so a link opens the matching dashboard. */
+  mode?: "test" | "live";
   subscriptions: AdminSubscription[];
 }> {
   return requestUrl(`${ADMIN_SUBSCRIPTIONS_PATH}`);
+}
+
+/**
+ * Where Stripe keeps one subscription, in the right mode.
+ *
+ * Managing a plan stays Stripe's job: a panel that could cancel would be a second way to
+ * spend somebody's money, and a link cannot drift from what Stripe actually holds.
+ */
+export function stripeDashboardUrl(
+  subscription: AdminSubscription,
+  mode: "test" | "live",
+): string | null {
+  const prefix =
+    mode === "test" ? "https://dashboard.stripe.com/test" : "https://dashboard.stripe.com";
+  if (subscription.stripeSubscriptionId) {
+    return `${prefix}/subscriptions/${encodeURIComponent(subscription.stripeSubscriptionId)}`;
+  }
+  if (subscription.stripeCustomerId) {
+    return `${prefix}/customers/${encodeURIComponent(subscription.stripeCustomerId)}`;
+  }
+  return null;
 }
 
 export function listAccounts(query: string): Promise<{ ok: boolean; accounts: AdminAccount[] }> {

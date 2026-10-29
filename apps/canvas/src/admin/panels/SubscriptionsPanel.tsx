@@ -1,4 +1,4 @@
-import { type AdminSubscription, listSubscriptions } from "../api";
+import { type AdminSubscription, listSubscriptions, stripeDashboardUrl } from "../api";
 import { ErrorLine, formatWhen, Muted, PanelHeader, useLoad } from "../ui";
 
 /**
@@ -36,13 +36,14 @@ function ceilingCopy(row: AdminSubscription): string {
 export function SubscriptionsPanel() {
   const { data, error, loading, reload } = useLoad(listSubscriptions);
   const rows = data?.subscriptions ?? [];
+  const mode = data?.mode ?? "test";
   const live = rows.filter((row) => row.status === "active" || row.status === "trialing").length;
 
   return (
     <section className="admin-panel" data-testid="subscriptions-panel">
       <PanelHeader
         title="Subscriptions"
-        description="One row per organization. A plan is changed by that organization in the app, on its Plan tab."
+        description={`One row per organization, read from the ${mode} database. A plan is changed by that organization in the app, or on Stripe's own page.`}
         actions={
           <button type="button" className="admin-button" onClick={reload}>
             Refresh
@@ -88,7 +89,27 @@ export function SubscriptionsPanel() {
                   ) : null}
                 </td>
                 <td>{ceilingCopy(row)}</td>
-                <td>{formatWhen(row.periodEnd)}</td>
+                <td>
+                  {formatWhen(row.periodEnd)}
+                  {(() => {
+                    const url = stripeDashboardUrl(row, mode);
+                    if (url === null) return null;
+                    return (
+                      <>
+                        {" "}
+                        <a
+                          className="admin-link"
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          data-testid={`stripe-${row.organizationId}`}
+                        >
+                          Manage in Stripe
+                        </a>
+                      </>
+                    );
+                  })()}
+                </td>
               </tr>
             ))}
           </tbody>

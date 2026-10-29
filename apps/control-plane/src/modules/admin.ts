@@ -8,6 +8,7 @@ import { createLogger, type Logger, REQUEST_ID_HEADER } from "../logging.js";
 import { createPool } from "../pool.js";
 import type { RouteModule } from "../routes.js";
 import { type AuditStore, auditSafely, createAuditStore } from "./audit.js";
+import { stripeMode } from "./auth-billing.js";
 import { sessionReader } from "./context.js";
 import { readStoredSettings } from "./settings.js";
 
@@ -88,6 +89,8 @@ interface SubscriptionRow {
   periodEnd: string | Date | number | null;
   cancelAtPeriodEnd: boolean | null;
   seats: number | string | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
 }
 
 /** One row of the people list, as the query above returns it. */
@@ -153,6 +156,7 @@ const REVOKE_GRANT_SQL = `
 const SUBSCRIPTIONS_SQL = `
   SELECT s."referenceId" AS organization_id, s."plan", s."status",
          s."periodEnd", s."cancelAtPeriodEnd", s."seats",
+         s."stripeCustomerId", s."stripeSubscriptionId",
          o.name AS organization_name
   FROM "subscription" s
   LEFT JOIN "organization" o ON o.id = s."referenceId"
@@ -934,6 +938,19 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
   };
 
   /**
+   * Test or live, read from the panel's row over the environment.
+   *
+   * The same composition billing itself boots with, so the dashboard a row links to is the
+   * dashboard the row came from.
+   */
+  const subscriptionsMode = async (): Promise<"test" | "live"> => {
+    const rows = await readStoredSettings((env[DATABASE_URL_VARIABLE] ?? "").trim()).catch(
+      () => [],
+    );
+    return stripeMode(envWithSettings({ env, rows }));
+  };
+
+  /**
    * The paid half of the deployment.
    *
    * Read-only on purpose: cancelling somebody's plan from an operator surface is a billing
@@ -946,6 +963,9 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
       const result = await database().query(SUBSCRIPTIONS_SQL);
       sendJson(response, 200, {
         ok: true,
+        // Which pair of Stripe credentials is active, so the panel can deep-link into the
+        // matching dashboard. A test-mode link to a live subscription opens nothing.
+        mode: await subscriptionsMode(),
         subscriptions: (result.rows as SubscriptionRow[]).map((row) => ({
           organizationId: row.organization_id,
           organizationName: row.organization_name,
@@ -954,6 +974,8 @@ export function createAdminModule(options: AdminModuleOptions): RouteModule {
           periodEnd: millisOf(row.periodEnd),
           cancelAtPeriodEnd: row.cancelAtPeriodEnd === true,
           seats: row.seats === null ? null : Number(row.seats),
+          stripeCustomerId: row.stripeCustomerId,
+          stripeSubscriptionId: row.stripeSubscriptionId,
         })),
       });
     } catch (error) {

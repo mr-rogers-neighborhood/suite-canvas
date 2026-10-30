@@ -55,3 +55,8 @@ apps/docs/.astro/
 apps/site/dist/
 apps/site/.astro/
 internal/
+
+# Agent and AI assistant configurations
+.agents/
+.gemini/
+

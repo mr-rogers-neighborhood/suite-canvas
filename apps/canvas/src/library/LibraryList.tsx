@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** The scrolling list: the new-board action, the rows, the empty state. */
+/** The scrolling list: the rows and the empty state. */
 export function LibraryList({
   tab,
   boardScope,
@@ -10,7 +10,6 @@ export function LibraryList({
   entryCount,
   truncated,
   rows,
-  onCreateBoard,
 }: {
   tab: string;
   boardScope: boolean;
@@ -21,8 +20,6 @@ export function LibraryList({
   /** The search stopped at its cap, so more matches exist than are listed. */
   truncated: boolean;
   rows: ReactNode;
-  /** Absent when this session may not create boards. */
-  onCreateBoard?: (() => void) | undefined;
 }) {
   return (
     <div className="library-list overflow-y-auto p-1.5">
@@ -33,16 +30,6 @@ export function LibraryList({
         >
           Showing the first 200 matches. Add a word to narrow them.
         </p>
-      ) : null}
-      {onCreateBoard ? (
-        <button
-          type="button"
-          data-testid="library-new-board"
-          className="mb-1 flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
-          onClick={onCreateBoard}
-        >
-          <span aria-hidden="true">+</span> New board
-        </button>
       ) : null}
       {/* "Start from" lives in the launcher, where a workspace begins. Here the
           library lists what you already have. */}

@@ -97,6 +97,14 @@ export interface LibraryDrawerProps {
   boards?: Array<LibraryItem & { cardCount?: number }>;
   /** A new board, opened. Absent when this session may not create boards. */
   onCreateBoard?: (() => void) | undefined;
+  /**
+   * The same "new card" verbs the dock offers, so the library can start a card as
+   * well as a board. Each row is absent when its handler is.
+   */
+  onCreateCard?: ((typeId: string) => void) | undefined;
+  onCreateSketch?: (() => void) | undefined;
+  onCreateSection?: (() => void) | undefined;
+  onCreatePortal?: ((targetBoardId: string) => void) | undefined;
   /** Switches to the board. */
   onOpenBoard?: (boardId: string) => void;
   /** Creates a portal card to the board on the active board; the row stays put. */

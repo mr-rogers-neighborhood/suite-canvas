@@ -6,6 +6,8 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { NewThingMenu } from "../chrome/NewThingMenu";
+import { newThingMenuModel } from "../chrome/newThingMenu";
 import { useSavedViews } from "../chrome/ViewsBar";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
 import { useEscapeLayer } from "../shell/escapeLayers";
@@ -51,6 +53,10 @@ export function LibraryDrawer({
   boards = [],
   /** Absent when this session may not create boards. */
   onCreateBoard,
+  onCreateCard,
+  onCreateSketch,
+  onCreateSection,
+  onCreatePortal,
   onOpenBoard = () => {},
   onPlaceBoard = () => {},
   onUnplaceBoardCards = () => {},
@@ -127,6 +133,11 @@ export function LibraryDrawer({
     x: number;
     y: number;
   } | null>(null);
+  /** The "+ Add new" menu, which opens over the list from the control at its top. */
+  const [addNew, setAddNew] = useState(false);
+  /** The portal row's submenu, which is the same list of board targets the dock shows. */
+  const [addNewPortal, setAddNewPortal] = useState(false);
+  const addNewMenu = useRef<HTMLDivElement | null>(null);
   const searchInput = useRef<HTMLInputElement | null>(null);
   const activeRow = useRef<HTMLLIElement | null>(null);
   const focusPending = useRef(false);
@@ -239,6 +250,11 @@ export function LibraryDrawer({
       query?.order === "updated" ? "updated" : query?.order === "relevance" ? "relevance" : "title",
     );
   }, [activeViewId, workspace, updateQuery]);
+
+  useEscapeLayer(() => {
+    setAddNew(false);
+    setAddNewPortal(false);
+  }, open && addNew);
 
   useEscapeLayer(() => {
     // The first Escape clears the query; only the next one closes the drawer.
@@ -443,6 +459,32 @@ export function LibraryDrawer({
     },
   };
 
+  /**
+   * The same menu the dock opens, from the top of the list. A reader who came here
+   * to start something should not have to close the drawer and find the pill, and
+   * an empty workspace has no row to act on at all.
+   */
+  const addNewModel = newThingMenuModel({
+    types,
+    boards: boards.map((board) => ({ id: board.id, name: board.title })),
+    activeBoardId,
+    libraryOpen: true,
+    canCreateContent: onCreateCard !== undefined,
+    canCreateBoards: onCreateBoard !== undefined,
+    handlers: {
+      ...(onCreateSketch === undefined ? {} : { createSketch: onCreateSketch }),
+      ...(onCreateSection === undefined ? {} : { createSection: onCreateSection }),
+      ...(onCreatePortal === undefined ? {} : { createPortal: onCreatePortal }),
+      ...(onCreateBoard === undefined ? {} : { createBoard: onCreateBoard }),
+    },
+  });
+  /** What a new thing does once it exists: the drawer steps aside so it is in view. */
+  const madeSomething = () => {
+    setAddNew(false);
+    setAddNewPortal(false);
+    onClose();
+  };
+
   // One list. A board is an item like a card, so the row shape follows the item
   // rather than the tab.
   const entries: LibraryEntry[] = ordered.map((item) => ({
@@ -548,6 +590,43 @@ export function LibraryDrawer({
         </p>
       ) : null}
 
+      {/* The same menu the dock opens. A reader who came to the library to start
+          something should not have to put the drawer away and go find the pill, and
+          a workspace with no rows yet has nothing here to act on at all. It sits
+          above the list rather than inside it: the list scrolls and clips, and a
+          menu is not something to scroll past. */}
+      <div ref={addNewMenu} className="relative px-1.5 pt-1">
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={addNew}
+          data-testid="library-add-new"
+          className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+          onClick={() => {
+            setAddNew((openNow) => !openNow);
+            setAddNewPortal(false);
+          }}
+        >
+          <span aria-hidden="true">+</span> Add new
+        </button>
+        {addNew ? (
+          <div className="absolute left-1.5 top-full z-20">
+            <NewThingMenu
+              model={addNewModel}
+              direction="down"
+              prefix="library"
+              onCreateCard={(typeId) => {
+                madeSomething();
+                onCreateCard?.(typeId);
+              }}
+              portalOpen={addNewPortal}
+              onTogglePortal={() => setAddNewPortal((openNow) => !openNow)}
+              onDone={madeSomething}
+            />
+          </div>
+        ) : null}
+      </div>
+
       <LibraryList
         tab={tab}
         boardScope={boardScope}
@@ -557,7 +636,6 @@ export function LibraryDrawer({
         entryCount={entries.length}
         truncated={truncated}
         rows={<LibraryRowList entries={entries} grouped={grouped} context={rowContext} />}
-        onCreateBoard={onCreateBoard}
       />
 
       <LibraryOverlays

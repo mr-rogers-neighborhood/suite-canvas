@@ -733,6 +733,88 @@ describe("LibraryDrawer boards", () => {
   });
 });
 
+describe("starting something from the library", () => {
+  const types = (workspace: WorkspaceDocument) => workspace.listTypes();
+  /** The board the fixture's cards sit on, which is the one a new card lands on. */
+  const board = (items: LibraryItem[]) => items[0]?.boards[0]?.id ?? null;
+
+  it("should offer the same verbs the dock does", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items, {
+      types: types(workspace),
+      onCreateCard: () => {},
+      onCreateSketch: () => {},
+      onCreateSection: () => {},
+      onCreatePortal: () => {},
+      onCreateBoard: () => {},
+      activeBoardId: board(items),
+    });
+
+    fireEvent.click(screen.getByTestId("library-add-new"));
+
+    expect(screen.getByTestId("library-type-menu")).toBeInTheDocument();
+    expect(screen.getByTestId("library-type-note")).toBeInTheDocument();
+    expect(screen.getByTestId("library-new-sketch")).toBeInTheDocument();
+    expect(screen.getByTestId("library-new-section")).toBeInTheDocument();
+    expect(screen.getByTestId("library-new-board")).toBeInTheDocument();
+  });
+
+  /** A behaviour is not something a reader authors, so it is never a row here either. */
+  it("should not offer a behaviour as a type to create", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items, {
+      types: types(workspace),
+      onCreateCard: () => {},
+      onCreateSketch: () => {},
+      activeBoardId: board(items),
+    });
+
+    fireEvent.click(screen.getByTestId("library-add-new"));
+
+    expect(screen.queryByTestId("library-type-whiteboard")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("library-type-portal")).not.toBeInTheDocument();
+  });
+
+  /** The new card lands on the board, so the drawer must not be standing in front of it. */
+  it("should create the card and put the drawer away", () => {
+    const { workspace, items } = fixture();
+    const onCreateCard = vi.fn();
+    const onClose = vi.fn();
+    renderDrawer(workspace, items, {
+      types: types(workspace),
+      onCreateCard,
+      onClose,
+      activeBoardId: board(items),
+    });
+
+    fireEvent.click(screen.getByTestId("library-add-new"));
+    fireEvent.click(screen.getByTestId("library-type-note"));
+
+    expect(onCreateCard).toHaveBeenCalledWith("note");
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.queryByTestId("library-type-menu")).not.toBeInTheDocument();
+  });
+
+  it("should name a board the portal can open", () => {
+    const { workspace, items } = fixture();
+    const onCreatePortal = vi.fn();
+    renderDrawer(workspace, items, {
+      types: types(workspace),
+      onCreateCard: () => {},
+      onCreatePortal,
+      boards: [{ ...(items[0] as LibraryItem), id: "b2", title: "Second board" }],
+      activeBoardId: board(items),
+    });
+
+    fireEvent.click(screen.getByTestId("library-add-new"));
+    fireEvent.click(screen.getByTestId("library-new-portal"));
+
+    const targets = within(screen.getByTestId("library-portal-menu"));
+    fireEvent.click(targets.getByTestId("library-portal-b2"));
+    expect(onCreatePortal).toHaveBeenCalledWith("b2");
+  });
+});
+
 describe("LibraryDrawer board blueprints", () => {
   interface TemplateFixture {
     workspace: WorkspaceDocument;

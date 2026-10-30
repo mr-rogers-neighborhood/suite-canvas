@@ -710,6 +710,14 @@ export function WorkspaceShellView({
             trash={trashItems}
             boards={boardEntries}
             onCreateBoard={canCreateBoards ? createBoard : undefined}
+            {...(canCreateContent
+              ? {
+                  onCreateCard: createCard,
+                  onCreateSketch: createSketch,
+                  onCreateSection: createSection,
+                  onCreatePortal: (targetBoardId: string) => createPortal(targetBoardId),
+                }
+              : {})}
             onOpenBoard={activateBoard}
             onPlaceBoard={(boardId) => createPortal(boardId)}
             onUnplaceBoardCards={unplaceBoardCards}

@@ -26,21 +26,28 @@ type BoardOverlaysProps = {
  * it rather than inside it.
  */
 export function BoardOverlays({ ui, projection, links, menuItems }: BoardOverlaysProps) {
-  const { activeBoardId, closeContextMenu, contextMenu, selectedNodeIds, canEditLayout } = ui;
+  const { activeBoardId, closeContextMenu, contextMenu, selectedNodeIds, canEditLayout, mode } = ui;
   const { linkScene } = projection;
   const {
     armedThread,
+    armedShape,
     threadCursor,
     edgeDescription,
     commitEdgeDescription,
     cancelEdgeDescription,
   } = links;
 
+  const showThreadPreview =
+    Boolean(armedThread) &&
+    Boolean(threadCursor) &&
+    Boolean(activeBoardId) &&
+    (mode !== "place" || armedShape === "thread" || armedShape === "fan");
+
   return (
     <>
       {/* Outside React Flow: its pane preventDefaults pointerdown, which eats the
           click on any control nested inside it. */}
-      {armedThread && threadCursor && activeBoardId ? (
+      {showThreadPreview && armedThread && threadCursor && activeBoardId ? (
         <ThreadLinkPreview
           endpoint={armedThread}
           cursor={threadCursor}

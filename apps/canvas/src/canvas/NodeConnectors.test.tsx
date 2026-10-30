@@ -246,11 +246,16 @@ describe("link gestures write what the mode promises", () => {
   });
 
   /** Clicks one dot of a card, by index, and waits for the arm to settle. */
-  const clickDot = (container: HTMLElement, cardId: string, index: number) => {
+  const clickDot = (
+    container: HTMLElement,
+    cardId: string,
+    index: number,
+    init?: MouseEventInit,
+  ) => {
     const dot = dotsOf(container, cardId)[index];
     if (!dot) throw new Error(`no dot ${index} on ${cardId}`);
     const target = dot.querySelector('[data-testid="connector-dot"]') ?? dot;
-    fireEvent.click(target as HTMLElement);
+    fireEvent.click(target as HTMLElement, init);
   };
 
   const linksOf = () =>
@@ -308,6 +313,69 @@ describe("link gestures write what the mode promises", () => {
     clickDot(container, PORTAL_ID, 2);
 
     await waitFor(() => expect(workspace.listEdges()).toHaveLength(1));
+  });
+
+  it("places: clicking a dot activates its grab handle without drawing a thread link preview", async () => {
+    const { container } = await mountSelected([NOTE_ID]);
+    useUiStore.setState({ mode: "place" });
+    await waitFor(() => expect(dotsOf(container, NOTE_ID).length).toBeGreaterThan(1));
+
+    clickDot(container, NOTE_ID, 1);
+    fireEvent.pointerMove(window, { clientX: 100, clientY: 100 });
+
+    expect(container.querySelector('[data-testid="connector-grab"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="thread-link-preview"]')).toBeNull();
+
+    // Dragging the connector grab handle clears any armed thread
+    const grab = container.querySelector('[data-testid="connector-grab"]') as HTMLElement;
+    fireEvent.pointerDown(grab, { button: 0, clientX: 240, clientY: 80 });
+    expect(useLinkThreadStore.getState().armed).toBeNull();
+    fireEvent.pointerUp(window, { clientX: 240, clientY: 80 });
+  });
+
+  it("places: shift-clicking a dot draws a thread link preview and arms by gesture", async () => {
+    const { container } = await mountSelected([NOTE_ID]);
+    useUiStore.setState({ mode: "place" });
+    await waitFor(() => expect(dotsOf(container, NOTE_ID).length).toBeGreaterThan(1));
+
+    clickDot(container, NOTE_ID, 1, { shiftKey: true });
+    fireEvent.pointerMove(window, { clientX: 100, clientY: 100 });
+
+    expect(useLinkThreadStore.getState().armedShape).toBe("thread");
+    expect(useLinkThreadStore.getState().armedBy).toBe("gesture");
+    expect(container.querySelector('[data-testid="thread-link-preview"]')).not.toBeNull();
+
+    // Releasing Shift clears the gesture
+    fireEvent.keyUp(window, { key: "Shift" });
+    expect(useLinkThreadStore.getState().armed).toBeNull();
+    expect(container.querySelector('[data-testid="thread-link-preview"]')).toBeNull();
+  });
+
+  it("places: ctrl-clicking a dot draws a fan link preview and arms by gesture", async () => {
+    const { container } = await mountSelected([NOTE_ID]);
+    useUiStore.setState({ mode: "place" });
+    await waitFor(() => expect(dotsOf(container, NOTE_ID).length).toBeGreaterThan(1));
+
+    clickDot(container, NOTE_ID, 1, { ctrlKey: true });
+    fireEvent.pointerMove(window, { clientX: 100, clientY: 100 });
+
+    expect(useLinkThreadStore.getState().armedShape).toBe("fan");
+    expect(useLinkThreadStore.getState().armedBy).toBe("gesture");
+    expect(container.querySelector('[data-testid="thread-link-preview"]')).not.toBeNull();
+
+    act(() => useLinkThreadStore.getState().clear());
+  });
+
+  it("threads: clicking a dot draws a thread link preview", async () => {
+    const { container } = await mountSelected([NOTE_ID]);
+    useUiStore.setState({ mode: "thread" });
+    await waitFor(() => expect(dotsOf(container, NOTE_ID).length).toBeGreaterThan(1));
+
+    clickDot(container, NOTE_ID, 1);
+    fireEvent.pointerMove(window, { clientX: 100, clientY: 100 });
+
+    expect(container.querySelector('[data-testid="thread-link-preview"]')).not.toBeNull();
+    act(() => useLinkThreadStore.getState().clear());
   });
 });
 

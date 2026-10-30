@@ -65,6 +65,7 @@ export function useBoardLinks(
    */
   const threadStepAt = useRef(0);
   const armedThread = useLinkThreadStore((state) => state.armed);
+  const armedShape = useLinkThreadStore((state) => state.armedShape);
   useEscapeLayer(() => {
     useLinkThreadStore.getState().clear();
     setSelectedConnector(null);
@@ -104,10 +105,12 @@ export function useBoardLinks(
   }, [mode]);
   // The reader's default radius, the rung a card falls back to when its own style and the
 
-  // While a thread is armed the pointer is the other end of a line that is not
+  // While a thread or fan is armed the pointer is the other end of a line that is not
   // drawn yet, so follow it in flow coordinates.
   useEffect(() => {
-    if (!armedThread) {
+    const isChaining =
+      armedThread !== null && (mode !== "place" || armedShape === "thread" || armedShape === "fan");
+    if (!isChaining) {
       setThreadCursor(null);
       return;
     }
@@ -116,7 +119,7 @@ export function useBoardLinks(
     };
     window.addEventListener("pointermove", follow);
     return () => window.removeEventListener("pointermove", follow);
-  }, [armedThread, screenToFlowPosition]);
+  }, [armedThread, armedShape, mode, screenToFlowPosition]);
 
   const [reconnecting, setReconnecting] = useState<{
     edgeId: string;
@@ -414,6 +417,7 @@ export function useBoardLinks(
 
       const anchorEnd = handleType === "target" ? "target" : "source";
       // Two link gestures never overlap, so the reconnect preview goes first.
+      useLinkThreadStore.getState().clear();
       setReconnecting(null);
       setReconnect(null);
       setConnecting({ nodeId, connectorId: handleId, anchorEnd });
@@ -596,6 +600,7 @@ export function useBoardLinks(
   return {
     threadStepAt,
     armedThread,
+    armedShape,
     threadCursor,
     reconnecting,
     connecting,

@@ -162,29 +162,24 @@ export function useNodeConnectorWiring(
         return;
       }
 
-      // A click on a dot arms it, in every mode: place waits for a second dot to
-      // finish its one link, and thread and fan write on the *next* click and keep
-      // going. Arming is what makes "click this, then that" the same gesture as a drag.
       const thread = useLinkThreadStore.getState();
-      if (thread.armed === null) {
-        armThread(clicked, "mode", mode);
-        setSelectedConnector({ nodeId, connectorId });
-        return;
-      }
-
-      // The shape decides what the next click means: a thread moves its armed end,
-      // a fan keeps it (ADR-0061). An arm outranks the stored mode, so a fan started
-      // with Control stays a fan once the key is up.
       const shape = stepShape({
         shiftKey: event?.shiftKey,
         ctrlKey: event?.ctrlKey,
         mode,
         armedShape: thread.armedShape,
       });
-      const step = stepLink(shape, thread.armed, clicked);
-      // A gesture started by a modifier ends when the modifier is released; only a
-      // shape chosen in the control survives the key.
       const by = shape === mode ? "mode" : "gesture";
+
+      // A click on a dot arms it, in every mode: place waits for a second dot to
+      // finish its one link, and thread and fan write on the *next* click and keep
+      // going. Arming is what makes "click this, then that" the same gesture as a drag.
+      if (thread.armed === null) {
+        armThread(clicked, by, shape);
+        setSelectedConnector({ nodeId, connectorId });
+        return;
+      }
+      const step = stepLink(shape, thread.armed, clicked);
       if (step.link && boardId) {
         workspace.addEdge({
           boardId,
@@ -218,6 +213,7 @@ export function useNodeConnectorWiring(
   const onMoveStart = useCallback(
     (connectorId: string) => {
       if (!canManageStructure || !nodeId) return;
+      useLinkThreadStore.getState().clear();
       setMovingConnector({ nodeId, connectorId });
     },
     [canManageStructure, nodeId, setMovingConnector],

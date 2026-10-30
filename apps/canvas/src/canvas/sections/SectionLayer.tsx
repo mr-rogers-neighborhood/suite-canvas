@@ -358,6 +358,9 @@ export function SectionLayer({
       (pointer) => {
         if (Math.hypot(pointer.clientX - event.clientX, pointer.clientY - event.clientY) > 4) {
           moved = true;
+          if (useLinkThreadStore.getState().armed) {
+            useLinkThreadStore.getState().clear();
+          }
         }
         const to = flowPoint(pointer);
         setLinkDraft({ from: origin, to });
@@ -388,6 +391,7 @@ export function SectionLayer({
           useLinkThreadStore.getState().clear();
           return;
         }
+        if (moved) return;
         // Released without a target, which is a click on the dot. A press arms the
         // connector in *every* mode, exactly as a card's dot does: place waits for a
         // second dot to finish its one link, and thread and fan write on the next
@@ -410,7 +414,8 @@ export function SectionLayer({
           onLinkCommit?.(step.link.from, step.link.to, origin);
         }
         // A shape chosen in the control outlives the key; a modifier's does not.
-        thread.arm(step.armed, shape === mode ? "mode" : "gesture", shape);
+        const next = thread.armed && shape === "place" ? null : step.armed;
+        thread.arm(next, shape === mode ? "mode" : "gesture", shape);
       },
     );
   };
@@ -423,6 +428,7 @@ export function SectionLayer({
     if (readOnly || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
+    useLinkThreadStore.getState().clear();
     onConnectorSelect?.(section.id, connector.id);
 
     const rect = rectFor(section);

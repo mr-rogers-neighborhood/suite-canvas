@@ -236,7 +236,12 @@ describe("what a plan card says", () => {
   const priced = {
     name: "personal",
     priceId: "price_1",
-    limits: { workspaces: 3, seats: 3, documentBytes: 268_435_456, attachmentBytes: 1_073_741_824 },
+    limits: {
+      workspaces: 2_147_483_647,
+      seats: 5,
+      documentBytes: 268_435_456,
+      attachmentBytes: 10_737_418_240,
+    },
     price: { amount: 900, currency: "usd", interval: "month" },
   };
 
@@ -245,15 +250,15 @@ describe("what a plan card says", () => {
     render(<PlanPanel />);
 
     expect(await screen.findByTestId("plan-price-personal")).toHaveTextContent("$9 / month");
-    expect(screen.getByTestId("plan-allowance-personal-workspaces")).toHaveTextContent("3");
+    expect(screen.getByTestId("plan-allowance-personal-workspaces")).toHaveTextContent("Unlimited");
     expect(screen.getByTestId("plan-allowance-personal-documentBytes")).toHaveTextContent("256 MB");
     expect(screen.getByTestId("plan-allowance-personal-attachmentBytes")).toHaveTextContent(
-      "1.0 GB",
+      "10 GB",
     );
-    // The allowance the invitation check counts, and the sentence that stops "3" reading as
-    // "only three people may look": everybody else arrives by link.
+    // The allowance the invitation check counts, and the sentence that stops "5" reading as
+    // "only five people may look": everybody else arrives by link.
     expect(screen.getByTestId("plan-allowance-personal-seats")).toHaveTextContent(
-      "3, including you",
+      "5, including you",
     );
     expect(screen.getByTestId("plan-allowance-personal-guests")).toHaveTextContent(
       "by share link, not counted",
@@ -309,7 +314,7 @@ describe("what a plan card says", () => {
 
     expect(await screen.findByTestId("plan-price-personal")).toHaveTextContent("Price unavailable");
     // The allowances are the tier table's, so they still say what the plan buys.
-    expect(screen.getByTestId("plan-allowance-personal-workspaces")).toHaveTextContent("3");
+    expect(screen.getByTestId("plan-allowance-personal-workspaces")).toHaveTextContent("Unlimited");
   });
 
   it("describes a tier it has never heard of from its own limits", async () => {

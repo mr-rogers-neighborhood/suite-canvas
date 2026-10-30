@@ -184,10 +184,9 @@ for every quota.
 ### What an account actually gets
 
 The table above is the instance ceiling, not the answer a reader wants. A hosted
-account is capped by its licence row, and a new organization is born with no
-workspace at all: local and offline use is free and needs no account, so an
-account is what buys sync. These are the numbers the seat check enforces, read
-from \`FREE_LICENCE_TIER\`.
+account is capped by its licence row, and a new organization is born with unlimited
+workspaces (represented by integer max 2,147,483,647), with storage-based quotas.
+These are the numbers the seat check enforces, read from \`FREE_LICENCE_TIER\`.
 
 | Cap | Born-with licence | Plan tier |
 | --- | --- | --- |

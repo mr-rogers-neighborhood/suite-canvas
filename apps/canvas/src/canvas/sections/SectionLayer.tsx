@@ -353,12 +353,19 @@ export function SectionLayer({
     const flowPoint = (pointer: PointerEvent) =>
       screenToFlowPosition({ x: pointer.clientX, y: pointer.clientY });
 
+    let moved = false;
     startWindowGesture(
       (pointer) => {
+        if (Math.hypot(pointer.clientX - event.clientX, pointer.clientY - event.clientY) > 4) {
+          moved = true;
+        }
         const to = flowPoint(pointer);
         setLinkDraft({ from: origin, to });
       },
       (pointer) => {
+        if (Math.hypot(pointer.clientX - event.clientX, pointer.clientY - event.clientY) > 4) {
+          moved = true;
+        }
         const to = flowPoint(pointer);
         const hit = resolveLinkTarget?.(to) ?? null;
         // A release on the section itself is not a target. Its own body is
@@ -369,7 +376,7 @@ export function SectionLayer({
           hit?.kind === "section" &&
           hit.id === section.id &&
           (hit.connectorId === undefined || hit.connectorId === connector.id);
-        const target = onSelf ? null : hit;
+        const target = onSelf || !moved ? null : hit;
         setLinkDraft(null);
         setDraftActive(false);
         if (target) {

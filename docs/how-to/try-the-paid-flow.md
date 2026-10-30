@@ -104,15 +104,11 @@ will work either. With it up, a deployment whose `.env` has `SUITE_BILLING_ENABL
 plans from `STRIPE_PRICE_TIERS`, and a deployment without them says so instead of showing a
 blank space.
 
-A brand-new account should show **Local** with **See plans**, not Synced. The organization is born
-with a licence for zero workspaces, so the relay refuses the socket join and the control plane refuses
-the claim, both with `plan-required`. The workspace stays on the device and stays editable, which is
-the product rather than a fault. Pressing **See plans** and paying is what opens the room; after Checkout the
-browser comes back to the same URL, the claim runs again on that load, and the room opens.
-
-If a fresh account reads **Synced** without a plan, the door is open somewhere: check
-`workspaces.sqlite` in the relay's data volume for a row belonging to that organization, and check
-that `SUITE_HOSTED=1` reaches both the relay and the control plane.
+A brand-new account starts on the free tier with unlimited workspaces, 32 MiB doc storage,
+100 MiB attachment storage, and 1 member seat. Upgrading to Personal ($9/mo) or Organization
+($24/mo) expands document and media storage (10 GB or 50 GB) and adds member seats (5 or 15).
+Opening the Plan tab and upgrading is what grants the expanded storage and team seats. After
+Checkout the browser comes back to the app with the new tier reflected in the entitlement.
 
 Sign in as any account, open the workspace menu, and the Plan tab: the two plans come from
 `STRIPE_PRICE_TIERS`, so a plan that is missing there is missing from the page.

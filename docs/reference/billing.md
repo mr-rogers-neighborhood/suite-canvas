@@ -128,8 +128,8 @@ and the deployment's configuration all come from this one table.
 
 ```json
 {
-  "price_1PAbCdEfGhIjKl": { "tier": "personal", "seats": 3, "workspaces": 3, "documentBytes": 268435456, "attachmentBytes": 1073741824 },
-  "price_1PAbCdEfGhIjKm": { "tier": "organization", "seats": 10, "workspaces": 25, "documentBytes": 2147483648, "attachmentBytes": 8589934592 }
+  "price_1PAbCdEfGhIjKl": { "tier": "personal", "seats": 5, "workspaces": 2147483647, "documentBytes": 268435456, "attachmentBytes": 10737418240 },
+  "price_1PAbCdEfGhIjKm": { "tier": "organization", "seats": 15, "workspaces": 2147483647, "documentBytes": 536870912, "attachmentBytes": 53687091200 }
 }
 ```
 
@@ -144,7 +144,7 @@ member rows, so the two numbers have different readers.
 
 ## Seats: a plan includes a number of people
 
-`personal` is $9 a month and admits **3** people; `organization` is $24 and admits **10**. The
+`personal` is $9 a month and admits **5** people; `organization` is $24 and admits **15**. The
 owner counts as one. There is no per-seat price, so nobody is prorated and the price does not
 move when a member joins.
 
@@ -174,14 +174,15 @@ editor or viewer, and as many people as the link reaches. `SUITE_MAX_SHARES_PER_
 (default 100) bounds how many links one workspace holds, and that bound belongs to the
 deployment rather than to the plan, because a link costs no storage.
 
-**What a lapsed plan returns to.** The free tier is one member and one workspace, so a
-cancelled organization keeps its plan until the end of the period it paid for, then drops to
-one member. Everybody keeps what is already on their own device.
+**What a lapsed plan returns to.** The free tier has unlimited workspaces, one member and
+32 MiB doc storage / 100 MiB attachment storage, so a cancelled organization keeps its plan
+until the end of the period it paid for, then returns to the free tier quotas. Everybody keeps
+what is already on their own device.
 
 ## The entitlement read
 
 `POST /api/billing/entitlement` takes `{"organizationId":"org_1"}` and answers
-`{"tier":"personal","limits":{"workspaces":3,"seats":3,"documentBytes":268435456,"attachmentBytes":1073741824}}`.
+`{"tier":"personal","limits":{"workspaces":2147483647,"seats":5,"documentBytes":268435456,"attachmentBytes":10737418240}}`.
 It reads the plugin's `subscription` row and the tier table, and calls Stripe for nothing:
 a payment provider outage must not stop hosted sync for customers who already paid.
 
@@ -207,7 +208,7 @@ which bounds the grace window to the period Stripe last collected for.
 `POST /api/billing/plans` answers the price list and the mode that produced it:
 
 ```json
-{"mode":"test","plans":[{"tier":"personal","priceId":"price_…","limits":{"workspaces":3,…}}]}
+{"mode":"test","plans":[{"tier":"personal","priceId":"price_…","limits":{"workspaces":2147483647,…}}]}
 ```
 
 Four fields, and every one of them has been a bug when it was missing. `tier` is the
@@ -234,7 +235,7 @@ the same: a blank space under "Subscription".
 
 | State | What it says |
 | --- | --- |
-| A plan-less organization (`tier: "free"`) | **Synced workspaces: none yet**, then one sentence: everything on this device is uncapped, and a plan adds the room |
+| A plan-less organization (`tier: "free"`) | **Synced workspaces: Unlimited**, then one sentence: everything on this device is uncapped, and a plan adds the room |
 | Plans listed | one card per price in `STRIPE_PRICE_TIERS`, and the self-host card beside them |
 | No session | a plan belongs to an account, with **Create an account**, because nothing else can follow |
 | Nothing listed | this deployment has no plans configured, and an operator sets `STRIPE_PRICE_TIERS` |

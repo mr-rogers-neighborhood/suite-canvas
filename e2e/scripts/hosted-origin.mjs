@@ -64,6 +64,8 @@ function optionsFor(target, request) {
 }
 
 const server = createServer((request, response) => {
+  request.on("error", () => {});
+  response.on("error", () => {});
   const url = new URL(request.url ?? "/", "http://localhost");
   const target = upstreamFor(url.pathname);
   const upstream = httpRequest(optionsFor(target, request), (answer) => {
@@ -79,11 +81,18 @@ const server = createServer((request, response) => {
   request.pipe(upstream);
 });
 
+server.on("clientError", (_error, socket) => {
+  socket.destroy();
+});
+
 server.on("upgrade", (request, socket, head) => {
+  socket.on("error", () => {});
   const url = new URL(request.url ?? "/", "http://localhost");
   const target = upstreamFor(url.pathname);
   const upstream = httpRequest(optionsFor(target, request));
   upstream.on("upgrade", (answer, upstreamSocket, upstreamHead) => {
+    upstreamSocket.on("error", () => socket.destroy());
+    socket.on("error", () => upstreamSocket.destroy());
     const headers = Object.entries(answer.headers)
       .map(([name, value]) => `${name}: ${Array.isArray(value) ? value.join(", ") : value}`)
       .join("\r\n");

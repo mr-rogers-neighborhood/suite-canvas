@@ -60,7 +60,7 @@ function isPlanEntry(value: unknown): value is TierPlan {
 /**
  * Reads `STRIPE_PRICE_TIERS`:
  *
- *   {"price_123":{"tier":"solo","seats":1,"workspaces":3,"documentBytes":268435456,"attachmentBytes":1073741824}}
+ *   {"price_123":{"tier":"personal","seats":5,"workspaces":2147483647,"documentBytes":268435456,"attachmentBytes":10737418240}}
  *
  * `seats` may be left out, which admits one member: that is what every table written
  * before the field existed sold. The number is the plan's own allowance, not a price: no

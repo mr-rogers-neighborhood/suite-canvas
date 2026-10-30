@@ -23,10 +23,10 @@ const ORG = "org_1";
 /** The free tier exactly as `@suite/auth`'s `FREE_LICENCE_TIER` names it. */
 const FREE = {
   tier: "free",
-  workspaces: 1,
+  workspaces: 2_147_483_647,
   seats: 1,
-  documentBytes: 64 * 1024 * 1024,
-  attachmentBytes: 8 * 1024 * 1024,
+  documentBytes: 33_554_432,
+  attachmentBytes: 104_857_600,
   days: 36_525,
 };
 

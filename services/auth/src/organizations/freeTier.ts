@@ -11,20 +11,19 @@ import type { SeatLicence } from "../types.js";
  * same transaction as the organization (`sql/0009_free_licence_provisioning.sql`), and
  * this module is where its numbers live.
  *
- * ## Zero workspaces is the product decision
+ * ## Unlimited workspaces with storage-based quotas (0013)
  *
- * Local and offline use is free and needs no account at all, so an account exists to buy
- * *sync* and collaboration. A hosted deployment therefore sells nothing for nothing: the
- * born-with row holds the owner's seat and **no workspace, no document bytes and no
- * attachment bytes**. `POST /api/workspaces/claim` is the only door from a local
- * workspace to an owned one, and this ceiling closes it until a subscription replaces the
- * row. The refusal is `plan-required`, which the app turns into the plan picker, so the
- * wall is a prompt with a button rather than a 403 nobody reads.
+ * Workspaces are documents/projects, not a metered commodity. Artificial workspace
+ * limits created friction and prevented users from sharing their work. Free accounts
+ * have unlimited workspaces (represented by integer max 2147483647), with storage-based
+ * quotas: 32 MiB per document, 100 MiB total attachment storage for the organization,
+ * and 1 seat for the owner.
  *
- * The seat stays at one, and that is not an oversight: a seat *is* a `member` row, and an
- * organization whose owner cannot be a member cannot exist. `0` seats would repeat the
- * provisioning bug this row was created to fix. `0` workspaces does the opposite: it
- * makes the account useless for syncing until it pays, which is what was asked for.
+ * Paid plans expand storage and add additional team member seats.
+ *
+ * The seat stays at one for free accounts, and that is not an oversight: a seat *is*
+ * a `member` row, and an organization whose owner cannot be a member cannot exist.
+ * `0` seats would repeat the provisioning bug this row was created to fix.
  *
  * `Infinity` remains the self-host answer (`UNLIMITED_QUOTA`,
  * `packages/licence/src/quota.ts`), and a self-host never reads this row at all — the

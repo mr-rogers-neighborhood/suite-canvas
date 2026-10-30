@@ -46,7 +46,7 @@ Stripe dashboard.
    ```sh
    STRIPE_SECRET_KEY=sk_test_…
    STRIPE_WEBHOOK_SECRET=<whsec_… from `pnpm stripe --listen`>
-   STRIPE_PRICE_TIERS='{"price_…":{"tier":"solo",…}}'
+   STRIPE_PRICE_TIERS='{"price_…":{"tier":"personal",…}}'
    SUITE_CONTROL_PLANE_PORT=1236
    ```
 
@@ -81,7 +81,7 @@ Stripe dashboard.
      -H 'origin: http://localhost:5173' \
      -H 'cookie: <the session cookie from the browser>' \
      -d '{
-       "plan": "solo",
+       "plan": "personal",
        "customerType": "organization",
        "referenceId": "<organization id>",
        "successUrl": "http://localhost:5173/?billing=success",
@@ -137,16 +137,16 @@ limit the suite asserts.
 
 | Tier | Lookup key | Members | Price |
 | --- | --- | --- | --- |
-| `solo` | `suite_solo_monthly` | 3 | $12/month |
-| `solo-pro` | `suite_solo_pro_monthly` | 10 | $49/month |
+| `personal` | `suite_personal_monthly` | 5 | $9/month |
+| `organization` | `suite_organization_monthly` | 15 | $24/month |
 
 `seats` is how many people a plan admits, the owner included, and there is no per-seat
 price: a plan includes a fixed number, so nobody is prorated and the price does not move
 when a member joins. The number reaches the invitation check through the licence row
 (`paidLicenceRow` in `services/billing/src/licence/projection.ts`), not through the Stripe
 quantity, which checkout always sends as one because no plan carries a `seatPriceId`.
-Storage is what costs money, so the ladder grows on workspaces and bytes and is generous on
-people. The lookup keys changed with the rename from `studio`, so `pnpm stripe` creates a
+Storage and team capacity are what costs money, so the ladder grows on storage and
+seats (with unlimited workspaces across all tiers). The lookup keys changed with the rename from `studio`, so `pnpm stripe` creates a
 new price the first time it runs after this and an existing `STRIPE_PRICE_TIERS` has to be
 regenerated.
 

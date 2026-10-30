@@ -128,8 +128,8 @@ Every organization is born on the free tier. `0009_free_licence_provisioning.sql
 `organization` that writes the organization's `organization_licences` row in the same transaction, so
 a create that fails at any point rolls the organization back rather than leaving an ownerless row
 behind — the orphan the seat refusal used to produce. The numbers are `FREE_LICENCE_TIER` in
-`src/organizations/freeTier.ts`: one workspace, one seat (the owner's), 64 MiB per document, 8 MiB per
-attachment, for a hundred years. `pnpm db:verify` reads the row the trigger wrote and compares it with
+`src/organizations/freeTier.ts`: unlimited workspaces (2,147,483,647), one seat (the owner's), 32 MiB per document,
+100 MiB attachment storage, for a hundred years. `pnpm db:verify` reads the row the trigger wrote and compares it with
 that object, so the SQL and the TypeScript cannot describe two different free tiers.
 
 The free row is a default, not a second kind of licence. `organization_licences.organization_id` is

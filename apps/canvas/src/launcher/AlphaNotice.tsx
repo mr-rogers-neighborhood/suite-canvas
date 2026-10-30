@@ -60,8 +60,10 @@ export function AlphaNotice({ onSeePlans, forceOpen = false }: AlphaNoticeProps)
         </h2>
 
         <p className="mt-2 text-[var(--ink)]">
-          A subscription is early access to sync, collaboration and file uploads. The canvas, the
-          cards and export work without one, on this device, and paying is optional.
+          A subscription is early access to higher document storage limits, file uploads (storage),
+          and the ability to add additional members to your organization (3 for the "Personal" plan,
+          20 for the "Organization" plan). The canvas, the cards, share links, import and export
+          work without one, on this device, and paying is optional.
         </p>
 
         <p className="mt-2 text-[var(--ink-muted)]">
@@ -89,6 +91,11 @@ export function AlphaNotice({ onSeePlans, forceOpen = false }: AlphaNoticeProps)
         <p className="mt-2 text-[var(--ink-muted)]">
           Cards are handled by Stripe on its own page. Plans are monthly and cancel from the portal,
           and a discount code, if you have one, is entered there too.
+        </p>
+
+        <p className="mt-2 text-[var(--ink-muted)]">
+          Obsidian import is experimental and may not work for all vaults. The import is done in the
+          browser, and no data is sent to the server.
         </p>
 
         <p className="mt-2 text-[var(--ink-muted)]">

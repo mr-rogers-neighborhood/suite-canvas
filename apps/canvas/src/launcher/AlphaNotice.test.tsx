@@ -19,7 +19,7 @@ describe("the alpha notice", () => {
 
     const notice = screen.getByTestId("alpha-notice");
     expect(notice).toHaveTextContent("alpha software");
-    expect(notice).toHaveTextContent("sync, collaboration and file uploads");
+    expect(notice).toHaveTextContent("higher document storage limits");
     // The source is public now, so the sentence that promised it would be is gone; the door
     // to it is a link instead, and it is checked below.
     expect(notice).not.toHaveTextContent("within about two weeks");

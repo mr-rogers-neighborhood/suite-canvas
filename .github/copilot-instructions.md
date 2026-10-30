@@ -16,7 +16,7 @@ Read [AGENTS.md](../AGENTS.md) for the repo map, rules and feature path, and
 - Run the local gate on every change: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm docs:check`,
   `pnpm docs:symbols`, `pnpm shape`. E2E runs on request only: never start Playwright unless the owner
   asks for a run or names a commit milestone.
-- GitHub Actions gates nothing. Never claim a workflow gates `main`; name the local command instead.
+- All verification gates are local. Never claim an external CI service gates `main`; name the local command instead.
 
 ## Verification
 
@@ -26,8 +26,7 @@ the build added, and it runs the scratchpad first.
 
 Playwright sits outside both. A full `pnpm e2e` is a milestone action the owner names, and a narrower
 `pnpm e2e:smoke`, `pnpm e2e:canvas`, `pnpm e2e:collab` or `pnpm e2e:views` is what you run when the
-owner asks for a run and one area covers the change. `.github/workflows/ci.yml` is present and unrun;
-it is not a check on `main`.
+owner asks for a run and one area covers the change.
 
 ## Shape
 

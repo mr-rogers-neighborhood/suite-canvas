@@ -92,15 +92,13 @@ would otherwise question), test plan (the commands you ran and their result), an
 
 A reviewer will ask which test fails without this change, what happens on a second client and on a
 reload, and whether the docs describing the touched command or number are in the same commit. Paste
-the command output rather than asserting a green run: no workflow runs on this account, so a local
-transcript is the evidence.
+the command output: all verification gates are local, so a local command transcript is the evidence.
 
 ## Dependencies
 
 Add one with a stated reason, to the package that uses it, and prefer a primitive the repo already
 depends on. A major bump is a decision and lands on its own. `.github/dependabot.yml` groups minor and
-patch updates weekly for `npm` and `github-actions`, though whether it runs depends on the same
-account state that stops every workflow here, so assume you are the automation.
+patch updates weekly for `npm`.
 
 ## Security and conduct
 

@@ -27,30 +27,11 @@ Playwright stays outside the gate. No contributor or agent starts it by default,
 on a run. E2E runs when the owner asks for it, or at a commit milestone the owner names. A full
 `pnpm e2e` is a milestone action; when a run is asked for, an area script is the cheaper evidence.
 
-### GitHub Actions is off
+### Verification is local
 
-`.github/workflows/ci.yml` holds the same commands, and the repository has Actions **disabled**: every
-run on this account stopped before a job started, with *"the job was not started because your account
-is locked due to a billing issue"*. A red cross that cannot be fixed by changing any code teaches a
-reader to ignore the one signal that would matter if it worked, so the workflow sits in the tree,
-unrun, and the local command above is the gate in fact as well as in name.
-
-Two things stand in for it:
-
-- **`pnpm verify`** is the workflow's own set: the gate, the story suite, the build and the two fast
-  security scans. Run it before a commit you want fully checked, and on a tag.
-- **`npx act -j quality`** runs `ci.yml` itself in Docker, if you want the runner's answer on your own
-  machine. It needs Docker and nothing else; the first run pulls a runner image.
-
-Turning Actions back on is one call, once the account's billing is in order, and needs no edit here:
-
-```sh
-gh api -X PUT repos/{owner}/{repo}/actions/permissions -F enabled=true
-```
-
-The workflow keeps Playwright off a push. A pull request gets the smoke tier, the full suite is a
-manual dispatch, and the branch protection that would require either is worth setting only after a run
-is visible in Actions.
+All verification gates in this repository are entirely local. `pnpm verify` runs the full set:
+the gate, the story suite, the build, the billing suite, and the two fast security scans. Run it
+before a commit you want fully checked, and on a tag.
 
 ## What each command runs
 
@@ -68,7 +49,7 @@ is visible in Actions.
 
 ## Security scans
 
-Four scans, one `pnpm` script each. Nothing here needs a GitHub workflow, a runner or an account, and
+Four scans, one `pnpm` script each. Nothing here needs an external runner or account, and
 each script exits non-zero on a finding, so the same command is a check and a gate.
 
 | Command | Reads | Needs |

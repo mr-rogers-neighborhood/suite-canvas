@@ -46,24 +46,14 @@ gh repo edit --add-topic local-first,crdt,collaboration,canvas,typescript
 This is the irreversible step. Forks, indexes and archives keep whatever was public, and un-publishing
 does not take it back.
 
-## 4. Confirm the gate actually runs
+## 4. Confirm the local gate passes
 
-`.github/workflows/ci.yml` is in the tree. A workflow on a private repository with no runner minutes
-sits in `startup_failure` with zero jobs, so the local gate is the only real one until the repository
-is public: public repositories get hosted runners, and the first push after the flip is what proves
-the workflow file and the account are both in order.
+The verification gate is entirely local. Run `pnpm verify` to confirm all linting, typechecks,
+unit and billing tests, doc checks, security scans, and builds pass cleanly:
 
 ```sh
-gh run list --limit 5
-gh run watch
+pnpm verify
 ```
-
-Then make it count: **Settings → Branches → Add branch protection rule** for `main`, requiring the
-`quality` check (and `e2e` once it is stable). Prove it with a deliberately failing commit on a branch
-and confirm the merge button refuses.
-
-A workflow that exists and does not run is the failure this step exists to end. Do not describe a
-repository as gated until a run is visible in Actions.
 
 ## 5. Tag the release
 

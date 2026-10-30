@@ -392,8 +392,7 @@ Caddy keeps proxying while `app` is down, so visitors see 502 for the length of 
 
 Nothing is pulled: the host builds `app` from `/srv/suite`, which is why it needs 4 GB of memory and
 30 GB of root disk (§1) and why a Graviton host produces an arm64 image. Neither the steps below nor
-`deploy/deploy.sh` depends on `.github/workflows/ci.yml` or `release.yml`, which cannot run on this
-account.
+`deploy/deploy.sh` depends on external CI: builds run directly on the host.
 
 The order is the part that matters. A host build replaces the image it runs, so the image that is
 running now is tagged *before* the build starts; that tag is the whole rollback.
@@ -619,9 +618,9 @@ an empty `/data` and requested three fresh certificates. `deploy/compose.aws.yam
 
 ### Publishing to a registry again (optional)
 
-Not used today, and nothing above needs it. If a registry becomes available, GitHub Actions on a
-working account or Codeberg with a container registry, only step 5 changes: build with a registry
-tag, push it, and point `SUITE_IMAGE` at the digest it produced. `compose.yaml` accepts any reference
+Not used today, and nothing above needs it. If a container registry becomes available,
+only step 5 changes: build with a registry tag, push it, and point `SUITE_IMAGE` at the digest
+it produced. `compose.yaml` accepts any reference
 in `SUITE_IMAGE`, so a pull-based host sets it to `ghcr.io/<owner>/suite@sha256:…` and then runs
 `docker compose pull app` followed by `docker compose up -d --no-build app`. A host that builds keeps
 using `suite:<tag>`, and `caddy` is never pulled because it packages this checkout's canvas bundle.

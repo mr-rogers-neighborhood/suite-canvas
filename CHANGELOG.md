@@ -303,7 +303,7 @@ not open.
 - `docs/release.md`: tag, image, rollback and smoke procedure.
 - `scripts/docs-check.mjs`: link, code-fence, retired-term and version checks.
 - `LICENSE` (MIT), `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`.
-- Dependabot for `npm` and `github-actions`, weekly and grouped.
+- Dependabot for `npm`, weekly and grouped.
 - A tag-driven release workflow that pushes the runtime image to GHCR and
   opens a GitHub release with the changelog section and image digest.
 - Portals: a portal card points at another board, renders a snapshot miniature,

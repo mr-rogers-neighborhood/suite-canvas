@@ -74,8 +74,7 @@ Playwright is not part of the gate. When the owner asks for a run, the area scri
 `pnpm e2e:canvas`, `pnpm e2e:collab`, `pnpm e2e:views`) are narrower than `pnpm e2e`; [the how-to
 page](docs/how-to/test-and-verify.md) has each one.
 
-GitHub Actions gates nothing. `.github/workflows/ci.yml` stays in the tree and needs a runner to run,
-so every gate claim in this repo names a local command.
+All verification gates are local, so every gate claim in this repo names a local command.
 
 ## Rules
 
@@ -94,8 +93,7 @@ so every gate claim in this repo names a local command.
 9. E2E runs on request, never by default. No contributor or agent starts Playwright unless the owner
    asks for a run or names a commit milestone, and no change waits on one. The per-change gate is the
    local set under [Verify](#verify).
-10. GitHub Actions gates nothing. A workflow file in the tree is not a check on `main`, and every gate
-    claim names a local command.
+10. All verification gates are local. Every gate claim names a local command.
 
 ## Code shape
 

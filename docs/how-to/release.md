@@ -32,19 +32,9 @@ The lead creates the tag after integration. A workstream does not push one.
 4. `git tag -a v0.1.0-alpha.1 -m "Suite 0.1.0-alpha.1"`.
 5. `git push origin v0.1.0-alpha.1`.
 
-`.github/workflows/release.yml` describes three jobs, and Actions is off on this repository, so none of
-them has ever run. They are kept for the day it is turned back on (the command is in
-[Test and verify a change](test-and-verify.md)); the manual path below is the release.
-
-| Job | Does | Fails when |
-| --- | --- | --- |
-| `preflight` | Installs, compares `GITHUB_REF_NAME` with `package.json`, runs both docs checks | The tag and the version disagree, or a doc is stale |
-| `image` | Builds the `runtime` target with `SUITE_VERSION=<tag>` and pushes `:<tag>`, `:sha-<12>` and `:latest` to GHCR | The build fails |
-| `release` | Opens a GitHub release whose body is the changelog section plus the image digest and a rollback link | `CHANGELOG.md` has no section for the version |
-
-Nothing on this page depends on either workflow file, and neither is the release: the image is built
-on the host that serves it, tagged there, and rolled back to by tag. That path needs no runner, no
-registry credential and no account entitlement, which is why it is the one written down.
+The release is built directly on the host that serves it, tagged there, and rolled back to by tag.
+That path needs no external runner, no registry credential and no third-party CI service, which is
+why it is the one written down.
 
 ### Build the image on the host
 
@@ -175,4 +165,4 @@ tag is what names the previous image.
 
 A release omits image signing and verification on pull, SBOM generation and attestation,
 multi-architecture images, self-hosted runners, and a staging environment or canary. There is one host
-and one tag. Adding any of them changes `release.yml` and should land with an ADR rather than by habit.
+and one tag. Adding any of them should land with an ADR rather than by habit.

@@ -24,3 +24,10 @@
   font-size: 5px;
   letter-spacing: 0.02em;
 }
+
+/* In dark mode, Excalidraw's canvas inverts default strokes (#1e1e1e) via
+   `invert(93%) hue-rotate(180deg)`. The preview applies the same filter to its
+   shape elements so sketches render with matching light strokes on dark backgrounds. */
+:where(.dark, [data-theme="dark"]) .whiteboard-preview__shapes {
+  filter: invert(93%) hue-rotate(180deg);
+}

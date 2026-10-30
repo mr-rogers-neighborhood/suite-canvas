@@ -113,7 +113,7 @@ export function whiteboardPreview(elements: readonly DrawingElement[]): Whiteboa
     const y = numberField(element, "y");
     const elementWidth = numberField(element, "width");
     const elementHeight = numberField(element, "height");
-    const stroke = stringField(element, "strokeColor", "#64748b");
+    const stroke = stringField(element, "strokeColor", "#1e1e1e");
     const fill = stringField(element, "backgroundColor", "transparent");
     const strokeWidth = Math.max(0.5, numberField(element, "strokeWidth", 1) * scale * 1.4);
     const points = pointsOf(element);

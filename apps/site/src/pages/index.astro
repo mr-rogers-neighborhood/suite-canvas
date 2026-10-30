@@ -35,17 +35,17 @@ const plans = [
     name: "Personal",
     price: "$9",
     members: "3",
-    workspaces: "3",
+    workspaces: "Unlimited",
     documentBytes: "256 MiB",
-    attachmentBytes: "1 GiB",
+    attachmentBytes: "10 GiB",
   },
   {
     name: "Organization",
     price: "$24",
     members: "10",
-    workspaces: "25",
-    documentBytes: "2 GiB",
-    attachmentBytes: "8 GiB",
+    workspaces: "Unlimited",
+    documentBytes: "512 MiB",
+    attachmentBytes: "50 GiB",
   },
 ];
 ---
@@ -127,10 +127,9 @@ const plans = [
       <section class="pricing" aria-labelledby="pricing">
         <h2 id="pricing">Pricing</h2>
         <p class="pricing-lede">
-          Two hosted plans, billed monthly. A licence carries a member count, a workspace count and
-          two storage caps, and the relay enforces the tighter of the licence and the instance. A
-          plan includes its members at one price: nobody is charged per person, and everybody else
-          can be invited by share link without an account.
+          Two hosted plans, billed monthly. All plans include unlimited synced workspaces, with
+          tiers based on storage and team seats. A plan includes its members at one price:
+          nobody is charged per person, and everybody else can be invited by share link without an account.
         </p>
         <table>
           <thead>

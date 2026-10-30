@@ -31,7 +31,7 @@ offline, syncs when you want it, and exports to a file you own.
   number of boards, with their own type, tags and connections, and one edit updates every place they
   appear.
 - **Boards are views.** Arrange the same cards differently for different questions instead of copying
-  them. Links between cards survive being moved.
+  them.
 - **Rich text where you want it.** Every card opens into a full editor, with mentions, checklists,
   tables and images.
 - **Works offline.** Edits land in a local database and a reload resumes where you were, with or

@@ -37,10 +37,10 @@ from `FREE_LICENCE_TIER`.
 
 | Cap | Born-with licence | Plan tier |
 | --- | --- | --- |
-| Workspaces | 0 | from the plan |
+| Workspaces | 2,147,483,647 | from the plan |
 | Seats | 1 | from the plan |
-| Document bytes per workspace | 0 bytes | from the plan |
-| Attachment bytes per workspace | 0 bytes | from the plan |
+| Document bytes per workspace | 32 MiB (33,554,432 bytes) | from the plan |
+| Attachment bytes per workspace | 100 MiB (104,857,600 bytes) | from the plan |
 
 A plan includes a fixed number of members and charges no per-seat price, so the
 price does not move when somebody joins: the plan figures are in

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useAccountStore } from "../auth/useAccountStore";
 import { useCardTitle } from "../hooks/useCardContainers";
 import { isShareSession } from "../session/session";
 import type { ShareScope } from "../session/shares";
@@ -47,21 +48,31 @@ export function ShareAction({ workspaceId, boardId, title }: ShareActionProps) {
   const selectedCardTitle = useCardTitle(selectedCardId ?? "");
 
   // A share session has no workspace-level chrome, and a standalone build has no relay.
-  if (import.meta.env.VITE_SUITE_MODE === "standalone" || isShareSession() || !canManageLinks) {
+  if (import.meta.env.VITE_SUITE_MODE === "standalone" || isShareSession()) {
     return null;
   }
+
+  const handleShareClick = () => {
+    if (!canManageLinks) {
+      useAccountStore.getState().openSignIn("sign-up");
+      return;
+    }
+    setScope("workspace");
+    setOpen(true);
+  };
 
   return (
     <>
       <button
         type="button"
         data-testid="share-action"
-        title="Share this workspace, a board or a card."
+        title={
+          canManageLinks
+            ? "Share this workspace, a board or a card."
+            : "Sign in or create a free account to share this workspace."
+        }
         className="inline-flex h-6 items-center rounded-md px-2 text-[11px] leading-none text-[var(--ink-muted)] transition-colors hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
-        onClick={() => {
-          setScope("workspace");
-          setOpen(true);
-        }}
+        onClick={handleShareClick}
       >
         Share
       </button>

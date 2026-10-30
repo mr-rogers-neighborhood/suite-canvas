@@ -59,12 +59,13 @@ export interface FreeLicenceTier {
 
 export const FREE_LICENCE_TIER: FreeLicenceTier = {
   tier: FREE_TIER,
-  // No plan, no workspace to claim: this is the wall a subscription opens.
-  workspaces: 0,
+  // Free accounts have unlimited workspaces, gated by storage and seats.
+  workspaces: 2_147_483_647,
   // The owner's own membership. A seat is a `member` row, so this cannot be zero.
   seats: 1,
-  documentBytes: 0,
-  attachmentBytes: 0,
+  // 32 MiB per workspace document, 100 MiB total attachment storage for the organization.
+  documentBytes: 33_554_432,
+  attachmentBytes: 104_857_600,
   days: 36_525,
 };
 

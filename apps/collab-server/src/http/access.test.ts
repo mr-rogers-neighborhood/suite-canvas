@@ -126,9 +126,8 @@ describe("claimWorkspaceForSession", () => {
     expect(orgs.has("ws-1")).toBe(false);
   });
 
-  it("refuses a workspace the plan does not cover, and writes nothing", async () => {
-    // A fresh organization: `tier: "free"` and no limits at all, which is exactly what the
-    // control plane mints before a subscription.
+  it("allows a free tier organization to claim and sync a workspace", async () => {
+    // A fresh organization on the free tier can claim and sync workspaces.
     const verified = await sessions.verifier.verify(
       await sessions.sign({ tier: "free", limits: {} }),
     );
@@ -136,8 +135,19 @@ describe("claimWorkspaceForSession", () => {
 
     const outcome = claimWorkspaceForSession({ orgs, licences }, "ws-1", verified.claims);
 
-    // The refusal is the door: without it the socket walks in, records the organization and
-    // the badge reads "Synced" for an account that has never paid for anything.
+    expect(outcome).toBe("claimed");
+    expect(orgs.has("ws-1")).toBe(true);
+    expect(licences.get("ws-1")?.tier).toBe("free");
+  });
+
+  it("refuses a workspace when explicit ceiling is 0, and writes nothing", async () => {
+    const verified = await sessions.verifier.verify(
+      await sessions.sign({ tier: "unlicensed", limits: { workspaces: 0 } }),
+    );
+    if (!verified.ok) throw new Error("expected a verified token");
+
+    const outcome = claimWorkspaceForSession({ orgs, licences }, "ws-1", verified.claims);
+
     expect(outcome).toBe("plan-required");
     expect(orgs.has("ws-1")).toBe(false);
     expect(licences.get("ws-1")).toBeNull();

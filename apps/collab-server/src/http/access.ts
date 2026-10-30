@@ -68,7 +68,13 @@ export type WorkspaceClaimOutcome =
  */
 function workspaceCeiling(claims: SessionClaims): number | null {
   const value = claims.limits.workspaces;
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return value;
+  }
+  if (claims.tier === "free") {
+    return 2_147_483_647;
+  }
+  return null;
 }
 
 /**
@@ -97,6 +103,7 @@ export function planRefusal(
 
   const ceiling = workspaceCeiling(claims);
   if (ceiling === null || ceiling <= 0) return "plan-required";
+  if (ceiling >= 2_147_483_647) return null;
   // The relay's own store is a lower bound on what the organization holds: a workspace
   // claimed in the control plane but never opened here is not counted, so this can only
   // refuse an organization the relay has itself watched reach its ceiling.
@@ -114,7 +121,11 @@ export function planRefusal(
 export function licenceClaimsOf(claims: SessionClaims, organizationId: string): LicenceClaims {
   const cap = (name: string): number => {
     const value = claims.limits[name];
-    return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+    if (name === "workspaces" && claims.tier === "free") return 2_147_483_647;
+    if (name === "documentBytes" && claims.tier === "free") return 33_554_432;
+    if (name === "attachmentBytes" && claims.tier === "free") return 104_857_600;
+    return 0;
   };
   return {
     v: 1,

@@ -282,25 +282,23 @@ customer, and the customer is created by Checkout, so offering the button before
 refusal ("no customer exists") that reads like a broken button. Before a plan exists, the plans
 are the action.
 
-## The born-with licence, and the wall
+## The born-with licence, and cloud capacity
 
 The entitlement read answers `free` for an organization with no live subscription, and the
 seat check reads a different row to decide what that organization may hold:
 `organization_licences` in the control-plane database. The two agree about the tier label,
 and the licence row is the one with numbers on it.
 
-**Local and offline use is free and needs no account**, so a hosted account exists to buy
-sync. Every organization is therefore born with a licence that grants the owner's seat and
-*no workspace*: migration `0009_free_licence_provisioning.sql` writes the row in the
-organization's own transaction through a trigger, and
-`0011_no_free_workspace.sql` sets its numbers to zero workspaces, zero document bytes and
-zero attachment bytes. `FREE_LICENCE_TIER` in
-`services/auth/src/organizations/freeTier.ts` is the same object, and `pnpm db:verify`
+**Local and offline use is free and needs no account**, so a hosted account exists to enable
+cloud sync, collaboration, and live sharing. Every organization is born with a licence that grants the owner's seat,
+**unlimited workspaces**, a 32 MiB document budget per workspace, and a 100 MiB total attachment storage allowance:
+migration `0013_unlimited_free_workspaces.sql` provisions these numbers in the organization's own transaction through a trigger.
+`FREE_LICENCE_TIER` in `services/auth/src/organizations/freeTier.ts` is the same object, and `pnpm db:verify`
 compares the row the trigger writes with it.
 
-The one number that is not zero is the seat, because a seat *is* a `member` row: an
-organization whose owner cannot be a member cannot exist. Zero seats would repeat the
-provisioning bug `0009` fixed; zero workspaces is the intended wall.
+The owner's seat is 1, because a seat *is* a `member` row: an organization whose owner cannot be a member cannot exist.
+A free account can create, cloud-sync, and share as many workspaces as they like without hitting arbitrary workspace count walls.
+Paid plans expand storage (10 GB for Personal, 50 GB for Organization) and add additional team member seats (3 for Personal, 10 for Organization).
 
 There are two doors from a local workspace to a synced one, and both read this row.
 

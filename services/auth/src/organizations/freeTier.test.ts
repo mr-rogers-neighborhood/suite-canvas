@@ -15,10 +15,10 @@ const NOW = 1_760_000_000_000;
 const ORG = "org-agency";
 
 describe("FREE_LICENCE_TIER", () => {
-  it("grants no workspace and no bytes, because those are what a plan buys", () => {
-    for (const key of ["workspaces", "documentBytes", "attachmentBytes"] as const) {
-      expect(FREE_LICENCE_TIER[key], `${key} is what a subscription opens`).toBe(0);
-    }
+  it("grants unlimited workspaces and initial storage quotas", () => {
+    expect(FREE_LICENCE_TIER.workspaces).toBe(2_147_483_647);
+    expect(FREE_LICENCE_TIER.documentBytes).toBe(33_554_432);
+    expect(FREE_LICENCE_TIER.attachmentBytes).toBe(104_857_600);
   });
 
   it("still holds the owner's seat, because a seat is a member row", () => {
@@ -40,12 +40,9 @@ describe("FREE_LICENCE_TIER", () => {
     expect(FREE_LICENCE_TIER.tier).toBe(FREE_TIER);
   });
 
-  it("refuses the first workspace, which is the wall, and admits the owner", () => {
+  it("admits workspaces without workspace-allowance-exhausted and admits the owner", () => {
     const licence = freeSeatLicence(ORG, NOW);
 
-    // `canAddWorkspace` counts the row *after* the write, so even the very first claim is
-    // past a ceiling of zero. That is the launch state: an account without a subscription
-    // cannot sync a workspace.
     expect(
       canAddWorkspace({
         organizationId: ORG,
@@ -53,7 +50,7 @@ describe("FREE_LICENCE_TIER", () => {
         workspaceCount: 1,
         now: NOW,
       }),
-    ).toEqual({ ok: false, reason: "workspace-allowance-exhausted" });
+    ).toEqual({ ok: true, seat: "licensed-member" });
 
     // The creator's own membership is the first `member` row, and `beforeAddMember`
     // asks about the count *after* the write as well.

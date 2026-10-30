@@ -152,6 +152,7 @@ describe("migration discovery", () => {
       "0010_templates.sql",
       "0011_no_free_workspace.sql",
       "0012_subscription_billing_mode.sql",
+      "0013_unlimited_free_workspaces.sql",
     ]);
     for (const file of files) {
       expect(file.sql.length).toBeGreaterThan(0);
@@ -206,11 +207,12 @@ describe("migrate", () => {
       "0010_templates.sql",
       "0011_no_free_workspace.sql",
       "0012_subscription_billing_mode.sql",
+      "0013_unlimited_free_workspaces.sql",
     ]);
     expect(report.skipped).toEqual([]);
-    expect(target.committed.size).toBe(12);
-    expect(target.connects).toBe(12);
-    expect(target.releases).toBe(12);
+    expect(target.committed.size).toBe(13);
+    expect(target.connects).toBe(13);
+    expect(target.releases).toBe(13);
     expect(lines).toEqual([
       "auth migration applied: 0001_control_plane.sql",
       "auth migration applied: 0002_plugins.sql",
@@ -224,6 +226,7 @@ describe("migrate", () => {
       "auth migration applied: 0010_templates.sql",
       "auth migration applied: 0011_no_free_workspace.sql",
       "auth migration applied: 0012_subscription_billing_mode.sql",
+      "auth migration applied: 0013_unlimited_free_workspaces.sql",
     ]);
 
     // Each body sits between its own BEGIN and COMMIT.
@@ -316,6 +319,7 @@ describe("status", () => {
       "0010_templates.sql",
       "0011_no_free_workspace.sql",
       "0012_subscription_billing_mode.sql",
+      "0013_unlimited_free_workspaces.sql",
     ]);
   });
 

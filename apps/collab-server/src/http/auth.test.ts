@@ -415,22 +415,18 @@ describe("the plan at the door", () => {
 
   const hosted = (): AuthorizeDeps => ({ ...deps, workspaces: { orgs, licences } });
 
-  it("keeps a free organization out of a workspace it does not hold", async () => {
-    // The socket used to walk in and record the organization, which is how an account with
-    // no plan read "Synced" while the control plane had just refused the same workspace.
+  it("admits a free organization to claim and sync a workspace", async () => {
     const token = await sessions.sign({ tier: "free", limits: {} });
 
     const decision = await decideAccess("ws-1", encode(token), hosted());
 
-    expect(decision).toMatchObject({ ok: false, reason: "plan-required" });
-    expect(orgs.has("ws-1")).toBe(false);
-    await expect(authorize("ws-1", encode(token), hosted())).resolves.toBeNull();
+    expect(decision).toMatchObject({ ok: true, permission: "write" });
+    expect(orgs.has("ws-1")).toBe(true);
+    await expect(authorize("ws-1", encode(token), hosted())).resolves.toBe("write");
   });
 
-  it("answers the access question with the same plan refusal and writes nothing", async () => {
-    // The client asks this route for the reason a join was refused. An "allowed" answer
-    // beside a shut door leaves the panel with nothing true to say.
-    const token = await sessions.sign({ tier: "free", limits: {} });
+  it("answers plan-required when a token has an explicit zero ceiling and writes nothing", async () => {
+    const token = await sessions.sign({ tier: "unlicensed", limits: { workspaces: 0 } });
 
     const decision = await decideAccess("ws-1", encode(token), hosted(), { claim: false });
 

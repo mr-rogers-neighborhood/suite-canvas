@@ -102,7 +102,8 @@ export function checkWorkspaceAllowance(input: WorkspaceAllowanceInput): SeatDec
   if (refusal !== null) return { ok: false, reason: refusal };
   if (input.licence.kind !== "licensed") return { ok: false, reason: "licence-unprovisioned" };
   const ceiling = input.licence.licence.claims.workspaces;
-  if (!Number.isFinite(ceiling)) return { ok: true, seat: "licensed-member" };
+  if (!Number.isFinite(ceiling) || ceiling >= 2_147_483_647)
+    return { ok: true, seat: "licensed-member" };
   return input.workspaceCount <= ceiling
     ? { ok: true, seat: "licensed-member" }
     : { ok: false, reason: "workspace-allowance-exhausted" };

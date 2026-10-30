@@ -85,6 +85,26 @@ test("creates a titled card from the dock", { tag: "@smoke" }, async ({ page }) 
   await expect(page.getByTestId("library-drawer")).toContainText("Field notes");
 });
 
+/**
+ * A reader who opens the library to start something should not have to put it away
+ * and go find the dock's pill. The library's own Add new opens the same menu.
+ */
+test("creates a card from the library's Add new", { tag: "@smoke" }, async ({ page }) => {
+  await page.goto(workspaceUrl("library-add-new"));
+  await expect(cards(page)).toHaveCount(2);
+
+  await openLibrary(page, "cards");
+  await page.getByTestId("library-add-new").click();
+  await expect(page.getByTestId("library-type-menu")).toBeVisible();
+
+  await page.getByTestId("library-type-note").click();
+
+  // The drawer steps aside, so the card it made is in view rather than behind it.
+  await expect(page.getByTestId("library-drawer")).toHaveCount(0);
+  await expect(cards(page)).toHaveCount(3);
+  await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
+});
+
 test("removes a card to the inbox and places it back on the board", { tag: "@smoke" }, async ({
   page,
 }) => {

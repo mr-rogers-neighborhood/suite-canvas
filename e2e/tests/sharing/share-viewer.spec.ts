@@ -73,8 +73,7 @@ async function createViewerLink(
   page: Page,
   scope: "workspace" | "board" | "card",
 ): Promise<string> {
-  await page.getByTestId("workspace-menu").click();
-  await page.getByTestId("workspace-menu-share").click();
+  await page.getByTestId("share-action").click();
   await expect(page.getByTestId("share-dialog")).toBeVisible();
   await page.getByTestId(`share-tab-${scope}`).click();
   await page.getByTestId("share-role-viewer").click();
@@ -280,8 +279,7 @@ test.fixme("workspace viewer reads every board and cannot manage", async ({ page
   await viewer.context().close();
 
   // A workspace editor link is an edit-only token from the same dialog.
-  await page.getByTestId("workspace-menu").click();
-  await page.getByTestId("workspace-menu-share").click();
+  await page.getByTestId("share-action").click();
   await page.getByTestId("share-role-editor").click();
   await page.getByTestId("share-create").click();
   const editorLink = new URL(await page.getByLabel("Share link").inputValue());
@@ -300,8 +298,7 @@ test("revoking a link makes the viewer unavailable", async ({ page, browser }) =
   });
 
   await page.getByTestId("share-close").click();
-  await page.getByTestId("workspace-menu").click();
-  await page.getByTestId("workspace-menu-share").click();
+  await page.getByTestId("share-action").click();
   // Revoking every link is confirmed inside the dialog now that no `window.confirm`
   // is left in the canvas, so the confirmation is a press of its own.
   await page.getByTestId("share-revoke-all").click();

@@ -99,14 +99,16 @@ async function boxFor(page: Page, cardId: string): Promise<Box> {
 /**
  * Shift-clicks the given cards so exactly those are selected, inspector closed.
  * React Flow mirrors the selection into the store asynchronously, so each click
- * waits for its own count before the next one lands.
+ * waits for its own count before the next one lands. The press lands on the header's
+ * left padding: the glyph and the ⋯ button are `nodrag` (React Flow never sees the
+ * press) and a press on the title starts an editor.
  */
 async function shiftSelect(page: Page, cardIds: readonly string[]): Promise<void> {
   await page.keyboard.press("Escape");
   let expected = 0;
   for (const cardId of cardIds) {
     const card = page.locator(`[data-testid="node-card"][data-node-id="${cardId}"]`);
-    await card.click({ position: { x: 40, y: 60 }, modifiers: ["Shift"] });
+    await card.click({ position: { x: 8, y: 8 }, modifiers: ["Shift"] });
     expected += 1;
     await expect(selectedNodes(page)).toHaveCount(expected);
   }
@@ -129,8 +131,7 @@ async function createSelectionLinkFor(
   page: Page,
   scope: "selection" | "card" = "selection",
 ): Promise<string> {
-  await page.getByTestId("workspace-menu").click();
-  await page.getByTestId("workspace-menu-share").click();
+  await page.getByTestId("share-action").click();
   await expect(page.getByTestId("share-dialog")).toBeVisible();
   await page.getByTestId(`share-tab-${scope}`).click();
   await expect(page.getByTestId("share-role-viewer")).toHaveAttribute("aria-pressed", "true");
@@ -180,30 +181,24 @@ test("the selection tab needs at least two cards", async ({ page }) => {
   const [first] = await cardBoxes(page);
   if (!first) throw new Error("cards not visible");
 
-  // One card selected: a subset of one is what the Card scope already does.
-  await page.keyboard.down("Shift");
-  await page.mouse.click(first.x + 40, first.y + 60);
-  await page.keyboard.up("Shift");
+  // One card selected: a subset of one is what the Card scope already does. The
+  // gutter beside the type glyph selects without putting the caret in the card.
+  await page.mouse.click(first.x + 24, first.y + 20);
   await expect(selectedNodes(page)).toHaveCount(1);
 
-  await page.getByTestId("workspace-menu").click();
-  await page.getByTestId("workspace-menu-share").click();
+  await page.getByTestId("share-action").click();
   const selectionTab = page.getByTestId("share-tab-selection");
   await expect(selectionTab).toBeDisabled();
   await expect(selectionTab).toHaveAttribute("title", /Select two or more cards/);
   await page.getByTestId("share-close").click();
 
-  // Two cards: the tab becomes available and preselects the viewer role.
-  const boxes = await cardBoxes(page);
-  const [, second] = boxes;
-  if (!second) throw new Error("second card not visible");
-  await page.keyboard.down("Shift");
-  await page.mouse.click(second.x + 40, second.y + 60);
-  await page.keyboard.up("Shift");
+  // Two cards: the tab becomes available and preselects the viewer role. The
+  // board's own select-all is what a reader uses rather than shift-clicking into
+  // two editors.
+  await page.keyboard.press("Control+a");
   await expect(selectedNodes(page)).toHaveCount(2);
 
-  await page.getByTestId("workspace-menu").click();
-  await page.getByTestId("workspace-menu-share").click();
+  await page.getByTestId("share-action").click();
   await expect(page.getByTestId("share-tab-selection")).toBeEnabled();
   await page.getByTestId("share-tab-selection").click();
   await expect(page.getByTestId("share-tab-selection")).toHaveAttribute("aria-pressed", "true");

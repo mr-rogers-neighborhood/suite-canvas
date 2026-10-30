@@ -380,11 +380,14 @@ test("syncs a mention and its live title to a peer", async ({ browser }) => {
       has: pageB.locator(".card-title-editor", { hasText: "Target card" }),
     })
     .first();
-  await targetB.getByRole("button", { name: "Edit card title" }).dblclick();
-  await expect(pageB.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1, {
-    timeout: 10_000,
-  });
+  // One press starts the title edit; a double click would land the second press
+  // inside the editor it just opened and drop the caret in the middle of the title.
+  await targetB.getByRole("button", { name: "Edit card title" }).click();
+  const titleEditor = pageB.locator(".card-title-editor.ProseMirror-focused");
+  await expect(titleEditor).toHaveCount(1, { timeout: 10_000 });
+  await pageB.keyboard.press("Control+End");
   await pageB.keyboard.type(" renamed");
+  await expect(titleEditor).toContainText("Target card renamed");
   await pageB.keyboard.press("Escape");
 
   await expect(sourceA.getByTestId("mention-chip")).toContainText("Target card renamed", {

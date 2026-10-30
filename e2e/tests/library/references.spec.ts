@@ -7,8 +7,8 @@ const workspaceUrl = (name: string) => `/?workspace=e2e-refs-${name}-${Date.now(
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const cardTitled = (page: Page, title: string) => cards(page).filter({ hasText: title });
-/** The board the switcher names, which is the board on screen. */
-const currentBoardName = (page: Page) => page.getByTestId("board-switcher").locator("span").first();
+/** The board the switcher names, which is the board on screen. Its first span is the glyph. */
+const currentBoard = (page: Page) => page.getByTestId("board-switcher");
 
 /** Opens the inspector from the card header, away from the editors. */
 async function openInspector(page: Page, card = cards(page).first()): Promise<void> {
@@ -120,7 +120,7 @@ test("links through a card property and navigates to the source", async ({ page 
   await expect(row).toContainText("Alpha");
 
   await row.click();
-  await expect(currentBoardName(page)).toHaveText("Board 1");
+  await expect(currentBoard(page)).toContainText("Board 1");
   await expect(cards(page)).toHaveCount(2);
 });
 
@@ -149,7 +149,7 @@ test("lists a drawn arrow with its board and switches board when clicked", async
   await expect(row).toContainText("Board 2");
 
   await row.click();
-  await expect(currentBoardName(page)).toHaveText("Board 2");
+  await expect(currentBoard(page)).toContainText("Board 2");
   await expect(cards(page)).toHaveCount(2);
 });
 

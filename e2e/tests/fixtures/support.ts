@@ -157,13 +157,6 @@ export async function openLibraryBoards(page: Page): Promise<void> {
 }
 
 /**
- * Library rows are the list entries (`li[data-row-id]`). The row title lives in
- * `library-title-<id>`, so a `library-item-` prefix selector would be a
- * different (and historically double-counted) thing.
- */
-export const libraryRows = (page: Page) => page.locator("li[data-row-id]");
-
-/**
  * Runs one action from a library row's menu.
  *
  * A row offers up to six actions, which as buttons left no room for the entity's

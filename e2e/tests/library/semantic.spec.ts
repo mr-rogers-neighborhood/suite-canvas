@@ -5,9 +5,17 @@ let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-sem-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
+/** The library rows that are cards. Boards are rows in Cards too, and are not these. */
+const cardRows = (page: Page) => page.locator('li[data-row-id][data-row-kind="card"]');
 
+/**
+ * Opens a card's inspector from its own menu. A press on the text does the same in
+ * reading mode, but the menu is the door that means the same thing in every mode and
+ * does not depend on where the card happens to sit on the board.
+ */
 async function openInspector(page: Page, card: Locator): Promise<void> {
-  await card.getByTestId("card-type").click();
+  await card.getByTestId("card-menu").click();
+  await page.getByRole("menuitem", { name: "Card info" }).click();
   await expect(page.getByTestId("card-inspector")).toBeVisible();
   // Blank cards open on Content; types, tags and properties live on Details.
   await page.getByTestId("card-panel-tab-details").click();
@@ -144,13 +152,13 @@ test("filters the library by type and tag, then clears", async ({ page }) => {
 
   await page.getByTestId("dock-library").click();
   await page.getByTestId("library-tab-cards").click();
-  await expect(page.locator('[data-testid^="library-item-"]')).toHaveCount(2);
+  await expect(cardRows(page)).toHaveCount(2);
 
   await page.locator('[data-testid^="facet-tag-"]').first().click();
-  await expect(page.locator('[data-testid^="library-item-"]')).toHaveCount(1);
+  await expect(cardRows(page)).toHaveCount(1);
 
   await page.getByTestId("clear-filters").click();
-  await expect(page.locator('[data-testid^="library-item-"]')).toHaveCount(2);
+  await expect(cardRows(page)).toHaveCount(2);
 
   await page.locator('[data-testid^="facet-type-"]').first().click();
   await expect(page.getByTestId("clear-filters")).toBeVisible();

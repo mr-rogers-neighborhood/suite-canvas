@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { expectPeersConnected } from "../../interactions";
 import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
-import { libraryRows, openLibrary } from "../fixtures/support";
+import { createNote, libraryCardRows, openLibrary } from "../fixtures/support";
 
 // Two peers in one room means two contexts of one account: presence and the
 // document both need a session the relay verifies (ADR-0074, ADR-0076).
@@ -27,22 +27,16 @@ test("a peer sees the card being dragged out of the library", async ({ browser }
   await expectPeersConnected(pageA, pageB);
 
   // A card that only lives in the inbox, so the drag has somewhere to start.
-  await pageA.getByTestId("dock-new-card").click();
-  await pageA.getByTestId("dock-type-note").click();
-  const createdTitle = pageA.locator(".card-title-editor.ProseMirror-focused");
-  await expect(createdTitle).toHaveCount(1);
-  await createdTitle.pressSequentially("Library card");
-  await expect(createdTitle).toContainText("Library card");
-  await pageA.keyboard.press("Escape");
+  await createNote(pageA, "Library card");
   await pageA.locator(".card-header").first().click({ button: "right" });
   await pageA.getByRole("menuitem", { name: "Remove from board" }).click();
   await openLibrary(pageA, "inbox");
-  await expect(libraryRows(pageA)).toHaveCount(1);
+  await expect(libraryCardRows(pageA)).toHaveCount(1);
 
   // Nothing held yet: no ghost on either page.
   await expect(pageB.getByTestId("peer-library-ghost")).toHaveCount(0);
 
-  const row = libraryRows(pageA).first();
+  const row = libraryCardRows(pageA).first();
   const box = await row.boundingBox();
   const canvas = await pageA.getByTestId("canvas-board").boundingBox();
   if (!box || !canvas) throw new Error("cannot measure");

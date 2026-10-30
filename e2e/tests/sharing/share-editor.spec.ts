@@ -140,8 +140,7 @@ async function typeBody(page: Page, card: Locator, text: string): Promise<void> 
 
 /** Creates an editor link for the active scope and returns its URL. */
 async function createEditorLink(page: Page, scope: "board" | "card"): Promise<string> {
-  await page.getByTestId("workspace-menu").click();
-  await page.getByTestId("workspace-menu-share").click();
+  await page.getByTestId("share-action").click();
   await expect(page.getByTestId("share-dialog")).toBeVisible();
   await page.getByTestId(`share-tab-${scope}`).click();
   await page.getByTestId("share-role-editor").click();
@@ -396,8 +395,12 @@ test("board editor creates content but has no library, board or schema chrome", 
   await expect(editor.getByTestId("manage-types")).toHaveCount(0);
   await editor.getByTestId("inspector-close").click();
 
-  // Delete removes the card from the board without trashing it.
-  await selectCard(editor, editorCard);
+  // Delete removes the card from the board without trashing it. The press is on the
+  // gutter, so no editor owns the keyboard when the key arrives.
+  const cardBox = await editorCard.boundingBox();
+  if (!cardBox) throw new Error("card not visible");
+  await editor.mouse.click(cardBox.x + 24, cardBox.y + 20);
+  await expect(editor.locator(".react-flow__node.selected")).toHaveCount(1);
   await editor.keyboard.press("Delete");
   await expect(editor.locator('[data-testid="node-card"]')).toHaveCount(0);
 
@@ -453,8 +456,7 @@ test("workspace editor token edits the workspace without owner chrome", async ({
   await page.goto(workspaceUrl("workspace-token"));
   await expect(cards(page)).toHaveCount(2);
 
-  await page.getByTestId("workspace-menu").click();
-  await page.getByTestId("workspace-menu-share").click();
+  await page.getByTestId("share-action").click();
   await expect(page.getByTestId("share-dialog")).toBeVisible();
   await page.getByTestId("share-role-editor").click();
   await page.getByTestId("share-create").click();

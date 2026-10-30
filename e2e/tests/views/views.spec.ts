@@ -3,7 +3,7 @@ import {
   cardByTitle,
   cards,
   createNote,
-  libraryRows,
+  libraryCardRows,
   openLibrary,
   workspaceIdFactory,
 } from "../fixtures/support";
@@ -36,7 +36,7 @@ test("saves a search as a view, reapplies it, renames it and deletes it", {
 
   await openLibrary(page, "cards");
   await search(page).fill("retro");
-  await expect(libraryRows(page)).toHaveCount(1);
+  await expect(libraryCardRows(page)).toHaveCount(1);
   const saved = await rowIds(page);
 
   await viewsButton(page).click();
@@ -62,16 +62,16 @@ test("saves a search as a view, reapplies it, renames it and deletes it", {
   // board, which is a row in the card list since boards lost their own tab
   // (`openLibraryBoards` above says so). The point of the count is that exiting a
   // view drops every filter, so the whole list is back.
-  await expect(libraryRows(page)).toHaveCount(4);
+  await expect(libraryCardRows(page)).toHaveCount(4);
   await expect(page.getByRole("button", { name: "Views" })).toBeVisible();
 
   // Re-applying the stored query restores exactly the rows it was saved with.
   await viewsButton(page).click();
   await page.locator('[data-testid^="views-item-"]').first().click();
   await expect(search(page)).toHaveValue("retro");
-  await expect(libraryRows(page)).toHaveCount(1);
+  await expect(libraryCardRows(page)).toHaveCount(1);
   expect(await rowIds(page)).toEqual(saved);
-  await expect(libraryRows(page)).toContainText("Planning retro");
+  await expect(libraryCardRows(page)).toContainText("Planning retro");
 
   // The view owns its name; rename happens in the menu itself.
   await viewsButton(page).click();
@@ -109,8 +109,8 @@ test("a saved view reopens the library on the Cards tab", { tag: "@smoke" }, asy
   await expect(page.getByTestId("library-drawer")).toBeVisible();
   await expect(page.getByTestId("library-tab-cards")).toHaveAttribute("data-active", "true");
   await expect(search(page)).toHaveValue("grading");
-  await expect(libraryRows(page)).toHaveCount(1);
-  await expect(libraryRows(page)).toContainText("Grading pass");
+  await expect(libraryCardRows(page)).toHaveCount(1);
+  await expect(libraryCardRows(page)).toContainText("Grading pass");
   await expect(cardByTitle(page, "Grading pass")).toHaveCount(1);
 });
 

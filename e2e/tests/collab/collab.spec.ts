@@ -142,7 +142,7 @@ test("undoes a removal from the board, not the editor text", async ({ page }) =>
   // Inside the editor, undo belongs to the editor's own fragment history.
   const card = page.locator('[data-testid="node-card"]').filter({ hasText: "scoped undo" });
   const body = card.getByTestId("card-body").locator(".ProseMirror");
-  await card.getByTestId("card-body").dblclick();
+  await card.getByTestId("card-body").click();
   await expect(body).toHaveClass(/ProseMirror-focused/);
   await page.keyboard.type("body text");
   await expect(body).toHaveText("body text");

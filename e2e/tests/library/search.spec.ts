@@ -4,7 +4,7 @@ import {
   cardId,
   cards,
   createNote,
-  libraryRows,
+  libraryCardRows,
   openLibrary,
   workspaceIdFactory,
 } from "../fixtures/support";
@@ -24,7 +24,7 @@ test("finds a card by a title word and marks the match", async ({ page }) => {
   await search(page).fill("retro");
 
   // Exactly one row, and it is the note: the two starter cards are untitled.
-  await expect(libraryRows(page)).toHaveCount(1);
+  await expect(libraryCardRows(page)).toHaveCount(1);
   const title = page.getByTestId(`library-title-${noteId}`);
   await expect(title).toContainText("Planning retro");
   await expect(title.locator("mark")).toHaveText("retro");
@@ -36,7 +36,9 @@ test("finds a word that only appears in a card body", async ({ page }) => {
   await createNote(page, "Team agenda");
 
   const card = cardByTitle(page, "Team agenda");
-  await card.getByTestId("card-body").dblclick();
+  // One press puts the caret in the body; a double click would land the second
+  // press inside the editor it just opened.
+  await card.getByTestId("card-body").click();
   await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(1);
   await page.keyboard.type("The zebra crossing is closed");
   await expect(card.getByTestId("card-body")).toContainText("zebra");
@@ -47,7 +49,7 @@ test("finds a word that only appears in a card body", async ({ page }) => {
   await openLibrary(page, "cards");
   await search(page).fill("zebra");
 
-  await expect(libraryRows(page)).toHaveCount(1);
+  await expect(libraryCardRows(page)).toHaveCount(1);
   // A body hit is shown as a snippet with the term marked; the title itself
   // does not contain the word, so it carries no mark.
   const snippet = page.getByTestId(`library-snippet-${noteId}`);
@@ -70,7 +72,7 @@ test("finds a card created after the index was built", async ({ page }) => {
   await search(page).fill("retro");
   await expect(page.getByTestId("library-search-empty")).toBeVisible();
   await search(page).fill("");
-  await expect(libraryRows(page)).toHaveCount(2);
+  await expect(libraryCardRows(page)).toHaveCount(2);
 
   // Close the drawer, write something, and search again: no reload happens, so
   // the cached index is the only thing that can find the new card.
@@ -81,8 +83,8 @@ test("finds a card created after the index was built", async ({ page }) => {
 
   await openLibrary(page, "cards");
   await search(page).fill("retrospective");
-  await expect(libraryRows(page)).toHaveCount(1);
-  await expect(libraryRows(page)).toContainText("Freshly written retrospective");
+  await expect(libraryCardRows(page)).toHaveCount(1);
+  await expect(libraryCardRows(page)).toContainText("Freshly written retrospective");
 });
 
 test("shows the empty state for a miss and restores the list when cleared", async ({ page }) => {
@@ -91,15 +93,15 @@ test("shows the empty state for a miss and restores the list when cleared", asyn
   await createNote(page, "Planning retro");
 
   await openLibrary(page, "cards");
-  await expect(libraryRows(page)).toHaveCount(3);
+  await expect(libraryCardRows(page)).toHaveCount(3);
 
   await search(page).fill("nothing matches this");
   await expect(page.getByTestId("library-search-empty")).toContainText(
     "No cards match \u201cnothing matches this\u201d.",
   );
-  await expect(libraryRows(page)).toHaveCount(0);
+  await expect(libraryCardRows(page)).toHaveCount(0);
 
   await page.getByTestId("library-search-clear").click();
   await expect(search(page)).toHaveValue("");
-  await expect(libraryRows(page)).toHaveCount(3);
+  await expect(libraryCardRows(page)).toHaveCount(3);
 });

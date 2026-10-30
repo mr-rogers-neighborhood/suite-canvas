@@ -110,7 +110,7 @@ async function relayToken(request: APIRequestContext): Promise<string> {
  * plugin claims the paste and inserts the node once the bytes are stored.
  */
 async function pastePng(page: Page, card: Locator): Promise<void> {
-  await card.getByTestId("card-body").dblclick();
+  await card.getByTestId("card-body").click();
   await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(1);
   // React StrictMode remounts the editor once in dev; let the focused instance
   // settle so the paste cannot land in the discarded one.

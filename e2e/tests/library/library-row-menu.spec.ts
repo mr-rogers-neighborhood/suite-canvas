@@ -12,7 +12,8 @@ const workspaceUrl = (name: string) =>
   `/?workspace=e2e-rowmenu-${name}-${Date.now()}-${++sequence}`;
 
 const drawer = (page: Page) => page.getByTestId("library-drawer");
-const rows = (page: Page) => page.locator("li[data-row-id]");
+/** The rows that are cards. A board is a row here too, and its menu is board verbs. */
+const rows = (page: Page) => page.locator('li[data-row-id][data-row-kind="card"]');
 
 async function openLibrary(page: Page, tab: string): Promise<void> {
   if ((await drawer(page).count()) === 0) await page.getByTestId("dock-library").click();

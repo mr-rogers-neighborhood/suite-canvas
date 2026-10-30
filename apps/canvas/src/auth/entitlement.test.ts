@@ -40,14 +40,13 @@ describe("quota lines", () => {
     expect(quotaLines(null)).toEqual([]);
   });
 
-  it("names the free tier's zero even when the server sends no limits at all", () => {
-    // The free licence is `limits: {}` — the tier is the only thing saying "no workspace".
+  it("names the free tier's workspace allowance even when the server sends no limits at all", () => {
     expect(freeWorkspaceLine()).toEqual({
       id: "workspaces",
       label: "Synced workspaces",
-      limit: 0,
-      value: "none yet",
-      zero: true,
+      limit: 2_147_483_647,
+      value: "Unlimited",
+      zero: false,
     });
   });
 });

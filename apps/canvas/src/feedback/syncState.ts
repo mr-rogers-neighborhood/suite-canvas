@@ -84,8 +84,8 @@ export const CAPPED_SENTENCE =
 
 /** The plan is paid and full, which no amount of retrying changes. */
 export function limitSentence(ceiling: number | null | undefined): string {
-  if (typeof ceiling !== "number" || ceiling <= 0) {
-    return "Saved here. Every synced workspace this plan covers is in use, so this one stays on this device.";
+  if (typeof ceiling !== "number" || ceiling <= 0 || ceiling >= 2_147_483_647) {
+    return "Saved here. Cloud storage or member allowance reached for this account, so this workspace stays on this device.";
   }
   return `Saved here. This plan covers ${ceiling} synced workspace${
     ceiling === 1 ? "" : "s"

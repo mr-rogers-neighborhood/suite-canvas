@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { relayCredential } from "../auth/credential";
 import { noteRefusal } from "../auth/refusal";
+import { useAccountStore } from "../auth/useAccountStore";
 import { useFocusTrap } from "../dialogs/useFocusTrap";
 import type {
   CreatedShare,
@@ -134,6 +135,8 @@ export function ShareDialog({
   onClose,
   client,
 }: ShareDialogProps) {
+  const phase = useAccountStore((state) => state.phase);
+  const openSignIn = useAccountStore((state) => state.openSignIn);
   const api = useMemo(() => client ?? defaultClient, [client]);
   const [scope, setScope] = useState<ShareScope>(initialScope);
   const [role, setRole] = useState<ShareRole>(initialScope === "workspace" ? "editor" : "viewer");
@@ -372,6 +375,73 @@ export function ShareDialog({
 
   const createLabel = role === "editor" ? "Create editor link" : "Create viewer link";
 
+  if (phase === "signed-out") {
+    return createPortal(
+      <div className="fixed inset-0 z-[70] flex items-center justify-center">
+        <button
+          type="button"
+          aria-label="Close share dialog"
+          className="absolute inset-0 cursor-default border-0 bg-black/25 backdrop-blur-[2px]"
+          onClick={onClose}
+        />
+        <div
+          ref={panel}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Sign in to share"
+          tabIndex={-1}
+          data-testid="share-dialog-signed-out"
+          className="relative w-[min(440px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-5 shadow-xl"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--ink)]">Sign in to share</h2>
+              <p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-muted)]">
+                Create share links with view or edit permissions for anyone. Free accounts include
+                unlimited personal workspaces, 100 MB of cloud storage, and share links.
+              </p>
+            </div>
+            <button
+              type="button"
+              data-testid="share-close"
+              aria-label="Close share dialog"
+              className="rounded-md px-1.5 py-0.5 text-[13px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+              onClick={onClose}
+            >
+              {"\u00d7"}
+            </button>
+          </div>
+
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              data-testid="share-sign-in"
+              className="rounded-md border border-[var(--hairline)] px-3 py-1.5 text-[11px] font-medium text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+              onClick={() => {
+                onClose();
+                openSignIn("sign-in");
+              }}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              data-testid="share-sign-up"
+              className="rounded-md bg-[var(--ink)] px-3 py-1.5 text-[11px] font-medium text-[var(--surface)] transition-opacity hover:opacity-90"
+              onClick={() => {
+                onClose();
+                openSignIn("sign-up");
+              }}
+            >
+              Create free account
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
+
   return createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
       <button
@@ -552,13 +622,39 @@ export function ShareDialog({
         ) : null}
 
         {error ? (
-          <p
+          <div
             role="alert"
             data-testid="share-error"
             className="mt-2 text-[11px] leading-relaxed text-red-600 dark:text-red-300"
           >
-            {error}
-          </p>
+            <p>{error}</p>
+            {error.includes("Sign in on this device") ? (
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="share-error-sign-up"
+                  className="rounded-md bg-[var(--ink)] px-2.5 py-1 text-[11px] font-medium text-[var(--surface)] hover:opacity-90"
+                  onClick={() => {
+                    onClose();
+                    openSignIn("sign-up");
+                  }}
+                >
+                  Create free account
+                </button>
+                <button
+                  type="button"
+                  data-testid="share-error-sign-in"
+                  className="rounded-md border border-[var(--hairline)] px-2.5 py-1 text-[11px] font-medium text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+                  onClick={() => {
+                    onClose();
+                    openSignIn("sign-in");
+                  }}
+                >
+                  Sign in
+                </button>
+              </div>
+            ) : null}
+          </div>
         ) : null}
 
         <div className="mt-3 border-t border-[var(--hairline)] pt-2">

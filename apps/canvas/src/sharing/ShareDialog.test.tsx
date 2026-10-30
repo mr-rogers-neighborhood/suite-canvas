@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { forgetCredential } from "../auth/credential";
+import { useAccountStore } from "../auth/useAccountStore";
 import type { CreateShareInput, Share } from "../session/shares";
 import { lastUsedLabel, type ShareClient, ShareDialog } from "./ShareDialog";
 
@@ -93,6 +94,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   forgetCredential();
+  useAccountStore.getState().clear();
 });
 
 describe("ShareDialog", () => {
@@ -596,5 +598,37 @@ describe("the published page address", () => {
     expect(screen.getByTestId("share-exposure")).toHaveTextContent(
       "Publishing Roadmap makes it, and every link inside it, readable by anyone who has the link, without an account.",
     );
+  });
+
+  it("renders the signed-out onboarding card when user is not signed in", () => {
+    useAccountStore.setState({ phase: "signed-out" });
+    const client = fakeClient();
+    renderDialog(client);
+
+    expect(screen.getByTestId("share-dialog-signed-out")).toBeInTheDocument();
+    expect(screen.getByTestId("share-sign-up")).toHaveTextContent("Create free account");
+    expect(screen.getByTestId("share-sign-in")).toHaveTextContent("Sign in");
+
+    fireEvent.click(screen.getByTestId("share-sign-up"));
+    expect(useAccountStore.getState().dialogOpen).toBe(true);
+    expect(useAccountStore.getState().dialogMode).toBe("sign-up");
+  });
+
+  it("renders action buttons in error alert when sign in is required", async () => {
+    const client = {
+      ...fakeClient(),
+      listShares: vi.fn(async () => {
+        throw new Error("Sign in on this device to manage this workspace's links.");
+      }),
+    };
+    renderDialog(client);
+
+    expect(await screen.findByTestId("share-error")).toBeInTheDocument();
+    expect(screen.getByTestId("share-error-sign-up")).toBeInTheDocument();
+    expect(screen.getByTestId("share-error-sign-in")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("share-error-sign-in"));
+    expect(useAccountStore.getState().dialogOpen).toBe(true);
+    expect(useAccountStore.getState().dialogMode).toBe("sign-in");
   });
 });

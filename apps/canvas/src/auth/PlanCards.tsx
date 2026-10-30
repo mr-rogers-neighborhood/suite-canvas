@@ -18,8 +18,9 @@ import { humanBytes } from "./entitlement";
 
 /** What a tier is for, in one sentence. Unknown tiers get a sentence built from their limits. */
 const PURPOSE: Readonly<Record<string, string>> = {
-  personal: "For a few people and a few workspaces, on every device you sign in on.",
-  organization: "For a bigger team and a lot of workspaces, with room to grow.",
+  personal:
+    "For individuals and small teams: unlimited workspaces, 10 GB media storage, and 3 seats.",
+  organization: "For growing teams: unlimited workspaces, 50 GB media storage, and 10 seats.",
 };
 
 function purposeOf(plan: BillingPlan): string {
@@ -64,7 +65,12 @@ export function allowancesOf(plan: BillingPlan): Allowance[] {
     rows.push({
       id: "workspaces",
       label: "Synced workspaces",
-      value: workspaces === 0 ? "none yet" : String(workspaces),
+      value:
+        workspaces >= 2_147_483_647
+          ? "Unlimited"
+          : workspaces === 0
+            ? "none yet"
+            : String(workspaces),
     });
   }
   const documentBytes = plan.limits.documentBytes;

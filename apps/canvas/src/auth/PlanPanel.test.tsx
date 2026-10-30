@@ -76,7 +76,7 @@ describe("the plan surface", () => {
     render(<PlanPanel entitlement={FREE} readOnMount={false} />);
 
     expect(screen.getByTestId("plan-quota")).toHaveTextContent("Synced workspaces");
-    expect(screen.getByTestId("plan-quota")).toHaveTextContent("none yet");
+    expect(screen.getByTestId("plan-quota")).toHaveTextContent("Unlimited");
     expect(screen.getByTestId("plan-free-sentence")).toHaveTextContent("Everything on this device");
     expect(screen.queryByTestId("plan-no-limits")).not.toBeInTheDocument();
     expect(screen.queryByText(/sets no limits/u)).not.toBeInTheDocument();
@@ -258,7 +258,7 @@ describe("what a plan card says", () => {
     expect(screen.getByTestId("plan-allowance-personal-guests")).toHaveTextContent(
       "by share link, not counted",
     );
-    expect(screen.getByTestId("plan-card-personal")).toHaveTextContent("a few people and a few");
+    expect(screen.getByTestId("plan-card-personal")).toHaveTextContent("unlimited workspaces");
   });
 
   it("says just you for a plan that admits one, rather than a bare number", async () => {

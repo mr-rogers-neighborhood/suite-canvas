@@ -74,7 +74,14 @@ export function quotaLines(
         id,
         label: known?.label ?? prettify(id),
         limit,
-        value: limit === 0 ? "none yet" : unit === "bytes" ? humanBytes(limit) : String(limit),
+        value:
+          id === "workspaces" && limit >= 2_147_483_647
+            ? "Unlimited"
+            : limit === 0
+              ? "none yet"
+              : unit === "bytes"
+                ? humanBytes(limit)
+                : String(limit),
         zero: limit === 0,
       };
     })
@@ -87,17 +94,22 @@ export const FREE_TIER_ID = "free";
 /**
  * What a plan-less organization gets, said once.
  *
- * The free licence grants no synced workspace and no bytes on the server, so the panel
- * states that in one sentence and then offers the plans. Nothing local is capped by it:
- * workspaces live in IndexedDB on the device whether or not an account exists, which is
- * the product and not a consolation.
+ * Free accounts get unlimited personal workspaces, 100 MB of attachment storage, and
+ * share links. Nothing local is capped by it: workspaces live in IndexedDB on the device
+ * whether or not an account exists, which is the product and not a consolation.
  */
 export const FREE_PLAN_SENTENCE =
-  "Everything on this device is uncapped. A plan adds the room: syncing, sharing and opening it elsewhere.";
+  "Everything on this device is uncapped. Free accounts include unlimited personal workspaces, 100 MB of cloud storage, and share links.";
 
-/** The line a free tier shows, so the zero it carries is not invisible. */
+/** The line a free tier shows, so the unlimited workspace allowance is visible. */
 export function freeWorkspaceLine(): QuotaLine {
-  return { id: "workspaces", label: "Synced workspaces", limit: 0, value: "none yet", zero: true };
+  return {
+    id: "workspaces",
+    label: "Synced workspaces",
+    limit: 2_147_483_647,
+    value: "Unlimited",
+    zero: false,
+  };
 }
 
 /** The account's plan, as the panel states it. `null` when no token is held yet. */

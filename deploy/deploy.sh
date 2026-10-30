@@ -230,6 +230,16 @@ if wait_healthy; then
   if [ -n "$rollback_tag" ]; then
     say "rollback is deploy/deploy.sh --rollback $rollback_tag"
   fi
+  if compose ps -q control-plane >/dev/null 2>&1; then
+    say "rebuilding and restarting control-plane"
+    compose build control-plane
+    compose up -d --no-build control-plane
+  fi
+  if compose ps -q caddy >/dev/null 2>&1; then
+    say "rebuilding and restarting caddy"
+    compose build caddy
+    compose up -d --no-build caddy
+  fi
   exit 0
 fi
 

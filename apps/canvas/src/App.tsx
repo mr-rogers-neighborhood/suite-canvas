@@ -311,7 +311,7 @@ function WorkspaceShell({
     choice: templateChoice,
     pick: pickTemplate,
     cancel: cancelTemplateChoice,
-  } = useCreateCard({ workspace, activeBoardId, canvasPoint, startEditing });
+  } = useCreateCard({ workspace, activeBoardId, canvasPoint, startEditing, openCardFocus });
 
   /** Clicks become steps, so recording has one engine beside the placement one. */
   const recordEngine = useRecordEngine();

@@ -14,11 +14,11 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history and outline buttons in `app/WorkspaceShellView.tsx` | Home, the open boards with their peer counts, undo, redo, version history and the outline, in one row |
 | Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface, plus the plan wall and the retry for whoever just paid |
 | Views bar | `apps/canvas/src/chrome/ViewsBar.tsx` | Saved views, applying one, renaming and deleting one. **Development only** (see below) |
-| Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new sketch, new section, new portal, type settings |
+| Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new sketch, new section, new portal, type settings. The menu itself is `apps/canvas/src/chrome/NewThingMenu.tsx`, shared with the library |
 | Outline rail | `apps/canvas/src/canvas/BoardOutline.tsx` | The active board's section tree, in reading order, with counts and presence. Hidden while the board has no sections |
 | Inspector | `apps/canvas/src/cards/CardInspectorHost.tsx` | The one panel for the selected card or container |
 | Blueprint install | `apps/canvas/src/app/BlueprintInstallHost.tsx` | The type a card's title and body declare, previewed before it is written |
-| Library drawer | `apps/canvas/src/library/LibraryDrawer.tsx` | Every card, board and trashed record, with search and facets |
+| Library drawer | `apps/canvas/src/library/LibraryDrawer.tsx` | Every card, board and trashed record, with search, facets and **Add new**, which opens the dock's own menu from the top of the list |
 | Command palette | `apps/canvas/src/command/CommandPalette.tsx` | Navigation and actions from one query |
 | Presence | `apps/canvas/src/presence/` and `apps/canvas/src/cursor/` | Peer cursors, name tags, avatars and the status cursor |
 | Account | `apps/canvas/src/auth/SignInEntry.tsx` and `AccountPanel.tsx` | Sign in or the account menu, and one dialog for the account, members, devices and the plan |

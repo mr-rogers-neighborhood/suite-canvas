@@ -1,6 +1,7 @@
 import type { WorkspaceDocument } from "@suite/graph";
 import { useCallback, useState } from "react";
 import type { TemplateChoice } from "../cards/TemplateChoiceMenu";
+import { WHITEBOARD_TYPE_ID } from "../cards/whiteboard";
 
 /**
  * The one path from "new card of this type" to a card on the board.
@@ -19,8 +20,9 @@ export function useCreateCard(args: {
   activeBoardId: string | null;
   canvasPoint: (point?: { x: number; y: number }) => { x: number; y: number };
   startEditing: (cardId: string, field: "title" | "body") => void;
+  openCardFocus: (cardId: string) => void;
 }) {
-  const { workspace, activeBoardId, canvasPoint, startEditing } = args;
+  const { workspace, activeBoardId, canvasPoint, startEditing, openCardFocus } = args;
   const [choice, setChoice] = useState<TemplateChoice | null>(null);
 
   const create = useCallback(
@@ -35,10 +37,14 @@ export function useCreateCard(args: {
         ...(templateId === null ? { fromTemplate: false } : {}),
         ...(templateId ? { templateId } : {}),
       });
-      startEditing(card.id, "title");
+      // A sketch is drawn, not titled: it opens on its surface. Asking for a title
+      // edit started an editor a sketch does not have on the canvas, so the press
+      // made a blank card and nothing else.
+      if (typeId === WHITEBOARD_TYPE_ID) openCardFocus(card.id);
+      else startEditing(card.id, "title");
       return card.id;
     },
-    [activeBoardId, canvasPoint, workspace, startEditing],
+    [activeBoardId, canvasPoint, workspace, startEditing, openCardFocus],
   );
 
   const createCard = useCallback(

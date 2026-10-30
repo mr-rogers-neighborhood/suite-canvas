@@ -128,6 +128,30 @@ test("seamless drops the frame the framed card keeps", async ({ page }) => {
   await expect(sketchFace(page)).toHaveClass(/whiteboard-card--seamless/);
 });
 
+/**
+ * A sketch is drawn, not titled. The dock's door used to make the card and ask for a
+ * title edit, which a sketch has no editor for, so the press made a blank card and
+ * opened nothing: the reader was left looking for a surface that never appeared.
+ */
+test("the dock opens a new sketch on its drawing surface", async ({ page }) => {
+  await page.goto(workspaceUrl("dock-door"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
+
+  await page.getByTestId("dock-new-card").click();
+  await page.getByTestId("dock-new-sketch").click();
+
+  await expect(sketchNodes(page)).toHaveCount(1);
+  await expect(page.getByTestId("sketch-focus")).toBeVisible();
+  // The one thing that must not be claimed is a title editor the sketch does not have.
+  await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(0);
+
+  await drawStroke(page);
+  await expect(page.getByTestId("whiteboard-surface")).toHaveAttribute("data-elements", "1");
+  await page.getByTestId("card-focus-close").click();
+  await expect(sketchFace(page).locator(".whiteboard-card__count")).toHaveText("1");
+});
+
 test("a click selects the sketch and a double click opens it", async ({ page }) => {
   await page.goto(workspaceUrl("enter"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();

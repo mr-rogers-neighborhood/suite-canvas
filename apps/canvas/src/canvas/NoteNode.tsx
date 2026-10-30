@@ -20,6 +20,7 @@ import { useSmoothedSize } from "../hooks/useSmoothedSize";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useBoards } from "../store/workspaceStore";
+import { commitCardResize } from "./board/cardResize";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./interactions/multiSelect";
 import { COLLAPSED_CARD_HEIGHT } from "./nodeData";
 import { useNodeConnectorWiring } from "./useNodeConnectorWiring";
@@ -156,7 +157,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
 
   const handleResizeEnd = useCallback(
     (_event: unknown, params: ResizeParams) => {
-      workspace.updatePlacementGeometry(placement.boardId, id, {
+      commitCardResize(workspace, placement.boardId, id, {
         x: params.x,
         y: params.y,
         width: params.width,

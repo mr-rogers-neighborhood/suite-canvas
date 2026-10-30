@@ -1,4 +1,4 @@
-import { proposeReflowPlan, type Rect, sectionsAt } from "@suite/graph";
+import { type LayoutPlan, proposeReflowPlan, type Rect, sectionsAt } from "@suite/graph";
 import type { Node, NodeChange, NodePositionChange } from "@xyflow/react";
 import {
   Background,
@@ -256,6 +256,103 @@ export function BoardSurface({
     [createNoteAt, screenToFlowPosition],
   );
 
+  const applyReflowPreview = useCallback(
+    (plan: LayoutPlan | null, activeCardId: string) => {
+      if (plan) {
+        const nextDisplaced = new Map<string, { x: number; y: number }>();
+        for (const p of plan.placements) {
+          if (p.cardId !== activeCardId) {
+            nextDisplaced.set(p.cardId, { x: p.x, y: p.y });
+          }
+        }
+
+        if (!samePointMap(previewDisplacedCards.current, nextDisplaced)) {
+          previewDisplacedCards.current = nextDisplaced;
+          setNodes((current) =>
+            current.map((entry) => {
+              if (entry.id === activeCardId) return entry;
+              const displaced = nextDisplaced.get(entry.id);
+              if (displaced) {
+                const base = entry.className?.replace("is-reflow-displaced", "").trim();
+                const className = `${base ? `${base} ` : ""}is-reflow-displaced`;
+                return { ...entry, position: displaced, className };
+              }
+              if (entry.className?.includes("is-reflow-displaced")) {
+                const original = boardPlacements.get(entry.id);
+                const cleaned = entry.className.replace("is-reflow-displaced", "").trim();
+                const { className: _omitted, ...rest } = entry;
+                return {
+                  ...rest,
+                  position: original ? { x: original.x, y: original.y } : entry.position,
+                  ...(cleaned ? { className: cleaned } : {}),
+                };
+              }
+              return entry;
+            }),
+          );
+        }
+
+        const nextSec = new Map<string, Rect>();
+        if (plan.sections) {
+          for (const s of plan.sections) {
+            nextSec.set(s.sectionId, { x: s.x, y: s.y, width: s.width, height: s.height });
+          }
+        }
+        if (!sameRectMap(previewSectionResizes, nextSec)) {
+          setPreviewSectionResizes(nextSec);
+        }
+      } else {
+        if (previewDisplacedCards.current.size > 0) {
+          previewDisplacedCards.current.clear();
+          setNodes((current) =>
+            current.map((entry) => {
+              if (entry.id === activeCardId) return entry;
+              if (entry.className?.includes("is-reflow-displaced")) {
+                const original = boardPlacements.get(entry.id);
+                const cleaned = entry.className.replace("is-reflow-displaced", "").trim();
+                const { className: _omitted, ...rest } = entry;
+                return {
+                  ...rest,
+                  position: original ? { x: original.x, y: original.y } : entry.position,
+                  ...(cleaned ? { className: cleaned } : {}),
+                };
+              }
+              return entry;
+            }),
+          );
+        }
+        if (previewSectionResizes.size > 0) {
+          setPreviewSectionResizes(new Map());
+        }
+      }
+    },
+    [boardPlacements, previewDisplacedCards, previewSectionResizes, setNodes],
+  );
+
+  const clearReflowPreview = useCallback(() => {
+    if (previewDisplacedCards.current.size > 0) {
+      previewDisplacedCards.current.clear();
+      setNodes((current) =>
+        current.map((entry) => {
+          if (entry.className?.includes("is-reflow-displaced")) {
+            const original = boardPlacements.get(entry.id);
+            const cleaned = entry.className.replace("is-reflow-displaced", "").trim();
+            const { className: _omitted, ...rest } = entry;
+            return {
+              ...rest,
+              position: original ? { x: original.x, y: original.y } : entry.position,
+              ...(cleaned ? { className: cleaned } : {}),
+            };
+          }
+          return entry;
+        }),
+      );
+    }
+    if (previewSectionResizes.size > 0) {
+      setPreviewSectionResizes(new Map());
+    }
+  }, [boardPlacements, previewDisplacedCards, previewSectionResizes, setNodes]);
+
   usePaneDoubleClick({
     store: ui.store,
     // A locked canvas is a picture to move: a double-click on the pane must not leave a
@@ -274,6 +371,35 @@ export function BoardSurface({
    */
   const changeNodes = useCallback(
     (changes: NodeChange<Node>[]) => {
+      // Check for node resizing events and update live reflow preview
+      for (const change of changes) {
+        if (change.type === "dimensions") {
+          if (change.resizing && activeBoardId) {
+            const nowMs = performance.now();
+            if (nowMs - lastPreviewTick.current > 24) {
+              lastPreviewTick.current = nowMs;
+              const node = ui.store.getState().nodeLookup.get(change.id);
+              const posChange = changes.find(
+                (c): c is NodePositionChange => c.type === "position" && c.id === change.id,
+              );
+              const targetPos = posChange?.position ?? (node ? node.position : { x: 0, y: 0 });
+              const targetSize = change.dimensions ?? sizeOf(change.id);
+              const plan = proposeReflowPlan({
+                boardId: activeBoardId,
+                targetCardId: change.id,
+                targetPosition: targetPos,
+                targetSize,
+                placements: boardPlacementList,
+                sections: boardSections,
+              });
+              applyReflowPreview(plan, change.id);
+            }
+          } else if (change.resizing === false) {
+            clearReflowPreview();
+          }
+        }
+      }
+
       // A single-card drag snaps to the board's other edges and centres. A
       // multi-card drag is deliberately left alone: snapping the group to one
       // member's line would move the other members apart.
@@ -310,6 +436,11 @@ export function BoardSurface({
       if (dropped.length > 0) commitDrop(dropped);
     },
     [
+      activeBoardId,
+      applyReflowPreview,
+      boardPlacementList,
+      boardSections,
+      clearReflowPreview,
       commitDrop,
       draggedNodeIds,
       locallyDraggingIds,
@@ -471,74 +602,7 @@ export function BoardSurface({
               placements: boardPlacementList,
               sections: boardSections,
             });
-
-            if (plan) {
-              const nextDisplaced = new Map<string, { x: number; y: number }>();
-              for (const p of plan.placements) {
-                if (p.cardId !== node.id) {
-                  nextDisplaced.set(p.cardId, { x: p.x, y: p.y });
-                }
-              }
-
-              if (!samePointMap(previewDisplacedCards.current, nextDisplaced)) {
-                previewDisplacedCards.current = nextDisplaced;
-                setNodes((current) =>
-                  current.map((entry) => {
-                    if (entry.id === node.id) return entry;
-                    const displaced = nextDisplaced.get(entry.id);
-                    if (displaced) {
-                      const base = entry.className?.replace("is-reflow-displaced", "").trim();
-                      const className = `${base ? `${base} ` : ""}is-reflow-displaced`;
-                      return { ...entry, position: displaced, className };
-                    }
-                    if (entry.className?.includes("is-reflow-displaced")) {
-                      const original = boardPlacements.get(entry.id);
-                      const cleaned = entry.className.replace("is-reflow-displaced", "").trim();
-                      const { className: _omitted, ...rest } = entry;
-                      return {
-                        ...rest,
-                        position: original ? { x: original.x, y: original.y } : entry.position,
-                        ...(cleaned ? { className: cleaned } : {}),
-                      };
-                    }
-                    return entry;
-                  }),
-                );
-              }
-
-              const nextSec = new Map<string, Rect>();
-              if (plan.sections) {
-                for (const s of plan.sections) {
-                  nextSec.set(s.sectionId, { x: s.x, y: s.y, width: s.width, height: s.height });
-                }
-              }
-              if (!sameRectMap(previewSectionResizes, nextSec)) {
-                setPreviewSectionResizes(nextSec);
-              }
-            } else {
-              if (previewDisplacedCards.current.size > 0) {
-                previewDisplacedCards.current.clear();
-                setNodes((current) =>
-                  current.map((entry) => {
-                    if (entry.id === node.id) return entry;
-                    if (entry.className?.includes("is-reflow-displaced")) {
-                      const original = boardPlacements.get(entry.id);
-                      const cleaned = entry.className.replace("is-reflow-displaced", "").trim();
-                      const { className: _omitted, ...rest } = entry;
-                      return {
-                        ...rest,
-                        position: original ? { x: original.x, y: original.y } : entry.position,
-                        ...(cleaned ? { className: cleaned } : {}),
-                      };
-                    }
-                    return entry;
-                  }),
-                );
-              }
-              if (previewSectionResizes.size > 0) {
-                setPreviewSectionResizes(new Map());
-              }
-            }
+            applyReflowPreview(plan, node.id);
           }
         }
 
@@ -553,21 +617,7 @@ export function BoardSurface({
       }}
       onNodeDragStop={(_, node, dragged) => {
         if (!canEditLayout) return;
-        previewDisplacedCards.current.clear();
-        setPreviewSectionResizes(new Map());
-        setNodes((current) =>
-          current.map((entry) => {
-            if (entry.className?.includes("is-reflow-displaced")) {
-              const cleaned = entry.className.replace("is-reflow-displaced", "").trim();
-              const { className: _omitted, ...rest } = entry;
-              return {
-                ...rest,
-                ...(cleaned ? { className: cleaned } : {}),
-              };
-            }
-            return entry;
-          }),
-        );
+        clearReflowPreview();
         const dropped = dragged.length > 0 ? dragged : [node];
         // The pointer position is the truth: land the render on it and paint
         // it before the one commit, so the drop never lingers a frame behind.

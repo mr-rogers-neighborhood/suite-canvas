@@ -7,6 +7,7 @@ import { useCardTitle } from "../hooks/useCardContainers";
 import { useDrawing } from "../hooks/useDrawing";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { commitCardResize } from "./board/cardResize";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./interactions/multiSelect";
 import { NodeConnectors } from "./NodeConnectors";
 import type { CardNodeData } from "./nodeData";
@@ -47,7 +48,7 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
 
   const handleResizeEnd = useCallback(
     (_event: unknown, params: ResizeParams) => {
-      workspace.updatePlacementGeometry(placement.boardId, card.id, {
+      commitCardResize(workspace, placement.boardId, card.id, {
         x: params.x,
         y: params.y,
         width: params.width,

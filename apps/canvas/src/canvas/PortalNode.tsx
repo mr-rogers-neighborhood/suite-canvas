@@ -8,6 +8,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { useAttachmentSource } from "../styles/useBoardCover";
+import { commitCardResize } from "./board/cardResize";
 import { cardIcon } from "./entityIcon";
 import { NodeConnectors } from "./NodeConnectors";
 import type { CardNodeData } from "./nodeData";
@@ -118,7 +119,7 @@ export function PortalNode({ id, data, selected }: NodeProps) {
 
   const handleResizeEnd = useCallback(
     (_event: unknown, params: ResizeParams) => {
-      workspace.updatePlacementGeometry(placement.boardId, id, {
+      commitCardResize(workspace, placement.boardId, id, {
         x: params.x,
         y: params.y,
         width: params.width,

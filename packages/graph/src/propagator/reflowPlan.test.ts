@@ -482,4 +482,60 @@ describe("proposeReflowPlan Integration", () => {
     expect(secUpdate?.x).toBe(122);
     expect(secUpdate?.width).toBe(478);
   });
+
+  it("resizes a card and displaces neighboring cards dynamically", () => {
+    const boardId = "resize-board";
+    const cardAId = "card-a";
+    const cardBId = "card-b";
+
+    // Card A is at (100, 100), initially 200x150
+    // Card B is at (324, 100), initially 200x150 (24px gap)
+    const placements: Placement[] = [
+      {
+        cardId: cardAId,
+        boardId,
+        x: 100,
+        y: 100,
+        width: 200,
+        height: 150,
+        z: 1,
+        createdAt: 1000,
+      },
+      {
+        cardId: cardBId,
+        boardId,
+        x: 324,
+        y: 100,
+        width: 200,
+        height: 150,
+        z: 2,
+        createdAt: 1000,
+      },
+    ];
+
+    // User drags Card A's right resize handle from width 200 to 350
+    const plan = proposeReflowPlan({
+      boardId,
+      targetCardId: cardAId,
+      targetPosition: { x: 100, y: 100 },
+      targetSize: { width: 350, height: 150 },
+      placements,
+      gap: 24,
+    });
+
+    expect(plan).not.toBeNull();
+    if (!plan) return;
+
+    // Card A has updated width
+    const placementA = plan.placements.find((p) => p.cardId === cardAId);
+    expect(placementA).toBeDefined();
+    expect(placementA?.width).toBe(350);
+    expect(placementA?.x).toBe(100);
+
+    // Card B pushed right to: Card A right edge (100 + 350) + gap (24) = 474
+    const placementB = plan.placements.find((p) => p.cardId === cardBId);
+    expect(placementB).toBeDefined();
+    expect(placementB?.x).toBe(474);
+    expect(placementB?.y).toBe(100);
+  });
 });

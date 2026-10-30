@@ -6,6 +6,15 @@
     <meta name="referrer" content="no-referrer" />
     <link rel="icon" type="image/svg+xml" href="/suite-logo-black.svg" />
     <title>Suite — collaborative canvas</title>
+    <script>
+      // Excalidraw asks a CDN for its fonts when it has no asset base, and a page
+      // policy that refuses third-party fonts (`font-src 'self'`) turns every
+      // sketch's text into a fallback face. The base is the origin root, because
+      // the font uris are already `fonts/<Family>/<file>.woff2`; `vite.config.ts`
+      // serves that directory from the package in development and copies it into
+      // the bundle on build.
+      window.EXCALIDRAW_ASSET_PATH = "/";
+    </script>
   </head>
   <body>
     <div id="root"></div>

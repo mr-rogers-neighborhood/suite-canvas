@@ -134,7 +134,7 @@ restart_app() {
   local image=$1
   docker image inspect "$image" >/dev/null 2>&1 ||
     die "$image is not on this host; --list shows what is"
-  SUITE_IMAGE=$image compose up -d --no-build app
+  SUITE_IMAGE=$image compose up -d --force-recreate --no-build app
 }
 
 if [ "$list" = 1 ]; then

@@ -497,11 +497,30 @@ export function installRequestIdRecorder(target: Window = window): () => void {
 /** Keeps the last uncaught errors and request ids available to the bundle. */
 export function installErrorRecorder(target: Window = window): () => void {
   const onError = (event: ErrorEvent) => {
+    const raw = event.message || (event.error instanceof Error ? event.error.message : "");
+    if (
+      raw.includes("ResizeObserver loop completed with undelivered notifications") ||
+      raw.includes("ResizeObserver loop limit exceeded")
+    ) {
+      return;
+    }
     useDiagnosticsStore
       .getState()
       .record(describeError(event.error ?? event.message, safeRoute(target.location.href)));
   };
   const onRejection = (event: PromiseRejectionEvent) => {
+    const raw =
+      event.reason instanceof Error
+        ? event.reason.message
+        : typeof event.reason === "string"
+          ? event.reason
+          : "";
+    if (
+      raw.includes("ResizeObserver loop completed with undelivered notifications") ||
+      raw.includes("ResizeObserver loop limit exceeded")
+    ) {
+      return;
+    }
     useDiagnosticsStore
       .getState()
       .record(describeError(event.reason, safeRoute(target.location.href)));

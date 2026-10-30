@@ -169,6 +169,8 @@ export function BoardSurface({
     handleSectionResize,
     handleSectionResizeEnd,
     handleSectionRename,
+    shrinkSectionToFit,
+    toggleSectionShrinkToFit,
   } = sections;
   const {
     nodes,
@@ -251,6 +253,19 @@ export function BoardSurface({
     [ui.store],
   );
 
+  const getCardSizes = useCallback(() => {
+    const lookup = ui.store.getState().nodeLookup;
+    const sizes = new Map<string, { width: number; height: number }>();
+    for (const [id, node] of lookup) {
+      const w = node.measured?.width ?? node.width;
+      const h = node.measured?.height ?? node.height;
+      if (w !== undefined && h !== undefined) {
+        sizes.set(id, { width: w, height: h });
+      }
+    }
+    return sizes;
+  }, [ui.store]);
+
   const createCardOnPane = useCallback(
     (client: { x: number; y: number }) => createNoteAt(screenToFlowPosition(client)),
     [createNoteAt, screenToFlowPosition],
@@ -329,18 +344,17 @@ export function BoardSurface({
     [boardPlacements, previewDisplacedCards, previewSectionResizes, setNodes],
   );
 
-  const clearReflowPreview = useCallback(() => {
+  const settleReflowPreview = useCallback(() => {
     if (previewDisplacedCards.current.size > 0) {
       previewDisplacedCards.current.clear();
       setNodes((current) =>
         current.map((entry) => {
           if (entry.className?.includes("is-reflow-displaced")) {
-            const original = boardPlacements.get(entry.id);
             const cleaned = entry.className.replace("is-reflow-displaced", "").trim();
             const { className: _omitted, ...rest } = entry;
             return {
               ...rest,
-              position: original ? { x: original.x, y: original.y } : entry.position,
+              position: entry.position,
               ...(cleaned ? { className: cleaned } : {}),
             };
           }
@@ -351,7 +365,7 @@ export function BoardSurface({
     if (previewSectionResizes.size > 0) {
       setPreviewSectionResizes(new Map());
     }
-  }, [boardPlacements, previewDisplacedCards, previewSectionResizes, setNodes]);
+  }, [previewDisplacedCards, previewSectionResizes, setNodes]);
 
   usePaneDoubleClick({
     store: ui.store,
@@ -391,11 +405,12 @@ export function BoardSurface({
                 targetSize,
                 placements: boardPlacementList,
                 sections: boardSections,
+                cardSizes: getCardSizes(),
               });
               applyReflowPreview(plan, change.id);
             }
           } else if (change.resizing === false) {
-            clearReflowPreview();
+            settleReflowPreview();
           }
         }
       }
@@ -440,12 +455,13 @@ export function BoardSurface({
       applyReflowPreview,
       boardPlacementList,
       boardSections,
-      clearReflowPreview,
       commitDrop,
       draggedNodeIds,
+      getCardSizes,
       locallyDraggingIds,
       onNodesChange,
       publishGuides,
+      settleReflowPreview,
       sizeOf,
       ui.store,
     ],
@@ -601,6 +617,7 @@ export function BoardSurface({
               targetSize,
               placements: boardPlacementList,
               sections: boardSections,
+              cardSizes: getCardSizes(),
             });
             applyReflowPreview(plan, node.id);
           }
@@ -617,7 +634,6 @@ export function BoardSurface({
       }}
       onNodeDragStop={(_, node, dragged) => {
         if (!canEditLayout) return;
-        clearReflowPreview();
         const dropped = dragged.length > 0 ? dragged : [node];
         // The pointer position is the truth: land the render on it and paint
         // it before the one commit, so the drop never lingers a frame behind.
@@ -663,6 +679,7 @@ export function BoardSurface({
         publishGuides([]);
         setDragging(null);
         commitDrop(committed, { allowReflow: true });
+        settleReflowPreview();
       }}
       onPaneClick={() => {
         const thread = useLinkThreadStore.getState();
@@ -754,6 +771,8 @@ export function BoardSurface({
         onDragEnd={handleSectionDragEnd}
         onResize={handleSectionResize}
         onResizeEnd={handleSectionResizeEnd}
+        onShrinkToFit={shrinkSectionToFit}
+        onToggleShrinkToFit={toggleSectionShrinkToFit}
         readOnly={!canEditLayout}
         onContextMenu={(event, sectionId) => {
           if (!canEditLayout) return;

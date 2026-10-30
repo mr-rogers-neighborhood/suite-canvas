@@ -392,6 +392,24 @@ const sectionRows: EntityMenuRow[] = [
       ];
     },
   },
+  {
+    id: "shrink-section-to-fit",
+    group: "layout",
+    kinds: ["section"],
+    render: (ctx, target) => {
+      const sectionId = target.ids[0];
+      if (!(ctx.canEditLayout && sectionId)) return [];
+      const section = ctx.workspace.getSection?.(sectionId);
+      const isShrinkToFit = section?.shrinkToFit !== false;
+      return [
+        {
+          label: "Shrink to fit",
+          checked: isShrinkToFit,
+          onSelect: () => ctx.toggleSectionShrinkToFit(sectionId),
+        },
+      ];
+    },
+  },
 ];
 
 const edgeRows: EntityMenuRow[] = [

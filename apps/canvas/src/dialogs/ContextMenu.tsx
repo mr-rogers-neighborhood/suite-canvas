@@ -13,6 +13,8 @@ export interface ContextMenuItem {
   swatch?: { light: string; dark: string } | undefined;
   /** Marks the swatch this surface already wears. */
   swatchSelected?: boolean | undefined;
+  /** Checkbox state for toggles */
+  checked?: boolean | undefined;
 }
 
 export interface ContextMenuProps {
@@ -111,6 +113,36 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
                 </div>
               ) : null}
             </div>
+          ) : item.checked !== undefined ? (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={item.checked}
+              className={itemClass(item.danger)}
+              data-swatch-selected={item.swatchSelected ? "true" : undefined}
+              onClick={() => {
+                item.onSelect?.();
+                onClose();
+              }}
+            >
+              <SwatchLabel item={item} />
+            </button>
+          ) : item.checked !== undefined ? (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={item.checked}
+              className={itemClass(item.danger)}
+              data-swatch-selected={item.swatchSelected ? "true" : undefined}
+              onClick={() => {
+                item.onSelect?.();
+                onClose();
+              }}
+            >
+              <SwatchLabel item={item} />
+            </button>
           ) : (
             <button
               key={item.label}
@@ -140,6 +172,37 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
  * correctly in light and dark without the menu having to know which is on.
  */
 function SwatchLabel({ item }: { item: ContextMenuItem }) {
+  if (item.checked !== undefined) {
+    return (
+      <span className="flex min-w-0 items-center gap-2">
+        <span
+          aria-hidden="true"
+          className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors ${
+            item.checked
+              ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--surface)]"
+              : "border-[var(--hairline-strong)] bg-transparent"
+          }`}
+        >
+          {item.checked ? (
+            <svg
+              width="9"
+              height="9"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+          ) : null}
+        </span>
+        <span className="truncate">{item.label}</span>
+      </span>
+    );
+  }
   if (!item.swatch) return <>{item.label}</>;
   return (
     <>

@@ -1,8 +1,9 @@
-import type { Rect } from "@suite/graph";
-import { sectionMovePlan, unionRect } from "@suite/graph";
+import type { MemberBox, Rect } from "@suite/graph";
+import { sectionFitRect, sectionMovePlan, unionRect } from "@suite/graph";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { InteractionMode } from "../../store/interactionMode";
 import { useUiStore } from "../../store/useUiStore";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../interactions/multiSelect";
 import { cardSectionOffsets, sectionOffsets } from "../sections/sectionLayout";
 import { DRAG_THROTTLE_MS } from "./boardSupport";
 import type { useBoardProjection } from "./useBoardProjection";
@@ -261,6 +262,62 @@ export function useBoardSections(
     [activeBoardId, store, workspace, selectSection, setEditingSection, canCreateContent],
   );
 
+  const shrinkSectionToFit = useCallback(
+    (sectionId: string) => {
+      if (!canEditLayout) return;
+      const section = boardSections.find((s) => s.id === sectionId);
+      if (!section) return;
+
+      const memberBoxes: MemberBox[] = [];
+      const lookup = store.getState().nodeLookup;
+
+      for (const [cardId, sId] of sectionMembershipMap.entries()) {
+        if (sId !== sectionId) continue;
+        const placement = boardPlacementList.find((p) => p.cardId === cardId);
+        if (!placement) continue;
+
+        const node = lookup.get(cardId);
+        const width = placement.width ?? node?.measured?.width ?? node?.width ?? DEFAULT_CARD_WIDTH;
+        const height =
+          placement.height ?? node?.measured?.height ?? node?.height ?? DEFAULT_CARD_HEIGHT;
+
+        memberBoxes.push({
+          cardId,
+          x: placement.x,
+          y: placement.y,
+          width,
+          height,
+        });
+      }
+
+      const newRect = sectionFitRect(section, memberBoxes, 24);
+      if (
+        newRect.x !== section.x ||
+        newRect.y !== section.y ||
+        newRect.width !== section.width ||
+        newRect.height !== section.height
+      ) {
+        workspace.updateSectionGeometry(sectionId, newRect);
+      }
+    },
+    [boardSections, boardPlacementList, sectionMembershipMap, canEditLayout, store, workspace],
+  );
+
+  const toggleSectionShrinkToFit = useCallback(
+    (sectionId: string) => {
+      if (!canEditLayout) return;
+      const section = boardSections.find((s) => s.id === sectionId);
+      if (!section) return;
+
+      const next = section.shrinkToFit === false;
+      workspace.setSectionShrinkToFit(sectionId, next);
+      if (next) {
+        shrinkSectionToFit(sectionId);
+      }
+    },
+    [boardSections, canEditLayout, workspace, shrinkSectionToFit],
+  );
+
   return {
     localSectionDrag,
     localSectionResize,
@@ -278,5 +335,7 @@ export function useBoardSections(
     handleSectionResizeEnd,
     handleSectionRename,
     createSectionAt,
+    shrinkSectionToFit,
+    toggleSectionShrinkToFit,
   };
 }

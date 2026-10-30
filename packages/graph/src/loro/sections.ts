@@ -99,6 +99,14 @@ export function sectionsMethods(ctx: DocContext) {
       ctx.commit(`${STRUCT_ORIGIN}section-color`);
     },
 
+    setSectionShrinkToFit(id: string, shrinkToFit: boolean): void {
+      const fields = ctx.sections.get(id);
+      if (!isMap(fields)) return;
+      fields.set("shrinkToFit", shrinkToFit);
+      fields.set("updatedAt", Date.now());
+      ctx.commit(`${STRUCT_ORIGIN}section-shrink-to-fit`);
+    },
+
     /**
      * A section's labels. Like a board's: a queryable grouping, never a rule about
      * which cards belong to the region (ADR-0053 §6).
@@ -269,6 +277,7 @@ export function sectionsMethods(ctx: DocContext) {
       fields.set("z", section.z);
       fields.set("createdAt", section.createdAt);
       fields.set("updatedAt", section.updatedAt);
+      if (section.shrinkToFit !== undefined) fields.set("shrinkToFit", section.shrinkToFit);
       if (section.color) fields.set("color", section.color);
       if (section.icon) fields.set("icon", section.icon);
       writeIdSet(fields.ensureMergeableMap("tags"), section.tags);

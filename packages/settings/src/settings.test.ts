@@ -138,7 +138,8 @@ describe("secrets at rest", () => {
   it("fails closed on a tampered value", () => {
     const stored = encryptSetting(key, "sk_test_123");
     const [version, iv, tag, body] = stored.split(".");
-    const flipped = `${version}.${iv}.${tag}.${body?.slice(0, -2)}AA`;
+    const replacement = body?.endsWith("AA") ? "BB" : "AA";
+    const flipped = `${version}.${iv}.${tag}.${body?.slice(0, -2)}${replacement}`;
 
     expect(() => decryptSetting(key, flipped)).toThrow();
   });

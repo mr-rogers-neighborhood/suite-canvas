@@ -112,6 +112,8 @@ export interface SectionLayerProps {
   armed?: boolean;
   /** A viewer may select a section, never move, resize or rename it. */
   readOnly?: boolean;
+  onShrinkToFit?: ((sectionId: string) => void) | undefined;
+  onToggleShrinkToFit?: ((sectionId: string) => void) | undefined;
 }
 
 export function SectionLayer({
@@ -143,6 +145,8 @@ export function SectionLayer({
   draftActive = false,
   armed = false,
   readOnly = false,
+  onShrinkToFit,
+  onToggleShrinkToFit,
 }: SectionLayerProps) {
   const { screenToFlowPosition } = useReactFlow();
   const { zoom } = useViewport();
@@ -757,6 +761,44 @@ export function SectionLayer({
                     {collapsedSections[section.id] === true ? "\u25b8" : "\u25be"}
                   </span>
                 </button>
+                {!readOnly &&
+                collapsedSections[section.id] !== true &&
+                (onToggleShrinkToFit ?? onShrinkToFit) ? (
+                  <button
+                    type="button"
+                    data-testid={`section-shrink-${section.id}`}
+                    aria-label={`Toggle shrink to fit for ${section.title || "Untitled section"}`}
+                    aria-pressed={section.shrinkToFit !== false}
+                    title={
+                      section.shrinkToFit !== false ? "Shrink to fit: on" : "Shrink to fit: off"
+                    }
+                    className="section-fold nodrag"
+                    style={
+                      section.shrinkToFit !== false
+                        ? { color: "var(--ink)", opacity: 1 }
+                        : { opacity: 0.4 }
+                    }
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      (onToggleShrinkToFit ?? onShrinkToFit)?.(section.id);
+                    }}
+                  >
+                    <svg
+                      width="9"
+                      height="9"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7" />
+                    </svg>
+                  </button>
+                ) : null}
                 <span className="section-count">{count}</span>
                 {peer ? <PeerNameTag user={peer.user} /> : null}
               </div>

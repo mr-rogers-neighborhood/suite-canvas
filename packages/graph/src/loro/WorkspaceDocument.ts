@@ -482,6 +482,10 @@ export class WorkspaceDocument extends CardsFacade {
     this.sectionsApi.setSectionColor(id, color);
   }
 
+  setSectionShrinkToFit(id: string, shrinkToFit: boolean): void {
+    this.sectionsApi.setSectionShrinkToFit(id, shrinkToFit);
+  }
+
   setSectionTags(id: string, tagIds: readonly string[]): void {
     this.sectionsApi.setSectionTags(id, tagIds);
   }

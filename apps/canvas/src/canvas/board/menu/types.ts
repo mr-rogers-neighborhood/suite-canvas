@@ -51,6 +51,8 @@ export interface BoardMenuContext {
   ) => void;
   setEditingSection: ReturnType<typeof useBoardUi>["setEditingSection"];
   selectSection: ReturnType<typeof useBoardUi>["selectSection"];
+  shrinkSectionToFit: (sectionId: string) => void;
+  toggleSectionShrinkToFit: (sectionId: string) => void;
 }
 
 export type MenuBranch = (ctx: BoardMenuContext) => ContextMenuItem[] | null;

@@ -310,6 +310,8 @@ export const sectionSchema = z.object({
   connectors: z.array(connectorSchema).optional(),
   /** Freeform labels (ADR-0053 §6); a queryable grouping, never a membership rule. */
   tags: z.array(entityIdSchema),
+  /** Whether the section automatically shrinks/fits to its member cards. Defaults to true. */
+  shrinkToFit: z.boolean().optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });

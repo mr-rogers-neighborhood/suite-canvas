@@ -118,6 +118,15 @@ export function useBoardCommands(
             width: target.measured?.width ?? target.width ?? DEFAULT_REFLOW_CARD_WIDTH,
             height: target.measured?.height ?? target.height ?? DEFAULT_REFLOW_CARD_HEIGHT,
           };
+          const lookup = store.getState().nodeLookup;
+          const cardSizes = new Map<string, { width: number; height: number }>();
+          for (const [id, node] of lookup) {
+            const w = node.measured?.width ?? node.width;
+            const h = node.measured?.height ?? node.height;
+            if (w !== undefined && h !== undefined) {
+              cardSizes.set(id, { width: w, height: h });
+            }
+          }
           const reflowPlan = proposeReflowPlan({
             boardId: activeBoardId,
             targetCardId: target.id,
@@ -125,6 +134,7 @@ export function useBoardCommands(
             targetSize,
             placements: boardPlacementList,
             sections: boardSections,
+            cardSizes,
           });
           if (reflowPlan) {
             workspace.applyLayoutPlan(reflowPlan);
@@ -145,7 +155,7 @@ export function useBoardCommands(
       // silent when the whole gesture ended where it started.
       workspace.movePlacements(activeBoardId, moves);
     },
-    [activeBoardId, boardPlacementList, boardSections, workspace, canEditLayout],
+    [activeBoardId, boardPlacementList, boardSections, workspace, canEditLayout, store],
   );
 
   /**

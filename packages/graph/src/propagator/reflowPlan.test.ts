@@ -4,7 +4,7 @@ import { WorkspaceDocument } from "../loro/WorkspaceDocument.js";
 import type { Placement, Section } from "../schema.js";
 import { projectTissue, settle, type TissueState } from "./engine.js";
 import { createInterval, intervalExact, intervalMerge, intervalUnconstrained } from "./interval.js";
-import { proposeReflowPlan } from "./reflowPlan.js";
+import { proposeReflowPlan, sectionFitRect } from "./reflowPlan.js";
 import { pinConstraint, separationConstraint, sumConstraint } from "./spatialPropagators.js";
 
 describe("Propagator Engine & Interval Semilattice", () => {
@@ -437,6 +437,7 @@ describe("proposeReflowPlan Integration", () => {
       width: 400,
       height: 400,
       z: 0,
+      shrinkToFit: false,
       tags: [],
       createdAt: 1000,
       updatedAt: 1000,
@@ -481,6 +482,104 @@ describe("proposeReflowPlan Integration", () => {
     expect(secUpdate).toBeDefined();
     expect(secUpdate?.x).toBe(122);
     expect(secUpdate?.width).toBe(478);
+  });
+
+  it("shrinks and expands in all 4 directions with detach threshold", () => {
+    const boardId = "shrink-omni-board";
+    const section: Section = {
+      id: "sec-shrink",
+      boardId,
+      title: "Shrink Section",
+      color: "green",
+      x: 100,
+      y: 100,
+      width: 500,
+      height: 400,
+      z: 0,
+      tags: [],
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+
+    const cardA: Placement = {
+      cardId: "card-a",
+      boardId,
+      x: 150,
+      y: 160,
+      width: 100,
+      height: 100,
+      z: 1,
+      createdAt: 1000,
+    };
+
+    const cardB: Placement = {
+      cardId: "card-b",
+      boardId,
+      x: 350,
+      y: 260,
+      width: 100,
+      height: 100,
+      z: 2,
+      createdAt: 1001,
+    };
+
+    // Card B moved inward closer to Card A (x: 300, y: 160)
+    // Section shrinks in all 4 directions!
+    // minLeft = 150 -> newX = 150 - 24 = 126
+    // minTop = 160 -> newY = 160 - 40 = 120
+    // maxRight = 300 + 100 = 400 -> newRight = 400 + 24 = 424 -> newWidth = 424 - 126 = 298
+    // maxBottom = 160 + 100 = 260 -> newBottom = 260 + 24 = 284 -> newHeight = 284 - 120 = 164
+    const planInward = proposeReflowPlan({
+      boardId,
+      targetCardId: "card-b",
+      targetPosition: { x: 300, y: 160 },
+      targetSize: { width: 100, height: 100 },
+      placements: [cardA, cardB],
+      sections: [section],
+      sectionPadding: 24,
+    });
+
+    expect(planInward).not.toBeNull();
+    const secInward = planInward?.sections?.find((s) => s.sectionId === "sec-shrink");
+    expect(secInward).toBeDefined();
+    expect(secInward?.x).toBe(126);
+    expect(secInward?.y).toBe(120);
+    expect(secInward?.width).toBe(298);
+    expect(secInward?.height).toBe(164);
+
+    // Now test pulling against wall: pushing card-b 50px outside right wall
+    // section right wall was 600. Pushing card-b to x: 550 (right edge: 650).
+    // It's within 80px detach margin, so section extends right to enclose it!
+    const planPush = proposeReflowPlan({
+      boardId,
+      targetCardId: "card-b",
+      targetPosition: { x: 550, y: 160 },
+      targetSize: { width: 100, height: 100 },
+      placements: [cardA, cardB],
+      sections: [section],
+      sectionPadding: 24,
+    });
+    const secPush = planPush?.sections?.find((s) => s.sectionId === "sec-shrink");
+    expect(secPush).toBeDefined();
+    expect(secPush?.width).toBe(548);
+
+    // Now test pulling card-b WAY outside (>80px beyond right wall): x = 700 (right edge 800 > 600 + 80)
+    // Card B detaches! Section now only contains Card A!
+    const planDetach = proposeReflowPlan({
+      boardId,
+      targetCardId: "card-b",
+      targetPosition: { x: 700, y: 160 },
+      targetSize: { width: 100, height: 100 },
+      placements: [cardA, cardB],
+      sections: [section],
+      sectionPadding: 24,
+    });
+    const secDetach = planDetach?.sections?.find((s) => s.sectionId === "sec-shrink");
+    expect(secDetach).toBeDefined();
+    expect(secDetach?.x).toBe(126);
+    expect(secDetach?.y).toBe(120);
+    expect(secDetach?.width).toBe(160);
+    expect(secDetach?.height).toBe(164);
   });
 
   it("resizes a card and displaces neighboring cards dynamically", () => {
@@ -537,5 +636,92 @@ describe("proposeReflowPlan Integration", () => {
     expect(placementB).toBeDefined();
     expect(placementB?.x).toBe(474);
     expect(placementB?.y).toBe(100);
+  });
+
+  it("calculates tight section shrink-to-fit bounding box", () => {
+    const section: Section = {
+      id: "sec-fit",
+      boardId: "board-1",
+      title: "Design",
+      color: "blue",
+      x: 100,
+      y: 100,
+      width: 800,
+      height: 600,
+      z: 0,
+      tags: [],
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+
+    // Case 1: Empty section collapses to compact dimensions at current origin
+    const emptyFit = sectionFitRect(section, []);
+    expect(emptyFit).toEqual({
+      x: 100,
+      y: 100,
+      width: 160,
+      height: 100,
+    });
+
+    // Case 2: Section with 2 cards inside
+    // Card 1: (200, 200), 200x100
+    // Card 2: (450, 350), 150x80
+    // minLeft = 200, minTop = 200, maxRight = 600, maxBottom = 430
+    // With padding 24:
+    // newX = 200 - 24 = 176
+    // newY = 200 - 24 = 176
+    // newWidth = (600 - 200) + 48 = 448
+    // newHeight = (430 - 200) + 48 = 278
+    const members = [
+      { x: 200, y: 200, width: 200, height: 100 },
+      { x: 450, y: 350, width: 150, height: 80 },
+    ];
+    const memberFit = sectionFitRect(section, members, 24);
+    expect(memberFit).toEqual({
+      x: 176,
+      y: 176,
+      width: 448,
+      height: 278,
+    });
+  });
+
+  it("utilizes live measured cardSizes when placements omit explicit dimensions", () => {
+    const boardId = "board-sizes";
+    const placements: Placement[] = [
+      {
+        cardId: "card-live",
+        boardId,
+        x: 100,
+        y: 100,
+        // no width / height stored on placement
+        z: 1,
+        createdAt: 1000,
+      },
+    ];
+
+    // Measured in DOM as 300x180
+    const cardSizes = new Map([["card-live", { width: 300, height: 180 }]]);
+
+    // Drop target to the left of card-live
+    const plan = proposeReflowPlan({
+      boardId,
+      targetCardId: "target",
+      targetPosition: { x: 80, y: 100 },
+      targetSize: { width: 100, height: 100 },
+      placements,
+      cardSizes,
+      gap: 20,
+    });
+
+    expect(plan).not.toBeNull();
+    if (!plan) return;
+
+    // Target (x=80, width=100) -> right edge is 180
+    // card-live pushed right to: 180 + 20 = 200
+    const pushed = plan.placements.find((p) => p.cardId === "card-live");
+    expect(pushed).toBeDefined();
+    expect(pushed?.x).toBe(200);
+    // Preserves measured width in layout plan
+    expect(pushed?.width).toBe(300);
   });
 });

@@ -216,6 +216,7 @@ export function sectionFromMap(id: string, fields: LoroMap): Section {
   const color = readString(fields, "color");
   const icon = readString(fields, "icon");
   const style = readSurfaceStyle(fields);
+  const shrinkToFit = readBoolean(fields, "shrinkToFit");
   return sectionSchema.parse({
     id,
     boardId: readString(fields, "boardId") ?? "",
@@ -232,6 +233,7 @@ export function sectionFromMap(id: string, fields: LoroMap): Section {
     ...(color ? { color } : {}),
     ...(icon ? { icon } : {}),
     ...(style ? { style } : {}),
+    ...(shrinkToFit !== undefined ? { shrinkToFit } : {}),
   });
 }
 

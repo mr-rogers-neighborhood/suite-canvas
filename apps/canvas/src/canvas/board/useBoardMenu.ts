@@ -80,6 +80,8 @@ export function useBoardMenu(
       setSelectedSectionConnector: sections.setSelectedSectionConnector,
       setEditingSection: ui.setEditingSection,
       selectSection: ui.selectSection,
+      shrinkSectionToFit: sections.shrinkSectionToFit,
+      toggleSectionShrinkToFit: sections.toggleSectionShrinkToFit,
     };
     return buildBoardMenu(ctx);
   }, [

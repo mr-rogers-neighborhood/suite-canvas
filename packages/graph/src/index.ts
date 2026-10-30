@@ -156,6 +156,7 @@ export {
 } from "./projection.js";
 export type {
   Interval,
+  MemberBox,
   Propagator,
   ReflowInput,
   SolveInconsistent,
@@ -171,6 +172,7 @@ export {
   DEFAULT_REFLOW_CARD_WIDTH,
   DEFAULT_REFLOW_GAP,
   DEFAULT_REFLOW_SECTION_PADDING,
+  DEFAULT_SECTION_DETACH_MARGIN,
   enclosureConstraint,
   IntervalContradictionError,
   inject,
@@ -188,6 +190,7 @@ export {
   pinConstraint,
   projectTissue,
   proposeReflowPlan,
+  sectionFitRect,
   separationConstraint,
   settle,
   sumConstraint,

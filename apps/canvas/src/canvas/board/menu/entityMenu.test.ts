@@ -25,7 +25,7 @@ function makeContext(overrides: Record<string, unknown> = {}): BoardMenuContext 
     cardsById: new Map(),
     sectionMembershipMap: new Map(),
     store: { getState: () => ({ addSelectedNodes: vi.fn() }) },
-    workspace: { getEdge: () => undefined },
+    workspace: { getEdge: () => undefined, getSection: () => ({ shrinkToFit: true }) },
     setSwatches: vi.fn(),
     openAppearance: vi.fn(),
     duplicateCards: vi.fn(),
@@ -161,5 +161,20 @@ describe("the entity menu", () => {
 
     expect(inside?.ids).toEqual(["card-a", "card-b"]);
     expect(outside?.ids).toEqual(["card-a"]);
+  });
+
+  it("offers shrink to fit with checkbox on a section right click", () => {
+    const toggleSectionShrinkToFit = vi.fn();
+    const items = buildEntityMenu(
+      makeContext({
+        toggleSectionShrinkToFit,
+        menu: { kind: "section", sectionId: "sec-1", x: 10, y: 10 },
+      }),
+    );
+    const shrinkItem = byLabel(items, "Shrink to fit");
+    expect(shrinkItem).toBeDefined();
+    expect(shrinkItem?.checked).toBe(true);
+    shrinkItem?.onSelect?.();
+    expect(toggleSectionShrinkToFit).toHaveBeenCalledWith("sec-1");
   });
 });

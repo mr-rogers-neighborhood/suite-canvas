@@ -86,9 +86,9 @@ describe("commitCardResize", () => {
     expect(updatedSec).toBeDefined();
     // Card B was pushed down to y = 354
     expect(workspace.getPlacement(board.id, cardB.id)?.y).toBe(354);
-    // Section height expands to fit displaced Card B with padding (24)
-    // maxBottom (514) + padding (24) - newY (50) = 488
-    expect(updatedSec?.height).toBe(488);
+    // Section height expands to fit displaced Card B with padding (24) and header (40)
+    // maxBottom (354 + 240 = 594) + padding (24) - newY (80 - 40 = 40) = 578
+    expect(updatedSec?.height).toBe(578);
 
     // Undo restores section, card A, and card B together
     workspace.undo();

@@ -172,7 +172,7 @@ overrides:
 patchedDependencies:
   '@stryker-mutator/vitest-runner@10.0.0': 45958502dea64cbea638210b2d080d1b48dd5e5246df4e4e4f85a815d986c734
   loro-prosemirror@0.4.4: ccea0fae37122631a09ed2760cc51773577c22dc8e4e816e56c34ed54039be39
-  loro-websocket@0.6.2: 4f622732a534b2afd668f7ad9c73475c6ff2edfa058d6fd519175d1cfb73ecbc
+  loro-websocket@0.6.2: 5b8e6c280e6d84b1300faf8746ffcd128c062cbc177f21ddd2b047736ba434f2
 
 importers:
 
@@ -276,7 +276,7 @@ importers:
         version: 0.3.0
       loro-websocket:
         specifier: 0.6.2
-        version: 0.6.2(patch_hash=4f622732a534b2afd668f7ad9c73475c6ff2edfa058d6fd519175d1cfb73ecbc)(@loro-dev/flock@4.5.2)(loro-crdt@1.16.4)(yjs@13.6.33)
+        version: 0.6.2(patch_hash=5b8e6c280e6d84b1300faf8746ffcd128c062cbc177f21ddd2b047736ba434f2)(@loro-dev/flock@4.5.2)(loro-crdt@1.16.4)(yjs@13.6.33)
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -376,7 +376,7 @@ importers:
         version: 0.3.0
       loro-websocket:
         specifier: 0.6.2
-        version: 0.6.2(patch_hash=4f622732a534b2afd668f7ad9c73475c6ff2edfa058d6fd519175d1cfb73ecbc)(@loro-dev/flock@4.5.2)(loro-crdt@1.16.4)(yjs@13.6.33)
+        version: 0.6.2(patch_hash=5b8e6c280e6d84b1300faf8746ffcd128c062cbc177f21ddd2b047736ba434f2)(@loro-dev/flock@4.5.2)(loro-crdt@1.16.4)(yjs@13.6.33)
       neverthrow:
         specifier: ^8.2.0
         version: 8.2.0
@@ -11813,7 +11813,7 @@ snapshots:
 
   loro-protocol@0.3.0: {}
 
-  loro-websocket@0.6.2(patch_hash=4f622732a534b2afd668f7ad9c73475c6ff2edfa058d6fd519175d1cfb73ecbc)(@loro-dev/flock@4.5.2)(loro-crdt@1.16.4)(yjs@13.6.33):
+  loro-websocket@0.6.2(patch_hash=5b8e6c280e6d84b1300faf8746ffcd128c062cbc177f21ddd2b047736ba434f2)(@loro-dev/flock@4.5.2)(loro-crdt@1.16.4)(yjs@13.6.33):
     dependencies:
       '@types/ws': 8.18.2
       loro-adaptors: 0.6.1(@loro-dev/flock@4.5.2)(loro-crdt@1.16.4)(yjs@13.6.33)

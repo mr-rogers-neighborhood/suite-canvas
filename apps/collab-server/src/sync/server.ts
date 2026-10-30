@@ -381,6 +381,14 @@ const idleSweep = setInterval(() => {
       error: error instanceof Error ? error.message : String(error),
     });
   });
+  const syncServer = server as unknown as { evictIdleRooms?: () => Promise<number> };
+  if (typeof syncServer.evictIdleRooms === "function") {
+    void syncServer.evictIdleRooms().catch((error: unknown) => {
+      logger.warn("idle sync room eviction failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
 }, 60_000);
 idleSweep.unref();
 

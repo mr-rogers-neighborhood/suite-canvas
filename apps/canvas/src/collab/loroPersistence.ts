@@ -182,6 +182,7 @@ export class LoroIndexeddbPersistence {
     const db = this.db;
     if (!db) return;
 
+    const tStart = typeof performance !== "undefined" ? performance.now() : 0;
     const snapshot = await request<SnapshotRecord | undefined>(
       db.transaction(SNAPSHOTS).objectStore(SNAPSHOTS).get(this.workspaceId),
     );
@@ -194,12 +195,36 @@ export class LoroIndexeddbPersistence {
         .index("workspaceId")
         .getAll(IDBKeyRange.only(this.workspaceId)),
     );
-    for (const update of updates) {
+
+    const payloads = updates.map((u) => u.bytes).filter((b) => b && b.length > 0);
+    if (payloads.length > 0) {
       try {
-        this.doc.import(update.bytes);
-      } catch (error) {
-        console.warn("[loro] skipping corrupt offline update", error);
+        this.doc.importBatch(payloads);
+      } catch (batchError) {
+        console.warn("[loro] importBatch failed, falling back to sequential import", batchError);
+        for (const update of updates) {
+          try {
+            this.doc.import(update.bytes);
+          } catch (error) {
+            console.warn("[loro] skipping corrupt offline update", error);
+          }
+        }
       }
+    }
+
+    if (
+      tStart > 0 &&
+      typeof performance !== "undefined" &&
+      typeof performance.mark === "function"
+    ) {
+      const elapsed = performance.now() - tStart;
+      performance.mark(`loro:load:${this.workspaceId}`, {
+        detail: {
+          durationMs: elapsed,
+          snapshotBytes: snapshot?.bytes?.byteLength ?? 0,
+          updateCount: updates.length,
+        },
+      });
     }
 
     // Rows written before A2 carry no version. Stamp the ones just imported:

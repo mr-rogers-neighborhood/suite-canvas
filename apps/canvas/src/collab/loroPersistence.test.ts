@@ -431,3 +431,80 @@ describe("the channel name", () => {
     expect(`${PERSIST_CHANNEL_PREFIX}${WORKSPACE}`).toBe("suite-persist:workspace-1");
   });
 });
+
+describe("batch loading and fallback", () => {
+  it("batch-imports offline updates on load", async () => {
+    const docA = new LoroDoc();
+    docA.setPeerId(1n);
+    const wsA = workspaceOf(docA);
+    const board = wsA.createBoard({ id: "board-1", name: "Board" });
+    const pA = new LoroIndexeddbPersistence(WORKSPACE, docA, { tabId: "tab-a" });
+    await pA.open();
+    await pA.compact();
+
+    const docB = new LoroDoc();
+    docB.setPeerId(2n);
+    const pB = new LoroIndexeddbPersistence(WORKSPACE, docB, { tabId: "tab-b" });
+    await pB.load();
+    const wsB = workspaceOf(docB);
+    wsB.createCard({ boardId: board.id, position: { x: 10, y: 10 } });
+    wsB.createCard({ boardId: board.id, position: { x: 20, y: 20 } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    pA.destroy();
+    pB.destroy();
+
+    const docC = new LoroDoc();
+    const pC = new LoroIndexeddbPersistence(WORKSPACE, docC, { tabId: "tab-c" });
+    await pC.load();
+    const wsC = workspaceOf(docC);
+    expect(wsC.listBoardCards(board.id)).toHaveLength(2);
+    pC.destroy();
+  });
+
+  it("falls back to sequential import when an update in the store is corrupt", async () => {
+    const docA = new LoroDoc();
+    docA.setPeerId(1n);
+    const wsA = workspaceOf(docA);
+    const board = wsA.createBoard({ id: "board-1", name: "Board" });
+    const pA = new LoroIndexeddbPersistence(WORKSPACE, docA, { tabId: "tab-a" });
+    await pA.open();
+    await pA.compact();
+
+    const docB = new LoroDoc();
+    docB.setPeerId(2n);
+    const pB = new LoroIndexeddbPersistence(WORKSPACE, docB, { tabId: "tab-b" });
+    await pB.load();
+    const wsB = workspaceOf(docB);
+    wsB.createCard({ boardId: board.id, position: { x: 10, y: 10 } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    pA.destroy();
+    pB.destroy();
+
+    // Inject a corrupt update record directly into IndexedDB
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const open = indexedDB.open("suite-loro");
+      open.onsuccess = () => resolve(open.result);
+      open.onerror = () => reject(open.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("updates", "readwrite");
+      tx.objectStore("updates").add({
+        workspaceId: WORKSPACE,
+        tabId: "tab-corrupt",
+        bytes: new Uint8Array([99, 99, 99]),
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+
+    const docC = new LoroDoc();
+    const pC = new LoroIndexeddbPersistence(WORKSPACE, docC, { tabId: "tab-c" });
+    await pC.load();
+    const wsC = workspaceOf(docC);
+    expect(wsC.listBoardCards(board.id)).toHaveLength(1);
+    pC.destroy();
+  });
+});

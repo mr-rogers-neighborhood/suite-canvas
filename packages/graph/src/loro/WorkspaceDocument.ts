@@ -771,8 +771,16 @@ export class WorkspaceDocument extends CardsFacade {
     this.snapshotApi.importUpdate(update);
   }
 
+  importBatch(updates: readonly Uint8Array[]): void {
+    this.snapshotApi.importBatch(updates);
+  }
+
   exportSnapshot(): Uint8Array {
     return this.snapshotApi.exportSnapshot();
+  }
+
+  exportShallowSnapshot(): Uint8Array {
+    return this.snapshotApi.exportShallowSnapshot();
   }
 
   importSnapshot(snapshot: Uint8Array): void {

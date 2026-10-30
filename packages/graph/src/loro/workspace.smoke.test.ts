@@ -68,4 +68,39 @@ describe("Loro workspace smoke", () => {
     expect(edge).not.toBeNull();
     expect(workspace.listBoardEdges(board.id)).toHaveLength(1);
   });
+
+  it("imports a batch of updates in a single call", () => {
+    const left = new WorkspaceDocument(new LoroDoc());
+    const board = left.ensureBoard();
+    const u1 = left.exportUpdate();
+
+    const card = left.createCard({ boardId: board.id, position: { x: 10, y: 20 } });
+    const u2 = left.exportUpdate();
+
+    left.updatePlacementPosition(board.id, card.id, { x: 50, y: 60 });
+    const u3 = left.exportUpdate();
+
+    const right = new WorkspaceDocument(new LoroDoc());
+    right.importBatch([u1, u2, u3]);
+
+    expect(right.listBoards()).toHaveLength(1);
+    expect(right.listBoardCards(board.id)).toHaveLength(1);
+    expect(right.getPlacement(board.id, card.id)?.x).toBe(50);
+  });
+
+  it("exports and imports a shallow snapshot without historical DAG overhead", () => {
+    const source = new WorkspaceDocument(new LoroDoc());
+    const board = source.ensureBoard();
+    const card = source.createCard({ boardId: board.id, position: { x: 10, y: 20 } });
+    source.updatePlacementPosition(board.id, card.id, { x: 100, y: 200 });
+
+    const shallowBytes = source.exportShallowSnapshot();
+    expect(shallowBytes.byteLength).toBeGreaterThan(0);
+
+    const target = new WorkspaceDocument(new LoroDoc());
+    target.importSnapshot(shallowBytes);
+
+    expect(target.listBoards()).toHaveLength(1);
+    expect(target.getPlacement(board.id, card.id)).toMatchObject({ x: 100, y: 200 });
+  });
 });

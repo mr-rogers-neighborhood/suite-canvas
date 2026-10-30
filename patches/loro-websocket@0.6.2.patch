@@ -1,5 +1,5 @@
 diff --git a/dist/server/index.cjs b/dist/server/index.cjs
-index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..0fb2cbca065dc7ce37eec93de4b3107b8d1dac52 100644
+index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..a9a882575dabc59db7e802caef7167ba5f66680b 100644
 --- a/dist/server/index.cjs
 +++ b/dist/server/index.cjs
 @@ -286,7 +286,8 @@ var SimpleServer = class SimpleServer {
@@ -12,15 +12,103 @@ index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..0fb2cbca065dc7ce37eec93de4b3107b
  				};
  				this.clients.set(ws$1, client);
  				ws$1.on("message", (data, isBinary) => {
-@@ -435,6 +436,7 @@ var SimpleServer = class SimpleServer {
+@@ -326,20 +327,34 @@ var SimpleServer = class SimpleServer {
+ 			if (this.saveTimer) clearInterval(this.saveTimer);
+ 			this.saveAllDirtyDocuments();
+ 			const wss = this.wss;
++			const cleanupRooms = () => {
++				for (const [, roomDoc] of this.rooms) {
++					if (roomDoc.doc && typeof roomDoc.doc.free === "function") {
++						try {
++							roomDoc.doc.free();
++						} catch {}
++						roomDoc.doc = null;
++					}
++				}
++				this.rooms.clear();
++			};
+ 			if (wss) {
+ 				const clients = Array.from(wss.clients);
+ 				Promise.all(clients.map((ws$1) => this.gracefulCloseWebSocket(ws$1))).catch(() => {}).finally(() => {
+ 					try {
+ 						wss.close(() => {
++							cleanupRooms();
+ 							resolve();
+ 						});
+ 					} catch {
++						cleanupRooms();
+ 						resolve();
+ 					}
+ 					this.wss = void 0;
+ 				});
+ 				return;
+ 			}
++			cleanupRooms();
+ 			resolve();
+ 		});
+ 	}
+@@ -435,7 +450,36 @@ var SimpleServer = class SimpleServer {
  			const roomKey = this.getRoomKey(message.roomId, message.crdt);
  			client.rooms.add(roomKey);
  			client.permissions.set(roomKey, permission);
+-			const joinResult = roomDoc.descriptor.adaptor.handleJoinRequest(roomDoc.data, message.version);
 +			client.auths.set(roomKey, this.decodeAuth(message.auth));
- 			const joinResult = roomDoc.descriptor.adaptor.handleJoinRequest(roomDoc.data, message.version);
++			let joinResult;
++			if (roomDoc.doc && message.crdt === loro_protocol.CrdtType.Loro) {
++				const serverVersion = roomDoc.doc.version();
++				let updates;
++				if (message.version && message.version.length > 0) {
++					try {
++						const clientVV = loro_crdt.VersionVector.decode(message.version);
++						updates = [roomDoc.doc.export({ mode: "update", from: clientVV })];
++						clientVV.free();
++					} catch {
++						updates = [roomDoc.data && !roomDoc.dirty ? roomDoc.data : roomDoc.doc.export({ mode: "snapshot" })];
++					}
++				} else {
++					updates = [roomDoc.data && !roomDoc.dirty ? roomDoc.data : roomDoc.doc.export({ mode: "snapshot" })];
++				}
++				joinResult = {
++					response: {
++						type: loro_protocol.MessageType.JoinResponseOk,
++						crdt: message.crdt,
++						roomId: message.roomId,
++						permission,
++						version: serverVersion.encode(),
++					},
++					updates,
++				};
++				serverVersion.free();
++			} else {
++				joinResult = roomDoc.descriptor.adaptor.handleJoinRequest(roomDoc.data, message.version);
++			}
  			const response = {
  				...joinResult.response,
-@@ -577,12 +579,62 @@ var SimpleServer = class SimpleServer {
+ 				permission,
+@@ -472,7 +516,21 @@ var SimpleServer = class SimpleServer {
+ 			}
+ 			const roomDoc = await this.getOrCreateRoomDocument(message.roomId, message.crdt);
+ 			try {
+-				roomDoc.data = roomDoc.descriptor.adaptor.applyUpdates(roomDoc.data, message.updates);
++				if (roomDoc.doc && message.crdt === loro_protocol.CrdtType.Loro) {
++					const payloads = message.updates.filter((u) => u && u.length > 0);
++					if (payloads.length > 0) {
++						try {
++							roomDoc.doc.importBatch(payloads);
++						} catch (batchErr) {
++							console.warn("importBatch failed, falling back to sequential import:", batchErr);
++							for (const update of payloads) {
++								roomDoc.doc.import(update);
++							}
++						}
++					}
++				} else {
++					roomDoc.data = roomDoc.descriptor.adaptor.applyUpdates(roomDoc.data, message.updates);
++				}
+ 			} catch (error) {
+ 				console.warn("applyUpdates failed for DocUpdate", error);
+ 				this.sendAck(client.ws, message.batchId, loro_protocol.UpdateStatusCode.InvalidUpdate, message.crdt, message.roomId);
+@@ -577,12 +635,62 @@ var SimpleServer = class SimpleServer {
  		const roomKey = this.getRoomKey(message.roomId, message.crdt);
  		client.rooms.delete(roomKey);
  		client.permissions.delete(roomKey);
@@ -83,11 +171,80 @@ index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..0fb2cbca065dc7ce37eec93de4b3107b
  	}
  	async getOrCreateRoomDocument(roomId, crdtType) {
  		const roomKey = this.getRoomKey(roomId, crdtType);
+@@ -598,8 +706,21 @@ var SimpleServer = class SimpleServer {
+ 			console.warn("Failed to load document:", error);
+ 			throw error;
+ 		}
++		let doc;
++		if (crdtType === loro_protocol.CrdtType.Loro) {
++			try {
++				doc = new loro_crdt.LoroDoc();
++				if (data && data.length > 0) {
++					doc.import(data);
++				}
++			} catch (e) {
++				console.warn("Failed to instantiate in-memory LoroDoc; falling back to stateless", e);
++				doc = undefined;
++			}
++		}
+ 		roomDoc = {
+ 			data,
++			doc,
+ 			descriptor,
+ 			lastSaved: Date.now(),
+ 			dirty: false
+@@ -674,6 +795,9 @@ var SimpleServer = class SimpleServer {
+ 			if (!roomDoc.dirty || !roomDoc.descriptor.shouldPersist) continue;
+ 			try {
+ 				const { roomId, crdtType } = this.parseRoomKey(roomKey);
++				if (roomDoc.doc) {
++					roomDoc.data = roomDoc.doc.export({ mode: "snapshot" });
++				}
+ 				await this.config.onSaveDocument(roomId, crdtType, roomDoc.data);
+ 				roomDoc.dirty = false;
+ 				roomDoc.lastSaved = Date.now();
+@@ -682,6 +806,36 @@ var SimpleServer = class SimpleServer {
+ 			}
+ 		}
+ 	}
++	async evictIdleRooms(maxIdleMs = 300000) {
++		const now = Date.now();
++		let evicted = 0;
++		for (const [roomKey, roomDoc] of this.rooms) {
++			const { roomId, crdtType } = this.parseRoomKey(roomKey);
++			if (this.hasOtherClientsInRoom(roomId, crdtType, null)) continue;
++			if (now - (roomDoc.lastSaved || 0) < maxIdleMs) continue;
++			if (roomDoc.dirty && roomDoc.descriptor.shouldPersist && this.config.onSaveDocument) {
++				try {
++					if (roomDoc.doc) {
++						roomDoc.data = roomDoc.doc.export({ mode: "snapshot" });
++					}
++					await this.config.onSaveDocument(roomId, crdtType, roomDoc.data);
++					roomDoc.dirty = false;
++				} catch (err) {
++					console.warn(`Failed to save dirty room ${roomId} before eviction:`, err);
++					continue;
++				}
++			}
++			if (roomDoc.doc && typeof roomDoc.doc.free === "function") {
++				try {
++					roomDoc.doc.free();
++				} catch {}
++				roomDoc.doc = null;
++			}
++			this.rooms.delete(roomKey);
++			evicted++;
++		}
++		return evicted;
++	}
+ };
+ SimpleServer.DEFAULT_SAVE_INTERVAL = 6e4;
+ 
 diff --git a/dist/server/index.d.cts b/dist/server/index.d.cts
-index 5e2fa22d06a06f9659b8ca5eeaf26daf0deb7f4e..35cf30008980d2f8c3b54cc9b2e4c8f54fabfc49 100644
+index 5e2fa22d06a06f9659b8ca5eeaf26daf0deb7f4e..7e8ccbb49114d5471393b443f50a922f2c33a167 100644
 --- a/dist/server/index.d.cts
 +++ b/dist/server/index.d.cts
-@@ -37,6 +37,18 @@ declare class SimpleServer {
+@@ -37,6 +37,23 @@ declare class SimpleServer {
    private sendAck;
    private broadcastToRoom;
    private hasOtherClientsInRoom;
@@ -103,14 +260,19 @@ index 5e2fa22d06a06f9659b8ca5eeaf26daf0deb7f4e..35cf30008980d2f8c3b54cc9b2e4c8f5
 +  ): number;
 +  /** Suite patch (not upstream): closes every socket authenticated with exactly `auth`. */
 +  disconnectAuth(auth: string): number;
++  /**
++   * Suite patch (not upstream): evicts idle rooms whose clients have all left and
++   * frees their in-memory LoroDoc WASM allocations.
++   */
++  evictIdleRooms(maxIdleMs?: number): Promise<number>;
    private getRoomKey;
    private parseRoomKey;
    private saveAllDirtyDocuments;
 diff --git a/dist/server/index.d.ts b/dist/server/index.d.ts
-index bf393145e8c48f7c115769b3cc163c8c4c40427c..edbadfea83b416afc94e7f0c1fd92d7b68b92fb1 100644
+index bf393145e8c48f7c115769b3cc163c8c4c40427c..0202e08628e2b82503a9f5cf4f5ac422cf35cbbf 100644
 --- a/dist/server/index.d.ts
 +++ b/dist/server/index.d.ts
-@@ -37,6 +37,18 @@ declare class SimpleServer {
+@@ -37,6 +37,23 @@ declare class SimpleServer {
    private sendAck;
    private broadcastToRoom;
    private hasOtherClientsInRoom;
@@ -126,13 +288,27 @@ index bf393145e8c48f7c115769b3cc163c8c4c40427c..edbadfea83b416afc94e7f0c1fd92d7b
 +  ): number;
 +  /** Suite patch (not upstream): closes every socket authenticated with exactly `auth`. */
 +  disconnectAuth(auth: string): number;
++  /**
++   * Suite patch (not upstream): evicts idle rooms whose clients have all left and
++   * frees their in-memory LoroDoc WASM allocations.
++   */
++  evictIdleRooms(maxIdleMs?: number): Promise<number>;
    private getRoomKey;
    private parseRoomKey;
    private saveAllDirtyDocuments;
 diff --git a/dist/server/index.js b/dist/server/index.js
-index 2ba619565b2532df04d4f95c33dc329b5df0c776..7944611ffffc85133ea5ca6d26c22cefcc29f24c 100644
+index 2ba619565b2532df04d4f95c33dc329b5df0c776..d9b26f41a0d904bb6ca0119dd0f3753f617620ff 100644
 --- a/dist/server/index.js
 +++ b/dist/server/index.js
+@@ -3,7 +3,7 @@ import { WebSocket, WebSocketServer } from "ws";
+ import { randomBytes } from "node:crypto";
+ import { LoroEphemeralServerAdaptor, LoroPersistentStoreServerAdaptor, LoroServerAdaptor } from "loro-adaptors/loro";
+ import { FlockServerAdaptor } from "loro-adaptors/flock";
+-import { VersionVector } from "loro-crdt";
++import { LoroDoc, VersionVector } from "loro-crdt";
+ 
+ //#region src/server/elo-doc.ts
+ var EloDoc = class {
 @@ -286,7 +286,8 @@ var SimpleServer = class SimpleServer {
  					ws,
  					rooms: /* @__PURE__ */ new Set(),
@@ -143,15 +319,103 @@ index 2ba619565b2532df04d4f95c33dc329b5df0c776..7944611ffffc85133ea5ca6d26c22cef
  				};
  				this.clients.set(ws, client);
  				ws.on("message", (data, isBinary) => {
-@@ -435,6 +436,7 @@ var SimpleServer = class SimpleServer {
+@@ -326,20 +327,34 @@ var SimpleServer = class SimpleServer {
+ 			if (this.saveTimer) clearInterval(this.saveTimer);
+ 			this.saveAllDirtyDocuments();
+ 			const wss = this.wss;
++			const cleanupRooms = () => {
++				for (const [, roomDoc] of this.rooms) {
++					if (roomDoc.doc && typeof roomDoc.doc.free === "function") {
++						try {
++							roomDoc.doc.free();
++						} catch {}
++						roomDoc.doc = null;
++					}
++				}
++				this.rooms.clear();
++			};
+ 			if (wss) {
+ 				const clients = Array.from(wss.clients);
+ 				Promise.all(clients.map((ws) => this.gracefulCloseWebSocket(ws))).catch(() => {}).finally(() => {
+ 					try {
+ 						wss.close(() => {
++							cleanupRooms();
+ 							resolve();
+ 						});
+ 					} catch {
++						cleanupRooms();
+ 						resolve();
+ 					}
+ 					this.wss = void 0;
+ 				});
+ 				return;
+ 			}
++			cleanupRooms();
+ 			resolve();
+ 		});
+ 	}
+@@ -435,7 +450,36 @@ var SimpleServer = class SimpleServer {
  			const roomKey = this.getRoomKey(message.roomId, message.crdt);
  			client.rooms.add(roomKey);
  			client.permissions.set(roomKey, permission);
+-			const joinResult = roomDoc.descriptor.adaptor.handleJoinRequest(roomDoc.data, message.version);
 +			client.auths.set(roomKey, this.decodeAuth(message.auth));
- 			const joinResult = roomDoc.descriptor.adaptor.handleJoinRequest(roomDoc.data, message.version);
++			let joinResult;
++			if (roomDoc.doc && message.crdt === CrdtType.Loro) {
++				const serverVersion = roomDoc.doc.version();
++				let updates;
++				if (message.version && message.version.length > 0) {
++					try {
++						const clientVV = VersionVector.decode(message.version);
++						updates = [roomDoc.doc.export({ mode: "update", from: clientVV })];
++						clientVV.free();
++					} catch {
++						updates = [roomDoc.data && !roomDoc.dirty ? roomDoc.data : roomDoc.doc.export({ mode: "snapshot" })];
++					}
++				} else {
++					updates = [roomDoc.data && !roomDoc.dirty ? roomDoc.data : roomDoc.doc.export({ mode: "snapshot" })];
++				}
++				joinResult = {
++					response: {
++						type: MessageType.JoinResponseOk,
++						crdt: message.crdt,
++						roomId: message.roomId,
++						permission,
++						version: serverVersion.encode(),
++					},
++					updates,
++				};
++				serverVersion.free();
++			} else {
++				joinResult = roomDoc.descriptor.adaptor.handleJoinRequest(roomDoc.data, message.version);
++			}
  			const response = {
  				...joinResult.response,
-@@ -577,12 +579,62 @@ var SimpleServer = class SimpleServer {
+ 				permission,
+@@ -472,7 +516,21 @@ var SimpleServer = class SimpleServer {
+ 			}
+ 			const roomDoc = await this.getOrCreateRoomDocument(message.roomId, message.crdt);
+ 			try {
+-				roomDoc.data = roomDoc.descriptor.adaptor.applyUpdates(roomDoc.data, message.updates);
++				if (roomDoc.doc && message.crdt === CrdtType.Loro) {
++					const payloads = message.updates.filter((u) => u && u.length > 0);
++					if (payloads.length > 0) {
++						try {
++							roomDoc.doc.importBatch(payloads);
++						} catch (batchErr) {
++							console.warn("importBatch failed, falling back to sequential import:", batchErr);
++							for (const update of payloads) {
++								roomDoc.doc.import(update);
++							}
++						}
++					}
++				} else {
++					roomDoc.data = roomDoc.descriptor.adaptor.applyUpdates(roomDoc.data, message.updates);
++				}
+ 			} catch (error) {
+ 				console.warn("applyUpdates failed for DocUpdate", error);
+ 				this.sendAck(client.ws, message.batchId, UpdateStatusCode.InvalidUpdate, message.crdt, message.roomId);
+@@ -577,12 +635,62 @@ var SimpleServer = class SimpleServer {
  		const roomKey = this.getRoomKey(message.roomId, message.crdt);
  		client.rooms.delete(roomKey);
  		client.permissions.delete(roomKey);
@@ -214,3 +478,72 @@ index 2ba619565b2532df04d4f95c33dc329b5df0c776..7944611ffffc85133ea5ca6d26c22cef
  	}
  	async getOrCreateRoomDocument(roomId, crdtType) {
  		const roomKey = this.getRoomKey(roomId, crdtType);
+@@ -598,8 +706,21 @@ var SimpleServer = class SimpleServer {
+ 			console.warn("Failed to load document:", error);
+ 			throw error;
+ 		}
++		let doc;
++		if (crdtType === CrdtType.Loro) {
++			try {
++				doc = new LoroDoc();
++				if (data && data.length > 0) {
++					doc.import(data);
++				}
++			} catch (e) {
++				console.warn("Failed to instantiate in-memory LoroDoc; falling back to stateless", e);
++				doc = undefined;
++			}
++		}
+ 		roomDoc = {
+ 			data,
++			doc,
+ 			descriptor,
+ 			lastSaved: Date.now(),
+ 			dirty: false
+@@ -674,6 +795,9 @@ var SimpleServer = class SimpleServer {
+ 			if (!roomDoc.dirty || !roomDoc.descriptor.shouldPersist) continue;
+ 			try {
+ 				const { roomId, crdtType } = this.parseRoomKey(roomKey);
++				if (roomDoc.doc) {
++					roomDoc.data = roomDoc.doc.export({ mode: "snapshot" });
++				}
+ 				await this.config.onSaveDocument(roomId, crdtType, roomDoc.data);
+ 				roomDoc.dirty = false;
+ 				roomDoc.lastSaved = Date.now();
+@@ -682,6 +806,36 @@ var SimpleServer = class SimpleServer {
+ 			}
+ 		}
+ 	}
++	async evictIdleRooms(maxIdleMs = 300000) {
++		const now = Date.now();
++		let evicted = 0;
++		for (const [roomKey, roomDoc] of this.rooms) {
++			const { roomId, crdtType } = this.parseRoomKey(roomKey);
++			if (this.hasOtherClientsInRoom(roomId, crdtType, null)) continue;
++			if (now - (roomDoc.lastSaved || 0) < maxIdleMs) continue;
++			if (roomDoc.dirty && roomDoc.descriptor.shouldPersist && this.config.onSaveDocument) {
++				try {
++					if (roomDoc.doc) {
++						roomDoc.data = roomDoc.doc.export({ mode: "snapshot" });
++					}
++					await this.config.onSaveDocument(roomId, crdtType, roomDoc.data);
++					roomDoc.dirty = false;
++				} catch (err) {
++					console.warn(`Failed to save dirty room ${roomId} before eviction:`, err);
++					continue;
++				}
++			}
++			if (roomDoc.doc && typeof roomDoc.doc.free === "function") {
++				try {
++					roomDoc.doc.free();
++				} catch {}
++				roomDoc.doc = null;
++			}
++			this.rooms.delete(roomKey);
++			evicted++;
++		}
++		return evicted;
++	}
+ };
+ SimpleServer.DEFAULT_SAVE_INTERVAL = 6e4;
+ 

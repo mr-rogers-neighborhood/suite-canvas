@@ -99,6 +99,12 @@ export function forgetRoomDocument(server: unknown, roomId: string): boolean {
     const split = key.lastIndexOf(":");
     const name = split === -1 ? key : key.slice(0, split);
     if (!names.has(name)) continue;
+    const entry = rooms.get(key) as { doc?: { free?: () => void } } | undefined;
+    if (entry?.doc && typeof entry.doc.free === "function") {
+      try {
+        entry.doc.free();
+      } catch {}
+    }
     rooms.delete(key);
     dropped = true;
   }

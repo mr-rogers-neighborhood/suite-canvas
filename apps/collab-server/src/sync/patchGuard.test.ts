@@ -29,5 +29,9 @@ describe("loro-websocket patch", () => {
       typeof prototype.disconnectAuth,
       "patches/loro-websocket@0.6.2.patch added disconnectAuth; it is missing",
     ).toBe("function");
+    expect(
+      typeof prototype.evictIdleRooms,
+      "patches/loro-websocket@0.6.2.patch added evictIdleRooms; it is missing",
+    ).toBe("function");
   });
 });

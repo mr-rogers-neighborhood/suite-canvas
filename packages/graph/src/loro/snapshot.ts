@@ -27,8 +27,17 @@ export function snapshotMethods(ctx: DocContext) {
       ctx.doc.import(update);
     },
 
+    importBatch(updates: readonly Uint8Array[]): void {
+      if (updates.length === 0) return;
+      ctx.doc.importBatch(updates as Uint8Array[]);
+    },
+
     exportSnapshot(): Uint8Array {
       return ctx.doc.export({ mode: "snapshot" });
+    },
+
+    exportShallowSnapshot(): Uint8Array {
+      return ctx.doc.export({ mode: "shallow-snapshot", frontiers: ctx.doc.frontiers() });
     },
 
     importSnapshot(snapshot: Uint8Array): void {

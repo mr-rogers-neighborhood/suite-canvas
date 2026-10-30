@@ -6,13 +6,13 @@ One task at a time: the steps for a job you already know you need to do.
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
+| [Contribute a change](contribute.md) | One change, from branch to merge. The coding standards are in reference/conventions.md, the repo map in AGENTS.md, and the local gate in test-and-veri… | 2026-10-30 |
 | [Deploy a server](deploy.md) | One small instance, one Docker host, one app container, six SQLite stores on one volume, Caddy in front, Cloudflare in front of Caddy. | 2026-10-30 |
+| [Publish a copy of the source](publish.md) | The repository is public, so this page is not a step anybody has to take today. It is the runbook for the other direction: you have a fork, a private… | 2026-10-30 |
+| [Release and roll back](release.md) | A release is a tag, an image built from it on the host that serves it, the image id that identifies it, a smoke test against a host, and a rollback pa… | 2026-10-30 |
+| [Test and verify a change](test-and-verify.md) | Suite runs three test runners: Vitest for the workspace projects, Playwright for end-to-end journeys, and node --test for @suite/billing, which sits o… | 2026-10-30 |
 | [Try the paid flow on this machine](try-the-paid-flow.md) | The whole product runs in five containers on one machine: the relay, the control plane, Postgres, Caddy, and the docs site. This page walks the parts… | 2026-10-30 |
-| [Release and roll back](release.md) | A release is a tag, an image built from it on the host that serves it, the image id that identifies it, a smoke test against a host, and a rollback pa… | 2026-10-28 |
-| [Test and verify a change](test-and-verify.md) | Suite runs three test runners: Vitest for the workspace projects, Playwright for end-to-end journeys, and node --test for @suite/billing, which sits o… | 2026-10-28 |
-| [Publish a copy of the source](publish.md) | The repository is public, so this page is not a step anybody has to take today. It is the runbook for the other direction: you have a fork, a private… | 2026-10-28 |
 | [Add a feature](add-a-feature.md) | The data flow fixes the order: the document package owns the shape, the workspace document owns the write, the snapshot store owns the read, and the c… | 2026-10-28 |
-| [Contribute a change](contribute.md) | One change, from branch to merge. The coding standards are in reference/conventions.md, the repo map in AGENTS.md, and the local gate in test-and-veri… | 2026-10-28 |
 | [Operate a deployment](operate.md) | Suite runs as a single Node process with six SQLite stores on one directory; there is no external database and no multi-replica mode. | 2026-10-28 |
 | [Observe a deployment](observe.md) | Where to look when something is wrong, and what each surface can and cannot tell you. Written for two people working on one box: the owner and whoever… | 2026-10-28 |
 | [Change the canvas](change-the-canvas.md) | Adding to the canvas means answering three questions before writing code: which layer owns the input, what the document records, and what peers see wh… | 2026-10-28 |

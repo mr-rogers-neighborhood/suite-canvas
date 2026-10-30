@@ -61,8 +61,8 @@ export function AlphaNotice({ onSeePlans, forceOpen = false }: AlphaNoticeProps)
 
         <p className="mt-2 text-[var(--ink)]">
           A subscription is early access to higher document storage limits, file uploads (storage),
-          and the ability to add additional members to your organization (3 for the "Personal" plan,
-          20 for the "Organization" plan). The canvas, the cards, share links, import and export
+          and the ability to add additional members to your organization (5 for the "Personal" plan,
+          15 for the "Organization" plan). The canvas, the cards, share links, import and export
           work without one, on this device, and paying is optional.
         </p>
 

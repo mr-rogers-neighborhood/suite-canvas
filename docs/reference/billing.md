@@ -298,7 +298,7 @@ compares the row the trigger writes with it.
 
 The owner's seat is 1, because a seat *is* a `member` row: an organization whose owner cannot be a member cannot exist.
 A free account can create, cloud-sync, and share as many workspaces as they like without hitting arbitrary workspace count walls.
-Paid plans expand storage (10 GB for Personal, 50 GB for Organization) and add additional team member seats (3 for Personal, 10 for Organization).
+Paid plans expand storage (10 GB for Personal, 50 GB for Organization) and add additional team member seats (5 for Personal, 15 for Organization).
 
 There are two doors from a local workspace to a synced one, and both read this row.
 

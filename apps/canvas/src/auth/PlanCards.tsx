@@ -19,8 +19,8 @@ import { humanBytes } from "./entitlement";
 /** What a tier is for, in one sentence. Unknown tiers get a sentence built from their limits. */
 const PURPOSE: Readonly<Record<string, string>> = {
   personal:
-    "For individuals and small teams: unlimited workspaces, 10 GB media storage, and 3 seats.",
-  organization: "For growing teams: unlimited workspaces, 50 GB media storage, and 10 seats.",
+    "For individuals and small teams: unlimited workspaces, 10 GB media storage, and 5 seats.",
+  organization: "For growing teams: unlimited workspaces, 50 GB media storage, and 15 seats.",
 };
 
 function purposeOf(plan: BillingPlan): string {

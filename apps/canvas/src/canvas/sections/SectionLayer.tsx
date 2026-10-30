@@ -12,7 +12,7 @@ import {
 import { PeerNameTag } from "../../presence/PeerNameTag";
 import { useUiStore } from "../../store/useUiStore";
 import { sectionIcon } from "../entityIcon";
-import { isChaining, stepLink, stepShape, useLinkThreadStore } from "../links/linkThread";
+import { stepLink, stepShape, useLinkThreadStore } from "../links/linkThread";
 import { revealConnectors } from "../NodeConnectors";
 import { useLinkDraftStore } from "../useNodeConnectorWiring";
 import type { SectionOffset } from "./sectionLayout";
@@ -381,11 +381,11 @@ export function SectionLayer({
           useLinkThreadStore.getState().clear();
           return;
         }
-        // Released without a target: in chaining mode that is a click, so the
-        // section connector takes part in a thread like a card's does.
-        if (!isChaining({ shiftKey: pointer.shiftKey, ctrlKey: pointer.ctrlKey, mode })) {
-          return;
-        }
+        // Released without a target, which is a click on the dot. A press arms the
+        // connector in *every* mode, exactly as a card's dot does: place waits for a
+        // second dot to finish its one link, and thread and fan write on the next
+        // click. Guarding this on the chaining modes left a thread that started on a
+        // card unable to finish on a section.
         const clicked = { kind: "section" as const, id: section.id, connectorId: connector.id };
         // A fan keeps its origin, a thread moves to the connector just clicked —
         // and an arm already in hand outranks the stored mode, so a fan started

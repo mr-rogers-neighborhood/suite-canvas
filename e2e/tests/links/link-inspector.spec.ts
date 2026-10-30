@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { cards } from "../fixtures/support";
+import { cards, selectForSection } from "../fixtures/support";
 
 /**
  * A link is not an entity, so it had no inspector: its controls lived only in a
@@ -125,7 +125,7 @@ test("a link that touches a section opens the same drawer and names the section 
 }) => {
   await page.goto(workspaceUrl("section"));
   await expect(cards(page)).toHaveCount(2);
-  await cards(page).last().click();
+  await selectForSection(page, cards(page).last());
   await page.keyboard.press("Control+g");
   await page.keyboard.press("Enter");
   await page.keyboard.press("Escape");

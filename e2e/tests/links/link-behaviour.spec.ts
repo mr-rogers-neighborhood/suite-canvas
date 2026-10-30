@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { settleViewport } from "../fixtures/marquee";
-import { cards } from "../fixtures/support";
+import { cards, selectForSection } from "../fixtures/support";
 
 /**
  * What a drawn link does to the things around it. A link is a line, but it also
@@ -58,7 +58,7 @@ async function noteLinkedToSection(page: Page) {
   await page.goto(workspaceUrl("outside"));
   await expect(cards(page)).toHaveCount(2);
 
-  await cards(page).last().click();
+  await selectForSection(page, cards(page).last());
   await page.keyboard.press("Control+g");
   await expect(page.locator(".section-header")).toHaveCount(1);
   await page.keyboard.press("Enter");

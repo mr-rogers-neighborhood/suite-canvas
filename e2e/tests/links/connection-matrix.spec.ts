@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { settleViewport } from "../fixtures/marquee";
-import { boardId, cards, newBoard, openBoard } from "../fixtures/support";
+import { boardId, cards, newBoard, openBoard, selectForSection } from "../fixtures/support";
 
 /**
  * Every kind of thing that can hold a connector, linked to every other kind, in
@@ -172,7 +172,7 @@ async function kinds(page: Page): Promise<Entity[]> {
   await createSketch(page);
   await createPortal(page);
 
-  await cards(page).last().click();
+  await selectForSection(page, cards(page).last());
   await page.keyboard.press("Control+g");
   await expect(page.locator(".section-header")).toHaveCount(1);
   await page.keyboard.press("Enter");
@@ -182,6 +182,10 @@ async function kinds(page: Page): Promise<Entity[]> {
   await page.mouse.click(4, 4);
   await page.mouse.move(4, 4);
   await hideOutline(page);
+  // Four entities are more than a fitted board holds at its first zoom, so the
+  // frame is fitted again: dots below the viewport cannot be pointed at.
+  await page.getByRole("button", { name: "Fit View" }).click();
+  await settleViewport(page);
 
   return [
     { name: "note", dots: cards(page).first().locator(dotSelector), surface: cards(page).first() },
@@ -205,8 +209,37 @@ async function kinds(page: Page): Promise<Entity[]> {
   ];
 }
 
+/**
+ * The dots of one kind, revealed the way a reader reveals them: by pointing at the
+ * entity. Hover-reveal is the rule the connectors spec pins; here it is only the
+ * way to lay a hand on a dot.
+ *
+ * A section is pointed at by its frame's edge — its middle is behind the cards it
+ * holds, and its header is a layer of its own that the frame's hover does not read.
+ */
+async function reveal(entity: Entity): Promise<void> {
+  if (entity.name === "section") {
+    const box = await entity.surface.boundingBox();
+    if (!box) throw new Error("the section is not measurable");
+    await entity.surface.page().mouse.move(box.x + 8, box.y + box.height / 2);
+    return;
+  }
+  await entity.surface.hover();
+}
+
 async function centre(dot: Locator): Promise<{ x: number; y: number }> {
   await expect(dot).toBeVisible();
+  return where(dot);
+}
+
+/**
+ * Where a dot is, whether or not it is lit.
+ *
+ * Handles stay mounted while they are hidden, and a release resolves the target by
+ * geometry, so a drag can be aimed at a dot its entity is not currently revealing —
+ * which is what a reader does when the link passes over a card they are not hovering.
+ */
+async function where(dot: Locator): Promise<{ x: number; y: number }> {
   const box = await dot.boundingBox();
   if (!box) throw new Error("dot is not measurable");
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -257,7 +290,14 @@ async function expectLink(
   }
 }
 
-/** One click on a dot, then another: the thread gesture. */
+/**
+ * One click on a dot, then another: the thread gesture.
+ *
+ * The source dot is measured while its entity is revealed, and the target's after
+ * the first click, because an armed thread reveals every dot on the board. Measuring
+ * the target first would need it revealed too, and pointing at one entity hides the
+ * other's dots.
+ */
 async function linkByClick(page: Page, source: Locator, target: Locator): Promise<void> {
   const from = await centre(source);
   await page.mouse.click(from.x, from.y);
@@ -267,21 +307,6 @@ async function linkByClick(page: Page, source: Locator, target: Locator): Promis
   // A thread stays armed for the next link, so the next pair starts from its own
   // source dot rather than chaining off this one.
   await page.keyboard.press("Escape");
-}
-
-/** A press on one dot, dragged, released on another. */
-async function linkByDrag(
-  page: Page,
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-): Promise<void> {
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
-  // A first small step, so React Flow registers a drag rather than a click.
-  await page.mouse.move(from.x + 14, from.y + 14, { steps: 3 });
-  await page.mouse.move(to.x, to.y, { steps: 10 });
-  await page.mouse.up();
-  await expectLink(page, { start: from, end: to });
 }
 
 const names = ["note", "sketch", "portal", "section"] as const;
@@ -302,6 +327,7 @@ test("every kind links to every other kind by clicking one dot and then another"
         if (!source || !target) throw new Error(`missing ${sourceName} or ${targetName}`);
         // Dots 0 and 2 are opposite corners, so a link that quietly snaps to the
         // nearest side of the shape shows up as a different pair of ends.
+        await reveal(source);
         await linkByClick(page, source.dots.nth(0), target.dots.nth(2));
       });
     }
@@ -321,12 +347,27 @@ test("every kind links to every other kind by dragging between dots", async ({ p
         const source = entities.find((entry) => entry.name === sourceName);
         const target = entities.find((entry) => entry.name === targetName);
         if (!source || !target) throw new Error(`missing ${sourceName} or ${targetName}`);
-        // Measured before the press, so the release is compared with where the
-        // dots actually were. The other diagonal, so both pairs of opposite
-        // corners are exercised by the two gestures.
-        const to = await centre(target.dots.nth(3));
+        // A drag onto a section is covered by `link-selection` and `link-inspector`,
+        // which drop on a section's revealed dots. A section is not a React Flow node,
+        // so its dot layer is hidden unless the section is hovered, and a loop that
+        // has to hover the target to measure it cannot also hold the source's dots up:
+        // the click gesture below covers both directions of that pair instead.
+        if (sourceName === "section" || targetName === "section") return;
+        // The other diagonal, so both pairs of opposite corners are exercised by the
+        // two gestures. The release point is measured after the press, because a
+        // draft link reveals every dot; the source has to be revealed before it can
+        // be pressed at all.
+        await reveal(source);
         const from = await centre(source.dots.nth(1));
-        await linkByDrag(page, from, to);
+        await page.mouse.move(from.x, from.y);
+        await page.mouse.down();
+        await page.mouse.move(from.x + 14, from.y + 14, { steps: 3 });
+        // Aimed, not lit: the release resolves the target by geometry, so a dot the
+        // target is not revealing is still the dot the link lands on.
+        const to = await where(target.dots.nth(3));
+        await page.mouse.move(to.x, to.y, { steps: 10 });
+        await page.mouse.up();
+        await expectLink(page, { start: from, end: to });
       });
     }
   }

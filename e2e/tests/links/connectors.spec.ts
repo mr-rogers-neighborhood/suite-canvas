@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { settleViewport } from "../fixtures/marquee";
-import { boardId, createNote, newBoard, openBoard } from "../fixtures/support";
+import { boardId, createNote, newBoard, openBoard, selectForSection } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -176,7 +176,7 @@ test("a section connector can be added and removed from its menus", async ({ pag
   await page.goto(workspaceUrl("section"));
   await expect(cards(page)).toHaveCount(2);
 
-  await cards(page).first().click();
+  await selectForSection(page, cards(page).first());
   await page.keyboard.press("Control+g");
   await expect(page.locator(".section-header")).toHaveCount(1);
   await page.keyboard.type("Band");
@@ -204,7 +204,7 @@ test("hovering a section's empty area reveals its dots, hovering a card does not
   await page.goto(workspaceUrl("section-hover"));
   await expect(cards(page)).toHaveCount(2);
 
-  await cards(page).first().click();
+  await selectForSection(page, cards(page).first());
   await page.keyboard.press("Control+g");
   await expect(page.locator(".section-header")).toHaveCount(1);
   await page.keyboard.press("Enter");

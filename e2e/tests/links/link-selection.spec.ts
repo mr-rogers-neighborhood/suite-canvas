@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { beginMarquee, finishMarquee } from "../fixtures/marquee";
-import { cards } from "../fixtures/support";
+import { cards, selectForSection } from "../fixtures/support";
 
 /**
  * A link is selected, moved and deleted like the entities around it, and a link
@@ -57,7 +57,7 @@ const centre = (box: { x: number; y: number; width: number; height: number } | n
 async function boardWithSectionLink(page: Page, name: string): Promise<void> {
   await page.goto(workspaceUrl(name));
   await expect(cards(page)).toHaveCount(2);
-  await cards(page).last().click();
+  await selectForSection(page, cards(page).last());
   await page.keyboard.press("Control+g");
   await page.keyboard.press("Enter");
   await page.keyboard.press("Escape");
@@ -116,7 +116,7 @@ test("a card link deletes on Delete once selected", async ({ page }) => {
 test("shift+click selects a section link alongside a card link", async ({ page }) => {
   await page.goto(workspaceUrl("multi"));
   await expect(cards(page)).toHaveCount(2);
-  await cards(page).last().click();
+  await selectForSection(page, cards(page).last());
   await page.keyboard.press("Control+g");
   await page.keyboard.press("Enter");
   await page.keyboard.press("Escape");
@@ -209,7 +209,7 @@ test("a marquee across a section link selects it with the entities it touches", 
 test("a link drawn from a section moves by its section end too", async ({ page }) => {
   await page.goto(workspaceUrl("source-end"));
   await expect(cards(page)).toHaveCount(2);
-  await cards(page).last().click();
+  await selectForSection(page, cards(page).last());
   await page.keyboard.press("Control+g");
   await page.keyboard.press("Enter");
   await page.keyboard.press("Escape");

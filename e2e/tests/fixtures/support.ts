@@ -104,6 +104,21 @@ export async function selectCard(page: Page, card: Locator = cards(page).first()
   await page.keyboard.press("Escape");
 }
 
+/**
+ * Selects a card for a chord, without starting an editor.
+ *
+ * A press in the title or the body starts an editor, and an editor owns the keys:
+ * `Control+g` typed into one is a `g`. The gutter beside the type glyph is a press
+ * the card itself owns, so it selects and leaves the keyboard to the board.
+ */
+export async function selectForSection(page: Page, card: Locator): Promise<void> {
+  const box = await card.boundingBox();
+  if (!box) throw new Error("card not visible");
+  await page.mouse.click(box.x + 24, box.y + 20);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+}
+
 /** A note from the dock, titled and out of edit mode. */
 export async function createNote(page: Page, title: string): Promise<void> {
   await page.getByTestId("dock-new-card").click();

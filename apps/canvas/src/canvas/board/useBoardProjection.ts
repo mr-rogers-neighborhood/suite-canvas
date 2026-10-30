@@ -198,9 +198,9 @@ export function useBoardProjection(ui: ReturnType<typeof useBoardUi>) {
   const tagMap = useMemo(() => new Map(snapshot.tags.map((tag) => [tag.id, tag])), [snapshot.tags]);
   const metaByCard = useMemo(() => {
     const map = new Map<string, CardMeta>();
-    for (const card of snapshot.cards) map.set(card.id, cardMeta(card, typeMap, tagMap));
+    for (const card of boardCards) map.set(card.id, cardMeta(card, typeMap, tagMap));
     return map;
-  }, [snapshot.cards, typeMap, tagMap]);
+  }, [boardCards, typeMap, tagMap]);
 
   return {
     boardPlacements,

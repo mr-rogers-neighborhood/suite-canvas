@@ -16,6 +16,7 @@ import { PresenceAvatars } from "../presence/PresenceAvatars";
 import type { InteractionMode } from "../store/interactionMode";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import type { CardMeta } from "./cardMeta";
+import { StaticCardFace, StaticCardTitle } from "./StaticCardFace";
 
 /** Everyone dragging one connector, plus where the first of them is holding it. */
 export interface ConnectorPeerState {
@@ -53,9 +54,9 @@ export interface NodeCardProps {
   /** Card document that owns the title and body rich text. */
   cardDoc: LoroDoc;
   /** Body rich-text container. */
-  contentId: ContainerID;
+  contentId?: ContainerID | null | undefined;
   /** Title rich-text container (a single paragraph). */
-  titleId: ContainerID;
+  titleId?: ContainerID | null | undefined;
   /** Shared cursor presence for this workspace. */
   cursorStore: CursorEphemeralStore | null;
   /** Local user, for cursor presence. */
@@ -521,20 +522,24 @@ export function NodeCard({
               }}
             />
           )}
-          <CardTitleEditor
-            cardDoc={cardDoc}
-            titleId={titleId}
-            cursorStore={cursorStore}
-            localUser={localUser}
-            editable={editing === "title"}
-            className={editing === "title" ? "nodrag nopan" : undefined}
-            onFocus={() => {
-              keepFocusAlive();
-              onStartEditing?.("title");
-            }}
-            onBlur={releaseFocusSoon}
-            onCommit={onEditEnd}
-          />
+          {editing === "title" && titleId ? (
+            <CardTitleEditor
+              cardDoc={cardDoc}
+              titleId={titleId}
+              cursorStore={cursorStore}
+              localUser={localUser}
+              editable={true}
+              className="nodrag nopan"
+              onFocus={() => {
+                keepFocusAlive();
+                onStartEditing?.("title");
+              }}
+              onBlur={releaseFocusSoon}
+              onCommit={onEditEnd}
+            />
+          ) : (
+            <StaticCardTitle cardDoc={cardDoc} titleId={titleId} />
+          )}
         </div>
 
         {linkCount > 0 ? (
@@ -640,18 +645,22 @@ export function NodeCard({
               editAndInspect("body");
             }}
           >
-            <CardBodyEditor
-              cardId={card.id}
-              cardDoc={cardDoc}
-              contentId={contentId}
-              cursorStore={cursorStore}
-              localUser={localUser}
-              editable={editContent && editing === "body"}
-              readOnly={!editContent}
-              onFocus={keepFocusAlive}
-              onBlur={releaseFocusSoon}
-              onOpenCardPanel={() => onOpenInfo?.()}
-            />
+            {editing === "body" && contentId ? (
+              <CardBodyEditor
+                cardId={card.id}
+                cardDoc={cardDoc}
+                contentId={contentId}
+                cursorStore={cursorStore}
+                localUser={localUser}
+                editable={editContent}
+                readOnly={!editContent}
+                onFocus={keepFocusAlive}
+                onBlur={releaseFocusSoon}
+                onOpenCardPanel={() => onOpenInfo?.()}
+              />
+            ) : (
+              <StaticCardFace cardDoc={cardDoc} contentId={contentId} canEdit={editContent} />
+            )}
           </div>
         </>
       )}

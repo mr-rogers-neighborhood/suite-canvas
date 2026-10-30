@@ -407,6 +407,8 @@ describe("CanvasBoard card organization", () => {
 
   it("ignores quick capture while an editor has focus", async () => {
     const { container } = mountEditor();
+    const body = container.querySelector("[data-testid='card-body']") as HTMLElement;
+    fireEvent.click(body);
     await waitFor(() => expect(container.querySelector(".ProseMirror")).not.toBeNull());
     const editor = container.querySelector(".ProseMirror") as HTMLElement;
     const before = workspace.listBoardCards(boardId).length;
@@ -417,6 +419,30 @@ describe("CanvasBoard card organization", () => {
     expect(create).not.toHaveBeenCalled();
     expect(workspace.listBoardCards(boardId)).toHaveLength(before);
     create.mockRestore();
+    useUiStore.getState().stopEditing();
+  });
+
+  it("mounts ProseMirror when editing via keyboard even if body container was initially absent", async () => {
+    const { container } = mountEditor();
+    const card = workspace.listBoardCards(boardId)[0];
+    if (!card) throw new Error("card not found");
+    const cardId = card.id;
+    workspace.doc.getMap("content").delete(cardId);
+    workspace.doc.commit();
+    expect(workspace.peekContent(cardId)).toBeNull();
+
+    useUiStore.setState({ selectedNodeIds: [cardId] });
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    expect(useUiStore.getState().editingNodeId).toBe(cardId);
+    expect(useUiStore.getState().editingField).toBe("body");
+
+    await waitFor(() => {
+      expect(workspace.peekContent(cardId)).not.toBeNull();
+      expect(container.querySelector(".ProseMirror")).not.toBeNull();
+    });
+
+    useUiStore.getState().stopEditing();
   });
 });
 

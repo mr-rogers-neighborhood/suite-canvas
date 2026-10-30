@@ -6,7 +6,7 @@ import {
   type Placement,
 } from "@suite/graph";
 import { type NodeProps, NodeResizer, type NodeTypes, type ResizeParams } from "@xyflow/react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CardMeta } from "../cards/cardMeta";
 import { NodeCard } from "../cards/NodeCard";
 import { hasTourSteps } from "../cards/tour";
@@ -75,13 +75,24 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   // A number, not the snapshot: the header chip only re-renders when it moves.
   const linkCount = useReferenceCount(id);
   const contentId = useMemo(
-    () => containers.contentId ?? workspace.getContent(id).id,
+    () => containers.contentId ?? workspace.peekContent(id)?.id,
     [workspace, id, containers],
   );
   const titleId = useMemo(
-    () => containers.titleId ?? workspace.getTitle(id).id,
+    () => containers.titleId ?? workspace.peekTitle(id)?.id,
     [workspace, id, containers],
   );
+
+  const editing = editingNodeId === id && editingSurface === "canvas" ? editingField : null;
+
+  // Allocate text containers on-demand when entering edit mode if they do not yet exist
+  useEffect(() => {
+    if (editing === "body" && !contentId) {
+      workspace.getContent(id);
+    } else if (editing === "title" && !titleId) {
+      workspace.getTitle(id);
+    }
+  }, [editing, contentId, titleId, workspace, id]);
 
   const presence = useMemo<PresenceUser[]>(
     () => peers.filter((peer) => peer.focus?.nodeId === id).map((peer) => peer.user),
@@ -245,7 +256,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         collapsed={collapsed === true}
         onToggleCollapsed={() => toggleCardCollapsed(id)}
         selected={selected}
-        editing={editingNodeId === id && editingSurface === "canvas" ? editingField : null}
+        editing={editing}
         presence={presence}
         draggingPeers={draggingPeers}
         showDragLabel={!draggingGroup}
@@ -262,6 +273,11 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         canManageTrash={canManageTrash}
         onStartEditing={(field) => {
           if (locked) return;
+          if (field === "body" && !contentId) {
+            workspace.getContent(id);
+          } else if (field === "title" && !titleId) {
+            workspace.getTitle(id);
+          }
           startEditing(id, field, "canvas");
         }}
         onEditEnd={stopEditing}
@@ -278,14 +294,15 @@ export function NoteNode({ id, data, selected }: NodeProps) {
               onSetType: (typeId: string) => workspace.setCardTypes(id, [typeId], typeId),
             }
           : {})}
-        presentable={isTutorialType(type) || hasTourSteps(workspace.doc, contentId)}
+        presentable={isTutorialType(type) || hasTourSteps(workspace.doc, contentId ?? null)}
         // A tour is the way into a presentation: double-click it to play it
         // (ADR-0064 §11). Reading the store here matches `openCardFocus` beside it.
         onDoubleClickPresent={() => {
           // Two ways a card is a tour (ADR-0054 §1): it is typed Tutorial, or its
           // body already holds step blocks. Asked at click time, not render time,
           // so a step typed a second ago already counts.
-          if (!isTutorialType(type) && !hasTourSteps(workspace.doc, contentId)) return false;
+          if (!isTutorialType(type) && !hasTourSteps(workspace.doc, contentId ?? null))
+            return false;
           useUiStore.getState().presentTour(id);
           return true;
         }}

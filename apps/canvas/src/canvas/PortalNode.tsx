@@ -1,4 +1,10 @@
-import { type NodeProps, NodeResizer, type NodeTypes, type ResizeParams } from "@xyflow/react";
+import {
+  type NodeProps,
+  NodeResizer,
+  type NodeTypes,
+  type ResizeParams,
+  useReactFlow,
+} from "@xyflow/react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { portalTargetId } from "../cards/portal";
 import { usePresenceStore } from "../collab/usePresenceStore";
@@ -117,18 +123,34 @@ export function PortalNode({ id, data, selected }: NodeProps) {
     [id, setResizing],
   );
 
+  const { getNodes } = useReactFlow();
+
   const handleResizeEnd = useCallback(
     (_event: unknown, params: ResizeParams) => {
-      commitCardResize(workspace, placement.boardId, id, {
-        x: params.x,
-        y: params.y,
-        width: params.width,
-        height: params.height,
-      });
+      const collapsedCards = useUiStore.getState().collapsedCards;
+      const cardSizes = new Map<string, { width: number; height: number }>();
+      for (const n of getNodes()) {
+        const isCollapsed = collapsedCards[n.id] === true;
+        const w = n.measured?.width ?? n.width;
+        const h = isCollapsed ? 40 : (n.measured?.height ?? n.height);
+        if (w !== undefined && h !== undefined) cardSizes.set(n.id, { width: w, height: h });
+      }
+      commitCardResize(
+        workspace,
+        placement.boardId,
+        id,
+        {
+          x: params.x,
+          y: params.y,
+          width: params.width,
+          height: params.height,
+        },
+        cardSizes,
+      );
       setResizing(null);
       setLiveSize(null);
     },
-    [workspace, placement.boardId, id, setResizing],
+    [workspace, placement.boardId, id, setResizing, getNodes],
   );
 
   const peerResize = peers.find((peer) => peer.resizing?.nodeId === id)?.resizing ?? null;

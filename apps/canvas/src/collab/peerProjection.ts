@@ -38,8 +38,8 @@ export const GESTURE_TTL_MS = 3000;
  * someone disappearing, and it sits inside the background-tab timer budget browsers allow
  * (~60s) rather than outside it.
  */
-export const PRESENCE_BEAT_MS = 15_000;
-export const PRESENCE_TTL_MS = 60_000;
+export const PRESENCE_BEAT_MS = 5_000;
+export const PRESENCE_TTL_MS = 15_000;
 
 /** Guard rail: a peer cannot legitimately drag more cards than this at once. */
 export const MAX_DRAG_NODE_IDS = 500;

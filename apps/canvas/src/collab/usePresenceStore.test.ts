@@ -68,4 +68,13 @@ describe("usePresenceStore.bind", () => {
     // A leaked interval would keep publishing into a store nobody reads.
     expect(beatOf()).toBe(beats);
   });
+
+  it("should delete the local peer from presence store on window pagehide/beforeunload", () => {
+    const store = new EphemeralStore(60_000);
+    usePresenceStore.getState().bind(store, "tab-unload");
+    expect(store.get("tab-unload")).toBeDefined();
+
+    window.dispatchEvent(new Event("beforeunload"));
+    expect(store.get("tab-unload")).toBeUndefined();
+  });
 });

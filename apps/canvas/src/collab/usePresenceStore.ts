@@ -189,7 +189,27 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
         heartbeat += 1;
         publish(AWARENESS_FIELDS.presenceBeat, heartbeat);
       }, PRESENCE_BEAT_MS);
+      const handleUnload = () => {
+        const { presenceStore: s, peerId: p } = get();
+        if (s && p) {
+          try {
+            s.delete(p);
+          } catch {
+            // Ignore errors during page unload
+          }
+        }
+      };
+
+      if (typeof window !== "undefined") {
+        window.addEventListener("beforeunload", handleUnload);
+        window.addEventListener("pagehide", handleUnload);
+      }
+
       stopBinding = () => {
+        if (typeof window !== "undefined") {
+          window.removeEventListener("beforeunload", handleUnload);
+          window.removeEventListener("pagehide", handleUnload);
+        }
         unsubscribe();
         window.clearInterval(timer);
         window.clearInterval(beatTimer);

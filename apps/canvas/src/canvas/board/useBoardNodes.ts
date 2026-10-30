@@ -2,7 +2,7 @@ import type { Card } from "@suite/graph";
 import { sectionMovePlan } from "@suite/graph";
 import type { Edge, Node, NodeChange } from "@xyflow/react";
 import { useEdgesState, useNodesState } from "@xyflow/react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { cardMeta } from "../../cards/cardMeta";
 import { resolveCardType } from "../../cards/cardTypes";
 import { isPortalCard } from "../../cards/portal";
@@ -314,6 +314,31 @@ export function useBoardNodes(
   useEffect(() => {
     applyBoardNodes();
   }, [applyBoardNodes]);
+
+  // When placement coordinates change from CRDT transactions (e.g. remote layout
+  // plans or drag commits), ensure that any in-flight smoothing positions and
+  // reflow preview displacements are cleared for those cards so the authoritative
+  // CRDT position takes over immediately without waiting for awareness cleanup.
+  const lastPlacements = useRef(boardPlacements);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: gesture refs are stable
+  useEffect(() => {
+    let cleared = false;
+    for (const [cardId, placement] of boardPlacements) {
+      const prev = lastPlacements.current.get(cardId);
+      if (prev && (prev.x !== placement.x || prev.y !== placement.y)) {
+        if (smoothPositions.current.has(cardId)) {
+          smoothPositions.current.delete(cardId);
+          cleared = true;
+        }
+        if (refs.previewDisplacedCards.current.has(cardId)) {
+          refs.previewDisplacedCards.current.delete(cardId);
+          cleared = true;
+        }
+      }
+    }
+    lastPlacements.current = boardPlacements;
+    if (cleared) applyBoardNodes();
+  }, [boardPlacements, applyBoardNodes]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: gesture refs are stable, so listing them would only add noise.
   useEffect(() => {

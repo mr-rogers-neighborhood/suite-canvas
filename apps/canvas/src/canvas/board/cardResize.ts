@@ -20,6 +20,7 @@ export function commitCardResize(
   boardId: string,
   cardId: string,
   geometry: CardResizeGeometry,
+  cardSizes?: ReadonlyMap<string, { readonly width: number; readonly height: number }>,
 ): void {
   const plan = proposeReflowPlan({
     boardId,
@@ -28,6 +29,7 @@ export function commitCardResize(
     targetSize: { width: geometry.width, height: geometry.height },
     placements: workspace.listPlacements(),
     sections: workspace.listSections(boardId),
+    cardSizes,
   });
 
   if (plan) {

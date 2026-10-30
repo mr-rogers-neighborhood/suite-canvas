@@ -1,4 +1,4 @@
-import { type NodeProps, NodeResizer, type ResizeParams } from "@xyflow/react";
+import { type NodeProps, NodeResizer, type ResizeParams, useReactFlow } from "@xyflow/react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { WhiteboardCardFace } from "../cards/WhiteboardCardFace";
 import { readSketchDisplay, SKETCH_TYPE_NAME } from "../cards/whiteboard";
@@ -42,21 +42,37 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
   const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null);
   const pointerOrigin = useRef<{ x: number; y: number } | null>(null);
 
+  const { getNodes } = useReactFlow();
+
   const handleResize = useCallback((_event: unknown, params: ResizeParams) => {
     setLiveSize({ width: params.width, height: params.height });
   }, []);
 
   const handleResizeEnd = useCallback(
     (_event: unknown, params: ResizeParams) => {
-      commitCardResize(workspace, placement.boardId, card.id, {
-        x: params.x,
-        y: params.y,
-        width: params.width,
-        height: params.height,
-      });
+      const collapsedCards = useUiStore.getState().collapsedCards;
+      const cardSizes = new Map<string, { width: number; height: number }>();
+      for (const n of getNodes()) {
+        const isCollapsed = collapsedCards[n.id] === true;
+        const w = n.measured?.width ?? n.width;
+        const h = isCollapsed ? 40 : (n.measured?.height ?? n.height);
+        if (w !== undefined && h !== undefined) cardSizes.set(n.id, { width: w, height: h });
+      }
+      commitCardResize(
+        workspace,
+        placement.boardId,
+        card.id,
+        {
+          x: params.x,
+          y: params.y,
+          width: params.width,
+          height: params.height,
+        },
+        cardSizes,
+      );
       setLiveSize(null);
     },
-    [workspace, placement.boardId, card.id],
+    [workspace, placement.boardId, card.id, getNodes],
   );
 
   // The same defaults the link geometry uses, so a sketch without a stored size

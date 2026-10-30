@@ -5,7 +5,13 @@ import {
   isTutorialType,
   type Placement,
 } from "@suite/graph";
-import { type NodeProps, NodeResizer, type NodeTypes, type ResizeParams } from "@xyflow/react";
+import {
+  type NodeProps,
+  NodeResizer,
+  type NodeTypes,
+  type ResizeParams,
+  useReactFlow,
+} from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CardMeta } from "../cards/cardMeta";
 import { NodeCard } from "../cards/NodeCard";
@@ -155,18 +161,34 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     [id, setResizing],
   );
 
+  const { getNodes } = useReactFlow();
+
   const handleResizeEnd = useCallback(
     (_event: unknown, params: ResizeParams) => {
-      commitCardResize(workspace, placement.boardId, id, {
-        x: params.x,
-        y: params.y,
-        width: params.width,
-        height: params.height,
-      });
+      const collapsedCards = useUiStore.getState().collapsedCards;
+      const cardSizes = new Map<string, { width: number; height: number }>();
+      for (const n of getNodes()) {
+        const isCollapsed = collapsedCards[n.id] === true;
+        const w = n.measured?.width ?? n.width;
+        const h = isCollapsed ? COLLAPSED_CARD_HEIGHT : (n.measured?.height ?? n.height);
+        if (w !== undefined && h !== undefined) cardSizes.set(n.id, { width: w, height: h });
+      }
+      commitCardResize(
+        workspace,
+        placement.boardId,
+        id,
+        {
+          x: params.x,
+          y: params.y,
+          width: params.width,
+          height: params.height,
+        },
+        cardSizes,
+      );
       setResizing(null);
       setLiveSize(null);
     },
-    [workspace, placement.boardId, id, setResizing],
+    [workspace, placement.boardId, id, setResizing, getNodes],
   );
 
   const panelOwnsCard = editingNodeId === id && editingSurface === "panel";

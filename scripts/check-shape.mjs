@@ -17,7 +17,13 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SOURCE_ROOTS = ["apps/canvas/src", "apps/collab-server/src", "services", "packages"];
+const SOURCE_ROOTS = [
+  "apps/canvas/src",
+  "apps/collab-server/src",
+  "apps/control-plane/src",
+  "services",
+  "packages",
+];
 const SKIP_DIRS = new Set([
   "node_modules",
   "dist",

@@ -23,6 +23,7 @@ Read [docs/README.md](docs/README.md) for the four documentation sections, and
 | --- | --- |
 | `apps/canvas` | The canvas app: launcher, boards, cards, editor, library, panels, collab provider, Zustand store |
 | `apps/collab-server` | Loro WebSocket relay, six SQLite stores, projection worker, attachments |
+| `apps/control-plane` | Control plane: Postgres, accounts, operator admin, billing and feedback modules |
 | `apps/docs` | The documentation site |
 | `packages/graph` | `@suite/graph`: schema, types, typed Loro layer, workspace file and portable export |
 | `services/auth` | Accounts, organizations, invitations, licensing. Built and tested, not mounted |

@@ -1,12 +1,13 @@
-import { PORTAL_BOARD_FIELD_ID } from "@suite/graph";
 import { ReactFlowProvider, useOnViewportChange, useReactFlow } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { shellPaletteItems } from "./app/palette";
 import { StaleBuildNotice } from "./app/StaleBuildNotice";
 import { useBoardDerivations } from "./app/useBoardDerivations";
+import { useBoardLibraryActions } from "./app/useBoardLibraryActions";
 import { useBoardPaletteActions } from "./app/useBoardPaletteActions";
 import { useCreateCard } from "./app/useCreateCard";
 import { useLeaveTransition } from "./app/useLeaveTransition";
+import { useLibraryItems } from "./app/useLibraryItems";
 import { useStaleBuild } from "./app/useStaleBuild";
 import { useWorkspaceBoot } from "./app/useWorkspaceBoot";
 import { useWorkspaceSyncFacts } from "./app/useWorkspaceSyncFacts";
@@ -32,9 +33,6 @@ import { countRender } from "./dev/perf";
 import { useBootGate } from "./hooks/useBootGate";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "./hooks/useLibrarySearch";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
-import type { LibraryItem } from "./library/LibraryDrawer";
-import { toBoardItems } from "./library/libraryBoards";
-import { createStarterBoard, templateCopyName } from "./library/TemplateGallery";
 import { isStandalone } from "./session/mode";
 import { getSession, type ShareSession } from "./session/session";
 import { useCanvasStore } from "./store/useCanvasStore";
@@ -609,151 +607,34 @@ function WorkspaceShell({
   const { activeBoardName, boardPaint, boardPainted, sectionOrder, sectionIdsFor } =
     useBoardDerivations({ snapshot, activeBoardId });
 
-  const toItem = useCallback(
-    (cardId: string): LibraryItem => {
-      const card = workspace.getCard(cardId);
-      return {
-        id: cardId,
-        title: workspace.displayTitle(cardId),
-        boards: workspace.listCardPlacements(cardId).flatMap((placement) => {
-          const board = workspace.getBoard(placement.boardId);
-          return board ? [{ id: board.id, name: board.name }] : [];
-        }),
-        typeIds: card?.typeIds ?? [],
-        tagIds: card?.tags ?? [],
-        sectionIds: sectionIdsFor(cardId),
-        properties: card?.properties ?? {},
-      };
-    },
-    [workspace, sectionIdsFor],
-  );
+  const { unplaced, allCards, trashed, boardItems, inboxItems, cardItems, trashItems } =
+    useLibraryItems({
+      snapshot,
+      workspace,
+      sectionIdsFor,
+      libraryOpen,
+    });
 
-  const cards = snapshot.cards;
-  const inbox = cards.filter((card) => !card.deletedAt).map((card) => card.id);
-  const unplaced = inbox.filter((id) => workspace.listCardPlacements(id).length === 0);
-  const trashed = workspace.listTrashedCards().map((card) => card.id);
-  const allCards = inbox.map((id) => id);
-
-  // Facet filtering lives in the drawer: it owns the section facet, and every
-  // facet needs the counts computed against the others.
-  const boardItems = useMemo(() => toBoardItems(snapshot), [snapshot]);
-  // A board is a row in the Cards tab and never in the inbox: it has no placement, so
-  // "loose" is not a state one can be in, and a list of both read as a list of neither.
-  const inboxItems = unplaced.map(toItem);
-  const cardItems = [...allCards.map(toItem), ...boardItems];
-  const trashItems = trashed.map(toItem);
-
-  /**
-   * Locate pans to the object on the board in front of the reader. A card that
-   * is not placed here has nowhere to pan to, so the drawer is told so instead
-   * of the camera moving somewhere unrelated.
-   */
-  const locateCard = useCallback(
-    (cardId: string): boolean => {
-      if (!activeBoardId) return false;
-      const card = workspace.getCard(cardId);
-      if (!card || card.deletedAt) return false;
-      const onBoard = snapshot.placements.some(
-        (placement) => placement.boardId === activeBoardId && placement.cardId === cardId,
-      );
-      if (!onBoard) return false;
-      focusCard(cardId, activeBoardId);
-      return true;
-    },
-    [activeBoardId, snapshot.placements, workspace, focusCard],
-  );
-
-  /** A portal on this board is the nearest thing a board has to a position. */
-  const locateBoard = useCallback(
-    (boardId: string): boolean => {
-      if (activeBoardId && activeBoardId !== boardId) {
-        const portal = snapshot.placements
-          .filter((placement) => placement.boardId === activeBoardId)
-          .map((placement) => workspace.getCard(placement.cardId))
-          .find(
-            (card) =>
-              card !== undefined &&
-              !card.deletedAt &&
-              card.properties[PORTAL_BOARD_FIELD_ID] === boardId,
-          );
-        if (portal) {
-          focusCard(portal.id, activeBoardId);
-          return true;
-        }
-      }
-      // Without a portal here, opening the board is the only way to show it.
-      activateBoard(boardId);
-      return true;
-    },
-    [activeBoardId, snapshot.placements, workspace, focusCard, activateBoard],
-  );
-
-  /** Unplacing is per board: a card that also lives elsewhere stays there. */
-  const unplaceBoardCards = useCallback(
-    (boardId: string) => {
-      if (!canEditLayout) return;
-      for (const card of workspace.listBoardCards(boardId)) {
-        workspace.unplaceCard(boardId, card.id);
-      }
-    },
-    [canEditLayout, workspace],
-  );
-
-  /**
-   * Delete asks once, in the library. If the board on screen goes, the shell
-   * resolves the next one the same way it resolves a boot.
-   */
-  const deleteBoard = useCallback(
-    (boardId: string, cards: "keep" | "trash") => {
-      if (!canManageBoards) return;
-      workspace.deleteBoard(boardId, { cards });
-      if (useUiStore.getState().activeBoardId === boardId) setActiveBoardId(null);
-    },
-    [canManageBoards, workspace, setActiveBoardId],
-  );
-
-  /**
-   * Using a template *duplicates* it: sections, cards, placements and internal
-   * links land as a new board in one undoable batch, and the template itself is
-   * never written. The drawer closes because the new board is now in front.
-   */
-  const useBoardTemplate = useCallback(
-    (templateId: string) => {
-      if (!canCreateBoards) return;
-      const source = workspace.getBoard(templateId);
-      if (!source) return;
-      const existing = workspace.listBoards().map((board) => board.name);
-      const board = workspace.duplicateBoard(templateId, {
-        name: templateCopyName(source.name, existing),
-      });
-      if (!board) return;
-      activateBoard(board.id);
-      setLibraryOpen(false);
-    },
-    [canCreateBoards, workspace, activateBoard, setLibraryOpen],
-  );
-
-  /** A built-in starter is generated on pick, never on boot. */
-  const useStarter = useCallback(
-    (starterId: string) => {
-      if (!canCreateBoards) return;
-      const existing = workspace.listBoards().map((board) => board.name);
-      const boardId = createStarterBoard(workspace, starterId, existing);
-      if (!boardId) return;
-      activateBoard(boardId);
-      setLibraryOpen(false);
-    },
-    [canCreateBoards, workspace, activateBoard, setLibraryOpen],
-  );
-
-  /** The flag is the whole feature: it never changes what the board holds. */
-  const setBoardTemplate = useCallback(
-    (boardId: string, template: boolean) => {
-      if (!canManageBoards) return;
-      workspace.setBoardTemplate(boardId, template);
-    },
-    [canManageBoards, workspace],
-  );
+  const {
+    locateCard,
+    locateBoard,
+    unplaceBoardCards,
+    deleteBoard,
+    useBoardTemplate,
+    useStarter,
+    setBoardTemplate,
+  } = useBoardLibraryActions({
+    workspace,
+    snapshot,
+    activeBoardId,
+    canEditLayout,
+    canManageBoards,
+    canCreateBoards,
+    focusCard,
+    activateBoard,
+    setActiveBoardId,
+    setLibraryOpen,
+  });
 
   const boardEmpty = !!activeBoardId && workspace.listBoardCards(activeBoardId).length === 0;
   // A projection can arrive empty when the owner's cards left the board — the

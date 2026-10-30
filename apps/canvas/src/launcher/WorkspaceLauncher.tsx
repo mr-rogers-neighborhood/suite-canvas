@@ -5,7 +5,6 @@ import { useAccountStore } from "../auth/useAccountStore";
 import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
 import { ToastLayer } from "../feedback/ToastLayer";
 import { toast } from "../feedback/toast";
-import { syncLabelOf, syncStateOf } from "../session/accountWorkspaces";
 import {
   DEFAULT_WORKSPACE_NAME,
   forgetWorkspaceName,
@@ -30,8 +29,8 @@ import {
   workspaceUrl,
 } from "../session/workspaceTransfer";
 import { AlphaNotice } from "./AlphaNotice";
-import { ImportMenu } from "./ImportMenu";
 import { RepositoryButton, RepositoryFooter, SavedLocallyPrompt } from "./LauncherChrome";
+import { type RecentEntry, RecentWorkspaceRow } from "./RecentWorkspaceRow";
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
   loadStarterTemplates,
@@ -39,22 +38,9 @@ import {
   starterTemplateById,
 } from "./starterTemplates";
 import { useAccountWorkspaces } from "./useAccountWorkspaces";
+import { VaultImportDialog } from "./VaultImportDialog";
 import { importVaultIntoWorkspace, vaultFilesFromPicker, vaultName } from "./vaultImport";
 import { readVaultZip } from "./vaultZip";
-
-/** A recents row with the workspace name resolved for display. */
-interface RecentEntry extends RecentWorkspace {
-  name: string;
-}
-
-function openedAt(timestamp: number): string {
-  const date = new Date(timestamp);
-  const today = new Date();
-  if (date.toDateString() === today.toDateString()) {
-    return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  }
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
 
 /** The workspace name leads the row; the last board name is only a fallback. */
 function labelRecent(
@@ -462,41 +448,16 @@ export function WorkspaceLauncher() {
                 event.target.value = "";
               }}
             />
-            {/* A folder picker for the same import a drop performs, for a machine with
-                no drag: `webkitdirectory` has no JSX spelling, so the ref sets it. */}
-            <input
-              ref={(element) => {
+            <VaultImportDialog
+              vaultInputRef={(element) => {
                 vaultInput.current = element;
                 if (element) element.webkitdirectory = true;
               }}
-              type="file"
-              hidden
-              multiple
-              data-testid="launcher-vault-input"
-              onChange={(event) => {
-                const target = vaultTarget;
-                const files = event.target.files;
-                event.target.value = "";
-                setVaultTarget(null);
-                if (target) importVaultFolder(target, files);
-              }}
-            />
-            {/* A tablet's Files app can hand over one file but cannot unpack a folder,
-                so a zipped vault is the shape some devices offer. It is the same import
-                past a reader, not a second importer. */}
-            <input
-              ref={zipInput}
-              type="file"
-              accept=".zip,application/zip"
-              hidden
-              data-testid="launcher-vault-zip-input"
-              onChange={(event) => {
-                const target = vaultTarget;
-                const files = event.target.files;
-                event.target.value = "";
-                setVaultTarget(null);
-                if (target) importVaultZip(target, files);
-              }}
+              zipInputRef={zipInput}
+              vaultTarget={vaultTarget}
+              onClearTarget={() => setVaultTarget(null)}
+              onImportFolder={importVaultFolder}
+              onImportZip={importVaultZip}
             />
             {/* Identity lives here as well as in the title bar: this is the first
                 screen someone sees, and an account is what keeps a workspace
@@ -672,184 +633,70 @@ export function WorkspaceLauncher() {
                 </p>
               ) : (
                 <ul className="mt-2 divide-y divide-[var(--hairline)]">
-                  {shown.map((entry) => {
-                    const renaming = renamingId === entry.id;
-                    const dropping = dropTargetId === entry.id;
-                    // The board name repeats the workspace name until someone names
-                    // the workspace, so it only earns space when it differs.
-                    const board = entry.title?.trim();
-                    const detail = [board && board !== entry.name ? board : null, entry.boardId]
-                      .filter((part): part is string => Boolean(part))
-                      .join(" · ");
-                    return (
-                      <li
-                        key={entry.id}
-                        data-testid={`launcher-recent-${entry.id}`}
-                        data-drop-target={dropping ? "vault" : undefined}
-                        className={`group flex items-center gap-3 py-2.5 ${
-                          dropping
-                            ? "rounded-lg bg-black/5 ring-1 ring-blue-400 dark:bg-white/10"
-                            : ""
-                        }`}
-                        onDragOver={(event) => {
-                          // Claiming the drop is what makes this row a target.
-                          event.preventDefault();
-                          setDropTargetId(entry.id);
-                        }}
-                        onDragLeave={() =>
-                          setDropTargetId((current) => (current === entry.id ? null : current))
-                        }
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          setDropTargetId(null);
-                          void importVault(entry, event.dataTransfer);
-                        }}
-                      >
-                        {renaming ? (
-                          <div className="min-w-0 flex-1">
-                            <input
-                              // biome-ignore lint/a11y/noAutofocus: inline rename is an explicit gesture
-                              autoFocus
-                              data-testid={`launcher-rename-input-${entry.id}`}
-                              aria-label={`Rename ${entry.name}`}
-                              aria-invalid={nameError ? true : undefined}
-                              value={draft}
-                              className="w-full rounded bg-transparent px-1 text-[13px] font-medium leading-5 outline-none ring-1 ring-blue-400"
-                              onChange={(event) => {
-                                setDraft(event.target.value);
-                                setNameError(null);
-                              }}
-                              onBlur={() => void commitRename(entry)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") {
-                                  event.preventDefault();
-                                  event.currentTarget.blur();
-                                }
-                                if (event.key === "Escape") {
-                                  renameCancelled.current = true;
-                                  setRenamingId(null);
-                                  setNameError(null);
-                                }
-                              }}
-                            />
-                            <span
-                              data-testid={`launcher-rename-hint-${entry.id}`}
-                              role={nameError ? "alert" : undefined}
-                              className={`block truncate text-[11px] leading-4 ${
-                                nameError
-                                  ? "text-red-600 dark:text-red-300"
-                                  : "text-[var(--ink-muted)]"
-                              }`}
-                            >
-                              {nameError ?? "Enter to save · Escape to cancel"}
-                            </span>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className="min-w-0 flex-1 text-left"
-                            onClick={() => openWorkspace(entry.id, entry.boardId)}
-                          >
-                            <span
-                              data-testid={`launcher-name-${entry.id}`}
-                              className="block truncate text-[13px] font-medium"
-                            >
-                              {entry.name}
-                            </span>
-                            <span className="flex items-baseline gap-2 text-[11px] text-[var(--ink-muted)]">
-                              <span
-                                data-testid={`launcher-detail-${entry.id}`}
-                                title={detail}
-                                className="min-w-0 truncate"
-                              >
-                                {detail}
-                              </span>
-                              <span className="shrink-0">{openedAt(entry.lastOpenedAt)}</span>
-                              {syncLabelOf(syncStateOf(entry.id, account)) === null ? null : (
-                                <span
-                                  data-testid={`launcher-sync-${entry.id}`}
-                                  data-sync={syncStateOf(entry.id, account)}
-                                  className="shrink-0 rounded-full border border-[var(--hairline)] px-1.5 text-[10px] leading-4"
-                                >
-                                  {syncLabelOf(syncStateOf(entry.id, account))}
-                                </span>
-                              )}
-                            </span>
-                          </button>
-                        )}
-                        {renaming ? null : (
-                          <button
-                            type="button"
-                            data-testid={`launcher-rename-${entry.id}`}
-                            aria-label={`Rename ${entry.name}`}
-                            title="Rename workspace"
-                            className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
-                            onClick={() => startRename(entry)}
-                            disabled={busy}
-                          >
-                            Rename
-                          </button>
-                        )}
-                        <ImportMenu
-                          workspaceId={entry.id}
-                          workspaceName={entry.name}
-                          open={importMenu === entry.id}
-                          onOpen={() =>
-                            setImportMenu((open) => (open === entry.id ? null : entry.id))
-                          }
-                          onClose={() => setImportMenu(null)}
-                          onImportFolder={() => {
-                            setVaultTarget(entry);
-                            vaultInput.current?.click();
-                          }}
-                          onImportZip={() => {
-                            setVaultTarget(entry);
-                            zipInput.current?.click();
-                          }}
-                          onOpenBackup={() => fileInput.current?.click()}
-                          disabled={busy}
-                        />
-                        <button
-                          type="button"
-                          data-testid={`launcher-export-${entry.id}`}
-                          className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
-                          onClick={() => void exportRecent(entry)}
-                          disabled={busy}
-                        >
-                          Export
-                        </button>
-                        {import.meta.env.VITE_SUITE_MODE === "standalone" ? (
-                          <button
-                            type="button"
-                            data-testid={`launcher-delete-${entry.id}`}
-                            aria-label="Delete this workspace…"
-                            title="Delete this workspace…"
-                            className="rounded-md px-2 py-1 text-[11px] text-red-600 opacity-0 transition-opacity hover:bg-red-50 group-hover:opacity-100 focus:opacity-100 dark:text-red-300 dark:hover:bg-red-500/15"
-                            onClick={() => setDeleteTarget(entry)}
-                            disabled={busy}
-                          >
-                            Delete
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          aria-label="Remove from this list (does not delete the workspace)"
-                          title="Remove from this list (does not delete the workspace)"
-                          className="rounded-md px-2 py-1 text-[13px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
-                          onClick={() => {
-                            forgetWorkspace(entry.id);
-                            setRecents(
-                              readRecentWorkspaces().map((row) =>
-                                labelRecent(row, readWorkspaceNames()),
-                              ),
-                            );
-                          }}
-                        >
-                          ×
-                        </button>
-                      </li>
-                    );
-                  })}
+                  {shown.map((entry) => (
+                    <RecentWorkspaceRow
+                      key={entry.id}
+                      entry={entry}
+                      renaming={renamingId === entry.id}
+                      draft={draft}
+                      nameError={nameError}
+                      dropping={dropTargetId === entry.id}
+                      account={account}
+                      busy={busy}
+                      importMenuOpen={importMenu === entry.id}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        setDropTargetId(entry.id);
+                      }}
+                      onDragLeave={() =>
+                        setDropTargetId((current) => (current === entry.id ? null : current))
+                      }
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        setDropTargetId(null);
+                        void importVault(entry, event.dataTransfer);
+                      }}
+                      onDraftChange={(value) => {
+                        setDraft(value);
+                        setNameError(null);
+                      }}
+                      onCommitRename={(target) => void commitRename(target)}
+                      onCancelRename={() => {
+                        renameCancelled.current = true;
+                        setRenamingId(null);
+                        setNameError(null);
+                      }}
+                      onOpenWorkspace={(id, boardId) => openWorkspace(id, boardId)}
+                      onStartRename={(target) => startRename(target)}
+                      onToggleImportMenu={() =>
+                        setImportMenu((open) => (open === entry.id ? null : entry.id))
+                      }
+                      onCloseImportMenu={() => setImportMenu(null)}
+                      onImportFolder={() => {
+                        setVaultTarget(entry);
+                        vaultInput.current?.click();
+                      }}
+                      onImportZip={() => {
+                        setVaultTarget(entry);
+                        zipInput.current?.click();
+                      }}
+                      onOpenBackup={() => fileInput.current?.click()}
+                      onExport={(target) => void exportRecent(target)}
+                      onDeleteTarget={
+                        import.meta.env.VITE_SUITE_MODE === "standalone"
+                          ? (target) => setDeleteTarget(target)
+                          : undefined
+                      }
+                      onForget={(target) => {
+                        forgetWorkspace(target.id);
+                        setRecents(
+                          readRecentWorkspaces().map((row) =>
+                            labelRecent(row, readWorkspaceNames()),
+                          ),
+                        );
+                      }}
+                    />
+                  ))}
                 </ul>
               )}
             </>

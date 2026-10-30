@@ -36,8 +36,8 @@ offline, syncs when you want it, and exports to a file you own.
   tables and images.
 - **Works offline.** Edits land in a local database and a reload resumes where you were, with or
   without a network.
-- **Share without an account, or collaborate with one.** A share link grants one board, one card or a
-  whole workspace, as editor or viewer. Signing in adds live sync and presence.
+- **Share and collaborate** A share link grants one board, one card or a
+  whole workspace, as editor or viewer.
 - **Nothing is trapped.** Export a workspace as a single `.suite` file, and keep the recovery key
   beside it.
 - **Yours to run.** The whole thing is one compose file, a relay and a static app, with no vendor in

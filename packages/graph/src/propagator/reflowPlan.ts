@@ -96,8 +96,8 @@ function boxOf(
     cardId: placement.cardId,
     x: placement.x,
     y: placement.y,
-    width: placement.width ?? measured?.width ?? DEFAULT_REFLOW_CARD_WIDTH,
-    height: placement.height ?? measured?.height ?? DEFAULT_REFLOW_CARD_HEIGHT,
+    width: measured?.width ?? placement.width ?? DEFAULT_REFLOW_CARD_WIDTH,
+    height: measured?.height ?? placement.height ?? DEFAULT_REFLOW_CARD_HEIGHT,
   };
 }
 

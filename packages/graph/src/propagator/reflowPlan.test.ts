@@ -724,4 +724,36 @@ describe("proposeReflowPlan Integration", () => {
     // Preserves measured width in layout plan
     expect(pushed?.width).toBe(300);
   });
+
+  it("respects rolled-up / collapsed card height over stored placement height", () => {
+    const boardId = "board-1";
+    // Card with stored placement height: 300 (unfolded height)
+    const cardRolledUp: Placement = {
+      cardId: "card-rolled",
+      boardId,
+      x: 100,
+      y: 100,
+      z: 1,
+      createdAt: 1,
+      width: 200,
+      height: 300,
+    };
+
+    // Measured size reflects rolled-up state (38px height)
+    const cardSizes = new Map([["card-rolled", { width: 200, height: 38 }]]);
+
+    // Card placed at y: 160 (below the 38px rolled-up card, but would collide if 300px tall)
+    const plan = proposeReflowPlan({
+      boardId,
+      targetCardId: "card-new",
+      targetPosition: { x: 100, y: 160 },
+      targetSize: { width: 200, height: 100 },
+      placements: [cardRolledUp],
+      cardSizes,
+      gap: 20,
+    });
+
+    // 100 + 38 + 20 = 158 <= 160 -> No collision! Card does not need displacement!
+    expect(plan).toBeNull();
+  });
 });

@@ -20,6 +20,7 @@ import { ModeControl } from "../links/ModeControl";
 import { SectionLinkLayer } from "../links/SectionLinkLayer";
 import { LocalDragEase, prefersReducedMotion } from "../localEasing";
 import { nodeTypes } from "../NoteNode";
+import { COLLAPSED_CARD_HEIGHT } from "../nodeData";
 import { PeerLibraryDragLayer } from "../PeerLibraryDragLayer";
 import { PortalNode } from "../PortalNode";
 import { PurposeControl } from "../PurposeControl";
@@ -244,10 +245,13 @@ export function BoardSurface({
 
   const sizeOf = useCallback(
     (id: string) => {
+      const isCollapsed = useUiStore.getState().collapsedCards[id] === true;
       const node = ui.store.getState().nodeLookup.get(id);
       return {
         width: node?.measured?.width ?? node?.width ?? DEFAULT_CARD_WIDTH,
-        height: node?.measured?.height ?? node?.height ?? DEFAULT_CARD_HEIGHT,
+        height: isCollapsed
+          ? COLLAPSED_CARD_HEIGHT
+          : (node?.measured?.height ?? node?.height ?? DEFAULT_CARD_HEIGHT),
       };
     },
     [ui.store],
@@ -255,13 +259,13 @@ export function BoardSurface({
 
   const getCardSizes = useCallback(() => {
     const lookup = ui.store.getState().nodeLookup;
+    const collapsedCards = useUiStore.getState().collapsedCards;
     const sizes = new Map<string, { width: number; height: number }>();
     for (const [id, node] of lookup) {
+      const isCollapsed = collapsedCards[id] === true;
       const w = node.measured?.width ?? node.width;
-      const h = node.measured?.height ?? node.height;
-      if (w !== undefined && h !== undefined) {
-        sizes.set(id, { width: w, height: h });
-      }
+      const h = isCollapsed ? COLLAPSED_CARD_HEIGHT : (node.measured?.height ?? node.height);
+      if (w !== undefined && h !== undefined) sizes.set(id, { width: w, height: h });
     }
     return sizes;
   }, [ui.store]);
@@ -276,9 +280,7 @@ export function BoardSurface({
       if (plan) {
         const nextDisplaced = new Map<string, { x: number; y: number }>();
         for (const p of plan.placements) {
-          if (p.cardId !== activeCardId) {
-            nextDisplaced.set(p.cardId, { x: p.x, y: p.y });
-          }
+          if (p.cardId !== activeCardId) nextDisplaced.set(p.cardId, { x: p.x, y: p.y });
         }
 
         if (!samePointMap(previewDisplacedCards.current, nextDisplaced)) {

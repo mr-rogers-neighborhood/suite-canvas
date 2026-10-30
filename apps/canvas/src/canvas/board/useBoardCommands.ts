@@ -17,6 +17,7 @@ import {
 } from "../interactions/arrangeCommand";
 import { dragMoves, dragRects, layerActions, orderedSelection } from "../interactions/multiSelect";
 import { childrenFromLinks, planRadial } from "../interactions/radialLayout";
+import { COLLAPSED_CARD_HEIGHT } from "../nodeData";
 import { portalSizeForBounds } from "../PortalCard";
 import { boardBounds } from "../portalMiniature";
 import { sectionsExpandPlan } from "../sections/sectionLayout";
@@ -114,15 +115,22 @@ export function useBoardCommands(
       if (options?.allowReflow && dragged.length === 1) {
         const target = dragged[0];
         if (target) {
+          const isCollapsed = useUiStore.getState().collapsedCards[target.id] === true;
           const targetSize = {
             width: target.measured?.width ?? target.width ?? DEFAULT_REFLOW_CARD_WIDTH,
-            height: target.measured?.height ?? target.height ?? DEFAULT_REFLOW_CARD_HEIGHT,
+            height: isCollapsed
+              ? COLLAPSED_CARD_HEIGHT
+              : (target.measured?.height ?? target.height ?? DEFAULT_REFLOW_CARD_HEIGHT),
           };
           const lookup = store.getState().nodeLookup;
+          const collapsedCards = useUiStore.getState().collapsedCards;
           const cardSizes = new Map<string, { width: number; height: number }>();
           for (const [id, node] of lookup) {
+            const nodeCollapsed = collapsedCards[id] === true;
             const w = node.measured?.width ?? node.width;
-            const h = node.measured?.height ?? node.height;
+            const h = nodeCollapsed
+              ? COLLAPSED_CARD_HEIGHT
+              : (node.measured?.height ?? node.height);
             if (w !== undefined && h !== undefined) {
               cardSizes.set(id, { width: w, height: h });
             }

@@ -1,4 +1,9 @@
-import type { LayerAction } from "@suite/graph";
+import {
+  DEFAULT_REFLOW_CARD_HEIGHT,
+  DEFAULT_REFLOW_CARD_WIDTH,
+  type LayerAction,
+  proposeReflowPlan,
+} from "@suite/graph";
 import type { Node } from "@xyflow/react";
 import { useCallback } from "react";
 import { ensureWhiteboardType } from "../../cards/whiteboard";
@@ -101,9 +106,33 @@ export function useBoardCommands(
   );
 
   const commitDrop = useCallback(
-    (dragged: Node[]) => {
+    (dragged: Node[], options?: { allowReflow?: boolean }) => {
       if (!canEditLayout || !activeBoardId || dragged.length === 0) return;
       const moves = dragMoves(dragged);
+
+      // Single-card drag drops check for propagator-based collision reflow and section breathing
+      if (options?.allowReflow && dragged.length === 1) {
+        const target = dragged[0];
+        if (target) {
+          const targetSize = {
+            width: target.measured?.width ?? target.width ?? DEFAULT_REFLOW_CARD_WIDTH,
+            height: target.measured?.height ?? target.height ?? DEFAULT_REFLOW_CARD_HEIGHT,
+          };
+          const reflowPlan = proposeReflowPlan({
+            boardId: activeBoardId,
+            targetCardId: target.id,
+            targetPosition: target.position,
+            targetSize,
+            placements: boardPlacementList,
+            sections: boardSections,
+          });
+          if (reflowPlan) {
+            workspace.applyLayoutPlan(reflowPlan);
+            return;
+          }
+        }
+      }
+
       const plan = sectionsExpandPlan(boardSections, dragRects(dragged));
       if (plan.length > 0) {
         workspace.moveSectionsBatch({
@@ -116,7 +145,7 @@ export function useBoardCommands(
       // silent when the whole gesture ended where it started.
       workspace.movePlacements(activeBoardId, moves);
     },
-    [activeBoardId, boardSections, workspace, canEditLayout],
+    [activeBoardId, boardPlacementList, boardSections, workspace, canEditLayout],
   );
 
   /**

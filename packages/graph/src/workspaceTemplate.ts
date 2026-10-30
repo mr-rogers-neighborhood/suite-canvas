@@ -349,6 +349,90 @@ export const STARTER_TEMPLATES: readonly WorkspaceTemplate[] = workspaceTemplate
         },
       ],
     },
+    {
+      id: "propagators",
+      name: "Propagators",
+      description: "Elastic sections and cascading layout reflow",
+      version: 2,
+      boards: [
+        {
+          name: "Propagators",
+          sections: [
+            {
+              title: "Exhibit A: 2D Radial Parting",
+              color: "blue",
+              x: 40,
+              y: 40,
+              width: 960,
+              height: 720,
+              cards: [
+                {
+                  title: "North Card",
+                  type: "note",
+                  body: "Displaces upward (-Y) when a card is dropped into the center.",
+                  x: 356,
+                  y: 120,
+                },
+                {
+                  title: "South Card",
+                  type: "note",
+                  body: "Displaces downward (+Y) when a card is dropped into the center.",
+                  x: 356,
+                  y: 440,
+                },
+                {
+                  title: "West Card",
+                  type: "note",
+                  body: "Displaces leftward (-X) when a card is dropped into the center.",
+                  x: 140,
+                  y: 280,
+                },
+                {
+                  title: "East Card",
+                  type: "note",
+                  body: "Displaces rightward (+X) when a card is dropped into the center.",
+                  x: 572,
+                  y: 280,
+                },
+              ],
+            },
+            {
+              title: "Exhibit B: 4-Way Elastic Membrane",
+              color: "green",
+              x: 1040,
+              y: 40,
+              width: 440,
+              height: 400,
+              cards: [
+                {
+                  title: "The Piston",
+                  type: "concept",
+                  body: "Drag me past the top, left, right, or bottom border. The section breathes outward to maintain padding.",
+                  x: 1100,
+                  y: 140,
+                },
+              ],
+            },
+          ],
+          cards: [
+            {
+              title: "The Meteor",
+              type: "concept",
+              body: "Drag me into Exhibit A and drop me in the center crosshair to disperse the cluster in 4 directions.",
+              x: 1520,
+              y: 80,
+            },
+            {
+              title: "Stationary Observer",
+              type: "source",
+              body: "Non-colliding cards experience zero drift during adjacent layout shifts.",
+              x: 1520,
+              y: 320,
+            },
+          ],
+        },
+      ],
+    },
   ]);
 
 /** The template with this id, or undefined. */

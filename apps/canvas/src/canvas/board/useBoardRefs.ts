@@ -96,6 +96,9 @@ export function useBoardRefs(ui: ReturnType<typeof useBoardUi>, boardOrder: read
   const sectionLinkSelection = useRef<string[]>([]);
   const lastBoxSent = useRef(0);
 
+  /** Displaced card positions previewed during an active hover/drag reflow. */
+  const previewDisplacedCards = useRef<Map<string, Point>>(new Map());
+
   useEffect(() => {
     boardCardIds.current = [...boardOrder];
   }, [boardOrder]);
@@ -125,5 +128,6 @@ export function useBoardRefs(ui: ReturnType<typeof useBoardUi>, boardOrder: read
     boardRoot,
     sectionLinkSelection,
     lastBoxSent,
+    previewDisplacedCards,
   };
 }

@@ -848,6 +848,12 @@ body {
   cursor: grabbing;
 }
 
+/* Tactile live preview for cards displaced by spatial propagators during drag */
+.react-flow__node.is-reflow-displaced {
+  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
 /* Names attached to the element a peer is actively manipulating. */
 .peer-name-tag {
   display: inline-block;

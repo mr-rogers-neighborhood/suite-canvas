@@ -26,8 +26,12 @@ describe("BOARD_STARTERS", () => {
     }
   });
 
-  it("keeps the two shapes the product is used for", () => {
-    expect(BOARD_STARTERS.map((starter) => starter.id)).toEqual(["notebook", "discworld"]);
+  it("keeps the shapes the product is used for", () => {
+    expect(BOARD_STARTERS.map((starter) => starter.id)).toEqual([
+      "notebook",
+      "discworld",
+      "propagators",
+    ]);
   });
 });
 
@@ -110,7 +114,8 @@ describe("TemplateGallery", () => {
     expect(screen.getByTestId("library-template-t1")).toBeInTheDocument();
     expect(screen.getByTestId("library-templates-divider")).toBeInTheDocument();
     expect(screen.getByTestId("library-starter-notebook")).toBeInTheDocument();
-    expect(within(screen.getByTestId("library-templates")).getAllByRole("button")).toHaveLength(4);
+    expect(screen.getByTestId("library-starter-propagators")).toBeInTheDocument();
+    expect(within(screen.getByTestId("library-templates")).getAllByRole("button")).toHaveLength(5);
   });
 
   it("reports which starter was picked", () => {

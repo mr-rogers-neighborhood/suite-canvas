@@ -1,4 +1,4 @@
-import { sectionsAt } from "@suite/graph";
+import { proposeReflowPlan, type Rect, sectionsAt } from "@suite/graph";
 import type { Node, NodeChange, NodePositionChange } from "@xyflow/react";
 import {
   Background,
@@ -47,6 +47,37 @@ const canvasNodeTypes = { ...nodeTypes, portal: PortalNode, whiteboard: Whiteboa
 
 /** A position change React Flow has already committed, with its new position. */
 type CommittedMove = NodePositionChange & { position: { x: number; y: number } };
+
+function samePointMap(
+  a: Map<string, { x: number; y: number }>,
+  b: Map<string, { x: number; y: number }>,
+): boolean {
+  if (a.size !== b.size) return false;
+  for (const [id, pos] of a) {
+    const other = b.get(id);
+    if (!other || Math.abs(other.x - pos.x) > 0.5 || Math.abs(other.y - pos.y) > 0.5) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function sameRectMap(a: Map<string, Rect>, b: Map<string, Rect>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [id, rect] of a) {
+    const other = b.get(id);
+    if (
+      !other ||
+      Math.abs(other.x - rect.x) > 0.5 ||
+      Math.abs(other.y - rect.y) > 0.5 ||
+      Math.abs(other.width - rect.width) > 0.5 ||
+      Math.abs(other.height - rect.height) > 0.5
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 /**
  * The most a fit may magnify. Fitting frames what is on the board; it does not
@@ -116,8 +147,16 @@ export function BoardSurface({
     marqueePress,
     localEase,
     sectionLinkSelection,
+    previewDisplacedCards,
   } = refs;
-  const { cardsById, boardSections, projectedLinks, sectionMembershipMap } = projection;
+  const {
+    cardsById,
+    boardSections,
+    projectedLinks,
+    sectionMembershipMap,
+    boardPlacements,
+    boardPlacementList,
+  } = projection;
   const {
     selectedSectionConnector,
     setSelectedSectionConnector,
@@ -169,6 +208,10 @@ export function BoardSurface({
   const lastSnapped = useRef<{ id: string; x: number; y: number } | null>(null);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const snapGuideKey = useRef("");
+
+  /** Section bounds expanded dynamically during a live drag gesture. */
+  const [previewSectionResizes, setPreviewSectionResizes] = useState<Map<string, Rect>>(new Map());
+  const lastPreviewTick = useRef(0);
 
   const publishGuides = useCallback((guides: SnapGuide[]) => {
     const key = guides
@@ -406,11 +449,99 @@ export function BoardSurface({
           localEase.current = ease;
         }
         setDragging({ nodeId: node.id, position: node.position, nodeIds: ids });
+        previewDisplacedCards.current.clear();
+        setPreviewSectionResizes(new Map());
       }}
       onNodeDrag={(_, node) => {
         if (!canEditLayout) return;
         localEase.current?.target(node.id, node.position);
         if (localEase.current) runLocalEase();
+
+        // Calculate live reflow preview for single-card drags
+        if (draggedNodeIds.current.length === 1 && activeBoardId) {
+          const nowMs = performance.now();
+          if (nowMs - lastPreviewTick.current > 24) {
+            lastPreviewTick.current = nowMs;
+            const targetSize = sizeOf(node.id);
+            const plan = proposeReflowPlan({
+              boardId: activeBoardId,
+              targetCardId: node.id,
+              targetPosition: node.position,
+              targetSize,
+              placements: boardPlacementList,
+              sections: boardSections,
+            });
+
+            if (plan) {
+              const nextDisplaced = new Map<string, { x: number; y: number }>();
+              for (const p of plan.placements) {
+                if (p.cardId !== node.id) {
+                  nextDisplaced.set(p.cardId, { x: p.x, y: p.y });
+                }
+              }
+
+              if (!samePointMap(previewDisplacedCards.current, nextDisplaced)) {
+                previewDisplacedCards.current = nextDisplaced;
+                setNodes((current) =>
+                  current.map((entry) => {
+                    if (entry.id === node.id) return entry;
+                    const displaced = nextDisplaced.get(entry.id);
+                    if (displaced) {
+                      const base = entry.className?.replace("is-reflow-displaced", "").trim();
+                      const className = `${base ? `${base} ` : ""}is-reflow-displaced`;
+                      return { ...entry, position: displaced, className };
+                    }
+                    if (entry.className?.includes("is-reflow-displaced")) {
+                      const original = boardPlacements.get(entry.id);
+                      const cleaned = entry.className.replace("is-reflow-displaced", "").trim();
+                      const { className: _omitted, ...rest } = entry;
+                      return {
+                        ...rest,
+                        position: original ? { x: original.x, y: original.y } : entry.position,
+                        ...(cleaned ? { className: cleaned } : {}),
+                      };
+                    }
+                    return entry;
+                  }),
+                );
+              }
+
+              const nextSec = new Map<string, Rect>();
+              if (plan.sections) {
+                for (const s of plan.sections) {
+                  nextSec.set(s.sectionId, { x: s.x, y: s.y, width: s.width, height: s.height });
+                }
+              }
+              if (!sameRectMap(previewSectionResizes, nextSec)) {
+                setPreviewSectionResizes(nextSec);
+              }
+            } else {
+              if (previewDisplacedCards.current.size > 0) {
+                previewDisplacedCards.current.clear();
+                setNodes((current) =>
+                  current.map((entry) => {
+                    if (entry.id === node.id) return entry;
+                    if (entry.className?.includes("is-reflow-displaced")) {
+                      const original = boardPlacements.get(entry.id);
+                      const cleaned = entry.className.replace("is-reflow-displaced", "").trim();
+                      const { className: _omitted, ...rest } = entry;
+                      return {
+                        ...rest,
+                        position: original ? { x: original.x, y: original.y } : entry.position,
+                        ...(cleaned ? { className: cleaned } : {}),
+                      };
+                    }
+                    return entry;
+                  }),
+                );
+              }
+              if (previewSectionResizes.size > 0) {
+                setPreviewSectionResizes(new Map());
+              }
+            }
+          }
+        }
+
         const now = performance.now();
         if (now - lastDragSent.current < DRAG_THROTTLE_MS) return;
         lastDragSent.current = now;
@@ -422,6 +553,21 @@ export function BoardSurface({
       }}
       onNodeDragStop={(_, node, dragged) => {
         if (!canEditLayout) return;
+        previewDisplacedCards.current.clear();
+        setPreviewSectionResizes(new Map());
+        setNodes((current) =>
+          current.map((entry) => {
+            if (entry.className?.includes("is-reflow-displaced")) {
+              const cleaned = entry.className.replace("is-reflow-displaced", "").trim();
+              const { className: _omitted, ...rest } = entry;
+              return {
+                ...rest,
+                ...(cleaned ? { className: cleaned } : {}),
+              };
+            }
+            return entry;
+          }),
+        );
         const dropped = dragged.length > 0 ? dragged : [node];
         // The pointer position is the truth: land the render on it and paint
         // it before the one commit, so the drop never lingers a frame behind.
@@ -466,7 +612,7 @@ export function BoardSurface({
         lastSnapped.current = null;
         publishGuides([]);
         setDragging(null);
-        commitDrop(committed);
+        commitDrop(committed, { allowReflow: true });
       }}
       onPaneClick={() => {
         const thread = useLinkThreadStore.getState();
@@ -542,7 +688,11 @@ export function BoardSurface({
         dimmedSectionIds={dimmedSectionIds}
         membership={sectionMembershipMap}
         offsets={sectionOffsetsMap}
-        resizes={sectionResizes}
+        resizes={
+          previewSectionResizes.size > 0
+            ? new Map([...sectionResizes, ...previewSectionResizes])
+            : sectionResizes
+        }
         peers={peers}
         selectedSectionId={selectedSectionId}
         editingSectionId={editingSectionId}

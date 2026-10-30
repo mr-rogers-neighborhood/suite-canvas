@@ -67,6 +67,19 @@ export function cardSectionOffsets(
   return result;
 }
 
+function matchingSection(card: Rect, sections: Section[]): Section | undefined {
+  const direct = sectionForCard(card, sections);
+  if (direct) return direct;
+  // If card's top-left anchor left the section (e.g. dragged left or up), match an overlapping section
+  return sections.find(
+    (s) =>
+      card.x < s.x + s.width &&
+      card.x + card.width > s.x &&
+      card.y < s.y + s.height &&
+      card.y + card.height > s.y,
+  );
+}
+
 /**
  * The rect changes needed when cards are dropped partly inside sections: grow
  * the section holding each card (and every ancestor of it) until every dropped
@@ -81,7 +94,7 @@ export function sectionsExpandPlan(sections: Section[], cards: Rect[]): SectionR
   const dropped = new Map<string, Rect[]>();
 
   for (const card of cards) {
-    const match = sectionForCard(card, sections);
+    const match = matchingSection(card, sections);
     if (!match) continue;
     if (rectContainsRect(match, card, EXPAND_TOLERANCE)) continue;
     const group = dropped.get(match.id);

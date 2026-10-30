@@ -6,6 +6,7 @@ import {
   PORTAL_TYPE_ID,
   WorkspaceDocument,
 } from "./loro/WorkspaceDocument.js";
+import { proposeReflowPlan } from "./propagator/index.js";
 import { captureWorkspaceTemplate } from "./templateCapture.js";
 import {
   applyWorkspaceTemplate,
@@ -38,8 +39,12 @@ describe("the authored data", () => {
     expect(STARTER_TEMPLATES.every((template) => template.version >= 1)).toBe(true);
   });
 
-  it("offers exactly the notebook and the guide", () => {
-    expect(STARTER_TEMPLATES.map((template) => template.id)).toEqual(["notebook", "discworld"]);
+  it("offers the notebook, the guide and propagators", () => {
+    expect(STARTER_TEMPLATES.map((template) => template.id)).toEqual([
+      "notebook",
+      "discworld",
+      "propagators",
+    ]);
   });
 
   it("counts what it writes from the data, so the row cannot drift", () => {
@@ -48,6 +53,94 @@ describe("the authored data", () => {
     if (!notebook) return;
     expect(templateSummary(notebook)).toEqual({ boards: 1, sections: 1, cards: 3 });
     expect(templateDetail(notebook)).toBe("1 section \u00b7 3 cards");
+
+    const propagators = findWorkspaceTemplate("propagators");
+    expect(propagators).toBeDefined();
+    if (!propagators) return;
+    expect(templateSummary(propagators)).toEqual({ boards: 1, sections: 2, cards: 7 });
+    expect(templateDetail(propagators)).toBe("2 sections \u00b7 7 cards");
+  });
+
+  it("applies the propagators template and demonstrates cascading reflow on card drop", () => {
+    const workspace = new WorkspaceDocument();
+    const result = applyWorkspaceTemplate(workspace, "propagators");
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    const boardId = result.boardIds[0];
+    if (!boardId) return;
+
+    const cards = workspace.listBoardCards(boardId);
+    const placements = workspace.listBoardPlacements(boardId);
+    const sections = workspace.listSections(boardId);
+
+    const meteor = cards.find((c) => workspace.displayTitle(c.id) === "The Meteor");
+    const north = cards.find((c) => workspace.displayTitle(c.id) === "North Card");
+    const south = cards.find((c) => workspace.displayTitle(c.id) === "South Card");
+    const west = cards.find((c) => workspace.displayTitle(c.id) === "West Card");
+    const east = cards.find((c) => workspace.displayTitle(c.id) === "East Card");
+    const observer = cards.find((c) => workspace.displayTitle(c.id) === "Stationary Observer");
+    const sectionA = sections.find((s) => s.title === "Exhibit A: 2D Radial Parting");
+
+    expect(meteor && north && south && west && east && observer && sectionA).toBeTruthy();
+    if (!meteor || !north || !south || !west || !east || !observer || !sectionA) return;
+
+    // Drop meteor into center crosshair at (356, 280)
+    const reflow = proposeReflowPlan({
+      boardId,
+      targetCardId: meteor.id,
+      targetPosition: { x: 356, y: 280 },
+      targetSize: { width: 288, height: 160 },
+      placements,
+      sections,
+      gap: 24,
+    });
+
+    expect(reflow).not.toBeNull();
+    if (!reflow) return;
+
+    // Apply the plan to WorkspaceDocument
+    workspace.applyLayoutPlan(reflow);
+
+    // Verify meteor sits at target drop position
+    const meteorPlaced = workspace.getPlacement(boardId, meteor.id);
+    expect(meteorPlaced?.x).toBe(356);
+    expect(meteorPlaced?.y).toBe(280);
+
+    // Verify north card moved upward (-Y)
+    const northPlaced = workspace.getPlacement(boardId, north.id);
+    expect(northPlaced?.y).toBeLessThan(120);
+
+    // Verify south card moved downward (+Y)
+    const southPlaced = workspace.getPlacement(boardId, south.id);
+    expect(southPlaced?.y).toBeGreaterThan(440);
+
+    // Verify west card moved leftward (-X)
+    const westPlaced = workspace.getPlacement(boardId, west.id);
+    expect(westPlaced?.x).toBeLessThan(140);
+
+    // Verify east card moved rightward (+X)
+    const eastPlaced = workspace.getPlacement(boardId, east.id);
+    expect(eastPlaced?.x).toBeGreaterThan(572);
+
+    // Verify stationary observer experienced zero drift
+    const observerPlaced = workspace.getPlacement(boardId, observer.id);
+    expect(observerPlaced?.x).toBe(1520);
+    expect(observerPlaced?.y).toBe(320);
+
+    // Verify Section expanded to enclose the new layout
+    const updatedSection = workspace.getSection(sectionA.id);
+    expect(
+      (updatedSection?.width ?? 0) > sectionA.width ||
+        (updatedSection?.height ?? 0) > sectionA.height ||
+        (updatedSection?.x ?? 0) < sectionA.x ||
+        (updatedSection?.y ?? 0) < sectionA.y,
+    ).toBe(true);
+
+    // Verify single Undo restores all cards to original positions
+    workspace.undo();
+    const restoredNorth = workspace.getPlacement(boardId, north.id);
+    expect(restoredNorth?.y).toBe(120);
   });
 
   it("has no template id it cannot find", () => {

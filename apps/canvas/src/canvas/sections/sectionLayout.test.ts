@@ -99,6 +99,19 @@ describe("sectionsExpandPlan", () => {
     expect(sectionsExpandPlan([region], [card(40, 40)])).toEqual([]);
   });
 
+  it("grows section leftward and upward when a card is dropped hanging over top-left", () => {
+    const region = section("region", 100, 100, 400, 400);
+    const plan = sectionsExpandPlan([region], [card(50, 60)]);
+
+    expect(plan).toHaveLength(1);
+    const grown = plan[0];
+    expect(grown?.id).toBe("region");
+    expect(grown?.x).toBeLessThanOrEqual(50);
+    expect(grown?.y).toBeLessThanOrEqual(60);
+    expect((grown?.x ?? 0) + (grown?.width ?? 0)).toBeGreaterThanOrEqual(500);
+    expect((grown?.y ?? 0) + (grown?.height ?? 0)).toBeGreaterThanOrEqual(500);
+  });
+
   it("plans one rect per section when cards land in different sections", () => {
     const left = section("left", 0, 0, 300, 300);
     const right = section("right", 400, 0, 300, 300);

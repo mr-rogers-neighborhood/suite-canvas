@@ -218,11 +218,12 @@ export function useBoardNodes(
           const storedPosition = sectionOffset
             ? { x: placement.x + sectionOffset.dx, y: placement.y + sectionOffset.dy }
             : { x: placement.x, y: placement.y };
+          const reflowPosition = refs.previewDisplacedCards.current.get(card.id);
           const position =
             existing &&
             (locallyDraggingIds.current.has(card.id) || locallyResizing.current.has(card.id))
               ? existing.position
-              : (smoothPositions.current.get(card.id) ?? storedPosition);
+              : (reflowPosition ?? smoothPositions.current.get(card.id) ?? storedPosition);
           const selected = explicit
             ? explicit.has(card.id)
             : repaintSelection
@@ -261,12 +262,20 @@ export function useBoardNodes(
           // selectable again and the scope would leak mid-gesture.
           const scope = marqueeScope.current;
           const selectable = !scope || sectionMembershipMap.get(card.id) === scope.sectionId;
+
+          const isDisplaced = refs.previewDisplacedCards.current.has(card.id);
+          const baseClass = existing?.className?.replace("is-reflow-displaced", "").trim();
+          const nodeClassName = isDisplaced
+            ? `${baseClass ? `${baseClass} ` : ""}is-reflow-displaced`
+            : baseClass;
+
           if (
             existing &&
             existing.data === data &&
             existing.selected === selected &&
             existing.selectable === selectable &&
             existing.zIndex === layer &&
+            (existing.className ?? "") === (nodeClassName ?? "") &&
             existing.position.x === position.x &&
             existing.position.y === position.y
           ) {
@@ -281,6 +290,7 @@ export function useBoardNodes(
               selectable,
               zIndex: layer,
               data,
+              ...(nodeClassName ? { className: nodeClassName } : {}),
             } satisfies Node,
           ];
         });

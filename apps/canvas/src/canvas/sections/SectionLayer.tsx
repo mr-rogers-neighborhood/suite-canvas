@@ -490,12 +490,17 @@ export function SectionLayer({
                     ...(painted ? {} : { background: FILL[color] }),
                     borderColor: selected ? STROKE[color] : undefined,
                     ...(peerColor ? { boxShadow: `0 0 0 2px ${peerColor}66` } : {}),
-                    ...(peerGesture.has(section.id)
+                    ...(resizes.has(section.id) && !peerGesture.has(section.id)
                       ? {
                           transition:
-                            "left 60ms linear, top 60ms linear, width 60ms linear, height 60ms linear",
+                            "left 160ms cubic-bezier(0.16, 1, 0.3, 1), top 160ms cubic-bezier(0.16, 1, 0.3, 1), width 160ms cubic-bezier(0.16, 1, 0.3, 1), height 160ms cubic-bezier(0.16, 1, 0.3, 1)",
                         }
-                      : {}),
+                      : peerGesture.has(section.id)
+                        ? {
+                            transition:
+                              "left 60ms linear, top 60ms linear, width 60ms linear, height 60ms linear",
+                          }
+                        : {}),
                     ...paintStyle(paint),
                   } as CSSProperties
                 }

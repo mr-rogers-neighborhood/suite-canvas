@@ -3,11 +3,12 @@
 **A canvas for thinking in connections.** Cards, boards and writing live in one document that works
 offline, syncs when you want it, and exports to a file you own.
 
+![layout.gif](https://i.imgduck.com/u/v8jzuR.gif)
+
 [**Open the app**](https://app.suite.run) · [Documentation](https://docs.suite.run) ·
 [Run it yourself](#run-it-yourself)
 
-> **Suite is alpha software.** The hosted deployment at <https://app.suite.run> is real and the
-> paying path is real, but expect rough edges and expect the shape of things to change.
+> **Suite is alpha software.** The hosted deployment is at <https://app.suite.run> - expect rough edges
 >
 > A subscription is **early access** to additional document storage, members (seats), and file uploads, and paying for one can help support the project. It is optional twice over: the canvas, the cards and
 > export work without one, on this device, with no account and no limit; and the source is public

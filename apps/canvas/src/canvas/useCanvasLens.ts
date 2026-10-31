@@ -1,29 +1,26 @@
 import { runViewQuery, type SavedView, type ViewQuery } from "@suite/graph";
 import { useEffect, useMemo } from "react";
 import { useSavedViews } from "../chrome/ViewsBar";
+import { useProjection, useProjectionStore } from "../store/projectionStore";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
-import { previewView, useViewsStore } from "../store/viewsStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
-import { draftToView } from "../views/draft";
 
 /**
- * The canvas lens: when a saved view is applied, the board keeps every card but
- * dims the ones the view did not select, so the result reads first without
- * losing the spatial context around it.
+ * The projection this reader has on their board: a saved view cast over the canvas, with the cards it
+ * selects outlined and everything else faded.
  *
- * The match set comes from the same `runViewQuery` the library and the Views
- * menu use, so a view cannot mean one thing in the drawer and another on the
- * canvas. Nothing here is written to the document: a lens is UI state.
+ * The *view* is shared document data; the projection is this reader's, which is why nothing here writes.
+ * A projection that names a view someone deleted is dropped rather than left pointing at nothing.
  */
 export interface CanvasLens {
-  /** The applied view, or null when no view is active. */
+  /** The projected view, or null when nothing is projected. */
   view: SavedView | null;
-  /** Card ids the view selected; empty when there is no lens. */
+  /** Card ids the projection selects; empty when there is nothing projected. */
   cardIds: ReadonlySet<string>;
-  /** Whether everything outside the context fades. Stored as a lens toggle, on by default. */
+  /** Whether everything outside the context fades. */
   fade: boolean;
-  /** Whether the context is outlined. Stored as a lens toggle, on by default. */
+  /** Whether the context is outlined. */
   outline: boolean;
 }
 
@@ -31,23 +28,27 @@ const NO_IDS: ReadonlySet<string> = new Set();
 
 export function useCanvasLens(): CanvasLens {
   const workspace = useCanvasStore((state) => state.workspace);
-  const activeViewId = useUiStore((state) => state.activeViewId);
+  const projection = useProjection();
   const activeBoardId = useUiStore((state) => state.activeBoardId);
   const views = useSavedViews(workspace);
   const snapshot = useWorkspaceSnapshot();
-  // The editor's draft is a view with a temporary id, so a preview is the same lens as a saved view —
-  // and it wins while it is on, because the reader is looking at what they are editing.
-  const draft = useViewsStore((state) => previewView(state));
-  const previewed = useMemo(() => (draft === null ? null : draftToView(draft)), [draft]);
 
   const view =
-    previewed ??
-    (activeViewId === null ? null : (views.find((v) => v.id === activeViewId) ?? null));
+    projection === null ? null : (views.find((entry) => entry.id === projection.viewId) ?? null);
 
-  // The query reads the document directly, so what it must depend on are the
-  // collections it reads. Depending on the whole snapshot would rebuild the set
-  // whenever the snapshot object changed identity, and every consumer of the
-  // lens would repaint for no visible reason.
+  // A view deleted on another device takes the projection with it: a bar naming a record that is gone
+  // would be the one thing in the app promising something it cannot show.
+  useEffect(() => {
+    if (
+      projection !== null &&
+      workspace !== null &&
+      !views.some((e) => e.id === projection.viewId)
+    ) {
+      useProjectionStore.getState().forget(projection.viewId);
+    }
+  }, [projection, views, workspace]);
+
+  // The query reads the document directly, so what it must depend on are the collections it reads.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the collections are the invalidation signal.
   const cardIds = useMemo(() => {
     if (!view || !workspace) return NO_IDS;
@@ -65,26 +66,23 @@ export function useCanvasLens(): CanvasLens {
     snapshot.tags,
   ]);
 
-  const fade = view?.lens?.fade !== false;
-  const outline = view?.lens?.outline !== false;
+  const fade = projection?.fade ?? true;
+  const outline = projection?.outline ?? true;
 
-  // Consumers put this in effect dependencies, so its identity must only change
-  // when the lens actually changes. A fresh object per render would re-run the
-  // node and edge projections forever.
+  // Consumers put this in effect dependencies, so its identity must only change when the projection does.
   return useMemo(() => ({ view, cardIds, fade, outline }), [view, cardIds, fade, outline]);
 }
 
-/** Whether the lens selected a card. A card with no lens is always "on". */
+/** Whether the projection selected a card. A card with no projection is always "on". */
 export function lensSelects(lens: CanvasLens, cardId: string): boolean {
   if (!lens.view) return true;
   return lens.cardIds.has(cardId);
 }
 
 /**
- * The derived reference index is what a `backlink` or `relation` predicate
- * reads. Repairing it is idempotent but can write once on a workspace that
- * arrived from another client, so it runs in an effect — never during the read
- * above — and only while a lens is actually on.
+ * The derived reference index is what a `backlink` or `relation` predicate reads. Repairing it is
+ * idempotent but can write once on a workspace that arrived from another client, so it runs in an effect
+ * and only while a projection is actually on.
  */
 export function useLensReferenceRepair(active: boolean): void {
   const workspace = useCanvasStore((state) => state.workspace);

@@ -1,108 +1,103 @@
-import type { SavedView } from "@suite/graph";
 import { create } from "zustand";
-import { draftFromView, draftIsDirty, emptyDraft, type ViewDraft } from "../views/draft";
-import { useUiStore } from "./useUiStore";
+import type { ViewDraft } from "../views/draft";
+import { emptyDraft } from "../views/draft";
 
 /**
- * The views editor's own state: the draft it is editing, whether that draft is applied, and which
- * view the presentation surface is showing.
+ * The views layer's own state: whether it is open, what it is open on, and whether the reader is picking
+ * cards for it.
  *
- * A draft outlives the sheet on purpose. "I want to see it work before I save it" means the preview
- * has to keep working after the reader closes the panel to look at the board, so `draft` is the
- * applied draft and `editorOpen` only says whether the sheet is in front of it. Nothing here is
- * document data: the draft becomes a view only when `WorkspaceDocument` writes it.
+ * A *saved* view is not held here. The layer edits the document's record directly, through the field-level
+ * setters, so two people in the same view see each other's changes as they happen. Only a *new* view has a
+ * draft, because there is nothing to share until it exists; `Create` is the moment it becomes a record.
  */
 interface ViewsState {
-  /** The draft being edited or previewed, or null when there is none. */
+  /** Whether the layer is on screen. */
+  open: boolean;
+  /** The saved view being read, or null when the layer is on a new draft. */
+  editingId: string | null;
+  /** A new view, until its first Create. */
   draft: ViewDraft | null;
-  /** Whether the sheet is open on that draft. */
-  editorOpen: boolean;
-  /** Whether the draft is applied to the board and the presentation surface. */
-  preview: boolean;
-  /** The saved view the presentation surface shows, or `PREVIEW_VIEW_ID` for a draft. */
-  presented: string | null;
-  /** What was applied before the sheet opened, so Cancel can put it back. */
-  previous: string | null;
-  /** The view card a new draft was opened from, linked to the view when it saves. */
-  pendingCardId: string | null;
+  /** Whether the context drawer is showing. */
+  contextOpen: boolean;
+  /** True while the layer is out of the way and the board is being picked for pins. */
+  picking: boolean;
+  /** The pins as they were when picking began, so Cancel can put them back. */
+  pickBase: readonly string[] | null;
 
-  /** Start a brand-new view: the sheet opens on it and it previews immediately. */
+  /** Open a saved view, or the last one if none is named. */
+  openLayer: (viewId: string | null) => void;
+  /** Open the layer on a view that does not exist yet. */
   openNew: (count: number, pendingCardId?: string | null) => void;
-  /** Edit a saved view. It previews as you edit, so the board answers every keystroke. */
-  openView: (view: SavedView) => void;
-  /** Change part of the draft. */
-  patch: (patch: Partial<ViewDraft>) => void;
-  /** Close the sheet and leave the draft applied (or not). */
-  closeEditor: () => void;
-  /** Reopen the sheet on the draft that is already applied. */
-  reopenEditor: () => void;
-  /** The live preview switch. Off restores whatever was applied before. */
-  setPreview: (preview: boolean) => void;
-  /** Which view the presentation surface is showing. */
-  present: (viewId: string | null) => void;
-  /** Throw the draft away, preview included. */
-  discard: () => void;
-  /** The draft is saved: it stops being a draft and becomes the presented view. */
-  saved: (viewId: string) => void;
-}
-
-/** The view id applied on the board before a draft took over. */
-function currentApplied(): string | null {
-  return useUiStore.getState().activeViewId;
+  /** The view card a new draft was opened from, linked when it is created. */
+  pendingCardId: string | null;
+  setDraft: (patch: Partial<ViewDraft>) => void;
+  setEditing: (viewId: string | null) => void;
+  close: () => void;
+  toggleContext: (open?: boolean) => void;
+  /** Begin picking: record where the pins were so Cancel is exact. */
+  startPicking: (base: readonly string[]) => void;
+  endPicking: () => void;
+  /** Cancel a pick: the caller restores `pickBase`. */
+  cancelPicking: () => readonly string[] | null;
+  /** The draft became a record. */
+  created: (viewId: string) => void;
 }
 
 export const useViewsStore = create<ViewsState>()((set, get) => ({
+  open: false,
+  editingId: null,
   draft: null,
-  editorOpen: false,
-  preview: true,
-  presented: null,
-  previous: null,
+  contextOpen: false,
+  picking: false,
+  pickBase: null,
   pendingCardId: null,
+
+  openLayer: (viewId) =>
+    set({
+      open: true,
+      editingId: viewId,
+      draft: null,
+      // A drawer left open on the last view would cover the rail the reader just asked to see.
+      contextOpen: false,
+      pendingCardId: null,
+    }),
 
   openNew: (count, pendingCardId = null) =>
     set({
+      open: true,
+      editingId: null,
       draft: emptyDraft(count),
-      editorOpen: true,
-      preview: true,
-      previous: currentApplied(),
+      contextOpen: true,
       pendingCardId,
     }),
-  openView: (view) =>
-    set({
-      draft: draftFromView(view),
-      editorOpen: true,
-      preview: true,
-      previous: currentApplied(),
-    }),
-  patch: (patch) => {
+
+  setDraft: (patch) => {
     const draft = get().draft;
-    if (!draft) return;
+    if (draft === null) return;
     set({ draft: { ...draft, ...patch } });
   },
 
-  closeEditor: () => set({ editorOpen: false }),
-  reopenEditor: () => set({ editorOpen: true }),
+  setEditing: (viewId) => set({ editingId: viewId, draft: null }),
 
-  setPreview: (preview) => set({ preview }),
+  close: () => set({ open: false, picking: false, pickBase: null }),
 
-  present: (viewId) => set({ presented: viewId }),
+  toggleContext: (open) => set({ contextOpen: open === undefined ? !get().contextOpen : open }),
 
-  discard: () =>
-    set({ draft: null, editorOpen: false, preview: true, presented: null, pendingCardId: null }),
+  startPicking: (base) => set({ picking: true, pickBase: [...base] }),
+  endPicking: () => set({ picking: false, pickBase: null }),
+  cancelPicking: () => {
+    const base = get().pickBase;
+    set({ picking: false, pickBase: null });
+    return base;
+  },
 
-  saved: (viewId) =>
-    set({ draft: null, editorOpen: false, preview: true, presented: viewId, pendingCardId: null }),
+  created: (viewId) => set({ draft: null, editingId: viewId, pendingCardId: null }),
 }));
 
-/** The view the board and the presentation should show for a draft, or null when previewing is off. */
-export function previewView(state: {
+/** The pins a draft or a saved view currently holds, from whichever is open. */
+export function activePins(state: {
   draft: ViewDraft | null;
-  preview: boolean;
-}): ViewDraft | null {
-  return state.preview && state.draft !== null ? state.draft : null;
-}
-
-/** Whether the open draft differs from the view it came from, for the dirty chip. */
-export function draftDirty(draft: ViewDraft | null, saved: SavedView | undefined): boolean {
-  return draft !== null && draftIsDirty(draft, saved);
+  editingId: string | null;
+}): readonly string[] {
+  return state.draft?.cardIds ?? [];
 }

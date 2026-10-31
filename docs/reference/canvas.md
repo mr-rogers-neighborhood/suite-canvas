@@ -404,6 +404,19 @@ ease converges on the snapped position instead of fighting it, and the drop comm
 guides showed. A multi-card drag does not snap: pulling the group onto one member's edge would move the
 other members out of formation.
 
+## Projections
+
+A projection is a view cast over this reader's board: the cards its context selects are outlined,
+everything else is faded, and `board/ProjectionBar.tsx` names the view with a chip per board the
+context reaches. It is reader state, not document state. `store/projectionStore.ts` keeps one entry
+per workspace in `localStorage` under `PROJECTION_KEY`, so two people on the same board disagree about
+projection exactly as they disagree about the camera, and `useCanvasLens` drops the entry when the view
+it names is deleted. What is shared is the view itself: its query and presentation are document data,
+so editing a saved view redraws its projection for everyone who has it cast.
+
+`Outline` and `Fade` are the two switches on the bar, remembered with the projection, and the board only
+re-renders because `useBoardProjection` folds the projected ids into the node data it already builds.
+
 ## Board module map
 
 | Path | Responsibility |
@@ -413,6 +426,7 @@ other members out of formation.
 | `board/BoardOverlays.tsx` | context menu, edge description, peer drag layer and other portals |
 | `board/useBoardUi.ts` | one bundle of stores, camera helpers and capability flags for the board |
 | `board/useBoardProjection.ts` | snapshot to board-scoped maps; no writes |
+| `board/ProjectionBar.tsx` | the projected view's name, board chips and the two reading switches |
 | `board/useBoardNodes.ts` | placements to flow nodes and edges, live offsets, peer easing |
 | `board/useBoardSelection.ts` | selection reconciliation, marquee to flow box, scope release |
 | `board/useBoardLinks.ts` | link thread, create, re-attach and label gestures |
@@ -438,6 +452,7 @@ other members out of formation.
 | `canvas/zoomRange.ts` | zoom floor, ceiling, clamp and band breakpoints |
 | `presence/PresenceLayer.tsx` | peer pointers, selections and marquee in a viewport portal |
 | `store/workspaceSnapshotStore.ts` | the one `WorkspaceDocument.observe` call site and its card change stream |
+| `store/projectionStore.ts` | which view this reader has cast on each workspace's board |
 
 `store/workspaceSnapshotStore.ts` is also how the canvas learns that a card's text moved. Its
 `subscribeCardChanges` reports card ids for record and rich-text edits, which is what the library index

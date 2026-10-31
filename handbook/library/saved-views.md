@@ -1,23 +1,22 @@
 ---
 title: Saved views
-description: "The views menu in the board controls, and how a saved view is applied."
+description: "The views icon in the board controls, what a saved view is, and where to read one."
 order: 20
 targets:
   - kind: ui
     id: views-bar
 ---
 
-The views icon sits with the board's own controls, beside the outline. It opens the list of saved
-views, each with the shape it draws; choosing one applies it, and **New view…** opens
-[the editor](target:ui:views-editor).
+The views icon sits with the board's own controls, after the outline toggle and before search. It opens
+[the views layer](target:ui:views-layer) on the view you were last reading, or on the first one if this is
+your first visit, and even with no views at all, so that the layer can make one.
 
-**Edit** on a row opens that view in the editor with its context and presentation already in place.
-Renaming and deleting are there too; deleting the view you are looking at returns you to the
-unfiltered board rather than leaving a filter whose definition is gone.
+A saved view is a *configuration*, not a snapshot: the words, scope, chips and pinned cards that select
+something, plus the shape it is read in. Nothing is copied out of the document, so editing a card in a
+table edits the card, and a view somebody else changes redraws for you while you are reading it.
 
-Applying a view is a reading, not a change. A lens fades the cards outside it and outlines the ones
-inside; the library can be filtered to the same context, and **Place** puts those cards on the board
-in the view's own order. No card is copied, moved or hidden from the document by a view.
+The rail on the left is every saved view with a live thumbnail. **New view** starts one, and it stays a
+local draft until you press **Create**, because until then there is nothing to share.
 
-The menu is a development-only door while the surfaces around views settle: the editor, the
-presentation and the charts all arrived in one pass.
+To put a view on the board itself, read [projections](target:ui:views-projection-bar): any view can be cast
+over the canvas, outlining what it selects and fading the rest.

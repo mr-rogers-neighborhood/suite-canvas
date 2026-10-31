@@ -27,8 +27,9 @@ describe("forceLayout", () => {
     const points = forceLayout(nodes, edges);
     for (let i = 0; i < points.length; i += 1) {
       for (let j = i + 1; j < points.length; j += 1) {
-        const a = points[i]!;
-        const b = points[j]!;
+        const a = points[i];
+        const b = points[j];
+        if (a === undefined || b === undefined) throw new Error("missing point");
         expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(0.01);
       }
     }
@@ -37,7 +38,11 @@ describe("forceLayout", () => {
   it("should pull a connected pair closer than an unconnected node", () => {
     // The whole point of the layout: related cards sit together.
     const points = forceLayout(nodes, edges, { iterations: 120 });
-    const at = (id: string) => points.find((point) => point.id === id)!;
+    const at = (id: string) => {
+      const point = points.find((candidate) => candidate.id === id);
+      if (point === undefined) throw new Error(`no point for ${id}`);
+      return point;
+    };
     const related = Math.hypot(at("a").x - at("b").x, at("a").y - at("b").y);
     const unrelated = Math.max(
       Math.hypot(at("a").x - at("c").x, at("a").y - at("c").y),

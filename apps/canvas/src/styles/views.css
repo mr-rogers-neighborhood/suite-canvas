@@ -1,0 +1,24 @@
+/*
+ * The views layer is a mode, so it should arrive as one: a short, reduced-motion-aware rise rather than a
+ * panel that pops. Nothing animates the *content* — a table sliding in would make the reader wait to read.
+ */
+.views-layer {
+  animation: views-layer-in 140ms ease-out;
+}
+
+@keyframes views-layer-in {
+  from {
+    opacity: 0;
+    transform: scale(0.994);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .views-layer {
+    animation: none;
+  }
+}

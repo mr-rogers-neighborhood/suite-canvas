@@ -274,7 +274,7 @@ describe("WorkspaceDocument views", () => {
     expect(workspace.listViews()).toEqual([created]);
     expect(workspace.getView(created.id)).toEqual(created);
 
-    workspace.updateView(created.id, { name: "People" });
+    workspace.renameView(created.id, "People");
     expect(workspace.getView(created.id)?.name).toBe("People");
     expect(workspace.getView(created.id)?.query.typeIds).toEqual(["character"]);
 
@@ -319,7 +319,7 @@ describe("WorkspaceDocument views", () => {
       "A view needs a name",
     );
     const created = workspace.createView({ name: "Named", query: emptyViewQuery() });
-    expect(() => workspace.updateView(created.id, { name: "" })).toThrow("A view needs a name");
+    expect(() => workspace.renameView(created.id, "")).toThrow("A view needs a name");
   });
 
   it("should refuse an invalid query", () => {
@@ -328,8 +328,9 @@ describe("WorkspaceDocument views", () => {
     expect(() => workspace.createView({ name: "Broken", query: broken })).toThrow();
 
     const created = workspace.createView({ name: "Fine", query: emptyViewQuery() });
-    const badOrder = { ...emptyViewQuery(), order: "newest" } as unknown as ViewQuery;
-    expect(() => workspace.updateView(created.id, { query: badOrder })).toThrow();
+    expect(() =>
+      workspace.patchViewQuery(created.id, { order: "newest" as unknown as ViewQuery["order"] }),
+    ).toThrow();
   });
 
   it("should refuse a duplicate id", () => {
@@ -390,11 +391,15 @@ describe("WorkspaceDocument views", () => {
  * survives a round trip, and that it never reaches the selection.
  */
 describe("savedViewSchema kind", () => {
-  it("should read a view with no kind as a lens", () => {
-    const saved = savedViewSchema.parse(view({ text: "grading" }));
+  it("should read a view with no kind, or a legacy lens, as a collection", () => {
+    // A lens stopped being a kind: projecting is a verb any view can take, so what is left to read is
+    // how the result is *shown*, and the old default was a selection with no data surface.
+    const bare = savedViewSchema.parse(view({ text: "grading" }));
+    const lens = savedViewSchema.parse({ ...view({ text: "grading" }), kind: "lens" });
 
-    expect(saved.kind).toBeUndefined();
-    expect(viewKindOf(saved)).toBe("lens");
+    expect(bare.kind).toBeUndefined();
+    expect(viewKindOf(bare)).toBe("collection");
+    expect(viewKindOf(lens)).toBe("collection");
   });
 
   it("should round-trip every kind", () => {
@@ -603,8 +608,7 @@ describe("a view in the document", () => {
       lens: { boardId: "board" },
     });
 
-    const updated = workspace.updateView(created.id, {
-      kind: "render",
+    const updated = workspace.setViewKind(created.id, "render", {
       render: { layout: "graph-2d" },
     });
     expect(updated?.lens).toBeUndefined();
@@ -619,7 +623,64 @@ describe("a view in the document", () => {
       context: { cardIds: ["c4"] },
     });
 
-    workspace.updateView(created.id, { context: { cardIds: [] } });
+    workspace.clearViewPins(created.id);
     expect(workspace.getView(created.id)?.context).toBeUndefined();
+  });
+});
+
+describe("live edits to one view", () => {
+  it("should write only the query keys a patch names", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({
+      name: "Scoped",
+      query: query({ typeIds: ["character"], scope: "all" }),
+    });
+
+    workspace.patchViewQuery(created.id, { text: "timeline" });
+    const stored = workspace.getView(created.id);
+    // The facets it did not name are untouched: that is what lets two people edit one view at once.
+    expect(stored?.query.text).toBe("timeline");
+    expect(stored?.query.typeIds).toEqual(["character"]);
+    expect(stored?.query.scope).toBe("all");
+  });
+
+  it("should let two pins land rather than resolving last-writer-wins", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({ name: "Pinned", query: query({}) });
+
+    workspace.addViewPin(created.id, "c1");
+    workspace.addViewPin(created.id, "c4");
+
+    expect(workspace.getView(created.id)?.context?.cardIds.sort()).toEqual(["c1", "c4"]);
+    workspace.removeViewPin(created.id, "c1");
+    expect(workspace.getView(created.id)?.context?.cardIds).toEqual(["c4"]);
+  });
+
+  it("should rename without touching the query", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({
+      name: "Before",
+      query: query({ typeIds: ["character"] }),
+    });
+
+    workspace.renameView(created.id, "After");
+    expect(workspace.getView(created.id)?.name).toBe("After");
+    expect(workspace.getView(created.id)?.query.typeIds).toEqual(["character"]);
+  });
+
+  it("should swap one kind's payload for another's in one write", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({
+      name: "Switching",
+      query: query({}),
+      kind: "collection",
+      collection: { mode: "grid" },
+    });
+
+    workspace.setViewKind(created.id, "render", { render: { layout: "bar" } });
+    const stored = workspace.getView(created.id);
+    expect(stored?.kind).toBe("render");
+    expect(stored?.render).toEqual({ layout: "bar" });
+    expect(stored?.collection).toBeUndefined();
   });
 });

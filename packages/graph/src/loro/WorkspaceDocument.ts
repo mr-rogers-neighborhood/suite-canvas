@@ -16,7 +16,13 @@ import type {
   Tag,
 } from "../schema.js";
 import type { PaletteSwatch, SurfaceStyle } from "../style.js";
-import type { SavedView } from "../views.js";
+import type {
+  SavedView,
+  ViewCollection,
+  ViewPresentationKind,
+  ViewQuery,
+  ViewRender,
+} from "../views.js";
 import type { DocApi } from "./api.js";
 import { createDocApi } from "./api.js";
 import { DocContext } from "./context.js";
@@ -31,7 +37,6 @@ import type {
   DuplicateBoardOptions,
   LayerAction,
   PlacementMoveInput,
-  UpdateViewInput,
   WorkspaceChange,
 } from "./model.js";
 
@@ -331,8 +336,42 @@ export class WorkspaceDocument extends CardsFacade {
     return this.viewsApi.createView(input);
   }
 
-  updateView(id: string, patch: UpdateViewInput): SavedView | undefined {
-    return this.viewsApi.updateView(id, patch);
+  renameView(id: string, name: string): SavedView | undefined {
+    return this.viewsApi.renameView(id, name);
+  }
+
+  /** Writes only the query keys in `patch`, so two people editing different facets converge. */
+  patchViewQuery(id: string, patch: Partial<ViewQuery>): SavedView | undefined {
+    return this.viewsApi.patchViewQuery(id, patch);
+  }
+
+  patchViewCollection(id: string, collection: ViewCollection): SavedView | undefined {
+    return this.viewsApi.patchViewCollection(id, collection);
+  }
+
+  patchViewRender(id: string, render: ViewRender): SavedView | undefined {
+    return this.viewsApi.patchViewRender(id, render);
+  }
+
+  setViewKind(
+    id: string,
+    kind: ViewPresentationKind,
+    payload?: { collection?: ViewCollection; render?: ViewRender },
+  ): SavedView | undefined {
+    return this.viewsApi.setViewKind(id, kind, payload);
+  }
+
+  /** Pins are an id set: two people pinning at once both win. */
+  addViewPin(id: string, cardId: string): SavedView | undefined {
+    return this.viewsApi.addViewPin(id, cardId);
+  }
+
+  removeViewPin(id: string, cardId: string): SavedView | undefined {
+    return this.viewsApi.removeViewPin(id, cardId);
+  }
+
+  clearViewPins(id: string): SavedView | undefined {
+    return this.viewsApi.clearViewPins(id);
   }
 
   deleteView(id: string): void {

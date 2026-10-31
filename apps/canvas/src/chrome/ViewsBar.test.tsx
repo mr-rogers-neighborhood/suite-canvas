@@ -1,311 +1,65 @@
 import { WorkspaceDocument } from "@suite/graph";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { LoroMap, LoroText } from "loro-crdt";
 import { beforeEach, describe, expect, it } from "vitest";
-import { LibraryDrawer, type LibraryItem } from "../library/LibraryDrawer";
-import { useUiStore } from "../store/useUiStore";
+import { useProjectionStore } from "../store/projectionStore";
+import { useCanvasStore } from "../store/useCanvasStore";
+import { useViewsStore } from "../store/viewsStore";
 import { ViewsBar } from "./ViewsBar";
 
-function addNode(parent: LoroMap, name: string): LoroMap {
-  const children = parent.ensureMergeableList("children");
-  const node = children.insertContainer(children.length, new LoroMap());
-  node.set("nodeName", name);
-  return node;
-}
-
-function addText(parent: LoroMap, text: string): void {
-  const children = parent.ensureMergeableList("children");
-  const value = children.insertContainer(children.length, new LoroText());
-  value.insert(0, text);
-}
-
-function fixture(): WorkspaceDocument {
-  const workspace = new WorkspaceDocument();
-  workspace.ensureDefaultTypes();
-  const board = workspace.ensureBoard();
-  workspace.createCard({ id: "c1", boardId: board.id, position: { x: 0, y: 0 } });
-  addText(workspace.getTitle("c1"), "Grading notes");
-  addText(addNode(workspace.getContent("c1"), "paragraph"), "colour grading in the second pass");
-  workspace.doc.commit({ origin: "test" });
-  return workspace;
-}
-
-function resetStore(): void {
-  useUiStore.setState({
-    activeViewId: null,
-    libraryQuery: "",
-    libraryTypeFilter: [],
-    libraryTagFilter: [],
-    librarySectionFilter: [],
-    libraryScope: "all",
-    libraryGroupBySection: false,
-    libraryOpen: false,
-    libraryTab: "inbox",
-  });
-}
-
-beforeEach(resetStore);
-
-describe("ViewsBar", () => {
-  it("should save the current search, apply it, and exit", () => {
-    const workspace = fixture();
-    useUiStore.setState({
-      libraryQuery: "grading",
-      libraryTypeFilter: ["note"],
-      libraryOpen: true,
-      libraryTab: "cards",
-    });
-    render(<ViewsBar workspace={workspace} canManage />);
-
-    fireEvent.click(screen.getByTestId("views-menu-button"));
-    fireEvent.click(screen.getByTestId("views-save"));
-    const input = screen.getByTestId("views-save-input");
-    expect(input).toHaveValue("grading");
-
-    fireEvent.change(input, { target: { value: "Grading pass" } });
-    fireEvent.click(screen.getByTestId("views-save-commit"));
-
-    const [saved] = workspace.listViews();
-    expect(saved?.name).toBe("Grading pass");
-    expect(saved?.query).toMatchObject({
-      text: "grading",
-      typeIds: ["note"],
-      scope: "all",
-      order: "relevance",
-    });
-    expect(useUiStore.getState().activeViewId).toBe(saved?.id ?? null);
-    expect(useUiStore.getState().libraryTab).toBe("cards");
-    expect(useUiStore.getState().libraryOpen).toBe(true);
-
-    // The saved view can be reopened from the menu and applied again.
-    useUiStore.setState({ activeViewId: null, libraryTypeFilter: [] });
-    fireEvent.click(screen.getByTestId("views-menu-button"));
-    fireEvent.click(screen.getByTestId(`views-item-${saved?.id}`));
-    expect(useUiStore.getState().activeViewId).toBe(saved?.id ?? null);
-    expect(useUiStore.getState().libraryTypeFilter).toEqual(["note"]);
-
-    fireEvent.click(screen.getByTestId("views-menu-button"));
-    fireEvent.click(screen.getByTestId("views-exit"));
-    expect(useUiStore.getState().activeViewId).toBeNull();
-    expect(useUiStore.getState().libraryQuery).toBe("");
-    expect(useUiStore.getState().libraryTypeFilter).toEqual([]);
-  });
-
-  it("should rename and delete a view inline, with delete confirmed", () => {
-    const workspace = fixture();
-    const saved = workspace.createView({
-      name: "Drafts",
-      query: {
-        text: "grading",
-        typeIds: [],
-        tagIds: [],
-        sectionIds: [],
-        scope: "all",
-        groupBySection: false,
-        order: "relevance",
-      },
-    });
-    render(<ViewsBar workspace={workspace} canManage />);
-
-    fireEvent.click(screen.getByTestId("views-menu-button"));
-    fireEvent.click(screen.getByTestId(`views-rename-${saved.id}`));
-    const input = screen.getByTestId("views-rename-input");
-    fireEvent.change(input, { target: { value: "Colour" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    expect(workspace.getView(saved.id)?.name).toBe("Colour");
-
-    fireEvent.click(screen.getByTestId(`views-delete-${saved.id}`));
-    // Nothing is deleted until the inline confirmation is used.
-    expect(workspace.getView(saved.id)?.name).toBe("Colour");
-    fireEvent.click(screen.getByTestId("views-delete-confirm"));
-    expect(workspace.listViews()).toEqual([]);
-    expect(screen.getByTestId("views-empty")).toBeInTheDocument();
-  });
-
-  it("should exit the active view when its own record is deleted", () => {
-    const workspace = fixture();
-    const saved = workspace.createView({
-      name: "Drafts",
-      query: {
-        text: "grading",
-        typeIds: [],
-        tagIds: [],
-        sectionIds: [],
-        scope: "all",
-        groupBySection: false,
-        order: "relevance",
-      },
-    });
-    useUiStore.setState({ activeViewId: saved.id, libraryQuery: "grading" });
-    render(<ViewsBar workspace={workspace} canManage />);
-
-    fireEvent.click(screen.getByTestId("views-menu-button"));
-    fireEvent.click(screen.getByTestId(`views-delete-${saved.id}`));
-    fireEvent.click(screen.getByTestId("views-delete-confirm"));
-
-    expect(useUiStore.getState().activeViewId).toBeNull();
-    expect(useUiStore.getState().libraryQuery).toBe("");
-  });
-
-  it("should not offer saving, renaming or deleting to a viewer", () => {
-    const workspace = fixture();
-    const saved = workspace.createView({
-      name: "Drafts",
-      query: {
-        text: "grading",
-        typeIds: [],
-        tagIds: [],
-        sectionIds: [],
-        scope: "all",
-        groupBySection: false,
-        order: "relevance",
-      },
-    });
-    useUiStore.setState({ libraryQuery: "grading" });
-    render(<ViewsBar workspace={workspace} canManage={false} />);
-
-    fireEvent.click(screen.getByTestId("views-menu-button"));
-    expect(screen.queryByTestId("views-save")).not.toBeInTheDocument();
-    expect(screen.queryByTestId(`views-rename-${saved.id}`)).not.toBeInTheDocument();
-    expect(screen.queryByTestId(`views-delete-${saved.id}`)).not.toBeInTheDocument();
-
-    // A viewer may still open the saved query read-only.
-    fireEvent.click(screen.getByTestId(`views-item-${saved.id}`));
-    expect(useUiStore.getState().activeViewId).toBe(saved.id);
-    expect(workspace.listViews()).toHaveLength(1);
-  });
-
-  it("should create a view from an unfiltered library", () => {
-    const workspace = fixture();
-    render(<ViewsBar workspace={workspace} canManage />);
-
-    fireEvent.click(screen.getByTestId("views-menu-button"));
-    expect(screen.getByTestId("views-empty")).toBeInTheDocument();
-
-    // The menu has to offer a way in before anything is filtered: "all cards" is a view.
-    fireEvent.click(screen.getByTestId("views-save"));
-    const input = screen.getByTestId("views-save-input");
-    expect(input).toHaveValue("View 1");
-
-    fireEvent.change(input, { target: { value: "Everything" } });
-    fireEvent.click(screen.getByTestId("views-save-commit"));
-
-    const [saved] = workspace.listViews();
-    expect(saved?.name).toBe("Everything");
-    expect(saved?.query).toMatchObject({
+function seed(projected = false) {
+  const doc = new WorkspaceDocument();
+  doc.ensureDefaultTypes();
+  const view = doc.createView({
+    name: "Grading pass",
+    query: {
       typeIds: [],
       tagIds: [],
       sectionIds: [],
       scope: "all",
+      groupBySection: false,
       order: "title",
-    });
-    expect(useUiStore.getState().activeViewId).toBe(saved?.id);
+    },
   });
+  useCanvasStore.setState({ workspace: doc });
+  useProjectionStore.setState({ byWorkspace: {} });
+  if (projected) useProjectionStore.getState().project(view.id);
+  return { doc, view };
+}
 
-  it("should show the applied view in the library and fill its query", () => {
-    const workspace = fixture();
-    const item: LibraryItem = {
-      id: "c1",
-      title: "Grading notes",
-      boards: [],
-      typeIds: ["note"],
-      tagIds: [],
-      sectionIds: [],
-      properties: {},
-    };
-    const saved = workspace.createView({
-      name: "Colour",
-      query: {
-        text: "grading",
-        typeIds: [],
-        tagIds: [],
-        sectionIds: [],
-        scope: "all",
-        groupBySection: false,
-        order: "relevance",
-      },
-    });
-
-    render(
-      <>
-        <ViewsBar workspace={workspace} canManage />
-        <LibraryDrawer
-          open
-          tab="cards"
-          counts={{ inbox: 0, cards: 1, trash: 0 }}
-          inbox={[]}
-          cards={[item]}
-          trash={[]}
-          onTab={() => {}}
-          onClose={() => {}}
-          onPlace={() => {}}
-          onCreateInInbox={() => {}}
-          onTrash={() => {}}
-          onRestore={() => {}}
-          onDeleteForever={() => {}}
-          onEmptyTrash={() => {}}
-          onGoToBoard={() => {}}
-          onDropAt={() => {}}
-          onPlaceCards={() => {}}
-          types={[]}
-          tags={[]}
-          typeFilter={[]}
-          tagFilter={[]}
-          onToggleType={() => {}}
-          onToggleTag={() => {}}
-          onClearFilters={() => {}}
-          activeBoardId={null}
-          activeBoardName={null}
-          scope="all"
-          onScope={() => {}}
-          full={false}
-          onFull={() => {}}
-          sectionFilter={[]}
-          onToggleSection={() => {}}
-          sectionOrder={[]}
-          groupBySection={false}
-          onToggleGroup={() => {}}
-          onOpenCard={() => {}}
-          workspace={workspace}
-        />
-      </>,
-    );
-
-    fireEvent.click(screen.getByTestId("views-menu-button"));
-    fireEvent.click(screen.getByTestId(`views-item-${saved.id}`));
-
-    expect(screen.getByTestId("library-active-view")).toHaveTextContent("Colour");
-    expect(screen.getByTestId("library-search")).toHaveValue("grading");
-    expect(screen.getByTestId("library-item-c1")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId("library-exit-view"));
-    expect(screen.queryByTestId("library-active-view")).not.toBeInTheDocument();
-    expect(screen.getByTestId("library-search")).toHaveValue("");
-    expect(useUiStore.getState().activeViewId).toBeNull();
-  });
+beforeEach(() => {
+  useViewsStore.setState({ open: false, editingId: null, draft: null, picking: false });
+  useProjectionStore.setState({ byWorkspace: {} });
 });
 
-describe("ViewsBar menu keyboard", () => {
-  it("moves focus into the saved views when the menu opens", () => {
-    const workspace = fixture();
-    workspace.createView({
-      name: "Grading",
-      query: {
-        text: "grading",
-        typeIds: [],
-        tagIds: [],
-        sectionIds: [],
-        scope: "all",
-        groupBySection: false,
-        order: "relevance",
-      },
-    });
-    render(<ViewsBar workspace={workspace} canManage />);
+describe("the views icon", () => {
+  it("should open the layer on the projected view, so both surfaces agree", () => {
+    const { view } = seed(true);
+    render(<ViewsBar />);
+
+    expect(screen.getByTestId("views-menu-button")).toHaveAttribute(
+      "aria-label",
+      "Views: Grading pass",
+    );
+    fireEvent.click(screen.getByTestId("views-menu-button"));
+    expect(useViewsStore.getState().open).toBe(true);
+    expect(useViewsStore.getState().editingId).toBe(view.id);
+  });
+
+  it("should open the layer on the first view when nothing is projected", () => {
+    const { view } = seed();
+    render(<ViewsBar />);
 
     fireEvent.click(screen.getByTestId("views-menu-button"));
+    expect(useViewsStore.getState().editingId).toBe(view.id);
+  });
 
-    const menu = screen.getByTestId("views-menu");
-    expect(menu.contains(document.activeElement)).toBe(true);
-    expect(document.activeElement).toHaveAttribute("role", "menuitem");
+  it("should open the layer even with no views, so the layer can make one", () => {
+    const doc = new WorkspaceDocument();
+    useCanvasStore.setState({ workspace: doc });
+    render(<ViewsBar />);
+
+    fireEvent.click(screen.getByTestId("views-menu-button"));
+    expect(useViewsStore.getState().open).toBe(true);
+    expect(useViewsStore.getState().editingId).toBeNull();
   });
 });

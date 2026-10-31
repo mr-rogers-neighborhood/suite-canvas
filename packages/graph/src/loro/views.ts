@@ -1,8 +1,15 @@
 import { isMap, readIdSet, readNumber, readString, writeIdSet } from "../records/values.js";
-import { type SavedView, savedViewSchema } from "../views.js";
+import type { ViewCollection, ViewPresentationKind, ViewQuery, ViewRender } from "../views.js";
+import {
+  type SavedView,
+  savedViewSchema,
+  viewCollectionSchema,
+  viewQuerySchema,
+  viewRenderSchema,
+} from "../views.js";
 import { STRUCT_ORIGIN } from "./constants.js";
 import type { DocContext } from "./context.js";
-import type { CreateViewInput, UpdateViewInput } from "./model.js";
+import type { CreateViewInput } from "./model.js";
 
 /**
  * Owns saved views: the named queries kept beside the boards they read, and the
@@ -11,6 +18,19 @@ import type { CreateViewInput, UpdateViewInput } from "./model.js";
  * Plain functions over the shared DocContext: the facade delegates here,
  * and modules reach each other through `ctx.api`.
  */
+/**
+ * The pinned card ids of one view, or undefined when the view has never had any.
+ *
+ * `undefined` and "an empty list" are different answers: the first means the view was written before pins
+ * existed, the second means a reader cleared them.
+ */
+function readPins(fields: { get: (key: string) => unknown }): string[] | undefined {
+  const context = fields.get("context");
+  if (!isMap(context)) return undefined;
+  const cardIds = context.get("cardIds");
+  return isMap(cardIds) ? readIdSet(cardIds) : [];
+}
+
 export function viewsMethods(ctx: DocContext) {
   return {
     cachedView(id: string): SavedView | undefined {
@@ -48,7 +68,7 @@ export function viewsMethods(ctx: DocContext) {
         // Everything the view carries beyond its query. Absent fields stay absent, so a view
         // written before kinds and pins existed still reads as the lens it always was.
         ...(fields.get("kind") !== undefined ? { kind: fields.get("kind") } : {}),
-        ...(fields.get("context") !== undefined ? { context: fields.get("context") } : {}),
+        ...(readPins(fields) === undefined ? {} : { context: { cardIds: readPins(fields) ?? [] } }),
         ...(fields.get("lens") !== undefined ? { lens: fields.get("lens") } : {}),
         ...(fields.get("collection") !== undefined ? { collection: fields.get("collection") } : {}),
         ...(fields.get("render") !== undefined ? { render: fields.get("render") } : {}),
@@ -97,30 +117,146 @@ export function viewsMethods(ctx: DocContext) {
     },
 
     /**
-     * Renames a view and/or replaces its query. The query is a whole record: a
-     * view is one saved query, so a facet edit is a new query, not a merge.
+     * Renames a view.
+     *
+     * One key of one record. A rename is the smallest possible edit, which is why it is not routed through
+     * a whole-record replace: two people renaming different views, or one renaming while another edits the
+     * query, must not overwrite each other.
      */
-    updateView(id: string, patch: UpdateViewInput): SavedView | undefined {
+    renameView(id: string, name: string): SavedView | undefined {
+      const fields = ctx.viewsMap.get(id);
+      if (!isMap(fields)) return undefined;
+      const trimmed = name.trim();
+      if (!trimmed) throw new Error("A view needs a name");
+      fields.set("name", trimmed);
+      ctx.commit(`${STRUCT_ORIGIN}rename-view`);
+      return ctx.api.views.getView(id);
+    },
+
+    /**
+     * Writes only the query keys the caller changed.
+     *
+     * The storage has always been per key (`text`, `scope`, each id set, the JSON slots); the old
+     * `updateView` rebuilt the whole query from a stale copy and wrote every key back, which is what made
+     * two people editing one view clobber each other. A patch that names a key owns that key and nothing
+     * else, so concurrent edits to different facets converge.
+     */
+    patchViewQuery(id: string, patch: Partial<ViewQuery>): SavedView | undefined {
+      const fields = ctx.viewsMap.get(id);
+      if (!isMap(fields)) return undefined;
       const current = ctx.api.views.getView(id);
-      if (!current) return undefined;
-      const name = patch.name === undefined ? current.name : patch.name.trim();
-      if (!name) throw new Error("A view needs a name");
-      // A whole-record replace, and one payload per kind: switching a view from a lens to a render
-      // must not leave the old camera behind to be read by the next client that guesses wrong.
-      const next = {
-        ...current,
-        ...patch,
-        name,
-        query: patch.query ?? current.query,
-      };
-      const kind = next.kind ?? "lens";
-      if (kind !== "lens") delete next.lens;
-      if (kind !== "collection") delete next.collection;
-      if (kind !== "render") delete next.render;
-      const view = savedViewSchema.parse(next);
-      ctx.api.views.writeView(view);
-      ctx.commit(`${STRUCT_ORIGIN}update-view`);
-      return view;
+      if (current === undefined) return undefined;
+      // The patch is validated as the query it would produce, so a bad enum is refused before any key is
+      // written. Writing first and validating later is how a document ends up holding a scope no reader
+      // can interpret.
+      viewQuerySchema.parse({ ...current.query, ...patch });
+      const query = fields.ensureMergeableMap("query");
+      if (patch.text !== undefined) {
+        if (patch.text.length === 0) query.delete("text");
+        else query.set("text", patch.text);
+      }
+      if (patch.textScope !== undefined) query.set("textScope", patch.textScope);
+      if (patch.scope !== undefined) query.set("scope", patch.scope);
+      if (patch.order !== undefined) query.set("order", patch.order);
+      if (patch.groupBySection !== undefined) query.set("groupBySection", patch.groupBySection);
+      if (patch.groupBy !== undefined) query.set("groupBy", patch.groupBy);
+      if (patch.typeIds !== undefined)
+        writeIdSet(query.ensureMergeableMap("typeIds"), patch.typeIds);
+      if (patch.tagIds !== undefined) writeIdSet(query.ensureMergeableMap("tagIds"), patch.tagIds);
+      if (patch.sectionIds !== undefined) {
+        writeIdSet(query.ensureMergeableMap("sectionIds"), patch.sectionIds);
+      }
+      for (const key of ["groups", "sorts"] as const) {
+        const value = patch[key];
+        if (value === undefined) continue;
+        if (value.length === 0) query.delete(key);
+        else query.set(key, value);
+      }
+      ctx.commit(`${STRUCT_ORIGIN}view-query`);
+      return ctx.api.views.getView(id);
+    },
+
+    /**
+     * Sets the kind and its payload in one commit, dropping the other payloads.
+     *
+     * One payload per kind, because a view that carried a table mode and a chart layout would leave the
+     * next client guessing which one the kind names. Kind and payload move together so a reader never sees
+     * a render without its layout.
+     */
+    setViewKind(
+      id: string,
+      kind: ViewPresentationKind,
+      payload?: { collection?: ViewCollection; render?: ViewRender },
+    ): SavedView | undefined {
+      const fields = ctx.viewsMap.get(id);
+      if (!isMap(fields)) return undefined;
+      fields.set("kind", kind);
+      const next: Record<string, unknown> = {};
+      if (kind === "collection") {
+        const collection = payload?.collection ?? { mode: "database" as const };
+        fields.set("collection", collection);
+        fields.delete("render");
+        next.collection = collection;
+      } else {
+        const render = payload?.render ?? { layout: "graph-2d" as const };
+        fields.set("render", render);
+        fields.delete("collection");
+        next.render = render;
+      }
+      // A lens payload is legacy; a kind edit is the moment to stop carrying one.
+      fields.delete("lens");
+      ctx.commit(`${STRUCT_ORIGIN}view-kind`);
+      return ctx.api.views.getView(id);
+    },
+
+    /**
+     * Pins are an id set, not a list in one slot.
+     *
+     * A `context` map keyed by card id means two people pinning at the same time both win, which is what
+     * "add this card to the view" means. A JSON array would resolve last-writer-wins and lose one.
+     */
+    addViewPin(id: string, cardId: string): SavedView | undefined {
+      const fields = ctx.viewsMap.get(id);
+      if (!isMap(fields)) return undefined;
+      const context = fields.ensureMergeableMap("context");
+      context.ensureMergeableMap("cardIds").set(cardId, true);
+      ctx.commit(`${STRUCT_ORIGIN}view-pin`);
+      return ctx.api.views.getView(id);
+    },
+
+    removeViewPin(id: string, cardId: string): SavedView | undefined {
+      const fields = ctx.viewsMap.get(id);
+      if (!isMap(fields)) return undefined;
+      const context = fields.get("context");
+      if (isMap(context)) context.ensureMergeableMap("cardIds").delete(cardId);
+      ctx.commit(`${STRUCT_ORIGIN}view-pin`);
+      return ctx.api.views.getView(id);
+    },
+
+    clearViewPins(id: string): SavedView | undefined {
+      const fields = ctx.viewsMap.get(id);
+      if (!isMap(fields)) return undefined;
+      fields.delete("context");
+      ctx.commit(`${STRUCT_ORIGIN}view-pin`);
+      return ctx.api.views.getView(id);
+    },
+
+    /** The collection's mode, written on its own so a table can become a grid without a kind write. */
+    patchViewCollection(id: string, collection: ViewCollection): SavedView | undefined {
+      const fields = ctx.viewsMap.get(id);
+      if (!isMap(fields)) return undefined;
+      fields.set("collection", viewCollectionSchema.parse(collection));
+      ctx.commit(`${STRUCT_ORIGIN}view-collection`);
+      return ctx.api.views.getView(id);
+    },
+
+    /** The render's layout, measure and grouping, written on their own. */
+    patchViewRender(id: string, render: ViewRender): SavedView | undefined {
+      const fields = ctx.viewsMap.get(id);
+      if (!isMap(fields)) return undefined;
+      fields.set("render", viewRenderSchema.parse(render));
+      ctx.commit(`${STRUCT_ORIGIN}view-render`);
+      return ctx.api.views.getView(id);
     },
 
     /** Removes the saved query; no card is touched. */
@@ -181,7 +317,7 @@ export function viewsMethods(ctx: DocContext) {
 
       const pins = view.context?.cardIds ?? [];
       if (pins.length === 0) fields.delete("context");
-      else fields.set("context", { cardIds: pins });
+      else writeIdSet(fields.ensureMergeableMap("context").ensureMergeableMap("cardIds"), pins);
 
       for (const key of ["lens", "collection", "render"] as const) {
         const value = view[key];

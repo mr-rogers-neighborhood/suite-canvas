@@ -36,7 +36,6 @@ import { LibraryDrawer, type LibraryItem } from "../library/LibraryDrawer";
 import { BOARD_TYPE_FACET } from "../library/libraryTypes";
 import { BOARD_STARTERS } from "../library/TemplateGallery";
 import { TypeSettingsHost } from "../panels/TypeSettingsHost";
-import { ViewsEditor } from "../panels/ViewsEditor";
 import { pinnedOrder, useBoardPins } from "../session/boardPins";
 import type { ShareSession } from "../session/session";
 import {
@@ -52,6 +51,7 @@ import { LoadingPlaceholder } from "../shell/LoadingPlaceholder";
 import type { useCanvasStore } from "../store/useCanvasStore";
 import { type LibraryTab, useUiStore } from "../store/useUiStore";
 import { viewsEnabled } from "../views/availability";
+import { ViewsLayer } from "../views/ViewsLayer";
 import { AppearanceHost } from "./AppearanceHost";
 import { BlueprintInstallHost } from "./BlueprintInstallHost";
 import { HistoryPanelHost } from "./HistoryPanelHost";
@@ -812,7 +812,7 @@ export function WorkspaceShellView({
         <MediaPickerHost />
 
         {/* The views editor: a right-hand sheet, so the board can be previewed behind it. */}
-        {workspaceSurface && viewsEnabled ? <ViewsEditor /> : null}
+        {workspaceSurface && viewsEnabled ? <ViewsLayer /> : null}
 
         {/* The type a card's title and body declare, previewed before it is written. */}
         {workspaceSurface && canManageSchema ? (

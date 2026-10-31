@@ -1,14 +1,13 @@
-import type { ViewPredicateGroup, ViewSort } from "@suite/graph";
+import type { ViewPredicateGroup, ViewQuery, ViewSort } from "@suite/graph";
 import { useMemo } from "react";
-import type { ViewDraft } from "../views/draft";
 
 export interface ViewQueryAdvancedProps {
-  draft: ViewDraft;
+  query: ViewQuery;
   /** Card types, tags and sections the facet rows offer. */
   types: readonly { id: string; name: string }[];
   tags: readonly { id: string; name: string }[];
   sections: readonly { id: string; title: string }[];
-  onChange: (patch: Partial<ViewDraft["query"]>) => void;
+  onChange: (patch: Partial<ViewQuery>) => void;
 }
 
 const fieldClass =
@@ -29,13 +28,13 @@ const smallButton =
  * engine and named here as not yet editable, which is a gap a reader can see rather than guess at.
  */
 export function ViewQueryAdvanced({
-  draft,
+  query,
   types,
   tags,
   sections,
   onChange,
 }: ViewQueryAdvancedProps) {
-  const { sorts = [], groups = [] } = draft.query;
+  const { sorts = [], groups = [] } = query;
   const unsupported = groups.filter((group) =>
     [...(group.any ?? []), ...(group.not ?? [])].some(
       (predicate) => !["type", "tag", "section", "text"].includes(predicate.p),
@@ -245,6 +244,6 @@ function describe(
 }
 
 /** Whether the query holds anything the Advanced disclosure is hiding. */
-export function advancedCount(draft: ViewDraft): number {
-  return (draft.query.sorts?.length ?? 0) + (draft.query.groups?.length ?? 0);
+export function advancedCount(query: ViewQuery): number {
+  return (query.sorts?.length ?? 0) + (query.groups?.length ?? 0);
 }

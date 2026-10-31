@@ -13,31 +13,20 @@ the artifact to roll back to. See [docs/how-to/release.md](docs/how-to/release.m
 
 ### Added
 
-- A views editor: a right-hand sheet with the saved views on the left and **Context**, **Kind** and
-  **Presentation** stacked on the right. A context is a query *and* the cards you pinned by hand, so a
-  view can be built from filters, from a selection, or from both, and the read-out says which is which.
-- Live preview. A draft is a real view with a temporary id, so a lens fades and outlines the board as
-  you type and a collection or render takes the board area behind the sheet. Nothing is written until
-  Save, and closing the sheet leaves the draft applied as `Preview · name` with Edit beside it.
-- A lens is a selection now, not a saved camera: the cards in the context are outlined, everything else
-  fades, and a strip along the bottom counts what is on this board and offers the boards the rest of the
-  context sits on. Cards in the inbox are counted rather than invented.
-- Collections and renders are presented over the board with their count and an Edit button, and renders
-  gained bar and line charts over a count, a sum or an average.
-- **New view** and **New media** in the canvas context menu, and **New view** in the library's Views tab.
-- The views menu is an icon in the board's own control row rather than a labelled dropdown.
-
-### Changed
-
-- A saved view stores a kind, its pins and its presentation, and keeps exactly one payload per kind, so
-  switching from a lens to a render cannot leave a stale camera behind.
-- The saved-views bar and the views editor share one development flag (`views/availability.ts`), worded
-  like the handbook's door.
-
-## [Unreleased]
-
-### Added
-
+- The views layer: a full-window mode with a rail of saved views drawn as live thumbnails, the
+  presentation filling the rest, a context drawer, and its own footer. It is where a view is read and
+  edited, and the board's icon opens it.
+- Picking: the layer steps out of the window, the board becomes the surface, presses add cards to the
+  view immediately, and a floating bar owns Done and Cancel. Cancel restores exactly what was there
+  before, including across a board switch.
+- Projection: any view can be cast onto this reader's board, outlined and faded, with a bar naming it
+  and chips for every board the context touches. It is per browser and per workspace, never synced.
+- Editable collection tables: text, number, checkbox and select cells write through the document;
+  richer kinds show their value and open their editor.
+- Bar and line charts with a measure (count, sum or average over a number field) and a grouping, laid
+  out above the surface rather than behind a sheet.
+- **New view** and **New media** in the canvas context menu, and **New view** in the library's Views
+  tab.
 - A handbook inside the app: a float in the corner of the board that lists the articles matching what is
   on screen, counts the things they document, and points a line at the element an article is about.
   It ships behind a development flag while the surface is rough; a production build keeps the
@@ -58,12 +47,22 @@ the artifact to roll back to. See [docs/how-to/release.md](docs/how-to/release.m
 
 ### Changed
 
-- The saved-views menu always offers **New view…**, including from an unfiltered library, and the bar
-  sits after the outline toggle and before search.
+- A lens is no longer a kind. `kind` is `collection` or `render`, projecting is a verb any view can
+  take, and a view written before the change reads as a collection with its old payload supplying the
+  projection's defaults.
+- Editing a saved view is live: field-level setters replace the whole-record write, so concurrent edits
+  to different facets converge. `Done` leaves, `Discard my edits` restores the record you opened, and a
+  new view stays a local draft until `Create`.
+- A view's context is a query *and* the cards you pinned by hand, so it can be built from filters, from
+  a selection, or from both, and the read-out says which is which.
+- The views controls are an icon in the board's own control row rather than a labelled dropdown, and
+  the bar sits after the outline toggle and before search.
+- The library is no longer filtered by a projection; its filters are the reader's own.
 - The six heading commands are one accessible menu in the toolbar and one row in the `/` menu. Choosing
   a level sets it rather than toggling it, and `/h3` still applies H3 without opening the menu.
 - Pins and the handbook share one drag and resize gesture, and one list of shell obstacles.
-
+- The saved-views bar and the views layer share one development flag (`views/availability.ts`), worded
+  like the handbook's door.
 ## [0.1.0-alpha.1] - 2026-10-29
 
 The first public release of Suite. The product is the one the hosted deployment runs; what this

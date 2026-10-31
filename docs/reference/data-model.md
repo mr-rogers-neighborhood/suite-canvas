@@ -135,20 +135,25 @@ facets, type and tag facets, scope, grouping and predicates, and `viewPredicates
 the document at read time. `viewsRevision` moves when a view record changes, so a renderer can subscribe to
 the view list without subscribing to every card.
 
-A view also names how to present its result, in an additive `kind`: `lens` (a selection applied to the
-board), `collection` (a `database`, `grid` or `list`) or `render` (a `graph-2d` graph, or a `bar` or `line`
-chart with a measure and a grouping). `kind` is optional and absent reads as `lens`; `viewKindOf` is the
-one place that fallback lives. A kind never takes part in the query, so two views that share a query
-select the same cards whatever they are.
+A view also names how its result is **read**, in an additive `kind`: `collection` (a `database`, `grid` or
+`list`) or `render` (a `graph-2d` graph, or a `bar` or `line` chart with a measure and a grouping). A kind
+never takes part in the query, so two views that share a query select the same cards whatever they are.
 
-**A context is a query plus pins.** `context.cardIds` holds cards added by hand, and `resolveContext`
-returns their union with the query's result, plus the boards the context sits on, the cards that are
-only in the inbox, and the pins that no longer resolve. Pins therefore live on the view rather than
-inside the query, which keeps the query a rule: it names what to select, never what was selected.
+**A lens was a kind and is now a verb.** `"lens"` still parses so documents written before that decision
+load, `viewKindOf` reads it as a collection, and the `lens` payload supplies the *defaults* a reader gets
+when they project the view (a preferred board, and the two toggles). The payload is never written again.
 
-`lens.boardId` is a preferred board, optional because the usual answer is "wherever the reader is".
-`lens.viewport` is legacy: old views still parse, nothing reads it, and nothing writes it. The
-`fade` and `outline` toggles on the lens are additive and default to on.
+**A projection is not in the document.** Which view a reader has cast over their board is a reading
+position: it lives in this browser, keyed by workspace, and nothing about it syncs. What syncs is the view.
+
+**A context is a query plus pins.** `context.cardIds` is stored as an id set rather than a list, so two
+people pinning at the same time both win; `resolveContext` unions the pins with the query's result and
+reports the boards the context sits on, the cards only in the inbox, and the pins that no longer resolve.
+
+**A saved view is edited field by field.** `renameView`, `patchViewQuery`, `setViewKind`,
+`addViewPin`/`removeViewPin`, `patchViewCollection` and `patchViewRender` each write only their own keys.
+There is no whole-record replace, which is what lets two people change different facets of one view without
+one of them silently reverting the other.
 
 ## Publish: plan, then apply
 

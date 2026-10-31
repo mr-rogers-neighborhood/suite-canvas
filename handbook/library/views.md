@@ -1,28 +1,26 @@
 ---
 title: Views
-description: "One query, three ways to show it: a lens on the board, a collection, or a render."
+description: "One configuration, two surfaces: the layer where you read it, and the projection on your board."
 order: 30
 targets:
   - kind: ui
-    id: views-presentation
+    id: views-layer
 ---
 
-A view is a question about the workspace, saved with a name. The question is a context — words to
-match, types, tags, sections and cards you pinned by hand — and the answer is shown in one of three
-ways:
+A view is a saved question about the workspace. Its **context** is what to select — words, types, tags,
+sections, and cards you pinned by hand — and its **kind** is how the result is read: a **collection** as a
+table, a grid or a list, or a **render** as a graph or a chart.
 
-- a **lens** highlights those cards on the board and fades everything else;
-- a **collection** shows them as a table, a grid or a list;
-- a **render** shows them as a graph, or as a bar or line chart of a count.
+Views live in a layer, not a panel. Press the views icon in the board's controls and the layer takes the
+window: saved views with live thumbnails on the left, the one you are reading filling the rest, its
+context a press away. Escape leaves.
 
-The kind never changes which cards are in the view. Two views that share a context select the same
-cards whatever they draw, which is why switching the kind of a saved view keeps its result.
+The same view can also be **projected** onto this reader's board, where its cards are outlined and
+everything else fades. Projecting is a reading, not an edit: it is yours alone, it is remembered in this
+browser, and it never changes anyone else's screen. What *is* shared is the view itself — its query and
+presentation travel in the workspace, so a view card on a canvas redraws for everyone the moment somebody
+edits the view it names.
 
-A collection and a render open in [the presentation](target:ui:views-presentation), a reading over
-the board with the card count and an Edit button. A lens is drawn on the board itself, with a strip
-along the bottom naming the view, counting what is on this board and offering the boards the rest of
-the context sits on. Cards in the inbox are counted and named, never invented: they have no position
-on a board, so there is nothing to highlight.
-
-Nothing in a view copies a card. A view is a rule, so a card renamed, retyped or trashed changes the
-result the moment it happens, and a view never holds a stale list of the cards it used to match.
+Because the configuration is shared, editing a saved view is live. There is no Save to press: the layer
+edits the record as you go, and everyone reading that view sees the change. **Discard my edits** puts back
+what you opened, and it is visible to them too.

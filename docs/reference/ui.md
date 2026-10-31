@@ -19,9 +19,9 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, sync and storage status, **Share** (`ShareAction.tsx`, its own control beside the status pill), the workspace menu, the account slot, the theme toggle |
 | Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history and outline buttons in `app/WorkspaceShellView.tsx` | Home, the open boards with their peer counts, undo, redo, version history and the outline, in one row |
 | Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface, plus the plan wall and the retry for whoever just paid |
-| Views | `apps/canvas/src/chrome/ViewsBar.tsx` | An icon in the nav row, after the outline, opening the saved views: apply, Edit, New view…, rename and delete. **Development only** (see below) |
-| Views editor | `apps/canvas/src/panels/ViewsEditor.tsx` | A right-hand sheet: the saved views, and the Context / Kind / Presentation steps, with the draft applied live |
-| View presentation | `apps/canvas/src/canvas/board/ViewPresentation.tsx` | A collection or a render over the board area, with its count, Edit and a close |
+| Views | `apps/canvas/src/chrome/ViewsBar.tsx` | One icon in the nav row, after the outline, opening the views layer on the projected view. **Development only** (see below) |
+| Views layer | `apps/canvas/src/views/ViewsLayer.tsx` | The full-window mode: the rail of saved views with thumbnails, the presentation, the context drawer and the picking state |
+| Projection bar | `apps/canvas/src/canvas/board/ProjectionBar.tsx` | A view cast onto this reader's board: its name, the boards it touches, the two toggles, Open and Stop |
 | Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new sketch, new section, new portal, type settings. The menu itself is `apps/canvas/src/chrome/NewThingMenu.tsx`, shared with the library |
 | Outline rail | `apps/canvas/src/canvas/BoardOutline.tsx` | The active board's section tree, in reading order, with counts and presence. Hidden while the board has no sections |
 | Inspector | `apps/canvas/src/cards/CardInspectorHost.tsx` | The one panel for the selected card or container |
@@ -125,45 +125,43 @@ is not visible to a peer until it uploads.
 
 ### Views are a development-only door
 
-The views icon in the nav row and the editor behind it are rendered behind one flag,
-`apps/canvas/src/views/availability.ts`, the same arrangement as the handbook's. `import.meta.env.DEV`
-is a literal Vite inlines, so a production bundle drops both branches and the components with them.
-Removing the flag is the whole change when the surfaces settle, and the release that does it should say
-so in its notes.
+The views icon and the layer behind it are rendered behind one flag, `apps/canvas/src/views/availability.ts`,
+the same arrangement as the handbook's. `import.meta.env.DEV` is a literal Vite inlines, so a production
+bundle drops both branches and the components with them.
 
-**What a view is now.** A saved view is a *context* plus a presentation. The context is a query and a
-list of hand-picked cards (`context.cardIds`), unioned by `resolveContext`, which also reports the boards
-the context touches, the cards that are only in the inbox and the pins that no longer resolve. The
-presentation is one of three kinds, a lens, a collection or a render, and never changes which cards are
-in the view.
+**A configuration is shared; a state is not.** A saved view's context, kind and presentation are document
+data, which is why a view card works: it holds only the id, so editing the view redraws every card that
+names it. A **projection** is the opposite, because which view this reader has cast over their board is a reading
+position, like a camera or a pin. It is per browser, per workspace, remembered in `localStorage`, and
+nothing about it reaches the document.
 
-**The editor is a sheet**, not a modal: `views/ViewsEditor.tsx` mounts on the right so the board stays
-visible and usable, because the draft is applied while it is edited. It has a rail of saved views and
-three stacked steps (Context, Kind, Presentation) and a footer with the name, a dirty chip, Cancel and
-Save (plus Save as copy when editing). `ViewsEditor` is the only surface that writes a view.
+**A lens is not a kind.** `kind` answers how a result is read (`collection` or `render`); projecting is a
+verb any view can take. A view written before that distinction still parses: `viewKindOf` reads it as a
+collection, and its old `lens` payload supplies the projection's preferred board and its two toggles.
 
-**The draft is live.** A draft is a `SavedView` with a temporary id (`views/draft.ts`), so the lens, the
-figures and the presentation consume it unchanged, because `useCanvasLens` reads the preview before the applied
-view, which makes a lens fade and outline the board on every keystroke. `Live preview` toggles that off;
-closing the sheet leaves the draft applied and labelled `Preview · name`, and nothing is written until
-Save. Cancel discards the draft and re-applies whatever was applied before.
+**The layer is a mode.** `views/ViewsLayer.tsx` takes the window rather than a drawer, because a view is a
+surface: a rail of live thumbnails on the left, the presentation in the middle, the context in a drawer, and
+a footer that says Done or Create. Opening it is a mode change, which is why Escape has one owner and why
+the title bar knows it is underneath.
 
-**A lens is a selection, not a camera.** `useBoardNodes` dims what is outside the context and outlines
-what is inside, both as lens toggles that default to on. `canvas/board/LensStrip.tsx` names the view,
-counts the cards on this board, and offers a chip per board the context touches: a context that spans
-boards navigates rather than guesses. Cards in the inbox are counted and never drawn, because they have
-no position to outline.
+**Editing a saved view is live.** The layer writes through field-level setters (`renameView`,
+`patchViewQuery`, `setViewKind`, `addViewPin`, `patchViewCollection`, `patchViewRender`), each of which touches
+only its own keys, so two people editing different facets converge instead of clobbering. There is no Save:
+`Done` leaves, and `Discard my edits` restores the record the layer opened with, as a write everyone sees.
+A *new* view stays a local draft until `Create`, so creating one is cancellable.
 
-**Collections and renders are presented, not edited.** `canvas/board/ViewPresentation.tsx` takes the
-board area with the view's name, count, Edit and a close, and draws a table, a grid, a list, a graph or
-a chart. Every cell is plain text: ADR-0043 allows editing cells in a database, and that is deliberately
-not here yet rather than a control that would not save. Charts are `cards/ViewChart.tsx` over pure
-series geometry (`cards/viewChart.ts`), and the same renderer draws a view card, an embed, the editor's
-preview and the presentation.
+**Picking is the layer's third state.** `Pick cards` hides the layer, the board becomes the surface, each
+press adds a pin immediately, and the floating bar owns Done and Cancel. Cancel restores the pin list the
+pick started from, including across a board switch.
 
-**View cards.** `New view` in the canvas context menu places a view card at the press and opens the
-editor on it; cancelling takes the card back. The library's Views tab has its own `New view`, and a
-card's row menu edits the view it presents.
+**The board reads the projection.** `useCanvasLens` resolves it, `useBoardNodes` outlines and fades from it,
+and `ProjectionBar` explains it. The library's own filters are the reader's; a projection no longer filters
+it, which removes the second source of "what is applied".
+
+**Collections and renders are read in the layer.** A collection is a table whose text, number, checkbox and
+select cells edit in place through `setProperty`; a render is a graph or a bar/line chart with a measure and
+a grouping. Anything richer than those four kinds shows its value and leaves editing to the inspector,
+rather than inventing a text protocol for a relation.
 
 Rows share one action menu, opened from the `⋯` button or a right-click, and one piece of state (`rowMenu`), so both entry points cannot show different actions for the same row. A card row can be dragged onto the canvas: the hold and drop run through `useLibraryHold`, and the drop places the card at the pointer instead of at the drawer.
 

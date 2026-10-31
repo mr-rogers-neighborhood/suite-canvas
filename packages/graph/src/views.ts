@@ -29,7 +29,14 @@ export const viewSortKeySchema = z.enum(viewSortKeys);
  * before kinds existed is still the camera fit it always was: a kind says where
  * to stand and how to draw, never what the query selects.
  */
-export const viewKinds = ["lens", "collection", "render"] as const;
+export const viewKinds = ["collection", "render", "lens"] as const;
+/**
+ * The kinds a reader may choose. `lens` is absent because it stopped being a *kind*: projecting a view
+ * onto the board is a verb any view can take (see `projection` in the views store), so a lens is what a
+ * view *does*, not what it is. It stays in the parse set so documents written before that decision load,
+ * and `viewKindOf` reads it as the collection it always selected.
+ */
+export const offeredViewKinds = ["collection", "render"] as const;
 export const viewCollectionModes = ["database", "grid", "list"] as const;
 /**
  * How a render draws its result. A graph draws the cards and the links between them; a chart
@@ -60,11 +67,11 @@ export const viewChartGroupBySchema = z.union([
 ]);
 
 /**
- * A lens is a *selection applied to the board*, not a camera.
+ * What a legacy lens carried, read as defaults when a reader projects the view.
  *
- * `boardId` is the board the lens prefers when its context spans several, and it is optional
- * because the common case is "wherever the reader is". `viewport` is legacy: it is still parsed so
- * views written before this decision keep loading, nothing reads it, and nothing writes it.
+ * Projection itself is reader state and is not stored (a projection is a reading position, like a pin).
+ * These four fields survive only so a view written before projection existed keeps its preferred board
+ * and its two toggles; `viewport` is parsed and ignored, and nothing writes the payload any more.
  */
 export const viewLensSchema = z.object({
   boardId: entityIdSchema.optional(),
@@ -151,6 +158,7 @@ export const savedViewSchema = z.object({
    * kind, so presentation can change without a result changing with it.
    */
   kind: viewKindSchema.optional(),
+  /** Legacy only: read as projection defaults, never written by this build. */
   lens: viewLensSchema.optional(),
   collection: viewCollectionSchema.optional(),
   render: viewRenderSchema.optional(),
@@ -164,6 +172,8 @@ export type ViewSort = { by: ViewSortKey; dir: "asc" | "desc" };
 export type ViewQuery = z.infer<typeof viewQuerySchema>;
 export type SavedView = z.infer<typeof savedViewSchema>;
 export type ViewKind = z.infer<typeof viewKindSchema>;
+/** The kinds a view can *be*. A lens is what a view can *do*, so it is not one of these. */
+export type ViewPresentationKind = (typeof offeredViewKinds)[number];
 export type ViewLens = z.infer<typeof viewLensSchema>;
 export type ViewCollection = z.infer<typeof viewCollectionSchema>;
 export type ViewCollectionMode = z.infer<typeof viewCollectionModeSchema>;
@@ -209,8 +219,11 @@ export function normalizeViewQuery(query: ViewQuery): ViewQuery {
  * learned kinds still writes views every reader understands, and resolving the
  * fallback here keeps that rule from living in every caller.
  */
-export function viewKindOf(view: SavedView): ViewKind {
-  return view.kind ?? "lens";
+export function viewKindOf(view: SavedView): ViewPresentationKind {
+  // A view saved before kinds were narrowed was a lens: a selection with no data surface. It reads as a
+  // collection in list mode, which draws the same cards and can be edited into anything else.
+  if (view.kind === undefined || view.kind === "lens") return "collection";
+  return view.kind;
 }
 
 export interface ViewContext {

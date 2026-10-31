@@ -21,7 +21,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "loro-crdt": "^1.16.4",
+    "loro-crdt": "^1.17.1",
     "neverthrow": "^8.2.0",
     "remeda": "^2.54.1",
     "zod": "^4.6.7"

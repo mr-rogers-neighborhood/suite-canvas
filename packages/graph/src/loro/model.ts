@@ -1,5 +1,5 @@
 import type { ContainerID } from "loro-crdt";
-import type { AnnotationAnchor } from "../annotations.js";
+import type { AnnotationAnchor, AnnotationPart } from "../annotations.js";
 import {
   type Board,
   type Card,
@@ -207,6 +207,8 @@ export interface CreateAnnotationInput {
   styleId: string;
   anchor: AnnotationAnchor;
   excerpt?: string;
+  /** The ranges this highlight was broken into, if the reader broke it. */
+  parts?: AnnotationPart[];
   createdAt?: number;
 }
 

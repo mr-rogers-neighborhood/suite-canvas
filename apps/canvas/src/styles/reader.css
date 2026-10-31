@@ -479,3 +479,326 @@
 [data-carrying-highlight="true"] .book-card {
   user-select: none;
 }
+
+/* ---------- A highlight, raised ---------- */
+
+.raise {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * The backdrop blurs rather than dims. The point of raising a highlight is to read it without the chapter competing,
+ * and a flat scrim would hide the context a reader still wants to see the shape of.
+ */
+.raise-scrim {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  backdrop-filter: blur(6px);
+  cursor: default;
+}
+
+.raise-panel {
+  position: relative;
+  display: flex;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(80vh, 640px);
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 24px 64px -28px rgb(0 0 0 / 0.45);
+}
+
+.raise-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.raise-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.raise-count {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.raise-colours {
+  display: flex;
+  gap: 5px;
+}
+
+.raise-colour {
+  width: 18px;
+  height: 18px;
+  border: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
+  border-radius: 9999px;
+  cursor: pointer;
+}
+
+.raise-colour[aria-pressed="true"] {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* The quote as the reader sees it, so a range can be chosen where the words actually are. */
+.raise-quote {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--segmented-bg);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+.raise-covered {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.raise-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+.raise-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.raise-part {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.raise-part-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.raise-part-arrow {
+  color: var(--ink-muted);
+}
+
+.raise-part-target {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 1px 4px;
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.raise-pending {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+}
+
+.raise-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--hairline);
+}
+
+/* ---------- The book's own marks ---------- */
+
+.reader-marks {
+  flex: none;
+  max-height: 45%;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.reader-marks-count {
+  margin: 0 0 4px;
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+
+.reader-marks-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A row is a press away from being raised: the words are what a reader is choosing between, so they lead. */
+.reader-mark {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 5px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  font-size: 11px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.reader-mark:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.reader-mark-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 9999px;
+}
+
+.reader-mark-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-mark-placed {
+  flex: none;
+  color: var(--ink-muted);
+}
+
+/* ---------- The library's annotation list ---------- */
+
+.library-annotations {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 8px 10px;
+}
+
+.library-annotation-book-title {
+  margin: 0 0 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.library-annotation-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The row and its remove control are siblings: a control inside a control is a button inside a button. */
+.library-annotation-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.library-annotation-row {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  text-align: left;
+  font-size: 12px;
+  color: var(--ink);
+  cursor: grab;
+}
+
+.library-annotation-row:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.library-annotation-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.library-annotation-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 9999px;
+}
+
+.library-annotation-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-annotation-parts {
+  flex: none;
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+
+.library-annotation-where {
+  flex: none;
+  font-size: 10px;
+}
+
+.library-annotation-card {
+  color: var(--ink-muted);
+}
+
+.library-annotation-unplaced {
+  font-style: italic;
+  color: var(--ink-muted);
+}

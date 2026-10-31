@@ -28,6 +28,25 @@ at the passage, so the card is never a second copy of the quote that could go ou
 A comment on a highlight is the next block in the body of that card. There is no separate comment system, because
 there is no separate kind of card.
 
+## Breaking a highlight apart
+
+Press a highlight and it is raised: the chapter blurs, the passage sits alone, and the words are yours to cut up. This
+is the answer to a sentence whose real concept is at the end — a title taken from the first few words is a title taken
+from the setup clause.
+
+Select a range inside the raised passage and say where it goes:
+
+- **Title** — these words name the card.
+- **A property** — these words fill a property, made for you if the type does not have it yet.
+- **Own card** — these words become a card of their own, which is how one paragraph turns into several notes.
+
+**Done** keeps the parts and leaves the highlight where it is. **Place** makes the cards, and says how many it will
+make before you press it. A highlight that has already been placed opens its card rather than making a second one.
+
+The highlights you have made collect in the book's **Highlights** panel, beside its contents, with the ones that
+became cards marked. They are also in the library's **Annotations** tab, grouped by book — pressing one opens the
+passage, and dragging one onto the board places it there.
+
 ## What it will not do
 
 A book protected by DRM cannot be opened, and says so rather than failing halfway. A fixed-layout book — a comic,

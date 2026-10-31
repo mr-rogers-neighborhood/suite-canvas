@@ -31,6 +31,7 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Library drawer | `apps/canvas/src/library/LibraryDrawer.tsx` | Every card, board and trashed record, with search, facets and **Add new**, which opens the dock's own menu from the top of the list |
 | Command palette | `apps/canvas/src/command/CommandPalette.tsx` | Navigation and actions from one query |
 | Presence | `apps/canvas/src/presence/` and `apps/canvas/src/cursor/` | Peer cursors, name tags, avatars and the status cursor |
+| Raise | `apps/canvas/src/reader/HighlightFocus.tsx` | One highlight alone on a blurred backdrop, where its parts are chosen and given targets |
 | Book reader | `apps/canvas/src/reader/BookReader.tsx` | An EPUB read large, in focus mode: contents, one chapter at a time, the highlight palette, and a press or a drag that promotes a highlight to a card |
 | Book card | `apps/canvas/src/cards/BookCardFace.tsx` | The card on the canvas: the cover filling it, the title, author and chapter count, and **Read** |
 | Book block | `apps/canvas/src/editor/BookView.tsx` | The block itself, for a card that holds a book among other content: the same cover, details and **Read** |
@@ -335,8 +336,19 @@ and offers Read; `CardFocusHost` branches to `BookFocus` for a card holding a bo
 and the highlight gesture is a selection; a node view is re-created whenever its node is replaced, so a live reader
 would restart on chapter one; and a chapter needs its own viewport rather than a scroll inside the card's.
 
+**A book's marks have a panel.** The reader's header holds Contents and Highlights: the second is the marks this reader
+has made, with placed ones marked, and it is where an unplaced highlight lives. The library's Annotations tab lists the
+same highlights grouped by book through `LibraryAnnotationList`, a press opens the passage and a drag starts the same
+carry a book does.
+
 **Reading position is reader state.** Per workspace and per attachment, in `localStorage`; a book opens where this
 reader stopped and never writes that fact into the document.
+
+**A highlight is raised before it is edited.** A press on a mark opens `HighlightFocus`: the quote alone, ranges
+selectable, a target per part and a preview of what Place makes. A paragraph cannot be cut up where it sits, so the
+raise is where parts are chosen; and because it exists, a press no longer has to double as "select inside a
+highlight", which is why a press raises and a drag carries. A right-click opens `HighlightMenu`, the same verbs without
+raising, and the raised surface's own rows are that menu.
 
 **A highlight can be carried out.** A press that travels past `HIGHLIGHT_DRAG_THRESHOLD` puts the highlight in
 `useHighlightDrag`, the focus surface conceals itself the way the library drawer does, and a release over the canvas

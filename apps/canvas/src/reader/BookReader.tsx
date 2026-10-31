@@ -4,7 +4,10 @@ import { sanitiseChapter } from "../archive/epub/sanitise";
 import { IconGlyph } from "../icons/IconGlyph";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { BookHighlights } from "./BookHighlights";
 import { useBookPosition, useBookStore } from "./bookStore";
+import { HighlightFocus } from "./HighlightFocus";
+import { HighlightMenu } from "./HighlightMenu";
 import { HighlightPalette } from "./HighlightPalette";
 import { beginHighlightDrag } from "./highlightDrag";
 import { promoteAnnotation } from "./promote";
@@ -60,13 +63,26 @@ export function BookReader({
   const [state, setState] = useState<State>({ status: "loading" });
   const [chapterPath, setChapterPath] = useState<string | null>(null);
   const [chapterXml, setChapterXml] = useState<string | null>(null);
-  const [contentsOpen, setContentsOpen] = useState(false);
+  const [panel, setPanel] = useState<"none" | "contents" | "highlights">("none");
   const remembered = useBookPosition(attachmentId);
   const remember = useBookStore((store) => store.remember);
   const highlights = useHighlights(sourceCardId ?? "");
   const workspace = useCanvasStore((state) => state.workspace);
   const activeBoardId = useUiStore((state) => state.activeBoardId);
+  const openCardFocus = useUiStore((state) => state.openCardFocus);
+  const raised = highlights.annotations.find((entry) => entry.id === raisedId) ?? null;
+  // The properties a promoted highlight can fill: the promoted type's own fields, so a reader can point a part at a
+  // property that already means something rather than typing a name and hoping.
+  const fieldNames = (workspace?.listTypes() ?? [])
+    .flatMap((type) => type.fields)
+    .filter((field) => field.kind === "text" || field.kind === "select")
+    .map((field) => field.name)
+    .filter((name, index, all) => all.indexOf(name) === index)
+    .slice(0, 12);
   const [selection, setSelection] = useState<PendingSelection | null>(null);
+  /** The highlight on the raised surface, by id: a press raises, and the surface is where it is taken apart. */
+  const [raisedId, setRaisedId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (bytes.status === "loading") return;
@@ -145,7 +161,7 @@ export function BookReader({
 
   const pick = (path: string) => {
     setChapterPath(path);
-    setContentsOpen(false);
+    setPanel("none");
     remember(attachmentId, path);
   };
 
@@ -162,11 +178,22 @@ export function BookReader({
           className="views-icon-button"
           aria-label="Contents"
           title="Contents"
-          aria-expanded={contentsOpen}
+          aria-expanded={panel === "contents"}
           data-testid="reader-contents-toggle"
-          onClick={() => setContentsOpen((open) => !open)}
+          onClick={() => setPanel((open) => (open === "contents" ? "none" : "contents"))}
         >
           <IconGlyph icon="lucide:list" size={14} />
+        </button>
+        <button
+          type="button"
+          className="views-icon-button"
+          aria-label="Highlights"
+          aria-expanded={panel === "highlights"}
+          data-testid="reader-highlights-toggle"
+          title="Your highlights"
+          onClick={() => setPanel((open) => (open === "highlights" ? "none" : "highlights"))}
+        >
+          <IconGlyph icon="lucide:highlighter" size={14} />
         </button>
         <span className="reader-title" title={book.book.title}>
           {book.book.title}
@@ -218,7 +245,18 @@ export function BookReader({
         </span>
       </header>
 
-      {contentsOpen ? (
+      {panel === "highlights" ? (
+        <BookHighlights
+          annotations={highlights.annotations}
+          styles={highlights.styles}
+          onOpen={(id) => {
+            setRaisedId(id);
+            setPanel("none");
+          }}
+        />
+      ) : null}
+
+      {panel === "contents" ? (
         <ol className="reader-contents" data-testid="reader-contents">
           {contents.map((entry) => (
             <li key={`${entry.path ?? "none"}-${entry.label}`}>
@@ -248,15 +286,83 @@ export function BookReader({
             onCarry={(annotationId, start, onDrop) =>
               beginHighlightDrag(annotationId, start, onDrop)
             }
-            onActivate={(annotationId) => {
-              const annotation = highlights.annotations.find((entry) => entry.id === annotationId);
-              if (annotation === undefined || workspace === null) return;
-              const promoted = promoteAnnotation({ workspace, annotation, boardId: activeBoardId });
-              if (promoted !== null) highlights.refresh();
-            }}
+            onActivate={(annotationId) => setRaisedId(annotationId)}
+            onMenu={(annotationId, point) => setMenu({ id: annotationId, ...point })}
           />
         )}
       </div>
+
+      {raised === null ? null : (
+        <HighlightFocus
+          key={raised.id}
+          annotation={raised}
+          styles={highlights.styles}
+          fieldNames={fieldNames}
+          onPlace={(parts) => {
+            if (workspace === null) return;
+            workspace.setAnnotationParts(raised.id, [...parts]);
+            const promoted = promoteAnnotation({
+              workspace,
+              annotation: { ...raised, parts: [...parts] },
+              boardId: activeBoardId,
+            });
+            if (promoted?.existed === true && activeBoardId !== null) {
+              // A highlight that already came out of the book takes the reader to that card rather than making a
+              // second one: the record names one card, and a silent duplicate would orphan the first from it.
+              openCardFocus(promoted.cardId);
+            }
+            highlights.refresh();
+            setRaisedId(null);
+          }}
+          onDone={(parts) => {
+            workspace?.setAnnotationParts(raised.id, [...parts]);
+            highlights.refresh();
+            setRaisedId(null);
+          }}
+          onStyle={(styleId) => {
+            workspace?.setAnnotationStyle(raised.id, styleId);
+            highlights.refresh();
+          }}
+          onRemove={() => {
+            workspace?.deleteAnnotation(raised.id);
+            highlights.refresh();
+            setRaisedId(null);
+          }}
+          onClose={() => setRaisedId(null)}
+        />
+      )}
+
+      {menu === null ? null : (
+        <HighlightMenu
+          annotation={highlights.annotations.find((entry) => entry.id === menu.id)}
+          styles={highlights.styles}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onRaise={() => {
+            setRaisedId(menu.id);
+            setMenu(null);
+          }}
+          onStyle={(styleId) => {
+            workspace?.setAnnotationStyle(menu.id, styleId);
+            highlights.refresh();
+          }}
+          onPlace={() => {
+            const annotation = highlights.annotations.find((entry) => entry.id === menu.id);
+            if (annotation === undefined || workspace === null) return;
+            const promoted = promoteAnnotation({ workspace, annotation, boardId: activeBoardId });
+            if (promoted?.existed === true && activeBoardId !== null)
+              openCardFocus(promoted.cardId);
+            highlights.refresh();
+            setMenu(null);
+          }}
+          onRemove={() => {
+            workspace?.deleteAnnotation(menu.id);
+            highlights.refresh();
+            setMenu(null);
+          }}
+        />
+      )}
 
       {selection !== null && sourceCardId !== undefined ? (
         <HighlightPalette

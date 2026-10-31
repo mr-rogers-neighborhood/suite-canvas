@@ -126,7 +126,8 @@ describe("what a promoted card says", () => {
     const nodes = workspace.bodyNodes(promoted?.cardId ?? "");
 
     expect(nodes.map((node) => node.type)).toEqual(["paragraph"]);
-    expect(nodes[0]?.content?.some((node) => node.text === "From the recording")).toBe(true);
+    // No words to quote, but the way back to the recording is still a reference rather than a sentence.
+    expect(nodes[0]?.content?.some((node) => node.type === "mention")).toBe(true);
   });
 
   it("should make a real reference, so the card and the book know each other", () => {
@@ -136,5 +137,105 @@ describe("what a promoted card says", () => {
 
     // A reference is the graph's own direction: the card points at the book, which is what makes a backlink.
     expect(workspace.referencesFor(promoted?.cardId ?? "")).toContain(book.id);
+  });
+});
+
+describe("parts of a highlight", () => {
+  const QUOTE = "The thing that matters here is what we call the domain.";
+
+  function partsFixture() {
+    const { workspace, book } = fixture();
+    // A highlight long enough to break apart, with "the domain" at the end: exactly the case that titling from the
+    // first words gets wrong.
+    const long = workspace.addAnnotation({
+      sourceCardId: book.id,
+      styleId: "style-yellow",
+      anchor: { kind: "quote", locator: "1", quote: QUOTE, prefix: "", suffix: "" },
+      excerpt: QUOTE,
+    });
+    const start = QUOTE.indexOf("the domain");
+    workspace.setAnnotationParts(long.id, [
+      { id: "part-title", start, end: start + "the domain".length, target: { kind: "title" } },
+      {
+        id: "part-field",
+        start: 0,
+        end: "The thing that matters here".length,
+        target: { kind: "field", name: "Question" },
+      },
+    ]);
+    return { workspace, book, annotation: workspace.getAnnotation(long.id) ?? long };
+  }
+
+  it("should title the card from the part the reader marked, not from the first words", () => {
+    const { workspace, annotation } = partsFixture();
+    const promoted = promoteAnnotation({ workspace, annotation });
+    expect(workspace.displayTitle(promoted?.cardId ?? "")).toBe("the domain");
+  });
+
+  it("should fill a named property, creating it on the type when it is missing", () => {
+    const { workspace, annotation } = partsFixture();
+    const promoted = promoteAnnotation({ workspace, annotation });
+    const card = workspace.getCard(promoted?.cardId ?? "");
+    const field = workspace
+      .getType(card?.primaryTypeId ?? "")
+      ?.fields.find((entry) => entry.name === "Question");
+
+    expect(field?.kind).toBe("text");
+    expect(card?.properties[field?.id ?? ""]).toBe("The thing that matters here");
+  });
+
+  it("should keep the whole passage in the body, because parts carve pieces out of what was marked", () => {
+    const { workspace, annotation } = partsFixture();
+    const promoted = promoteAnnotation({ workspace, annotation });
+    const quote = workspace.bodyNodes(promoted?.cardId ?? "")[0];
+
+    expect(quote?.type).toBe("blockquote");
+    expect(quote?.content?.[0]?.content?.[0]?.text).toBe(QUOTE);
+  });
+
+  it("should make a card per own-card part, all pointing at the same highlight", () => {
+    const { workspace, annotation } = partsFixture();
+    const start = QUOTE.indexOf("what we call");
+    workspace.setAnnotationParts(annotation.id, [
+      ...(annotation.parts ?? []),
+      { id: "part-own", start, end: start + "what we call".length, target: { kind: "own-card" } },
+    ]);
+    const promoted = promoteAnnotation({
+      workspace,
+      annotation: workspace.getAnnotation(annotation.id) ?? annotation,
+    });
+
+    expect(promoted?.ownCardIds).toHaveLength(1);
+    const own = workspace.getCard(promoted?.ownCardIds[0] ?? "");
+    expect(workspace.displayTitle(own?.id ?? "")).toBe("what we call");
+  });
+
+  it("should open the card a highlight already has instead of making a second one", () => {
+    const { workspace, annotation } = partsFixture();
+    const first = promoteAnnotation({ workspace, annotation });
+    const second = promoteAnnotation({
+      workspace,
+      annotation: workspace.getAnnotation(annotation.id) ?? annotation,
+    });
+
+    expect(second?.existed).toBe(true);
+    expect(second?.cardId).toBe(first?.cardId);
+    expect(workspace.getCard(first?.cardId ?? "")).toBeDefined();
+  });
+
+  it("should make another card when the reader asks for one deliberately", () => {
+    const { workspace, annotation } = partsFixture();
+    const first = promoteAnnotation({ workspace, annotation });
+    const second = promoteAnnotation({
+      workspace,
+      annotation: workspace.getAnnotation(annotation.id) ?? annotation,
+      again: true,
+    });
+
+    expect(second?.existed).toBe(false);
+    expect(second?.cardId).not.toBe(first?.cardId);
+    // The record names the newest card; the first is still a card the reader has.
+    expect(workspace.getAnnotation(annotation.id)?.cardId).toBe(second?.cardId);
+    expect(workspace.getCard(first?.cardId ?? "")).toBeDefined();
   });
 });

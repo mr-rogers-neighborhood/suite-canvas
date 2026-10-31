@@ -51,24 +51,81 @@ export const annotationAnchorSchema = z.discriminatedUnion("kind", [
 ]);
 
 /**
+ * Where a part of a highlight goes when the highlight becomes a card.
+ *
+ * A target is a *destination*, never a promise that something exists there: `field` names a property, and promotion
+ * creates it on the promoted type when it is missing. Naming beats an id because a recipe has to survive a type
+ * change, which is the whole reason a reader writes one.
+ */
+export const annotationPartTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("title") }),
+  z.object({ kind: z.literal("body") }),
+  z.object({ kind: z.literal("field"), name: z.string().min(1).max(60) }),
+  /** This range becomes a card of its own: the split-a-paragraph-into-atoms workflow. */
+  z.object({ kind: z.literal("own-card") }),
+]);
+
+/**
+ * A range inside a highlight, and what it is for.
+ *
+ * `start` and `end` index the annotation's own quote. That is the point: the quote is text, so a range of it is
+ * stable under reflow exactly as the quote is, and unlike a second `quote/prefix/suffix` it cannot be ambiguous
+ * inside its own paragraph. A part inherits the annotation's own resolution — if the highlight still finds its words,
+ * its parts still find theirs.
+ */
+export const annotationPartSchema = z.object({
+  id: entityIdSchema,
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+  target: annotationPartTargetSchema,
+});
+
+/**
  * One highlight.
  *
  * `excerpt` is optional and medium-produced: a quote, a page's words and a timestamp are different facts, and
  * a canvas region has none of them. There is deliberately no `medium` field — `anchor.kind` already carries it,
  * and a second copy of a derivable fact is the thing that goes stale.
  */
-export const annotationSchema = z.object({
-  id: entityIdSchema,
-  /** The card whose body holds the source: a book, a PDF, a video. */
-  sourceCardId: entityIdSchema,
-  /** An `AnnotationStyle`, which is shared across media because a colour is a colour. */
-  styleId: entityIdSchema,
-  anchor: annotationAnchorSchema,
-  excerpt: z.string().max(4000).optional(),
-  /** The card it was promoted into, once it has one. A highlight has no card until it earns one. */
-  cardId: entityIdSchema.optional(),
-  createdAt: z.number().int().nonnegative(),
-});
+export const annotationSchema = z
+  .object({
+    id: entityIdSchema,
+    /** The card whose body holds the source: a book, a PDF, a video. */
+    sourceCardId: entityIdSchema,
+    /** An `AnnotationStyle`, which is shared across media because a colour is a colour. */
+    styleId: entityIdSchema,
+    anchor: annotationAnchorSchema,
+    excerpt: z.string().max(4000).optional(),
+    /** The card it was promoted into, once it has one. A highlight has no card until it earns one. */
+    cardId: entityIdSchema.optional(),
+    /**
+     * The ranges a reader broke this highlight into, and where each one goes.
+     *
+     * Absent means "the whole quote is the passage", which is the ordinary case: a part exists because somebody
+     * decided the concept was not at the start of the sentence.
+     */
+    parts: z.array(annotationPartSchema).max(24).optional(),
+    createdAt: z.number().int().nonnegative(),
+  })
+  .superRefine((annotation, ctx) => {
+    const parts = annotation.parts ?? [];
+    if (parts.length === 0) return;
+    if (annotation.anchor.kind !== "quote") {
+      // Only a quote has characters to index. A page's rectangles and a span of time have their own shape, and a part
+      // of either would need a different idea rather than a silently ignored field.
+      ctx.addIssue({ code: "custom", message: "Only a quote can be broken into parts" });
+      return;
+    }
+    const length = annotation.anchor.quote.length;
+    for (const part of parts) {
+      if (part.end <= part.start) {
+        ctx.addIssue({ code: "custom", message: `Part ${part.id} ends before it starts` });
+      }
+      if (part.end > length) {
+        ctx.addIssue({ code: "custom", message: `Part ${part.id} runs past the end of its quote` });
+      }
+    }
+  });
 
 /**
  * A colour a reader can highlight with.
@@ -86,6 +143,14 @@ export const annotationStyleSchema = z.object({
   templateTypeId: entityIdSchema.optional(),
   /** Paint order in the palette, smallest first. */
   order: z.number().int().nonnegative(),
+  /**
+   * The destinations this style expects a highlight to be broken into.
+   *
+   * A suggestion, not a schema: "green means the title is the claim and `Source` is the book" is data a reader
+   * writes once, and a new green highlight starts with those parts empty and named. The highlight stays the truth,
+   * because the words a part covers are the reader's choice every time.
+   */
+  recipe: z.array(annotationPartTargetSchema).max(12).optional(),
 });
 
 export type AnchorRect = z.infer<typeof anchorRectSchema>;
@@ -135,4 +200,47 @@ export function annotationsWithin(
 ): { kept: Annotation[]; withheld: number } {
   const kept = annotations.filter((annotation) => sourceCardIds.has(annotation.sourceCardId));
   return { kept, withheld: annotations.length - kept.length };
+}
+
+export type AnnotationPart = z.infer<typeof annotationPartSchema>;
+export type AnnotationPartTarget = z.infer<typeof annotationPartTargetSchema>;
+
+/**
+ * The words a part covers, or null when the annotation cannot say.
+ *
+ * Read through the annotation rather than stored on the part: a copy of the text would be a second truth that
+ * drifts the moment the highlight is resolved again.
+ */
+export function partText(annotation: Annotation, part: AnnotationPart): string | null {
+  if (annotation.anchor.kind !== "quote") return null;
+  if (part.start < 0 || part.end > annotation.anchor.quote.length || part.end <= part.start)
+    return null;
+  return annotation.anchor.quote.slice(part.start, part.end);
+}
+
+/** Quality-of-life for a surface that lists parts: their text, in the order they appear. */
+export function partsOf(annotation: Annotation): { part: AnnotationPart; text: string }[] {
+  return [...(annotation.parts ?? [])]
+    .sort((a, b) => a.start - b.start || a.id.localeCompare(b.id))
+    .flatMap((part) => {
+      const text = partText(annotation, part);
+      return text === null ? [] : [{ part, text }];
+    });
+}
+
+/** The first part with one target kind, which is how promotion reads a title or a body. */
+export function partFor(
+  annotation: Annotation,
+  kind: AnnotationPartTarget["kind"],
+): { part: AnnotationPart; text: string } | null {
+  return partsOf(annotation).find((entry) => entry.part.target.kind === kind) ?? null;
+}
+
+/** Every part that names a property, paired with its name, in reading order. */
+export function fieldParts(
+  annotation: Annotation,
+): { part: AnnotationPart; text: string; name: string }[] {
+  return partsOf(annotation).flatMap(({ part, text }) =>
+    part.target.kind === "field" ? [{ part, text, name: part.target.name }] : [],
+  );
 }

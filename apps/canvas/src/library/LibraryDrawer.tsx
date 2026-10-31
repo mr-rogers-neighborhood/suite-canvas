@@ -3,6 +3,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -11,11 +12,14 @@ import { NewThingMenu } from "../chrome/NewThingMenu";
 import { newThingMenuModel } from "../chrome/newThingMenu";
 import { useSavedViews } from "../chrome/ViewsBar";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
+import { useHighlightDrag } from "../reader/highlightDrag";
+import { useAnnotations } from "../reader/useHighlights";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useViewsStore } from "../store/viewsStore";
 import { viewsEnabled } from "../views/availability";
+import { LibraryAnnotationList } from "./LibraryAnnotationList";
 import { LibraryFacets } from "./LibraryFacets";
 import { LibraryHeader } from "./LibraryHeader";
 import { LibraryList } from "./LibraryList";
@@ -117,6 +121,28 @@ export function LibraryDrawer({
   const workspace = workspaceProp ?? storeWorkspace;
   const setLibraryQuery = useUiStore((state) => state.setLibraryQuery);
   const views = useSavedViews(workspace);
+  const openCardFocus = useUiStore((state) => state.openCardFocus);
+  /** The workspace's highlights, re-read when one changes: this list is the reader's record of what they marked. */
+  const annotations = useAnnotations(workspace);
+  const annotationStyles = workspace?.listAnnotationStyles() ?? [];
+  const annotationCardTitles = useMemo(() => {
+    const titles = new Map<string, string>();
+    for (const annotation of annotations) {
+      if (annotation.cardId === undefined) continue;
+      titles.set(annotation.cardId, workspace?.displayTitle(annotation.cardId) ?? "Untitled");
+    }
+    return titles;
+  }, [annotations, workspace]);
+  const annotationBookTitles = useMemo(() => {
+    const titles = new Map<string, string>();
+    for (const annotation of annotations) {
+      titles.set(
+        annotation.sourceCardId,
+        workspace?.displayTitle(annotation.sourceCardId) ?? "A book",
+      );
+    }
+    return titles;
+  }, [annotations, workspace]);
   const openNewView = useViewsStore((state) => state.openNew);
   const newView = useCallback(() => openNewView(views.length), [openNewView, views.length]);
   const [activeResult, setActiveResult] = useState(0);
@@ -560,7 +586,25 @@ export function LibraryDrawer({
 
       {/* The selection bar replaces the search row while a selection exists: what a
           reader picks rows for is acting on them together. */}
-      {tab === "media" ? (
+      {tab === "annotations" ? (
+        <LibraryAnnotationList
+          annotations={annotations}
+          styles={annotationStyles}
+          cardTitles={annotationCardTitles}
+          bookTitles={annotationBookTitles}
+          onOpen={(annotation) => {
+            close();
+            openCardFocus(annotation.sourceCardId);
+          }}
+          onCarry={(annotation, point) => {
+            // The same carry the book uses: one piece of state, and the board's own drop layer promotes on release.
+            // A second drop path for the drawer would be a second rule for where a highlight lands.
+            useHighlightDrag.getState().carry(annotation.id);
+            useHighlightDrag.getState().move(point);
+          }}
+          onRemove={(annotation) => workspace?.deleteAnnotation(annotation.id)}
+        />
+      ) : tab === "media" ? (
         <LibraryMediaList
           items={media}
           onTrash={onTrashMedia}

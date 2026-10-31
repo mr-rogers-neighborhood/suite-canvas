@@ -11,25 +11,19 @@ import { useUiStore } from "../store/useUiStore";
  * is the mode this button exists for. Getting those two the wrong way round looks exactly like a button that does
  * nothing, which is why it is asserted rather than assumed.
  */
-const { bytes } = vi.hoisted(() => ({ bytes: { value: null as Uint8Array | null } }));
-
-vi.mock("../reader/useBookBytes", () => ({
-  useBookBytes: () =>
-    bytes.value === null ? { status: "loading" } : { status: "ready", bytes: bytes.value },
-}));
-
-vi.mock("../reader/useBookCover", () => ({
-  useBookCover: () => ({
-    status: "ready",
-    cover: {
-      title: "A Small Book",
-      creator: "Ada Lovelace",
-      language: "en",
-      chapters: 2,
-      coverUrl: null,
+vi.mock("../reader/bookMeta", async () => {
+  const { create } = await import("zustand");
+  const store = create<{ entries: Record<string, unknown> }>()(() => ({
+    entries: {
+      ["a".repeat(32)]: {
+        status: "ready",
+        meta: { title: "A Small Book", creator: "Ada Lovelace", chapters: 2 },
+        coverUrl: null,
+      },
     },
-  }),
-}));
+  }));
+  return { useBookMeta: store, loadBook: () => undefined, retryBook: () => undefined };
+});
 
 const { BookView } = await import("./BookView");
 

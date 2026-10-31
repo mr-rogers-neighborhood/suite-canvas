@@ -180,6 +180,16 @@ cannot render says so rather than drawing nothing.
 There is no `medium` field: `anchor.kind` carries it, and `excerpt` is optional because a quote, a page and a
 timestamp are different facts and a canvas region has none.
 
+**A highlight can be broken into parts.** `parts: { id, start, end, target }[]`, where the offsets index the
+annotation's own `quote`. That is text, so reflow cannot move them, and they are unambiguous inside their own
+paragraph in a way a second sub-quote would not be. A target is `title`, `body`, `field` (by name, created on promotion when missing) or
+`own-card`. Parts are written whole, because they describe each other: two writers editing different parts would
+produce ranges that overlap or leave gaps.
+
+**A style may carry a recipe**: the targets it expects a highlight to be broken into. It seeds; the highlight decides.
+`promoteAnnotation` opens the card a highlight already has rather than making a second one, and `again` is the
+explicit way to make another.
+
 `annotationStyles` is the palette: `{ id, name, color, templateTypeId?, order }`. Shared across media, and data
 rather than code — nothing branches on a style's id. A style naming a `templateTypeId` is how "green highlights
 become Claim cards" is expressed with the templates the graph already has.

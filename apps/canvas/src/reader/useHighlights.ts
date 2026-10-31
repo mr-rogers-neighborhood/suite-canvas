@@ -1,4 +1,4 @@
-import type { Annotation, AnnotationStyle } from "@suite/graph";
+import type { Annotation, AnnotationStyle, WorkspaceDocument } from "@suite/graph";
 import { useCallback, useEffect, useState } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
 
@@ -71,4 +71,27 @@ export function useHighlights(sourceCardId: string): Highlights {
   );
 
   return { annotations, styles, add, remove, restyle, refresh: read };
+}
+
+/**
+ * Every highlight in the workspace, re-read when one changes.
+ *
+ * The library's list is the reader's record of what they marked, so it wants all of them rather than one source's;
+ * the same subscription and the same one listener, because a palette change and a highlight arrive together wherever
+ * somebody is looking at either.
+ */
+export function useAnnotations(workspace: WorkspaceDocument | null): Annotation[] {
+  const [annotations, setAnnotations] = useState<readonly Annotation[]>([]);
+
+  useEffect(() => {
+    if (workspace === null) {
+      setAnnotations([]);
+      return;
+    }
+    const read = () => setAnnotations(workspace.listAnnotations());
+    read();
+    return workspace.observeAnnotations(read);
+  }, [workspace]);
+
+  return [...annotations];
 }

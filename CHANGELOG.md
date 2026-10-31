@@ -2,6 +2,30 @@
 
 ### Added
 
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
 - A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
   title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
   published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
@@ -14,6 +38,30 @@
   focus surface lets the pointer through to the board underneath.
 - The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
   selection and the drag then dragged it across the window.
+
+## [Unreleased]
+
+### Added
+
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
 
 ## [Unreleased]
 
@@ -42,6 +90,30 @@
 
 ### Added
 
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
 - A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
   title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
   published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
@@ -54,6 +126,30 @@
   focus surface lets the pointer through to the board underneath.
 - The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
   selection and the drag then dragged it across the window.
+
+## [Unreleased]
+
+### Added
+
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
 
 ## [Unreleased]
 
@@ -85,6 +181,30 @@
 
 ### Added
 
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
 - A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
   title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
   published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
@@ -97,6 +217,30 @@
   focus surface lets the pointer through to the board underneath.
 - The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
   selection and the drag then dragged it across the window.
+
+## [Unreleased]
+
+### Added
+
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
 
 ## [Unreleased]
 
@@ -125,6 +269,30 @@
 
 ### Added
 
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
 - A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
   title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
   published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
@@ -137,6 +305,30 @@
   focus surface lets the pointer through to the board underneath.
 - The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
   selection and the drag then dragged it across the window.
+
+## [Unreleased]
+
+### Added
+
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
 
 ## [Unreleased]
 
@@ -152,6 +344,30 @@
 
 ### Added
 
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
 - A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
   title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
   published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
@@ -164,6 +380,30 @@
   focus surface lets the pointer through to the board underneath.
 - The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
   selection and the drag then dragged it across the window.
+
+## [Unreleased]
+
+### Added
+
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
 
 ## [Unreleased]
 
@@ -192,6 +432,30 @@
 
 ### Added
 
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
 - A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
   title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
   published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
@@ -204,6 +468,30 @@
   focus surface lets the pointer through to the board underneath.
 - The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
   selection and the drag then dragged it across the window.
+
+## [Unreleased]
+
+### Added
+
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
 
 ## [Unreleased]
 
@@ -235,6 +523,30 @@
 
 ### Added
 
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
 - A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
   title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
   published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
@@ -247,6 +559,30 @@
   focus surface lets the pointer through to the board underneath.
 - The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
   selection and the drag then dragged it across the window.
+
+## [Unreleased]
+
+### Added
+
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
 
 ## [Unreleased]
 
@@ -275,6 +611,30 @@
 
 ### Added
 
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
 - A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
   title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
   published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
@@ -287,6 +647,30 @@
   focus surface lets the pointer through to the board underneath.
 - The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
   selection and the drag then dragged it across the window.
+
+## [Unreleased]
+
+### Added
+
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+### Changed
+
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+### Fixed
+
+- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
+  It is three states now, and a pending book retries.
 
 ## [Unreleased]
 

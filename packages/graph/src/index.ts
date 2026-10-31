@@ -3,6 +3,8 @@ export type {
   AnchorRect,
   Annotation,
   AnnotationAnchor,
+  AnnotationPart,
+  AnnotationPartTarget,
   AnnotationStyle,
 } from "./annotations.js";
 export {
@@ -13,6 +15,10 @@ export {
   annotationsOf,
   annotationsWithin,
   DEFAULT_ANNOTATION_STYLES,
+  fieldParts,
+  partFor,
+  partsOf,
+  partText,
   sortedStyles,
 } from "./annotations.js";
 export type { BehaviourTypeId } from "./behaviours.js";

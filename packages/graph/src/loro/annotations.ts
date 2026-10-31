@@ -1,8 +1,10 @@
 import {
   type Annotation,
   type AnnotationAnchor,
+  type AnnotationPart,
   type AnnotationStyle,
   annotationAnchorSchema,
+  annotationPartSchema,
   annotationSchema,
   annotationStyleSchema,
   DEFAULT_ANNOTATION_STYLES,
@@ -69,6 +71,24 @@ export function annotationsMethods(ctx: DocContext) {
     return parsed.success ? parsed.data : undefined;
   };
 
+  /**
+   * A highlight's parts, read back from either representation.
+   *
+   * A part is a plain object just written or a container that arrived through a projection, and the schema is what
+   * decides whether either is a part. Undefined rather than an empty list when a highlight has none, because "absent"
+   * and "broken into nothing" are different answers to a surface asking what it should show.
+   */
+  const readParts = (value: unknown): Annotation["parts"] | undefined => {
+    const items = isList(value) ? value.toArray() : Array.isArray(value) ? value : null;
+    if (items === null) return undefined;
+    const parsed = items.flatMap((item) => {
+      const record = recordOf(item);
+      const part = record === null ? undefined : annotationPartSchema.safeParse(record);
+      return part?.success === true ? [part.data] : [];
+    });
+    return parsed.length === 0 ? undefined : parsed;
+  };
+
   const readAnnotation = (id: string): Annotation | undefined => {
     const fields = ctx.annotationsMap.get(id);
     if (!isMap(fields)) return undefined;
@@ -84,6 +104,9 @@ export function annotationsMethods(ctx: DocContext) {
       ...(readString(fields, "cardId") === undefined
         ? {}
         : { cardId: readString(fields, "cardId") }),
+      ...(readParts(fields.get("parts")) === undefined
+        ? {}
+        : { parts: readParts(fields.get("parts")) }),
       createdAt: readNumber(fields, "createdAt") ?? 0,
     });
     // A hand-edited or corrupt record is skipped rather than thrown on: one bad highlight must not cost a
@@ -102,6 +125,7 @@ export function annotationsMethods(ctx: DocContext) {
       ...(readString(fields, "templateTypeId") === undefined
         ? {}
         : { templateTypeId: readString(fields, "templateTypeId") }),
+      ...(Array.isArray(fields.get("recipe")) ? { recipe: fields.get("recipe") } : {}),
     });
     return parsed.success ? parsed.data : undefined;
   };
@@ -136,6 +160,7 @@ export function annotationsMethods(ctx: DocContext) {
         styleId: input.styleId,
         anchor: input.anchor,
         ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
+        ...(input.parts === undefined ? {} : { parts: input.parts }),
         createdAt: input.createdAt ?? Date.now(),
       });
       const fields = ctx.annotationsMap.ensureMergeableMap(id);
@@ -144,6 +169,7 @@ export function annotationsMethods(ctx: DocContext) {
       fields.set("anchor", annotation.anchor);
       fields.set("createdAt", annotation.createdAt);
       if (annotation.excerpt !== undefined) fields.set("excerpt", annotation.excerpt);
+      if (annotation.parts !== undefined) fields.set("parts", annotation.parts);
       ctx.commit(`${STRUCT_ORIGIN}add-annotation`);
       notify();
       return annotation;
@@ -170,6 +196,27 @@ export function annotationsMethods(ctx: DocContext) {
       if (!isMap(fields)) return undefined;
       fields.set("cardId", cardId);
       ctx.commit(`${STRUCT_ORIGIN}annotate-promoted`);
+      notify();
+      return ctx.api.annotations.getAnnotation(id);
+    },
+
+    /**
+     * Replaces a highlight's parts.
+     *
+     * Written whole rather than per part, and that is deliberate: a part is a range, so two people editing different
+     * parts of one highlight would produce ranges that overlap or leave gaps — a shape neither of them chose. One
+     * list, last writer wins, is the honest semantics for a structure whose parts are about each other.
+     */
+    setAnnotationParts(id: string, parts: AnnotationPart[]): Annotation | undefined {
+      const fields = ctx.annotationsMap.get(id);
+      if (!isMap(fields)) return undefined;
+      const current = ctx.api.annotations.getAnnotation(id);
+      if (current === undefined) return undefined;
+      // Validate against the quote before writing: a range outside it would be a highlight that cannot draw itself.
+      annotationSchema.parse({ ...current, parts });
+      if (parts.length === 0) fields.delete("parts");
+      else fields.set("parts", parts);
+      ctx.commit(`${STRUCT_ORIGIN}annotate-parts`);
       notify();
       return ctx.api.annotations.getAnnotation(id);
     },
@@ -284,6 +331,8 @@ export function annotationsMethods(ctx: DocContext) {
       fields.set("order", style.order);
       if (style.templateTypeId === undefined) fields.delete("templateTypeId");
       else fields.set("templateTypeId", style.templateTypeId);
+      if (style.recipe === undefined || style.recipe.length === 0) fields.delete("recipe");
+      else fields.set("recipe", style.recipe);
     },
 
     /** One anchor as the medium would describe it, for a surface that lists highlights without the source. */

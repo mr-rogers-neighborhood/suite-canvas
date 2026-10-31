@@ -1,7 +1,7 @@
 import { WorkspaceDocument } from "@suite/graph";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { forgetBookCovers, useBookCoverCache } from "../reader/bookCoverCache";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 
@@ -14,40 +14,25 @@ import { useUiStore } from "../store/useUiStore";
  */
 const ID = "a".repeat(32);
 
-vi.mock("../reader/bookCoverCache", async () => {
+const loadBook = vi.fn();
+
+vi.mock("../reader/bookMeta", async () => {
   const { create } = await import("zustand");
-  const store = create<{
-    covers: Record<string, string>;
-    tried: Set<string>;
-    publish: (id: string, url: string | null) => void;
-  }>()((set, get) => ({
-    covers: {},
-    tried: new Set<string>(),
-    publish: (id, url) => {
-      const tried = new Set(get().tried);
-      tried.add(id);
-      set({
-        tried,
-        ...(url === null ? {} : { covers: { ...get().covers, [id]: url } }),
-      });
-    },
-  }));
+  const store = create<{ entries: Record<string, unknown> }>()(() => ({ entries: {} }));
   return {
-    useBookCoverCache: store,
-    coverOf: (id: string) => store.getState().covers[id] ?? null,
-    // A no-op by default: the cover a test wants is published by the test, so "no cover yet" and "cover arrived"
-    // are two states a case can choose rather than a race it has to win.
-    extractCover: vi.fn(async () => undefined),
-    // Details are read from the same module, so they are stubbed at the same seam.
-    bookDetails: vi.fn(async () => null),
-    forgetBookCovers: () => store.setState({ covers: {}, tried: new Set() }),
+    useBookMeta: store,
+    loadBook: (attachmentId: string) => {
+      loadBook(attachmentId);
+    },
+    retryBook: () => undefined,
+    bookEntryOf: () => ({ status: "pending" }),
   };
 });
 
 const { BookCardFace } = await import("./BookCardFace");
-const { extractCover } = await import("../reader/bookCoverCache");
+const { useBookMeta } = await import("../reader/bookMeta");
 
-function seed(bookId = ID) {
+function seed() {
   const workspace = new WorkspaceDocument();
   workspace.ensureDefaultTypes();
   const board = workspace.ensureBoard();
@@ -55,7 +40,7 @@ function seed(bookId = ID) {
   workspace.setBodyNodes(card.id, [
     {
       type: "media",
-      attrs: { kind: "epub", id: bookId, mime: "application/epub+zip", name: "A Book.epub" },
+      attrs: { kind: "epub", id: ID, mime: "application/epub+zip", name: "A Book.epub" },
     },
   ]);
   useCanvasStore.setState({ workspace });
@@ -64,18 +49,22 @@ function seed(bookId = ID) {
 }
 
 beforeEach(() => {
-  forgetBookCovers();
-  vi.clearAllMocks();
+  (
+    useBookMeta as unknown as { setState: (state: { entries: Record<string, unknown> }) => void }
+  ).setState({
+    entries: {},
+  });
+  loadBook.mockClear();
 });
 
 describe("the book card on the canvas", () => {
-  it("should draw the block's own name before any cover has been extracted", async () => {
+  it("should draw the block's own name before the book has been read", () => {
     const { card } = seed();
     render(<BookCardFace card={card} />);
 
     expect(screen.getByTestId("book-card-title")).toHaveTextContent("A Book.epub");
-    // The extractor is asked for once, off the paint, rather than the face opening a zip itself.
-    await waitFor(() => expect(extractCover).toHaveBeenCalledWith(ID));
+    // The read is asked for once, off the paint, rather than the face opening a zip itself.
+    expect(loadBook).toHaveBeenCalledWith(ID);
   });
 
   it("should draw the cover once it arrives, without the card changing shape", async () => {
@@ -83,17 +72,29 @@ describe("the book card on the canvas", () => {
     const { container } = render(<BookCardFace card={card} />);
     expect(container.querySelector(".book-card-cover")).toBeNull();
 
-    // What the extractor does when it finishes, which is after this face has already painted.
-    act(() => useBookCoverCache.getState().publish(ID, "blob:cover"));
+    // What the load does when it finishes, which is after this face has already painted.
+    act(() =>
+      (useBookMeta as unknown as { setState: (state: unknown) => void }).setState({
+        entries: {
+          [ID]: {
+            status: "ready",
+            meta: { title: "A Small Book", creator: "Ada Lovelace", chapters: 2 },
+            coverUrl: "blob:cover",
+          },
+        },
+      }),
+    );
 
     await waitFor(() => expect(container.querySelector(".book-card-cover")).not.toBeNull());
     const image = container.querySelector(".book-card-cover");
     expect(image?.getAttribute("src")).toBe("blob:cover");
     // The cover comes from the book's own bytes, so nothing about it is fetched from a third party.
     expect(image?.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(screen.getByTestId("book-card-title")).toHaveTextContent("A Small Book");
+    expect(screen.getByTestId("book-card-meta")).toHaveTextContent("Ada Lovelace · 2 chapters");
   });
 
-  it("should open focus mode on Read rather than starting a drag of the card", async () => {
+  it("should open focus mode on Read rather than starting a drag of the card", () => {
     const { card } = seed();
     render(<BookCardFace card={card} />);
 

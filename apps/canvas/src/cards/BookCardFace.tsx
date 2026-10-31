@@ -1,7 +1,7 @@
 import type { Card } from "@suite/graph";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { MEDIA_NODE_NAME } from "../editor/mediaNode";
-import { bookDetails, extractCover, useBookCoverCache } from "../reader/bookCoverCache";
+import { bookEntryOf, loadBook, retryBook, useBookMeta } from "../reader/bookMeta";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 
@@ -11,9 +11,9 @@ import { useUiStore } from "../store/useUiStore";
  * The card *is* the book: the cover fills it the way a picture fills an image card, and the details a reader wants
  * before deciding to read sit under it — the title, the author, how many chapters, and **Read**.
  *
- * The cover is deliberately not drawn by reading the archive here. `extractCover` does that once, off the paint, and
- * publishes it; this face reads what is ready. A board of forty cards is forty faces before anybody clicks, so the
- * expensive part is deferred and the first paint shows the book's name instead of waiting for a zip.
+ * The cover is not drawn by reading the archive here. `loadBook` does that once, off the paint, and publishes what it
+ * found; this face subscribes. A board of forty cards is forty faces before anybody clicks, so the tile arrives first
+ * and the picture after it, and the card does not change shape when it does.
  */
 export function BookCardFace({ card }: { card: Card }) {
   const workspace = useCanvasStore((state) => state.workspace);
@@ -21,48 +21,33 @@ export function BookCardFace({ card }: { card: Card }) {
   const file = workspace === null ? null : bookBlockOf(workspace, card.id);
   const attachmentId = file?.id ?? "";
 
-  // Subscribing to the cache rather than reading it once: the extractor publishes after this face has painted.
-  const cover = useBookCoverCache((state) => state.covers[attachmentId] ?? null);
-  const [details, setDetails] = useState<{
-    title: string;
-    creator: string | null;
-    chapters: number;
-  } | null>(null);
+  // Subscribing rather than reading once: the load finishes after this face has painted.
+  const entry = useBookMeta((state) => state.entries[attachmentId]);
 
   useEffect(() => {
     if (attachmentId.length === 0) return;
-    void extractCover(attachmentId);
+    loadBook(attachmentId);
+    // A face that remounts is a second chance: the bytes may have landed since the last attempt gave up waiting.
+    retryBook(attachmentId);
   }, [attachmentId]);
 
-  useEffect(() => {
-    if (attachmentId.length === 0) return;
-    let cancelled = false;
-    void bookDetails(attachmentId).then((found) => {
-      if (!cancelled) setDetails(found);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [attachmentId]);
-
-  const title = details?.title ?? file?.name ?? "Untitled book";
-  // No word for "still reading the zip": the empty tile already says the cover has not arrived, and a card that
-  // narrates its own loading is a card that flickers. The author is the fact worth the line.
-  const author = details?.creator ?? "Book";
+  const ready = entry?.status === "ready" ? entry : null;
+  const title = ready?.meta.title ?? file?.name ?? "Untitled book";
+  const author = ready?.meta.creator ?? "Book";
 
   return (
     <div className="book-card" data-testid="book-card-face">
-      <div className="book-card-art" data-has-cover={cover === null ? undefined : "true"}>
-        {cover === null ? (
+      <div className="book-card-art">
+        {ready?.coverUrl === null || ready === null ? (
           <span aria-hidden="true" className="book-card-placeholder">
             {"\u{1f4d6}"}
           </span>
         ) : (
-          // The cover is bytes from the book's own archive, held as an object URL, so nothing is fetched from
-          // anywhere and `no-referrer` is the whole of the policy.
+          // The cover is bytes from the book's own archive, held as an object URL: nothing is fetched from anywhere,
+          // so `no-referrer` is the whole of the policy.
           <img
             className="book-card-cover"
-            src={cover}
+            src={ready.coverUrl}
             alt=""
             referrerPolicy="no-referrer"
             draggable={false}
@@ -75,9 +60,9 @@ export function BookCardFace({ card }: { card: Card }) {
         </span>
         <span className="book-card-meta" data-testid="book-card-meta">
           {author}
-          {details === null
+          {ready === null
             ? ""
-            : ` · ${String(details.chapters)} ${details.chapters === 1 ? "chapter" : "chapters"}`}
+            : ` · ${String(ready.meta.chapters)} ${ready.meta.chapters === 1 ? "chapter" : "chapters"}`}
         </span>
       </div>
       <button
@@ -110,3 +95,10 @@ function bookBlockOf(
   }
   return null;
 }
+
+/** The book a card holds, for a surface that needs the attachment rather than the face. */
+export function bookOfCard(workspace: Parameters<typeof bookBlockOf>[0], cardId: string) {
+  return bookBlockOf(workspace, cardId);
+}
+
+export { bookEntryOf };

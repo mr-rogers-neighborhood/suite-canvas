@@ -1,4 +1,4 @@
-import type { Annotation, AnnotationStyle } from "../../annotations.js";
+import type { Annotation, AnnotationPart, AnnotationStyle } from "../../annotations.js";
 import type { DocApi } from "../api.js";
 import type { CreateAnnotationInput, CreateAnnotationStyleInput } from "../model.js";
 
@@ -33,6 +33,11 @@ export class AnnotationsFacade {
 
   setAnnotationStyle(id: string, styleId: string): Annotation | undefined {
     return this.annotationsApi.setAnnotationStyle(id, styleId);
+  }
+
+  /** Replaces a highlight's parts whole: they describe each other, so they are one value. */
+  setAnnotationParts(id: string, parts: AnnotationPart[]): Annotation | undefined {
+    return this.annotationsApi.setAnnotationParts(id, parts);
   }
 
   setAnnotationCard(id: string, cardId: string): Annotation | undefined {

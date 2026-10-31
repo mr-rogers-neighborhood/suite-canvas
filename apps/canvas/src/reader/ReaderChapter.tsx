@@ -20,8 +20,10 @@ export interface ReaderChapterProps {
   annotations: readonly Annotation[];
   styles: readonly { id: string; color: string }[];
   onSelect: (selection: PendingSelection) => void;
-  /** A press on a painted highlight: the card it becomes, or the passage reopened. */
+  /** A press on a painted highlight: it is raised, and the raised surface holds every verb. */
   onActivate: (annotationId: string) => void;
+  /** A right-click on a painted highlight: the same verbs, without raising it. */
+  onMenu: (annotationId: string, point: { x: number; y: number }) => void;
   /** A press that travels: the highlight is carried out of the book. */
   onCarry: (
     annotationId: string,
@@ -36,6 +38,7 @@ export function ReaderChapter({
   styles,
   onSelect,
   onActivate,
+  onMenu,
   onCarry,
 }: ReaderChapterProps) {
   const container = useRef<HTMLDivElement | null>(null);
@@ -84,6 +87,13 @@ export function ReaderChapter({
         const mark = (event.target as HTMLElement).closest("mark[data-annotation-id]");
         const id = mark?.getAttribute("data-annotation-id");
         if (id !== null && id !== undefined && id.length > 0) onActivate(id);
+      }}
+      onContextMenu={(event) => {
+        const mark = (event.target as HTMLElement).closest("mark[data-annotation-id]");
+        const id = mark?.getAttribute("data-annotation-id");
+        if (id === null || id === undefined || id.length === 0) return;
+        event.preventDefault();
+        onMenu(id, { x: event.clientX, y: event.clientY });
       }}
       // biome-ignore lint/security/noDangerouslySetInnerHtml: the one allowed injection site, after `sanitiseChapter`.
       dangerouslySetInnerHTML={{ __html: html }}

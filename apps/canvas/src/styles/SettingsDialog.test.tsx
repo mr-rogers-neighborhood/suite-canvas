@@ -95,6 +95,22 @@ describe("settings", () => {
     expect(document.documentElement.dataset.motion).toBe("reduced");
   });
 
+  it("applies a reading change to the page a book is drawn on", () => {
+    render(<SettingsDialog onClose={() => {}} />);
+
+    fireEvent.click(screen.getByTestId("appearance-reading-size-17"));
+    expect(document.documentElement.style.getPropertyValue("--reader-size")).toBe("17px");
+
+    fireEvent.click(screen.getByTestId("appearance-reading-measure-wide"));
+    expect(document.documentElement.style.getPropertyValue("--reader-measure")).toBe("80ch");
+
+    fireEvent.click(screen.getByTestId("appearance-reading-theme-dim"));
+    expect(document.documentElement.dataset.reading).toBe("dim");
+
+    // The canvas is untouched: reading a book at night is not a change to how the boards look.
+    expect(document.documentElement.dataset.canvas).toBe(DEFAULT_APPEARANCE.canvasBackground);
+  });
+
   it("resets to the defaults, and the root follows", () => {
     useAppearanceStore.setState({
       appearance: { ...DEFAULT_APPEARANCE, density: "compact", radius: 2 },

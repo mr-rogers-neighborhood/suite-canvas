@@ -77,6 +77,30 @@
   font-weight: 600;
 }
 
+/* The rule under the header: a page's worth of progress through the book, updated from the scroll. */
+.reader-progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: color-mix(in srgb, var(--ink-muted) 18%, transparent);
+}
+
+.reader-progress-bar {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reader-progress-bar {
+    transition: none;
+  }
+}
+
 .reader-body {
   min-height: 0;
   flex: 1;
@@ -84,14 +108,18 @@
   padding: 0 12px;
 }
 
-/* The measure: about 34 characters is too narrow and 90 too wide; this lands near 70. */
+/*
+ * The measure: about 34 characters is too narrow and 90 too wide, so the default lands near 70 and the reader can move
+ * it either way. Size, measure and page are device preferences from `appearance.ts` (ADR-0071), published on the root
+ * as `--reader-size`, `--reader-measure` and `data-reading`.
+ */
 .reader-chapter {
-  max-width: 68ch;
+  max-width: var(--reader-measure, 68ch);
   margin: 0 auto;
   padding: 12px 0 32px;
-  font-size: 13px;
+  font-size: var(--reader-size, 13px);
   line-height: 1.65;
-  color: var(--ink);
+  color: var(--reader-ink, var(--ink));
 }
 
 .reader-chapter h1,
@@ -1030,6 +1058,19 @@
   border-top: 1px solid var(--hairline);
 }
 
+/* The filter row in a book's Highlights panel: one chip per kind, plus all and not-yet-card. */
+.reader-mark-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 10px 6px;
+}
+
+.reader-mark-filter {
+  display: inline-flex;
+  align-items: center;
+}
+
 .library-annotations-head {
   display: flex;
   justify-content: flex-end;
@@ -1161,4 +1202,139 @@
   align-items: center;
   gap: 2px;
   margin-left: auto;
+}
+
+/* A mark is a control once it can be reached from the keyboard, so it has to look like one when it is focused. */
+.reader-chapter mark.reader-highlight:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* ---------- The page a book is printed on ---------- */
+
+/*
+ * A reading theme tints the page, not the app. Sepia and dim are the two a reader asks for by name, and both are
+ * applied to the reader's own column so nothing outside the book moves.
+ */
+/* The rule under the header: a page's worth of progress through the book, updated from the scroll. */
+.reader-progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: color-mix(in srgb, var(--ink-muted) 18%, transparent);
+}
+
+.reader-progress-bar {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reader-progress-bar {
+    transition: none;
+  }
+}
+
+.reader-body {
+  transition: background-color 140ms ease-out;
+}
+
+[data-reading="sepia"] /* The rule under the header: a page's worth of progress through the book, updated from the scroll. */
+.reader-progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: color-mix(in srgb, var(--ink-muted) 18%, transparent);
+}
+
+.reader-progress-bar {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reader-progress-bar {
+    transition: none;
+  }
+}
+
+.reader-body {
+  background: #f6efdf;
+  --reader-ink: #3b3327;
+}
+
+[data-reading="dim"] /* The rule under the header: a page's worth of progress through the book, updated from the scroll. */
+.reader-progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: color-mix(in srgb, var(--ink-muted) 18%, transparent);
+}
+
+.reader-progress-bar {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reader-progress-bar {
+    transition: none;
+  }
+}
+
+.reader-body {
+  background: #1c1f24;
+  --reader-ink: #cbd2dc;
+}
+
+[data-reading="sepia"] .reader-chapter blockquote,
+[data-reading="dim"] .reader-chapter blockquote {
+  color: color-mix(in srgb, var(--reader-ink) 65%, transparent);
+  border-left-color: color-mix(in srgb, var(--reader-ink) 35%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The rule under the header: a page's worth of progress through the book, updated from the scroll. */
+  .reader-progress {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 2px;
+    background: color-mix(in srgb, var(--ink-muted) 18%, transparent);
+  }
+
+  .reader-progress-bar {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--accent);
+    transition: width 120ms linear;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reader-progress-bar {
+      transition: none;
+    }
+  }
+
+  .reader-body {
+    transition: none;
+  }
 }

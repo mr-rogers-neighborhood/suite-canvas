@@ -1,5 +1,6 @@
 import type { Annotation, AnnotationStyle } from "@suite/graph";
 import { partText } from "@suite/graph";
+import { useState } from "react";
 import { IconGlyph } from "../icons/IconGlyph";
 import { beginHighlightDrag } from "./highlightDrag";
 
@@ -20,6 +21,9 @@ export interface BookHighlightsProps {
 }
 
 export function BookHighlights({ annotations, styles, onOpen, onPlace }: BookHighlightsProps) {
+  /** `null` is everything; `"unplaced"` is the ones with no card; anything else is a kind's id. */
+  const [filter, setFilter] = useState<string | null>(null);
+
   if (annotations.length === 0) {
     return (
       <p className="reader-note" data-testid="book-highlights-empty">
@@ -29,16 +33,53 @@ export function BookHighlights({ annotations, styles, onOpen, onPlace }: BookHig
     );
   }
 
-  const placed = annotations.filter((annotation) => annotation.cardId !== undefined).length;
+  const cards = annotations.filter((annotation) => annotation.cardId !== undefined).length;
+  const shown = annotations.filter((annotation) => matches(annotation, filter));
 
   return (
     <div className="reader-marks" data-testid="book-highlights">
-      <p className="reader-marks-count">
-        {annotations.length} {annotations.length === 1 ? "highlight" : "highlights"} · {placed} on
-        the board
+      {/* A card may be waiting in the inbox, so the panel counts cards rather than claiming they are on a board: where
+          a card sits is the library's answer to give, and it is the one place that can see placements. */}
+      <p className="reader-marks-count" data-testid="reader-marks-count">
+        {annotations.length} {annotations.length === 1 ? "highlight" : "highlights"} · {cards}{" "}
+        {cards === 1 ? "card" : "cards"}
       </p>
+      <div
+        className="reader-mark-filters"
+        role="toolbar"
+        aria-label="Filter the highlights"
+        data-testid="reader-mark-filters"
+      >
+        <FilterChip
+          label="All"
+          active={filter === null}
+          onPick={() => setFilter(null)}
+          testId="reader-filter-all"
+        />
+        <FilterChip
+          label="Not a card yet"
+          active={filter === "unplaced"}
+          onPick={() => setFilter("unplaced")}
+          testId="reader-filter-unplaced"
+        />
+        {styles.map((style) => (
+          <FilterChip
+            key={style.id}
+            label={style.name}
+            colour={style.color}
+            active={filter === style.id}
+            onPick={() => setFilter(style.id)}
+            testId={`reader-filter-${style.id}`}
+          />
+        ))}
+      </div>
+      {shown.length === 0 ? (
+        <p className="reader-note" data-testid="reader-marks-filtered-empty">
+          Nothing of this kind yet.
+        </p>
+      ) : null}
       <ul className="reader-marks-rows">
-        {annotations.map((annotation) => {
+        {shown.map((annotation) => {
           const style = styles.find((entry) => entry.id === annotation.styleId);
           return (
             <li key={annotation.id}>
@@ -81,6 +122,48 @@ export function BookHighlights({ annotations, styles, onOpen, onPlace }: BookHig
         })}
       </ul>
     </div>
+  );
+}
+
+/** Whether a highlight belongs in the current filter. */
+function matches(annotation: Annotation, filter: string | null): boolean {
+  if (filter === null) return true;
+  if (filter === "unplaced") return annotation.cardId === undefined;
+  return annotation.styleId === filter;
+}
+
+/** One filter as a chip, with its kind's colour when it is a kind. */
+function FilterChip({
+  label,
+  colour,
+  active,
+  onPick,
+  testId,
+}: {
+  label: string;
+  colour?: string | undefined;
+  active: boolean;
+  onPick: () => void;
+  testId: string;
+}) {
+  return (
+    <button
+      type="button"
+      className="style-chip reader-mark-filter"
+      data-testid={testId}
+      data-checked={active ? "true" : undefined}
+      aria-pressed={active}
+      onClick={onPick}
+    >
+      {colour === undefined ? null : (
+        <span
+          aria-hidden="true"
+          className="reader-mark-dot"
+          style={{ background: colour, marginRight: 4 }}
+        />
+      )}
+      {label}
+    </button>
   );
 }
 

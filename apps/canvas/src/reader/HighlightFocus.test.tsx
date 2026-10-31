@@ -110,14 +110,17 @@ describe("raising a highlight", () => {
     expect(onDone).toHaveBeenCalledWith([]);
   });
 
-  it("should say how many cards Place would make", () => {
+  it("should promise one card however many parts are mapped", () => {
+    // Place used to say "Place 2 cards" when a part was marked as a card of its own. One highlight is one card now, so
+    // the button says the same thing whether the passage was cut into two parts or twenty.
     draw({
       parts: [
         { id: "p1", start: 0, end: 3, target: { kind: "title" } },
-        { id: "p2", start: 4, end: 9, target: { kind: "own-card" } },
+        { id: "p2", start: 4, end: 9, target: { kind: "field", name: "Question" } },
       ],
     });
-    expect(screen.getByTestId("raise-place")).toHaveTextContent("Place 2 cards");
+    expect(screen.getByTestId("raise-place")).toHaveTextContent("Place");
+    expect(screen.getByTestId("raise-place").textContent).not.toContain("cards");
   });
 
   it("should offer the type's slots first when a part is added", () => {

@@ -65,6 +65,21 @@ export function annotationsMethods(ctx: DocContext) {
     return null;
   };
 
+  /**
+   * A part's destination, repaired where an older document still carries one the shape no longer offers.
+   *
+   * Schema 5 allowed `own-card`, which asked a part to become a card of its own. Schema 6 removed it so that one
+   * highlight means one card. The words are not lost by dropping the destination — the passage is already the card's
+   * first block — but a record that fails the schema is a highlight the reader can no longer see, so a legacy target
+   * reads back as `body` instead. This is the repair the data-model how-to asks for: no migration script, one
+   * normalising reader.
+   */
+  const targetOf = (value: unknown): unknown => {
+    const record = recordOf(value);
+    if (record !== null && record.kind === "own-card") return { kind: "body" };
+    return value;
+  };
+
   const readAnchor = (value: unknown): AnnotationAnchor | undefined => {
     const record = recordOf(value);
     if (record === null) return undefined;
@@ -84,7 +99,10 @@ export function annotationsMethods(ctx: DocContext) {
     if (items === null) return undefined;
     const parsed = items.flatMap((item) => {
       const record = recordOf(item);
-      const part = record === null ? undefined : annotationPartSchema.safeParse(record);
+      const part =
+        record === null
+          ? undefined
+          : annotationPartSchema.safeParse({ ...record, target: targetOf(record.target) });
       return part?.success === true ? [part.data] : [];
     });
     return parsed.length === 0 ? undefined : parsed;
@@ -126,7 +144,9 @@ export function annotationsMethods(ctx: DocContext) {
       ...(readString(fields, "templateTypeId") === undefined
         ? {}
         : { templateTypeId: readString(fields, "templateTypeId") }),
-      ...(Array.isArray(fields.get("recipe")) ? { recipe: fields.get("recipe") } : {}),
+      ...(Array.isArray(fields.get("recipe"))
+        ? { recipe: (fields.get("recipe") as unknown[]).map(targetOf) }
+        : {}),
     });
     return parsed.success ? parsed.data : undefined;
   };

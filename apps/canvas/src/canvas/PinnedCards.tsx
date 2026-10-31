@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { CardBodyEditor } from "../cards/CardBodyEditor";
+import { mentionLabelIn } from "../cards/mentionLabel";
 import { StaticCardTitle } from "../cards/StaticCardFace";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { type PinRect, usePinStore } from "../store/pinStore";
@@ -115,7 +116,11 @@ export function PinnedCards() {
               }}
             >
               <div className="min-w-0 flex-1 truncate text-[13px] font-semibold">
-                <StaticCardTitle cardDoc={workspace.doc} titleId={titleId} />
+                <StaticCardTitle
+                  cardDoc={workspace.doc}
+                  titleId={titleId}
+                  mentionLabel={mentionLabelIn(workspace)}
+                />
               </div>
               <button
                 type="button"

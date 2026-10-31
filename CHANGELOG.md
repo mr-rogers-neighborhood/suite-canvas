@@ -2,6 +2,27 @@
 
 ### Added
 
+- Reading a book is quieter about its own machinery: a mention of a card shows the card's name, and a passage's
+  mention shows its words, both without focusing the card first.
+- The reader has its own appearance: **text size**, **width** and a **page** (the app's, sepia, or dim). They are
+  device preferences beside the canvas knobs in the appearance panel, and they sink into a book and nowhere else.
+- A book remembers how far down the chapter you were, not just which chapter; the contents list marks the one you are
+  in, and a rule under the header is your place in the whole book.
+- The reader turns pages with the keyboard: left/right, space/shift-space, home/end. The space bar stays with a live
+  selection.
+- A highlight's menu can **copy with its source**: the passage, then the author and the book.
+- The Highlights panel filters by kind and by "not a card yet".
+
+### Changed
+
+- One highlight makes **one** card. The mapping decides what that card says, not how many cards appear: the
+  `own-card` destination is gone, so a press can no longer make an unpredictable number of cards. `SCHEMA_VERSION`
+  moves to 6 and a stored `own-card` part reads back as part of the passage.
+- A highlight's colour is chosen from a menu row called **Kind**, not **Type**: a kind is what a highlight is, a type
+  is what a card is, and the library already had a Types button.
+
+### Added
+
 - An annotation card wears its passage: a strip above the body with the highlight's kind colour down the left, the
   words, the book it came from, **Reopen** and **Keep it**. The body underneath stays editable, because a comment on a
   passage belongs in the card that came from it.
@@ -20,6 +41,16 @@
 
 ### Fixed
 
+- A highlight that crossed a bold word, a link or a paragraph break was not painted at all, and nothing said so:
+  `Range.surroundContents` refuses a range that partly covers an element and the painter swallowed the refusal. Marks
+  are now painted per text node, and anything still unplaceable is counted under the header.
+- Two paragraphs were zero characters apart in the text a quote is searched in, so a highlight taken across a
+  paragraph break could never be found again. The chapter's flat text separates blocks with one space and collapses
+  whitespace-only nodes.
+- A painted mark had no keyboard path at all, although a comment claimed one. It is focusable now, opens with Enter or
+  Space, and its menu opens with the menu key.
+- The Highlights panel said "N on the board" while counting cards that were waiting in the inbox.
+- A highlight's submenu said **Type** for what its own dialog had started calling a kind.
 - Pressing **Place** created the card in the inbox. The promotion was given a board and no point, so it wrote no
   placement: the board showed nothing, and a second press "opened" a card nobody could see.
 - Dragging a highlight out of the library or the book's Highlights panel made nothing. Both rows rolled their own

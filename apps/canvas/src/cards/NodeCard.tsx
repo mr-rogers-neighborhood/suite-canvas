@@ -20,6 +20,7 @@ import { AnnotationCardFace, annotationOfCard } from "./AnnotationCardFace";
 import { BookCardFace } from "./BookCardFace";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import type { CardMeta } from "./cardMeta";
+import { mentionLabelIn } from "./mentionLabel";
 import { StaticCardFace, StaticCardTitle } from "./StaticCardFace";
 import { ViewCardFace } from "./ViewCardFace";
 import { isViewCard } from "./viewCard";
@@ -215,6 +216,8 @@ function CardBodyArea({
   onOpenCardPanel,
 }: CardBodyAreaProps) {
   const workspace = useCanvasStore((state) => state.workspace);
+  // A mention's words live in the document, and this face has no node views to ask: one resolver, made once per body.
+  const mentionLabel = useMemo(() => mentionLabelIn(workspace), [workspace]);
   if (isViewCard(card)) return <ViewCardFace card={card} />;
   // A book card draws itself: the cover, what the book says about it, and Read. Same arrangement as a view card.
   if (isBookCard(workspace, card.id)) return <BookCardFace card={card} />;
@@ -235,7 +238,14 @@ function CardBodyArea({
       />
     );
   }
-  return <StaticCardFace cardDoc={cardDoc} contentId={contentId} canEdit={editContent} />;
+  return (
+    <StaticCardFace
+      cardDoc={cardDoc}
+      contentId={contentId}
+      canEdit={editContent}
+      mentionLabel={mentionLabel}
+    />
+  );
 }
 
 export function NodeCard({
@@ -627,7 +637,11 @@ export function NodeCard({
               onCommit={onEditEnd}
             />
           ) : (
-            <StaticCardTitle cardDoc={cardDoc} titleId={titleId} />
+            <StaticCardTitle
+              cardDoc={cardDoc}
+              titleId={titleId}
+              mentionLabel={mentionLabelIn(nodeWorkspace)}
+            />
           )}
         </div>
 

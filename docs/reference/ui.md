@@ -33,7 +33,8 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Presence | `apps/canvas/src/presence/` and `apps/canvas/src/cursor/` | Peer cursors, name tags, avatars and the status cursor |
 | Kinds of highlight | `apps/canvas/src/reader/AnnotationKindsDialog.tsx` | What each kind of highlight produces: its colour, its card type and the slots it fills. Opened through `AnnotationKindsHost`, so it is the shell's rather than the drawer's |
 | Raise | `apps/canvas/src/reader/HighlightFocus.tsx` | One highlight alone on a blurred backdrop, where its parts are chosen and given targets |
-| Book reader | `apps/canvas/src/reader/BookReader.tsx` | An EPUB read large, in focus mode: contents, one chapter at a time, the highlight palette, and a press or a drag that promotes a highlight to a card |
+| Book reader | `apps/canvas/src/reader/BookReader.tsx` | An EPUB read large, in focus mode: contents, one chapter at a time, the highlight palette, the reader's own progress rule, and page keys. A press or a drag promotes a highlight to a card |
+| Chapter surface | `apps/canvas/src/reader/ReaderChapter.tsx` | The one `dangerouslySetInnerHTML` site after sanitising, and the painter that wraps a passage in focusable marks, one per text node |
 | Book card | `apps/canvas/src/cards/BookCardFace.tsx` | The card on the canvas: the cover filling it, the title, author and chapter count, and **Read** |
 | Book block | `apps/canvas/src/editor/BookView.tsx` | The block itself, for a card that holds a book among other content: the same cover, details and **Read** |
 | Media picker | `apps/canvas/src/editor/MediaPickerHost.tsx` | The one table of media kinds, applied to an editor target or a board target |
@@ -351,6 +352,18 @@ raise is where parts are chosen; and because it exists, a press no longer has to
 highlight", which is why a press raises and a drag carries. A right-click opens `HighlightMenu`, the same verbs without
 raising, and the raised surface's own rows are that menu.
 
+**A mark is painted per text node, and it is a control.** `Range.surroundContents` throws as soon as a range partially
+covers an element, so a passage over a bold word, a link or a paragraph break used to be dropped by a `catch` with
+nothing said. `paintHighlights` segments the match against the chapter's own text index instead, one range per text
+node, so every wrap sits inside a single node and a crossing passage becomes adjacent marks that share the highlight's
+id. Every mark carries `tabindex`, `role="button"` and the keys `ReaderChapter` delegates: Enter or Space raises it, the
+menu key or Shift-F10 opens its menu. A highlight the chapter cannot place is counted and reported under the header.
+
+**Two paragraphs are two words apart.** `chapterTextIndex` separates block-level runs with one space and gives a
+whitespace-only node no run at all, because a reader's selection across a paragraph break arrives normalised to single
+spaces and the book's markup usually has nothing between the tags. Without that, an anchor taken across a break could
+never be found again.
+
 **Four sources, one carry, one release.** The painted mark in the chapter, the book's Highlights panel, the library's
 annotation row, and a `@` mention chip all begin the same gesture, `beginHighlightDrag`, so all four get the
 threshold, the root attribute that stops the drag being a text selection, and the cancel path. The gesture ends in
@@ -448,7 +461,7 @@ Colours come from the workspace palette: `PaletteEditor` in Settings edits it as
 
 A **shape** is the frame, not a decoration on one. `shapeClipPath` and `shapeOutline` in `apps/canvas/src/canvas/surfacePaint.ts` are the one table of silhouettes: the clip path is what the browser paints and the outline is what everything else reads — the connector dots (`silhouette.ts` projects a dot onto the paint), the inset that keeps a title inside a diamond (`shapeInset`), and the width of the title bar under it. Where a silhouette is not the box, the card's own border, shadow and selection ring all stand down, because they are rectangles and a diamond shows all three; the reader's feedback follows the paint as a drop-shadow glow instead. The edge editor collapses to one `Outline` row for the same reason: a diamond has no top edge to style apart from its bottom one.
 
-Device appearance is local, and it lives in Settings. `apps/canvas/src/styles/SettingsDialog.tsx` is a modal dialog with a focus trap and Escape through the escape stack. One section is document data and one is not: `PaletteEditor` writes the workspace palette, and `AppearanceSection` sets density, card radius, canvas background and a motion preference, written by `apps/canvas/src/theme/appearance.ts` as attributes on `<html>` (`data-density`, `data-canvas`, `data-motion`) plus a `--reader-card-radius` variable. Nothing about it is synced, because it changes how this screen draws and never what a peer sees.
+Device appearance is local, and it lives in Settings. `apps/canvas/src/styles/SettingsDialog.tsx` is a modal dialog with a focus trap and Escape through the escape stack. One section is document data and one is not: `PaletteEditor` writes the workspace palette, and `AppearanceSection` sets density, card radius, canvas background and a motion preference, written by `apps/canvas/src/theme/appearance.ts` as attributes on `<html>` (`data-density`, `data-canvas`, `data-motion`, `data-reading`) plus `--reader-card-radius`, `--reader-size` and `--reader-measure`. Nothing about it is synced, because it changes how this screen draws and never what a peer sees. The **reading** group is separate from the canvas knobs on purpose: text size, measure and page belong to a book and sink into nothing else, so a reader at midnight gets a dim page without their boards turning sepia.
 
 The dialog opens from the theme menu (`theme-appearance`, which reads "Settings…") and from the palette's `system.settings` row. Both go through `openSettings` in `apps/canvas/src/styles/settingsEvents.ts`, a window event, so neither surface has to own the other's state. The appearance controls keep their `appearance-*` test ids.
 

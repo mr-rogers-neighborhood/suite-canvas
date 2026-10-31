@@ -13,6 +13,24 @@
 export type Density = "comfortable" | "compact";
 export type CanvasBackground = "plain" | "dots";
 export type MotionPreference = "full" | "reduced";
+/** What the reader's page is printed on, which is not the app's theme. */
+export type ReadingTheme = "app" | "sepia" | "dim";
+/** How wide a column of prose is: 56, 68 or 80 characters. */
+export type ReadingMeasure = "narrow" | "standard" | "wide";
+
+/**
+ * How a book reads on this screen.
+ *
+ * Separate from the four canvas knobs because it is a separate act: a reader at midnight wants a dim page at 17px
+ * without their boards turning sepia. Still a device preference, for the same reason — the size somebody needs is
+ * about their eyes, not about the document.
+ */
+export interface ReadingAppearance {
+  /** Body text in pixels. */
+  size: number;
+  measure: ReadingMeasure;
+  theme: ReadingTheme;
+}
 
 export interface Appearance {
   density: Density;
@@ -20,7 +38,28 @@ export interface Appearance {
   radius: number;
   canvasBackground: CanvasBackground;
   motion: MotionPreference;
+  reading: ReadingAppearance;
 }
+
+/** The sizes the reader offers, in the order the panel shows them. */
+export const READING_SIZES = [
+  { value: 12, label: "Small" },
+  { value: 13, label: "Standard" },
+  { value: 15, label: "Large" },
+  { value: 17, label: "Larger" },
+] as const;
+
+export const READING_MEASURES: readonly { value: ReadingMeasure; label: string; ch: number }[] = [
+  { value: "narrow", label: "Narrow", ch: 56 },
+  { value: "standard", label: "Standard", ch: 68 },
+  { value: "wide", label: "Wide", ch: 80 },
+];
+
+export const READING_THEMES: readonly { value: ReadingTheme; label: string }[] = [
+  { value: "app", label: "The app's" },
+  { value: "sepia", label: "Sepia" },
+  { value: "dim", label: "Dim" },
+];
 
 export const APPEARANCE_STORAGE_KEY = "suite.appearance";
 
@@ -29,6 +68,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
   radius: 12,
   canvasBackground: "dots",
   motion: "full",
+  reading: { size: 13, measure: "standard", theme: "app" },
 };
 
 /** The range the radius control offers. Wide enough to see, narrow enough to stay a card. */
@@ -71,6 +111,29 @@ export function readStoredAppearance(storage: Pick<Storage, "getItem"> | undefin
       DEFAULT_APPEARANCE.canvasBackground,
     ),
     motion: oneOf(record.motion, ["full", "reduced"] as const, DEFAULT_APPEARANCE.motion),
+    reading: readReading(record.reading),
+  };
+}
+
+/** A partial or hand-edited reading record falls back field by field, like the rest of the appearance. */
+function readReading(value: unknown): ReadingAppearance {
+  const record =
+    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  const sizes = READING_SIZES.map((entry) => entry.value);
+  const smallest = sizes[0] ?? 12;
+  const largest = sizes[sizes.length - 1] ?? 17;
+  const size =
+    typeof record.size === "number" && Number.isFinite(record.size)
+      ? Math.min(largest, Math.max(smallest, Math.round(record.size)))
+      : DEFAULT_APPEARANCE.reading.size;
+  return {
+    size,
+    measure: oneOf(
+      record.measure,
+      ["narrow", "standard", "wide"] as const,
+      DEFAULT_APPEARANCE.reading.measure,
+    ),
+    theme: oneOf(record.theme, ["app", "sepia", "dim"] as const, DEFAULT_APPEARANCE.reading.theme),
   };
 }
 
@@ -85,4 +148,9 @@ export function applyAppearance(appearance: Appearance, root: HTMLElement): void
   root.dataset.canvas = appearance.canvasBackground;
   root.dataset.motion = appearance.motion;
   root.style.setProperty("--reader-card-radius", `${appearance.radius}px`);
+  // The reading group is published as its own attributes, so a book's page can change without the boards changing.
+  root.dataset.reading = appearance.reading.theme;
+  root.style.setProperty("--reader-size", `${appearance.reading.size}px`);
+  const measure = READING_MEASURES.find((entry) => entry.value === appearance.reading.measure);
+  root.style.setProperty("--reader-measure", `${measure?.ch ?? 68}ch`);
 }

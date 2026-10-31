@@ -200,20 +200,28 @@ describe("parts of a highlight", () => {
     expect(quote?.content?.[0]?.content?.[0]?.text).toBe(QUOTE);
   });
 
-  it("should make a card per own-card part, all pointing at the same highlight", () => {
+  it("should make one card however many parts the passage is cut into", () => {
     const { workspace, annotation } = partsFixture();
     const start = QUOTE.indexOf("what we call");
     workspace.setAnnotationParts(annotation.id, [
       ...(annotation.parts ?? []),
-      { id: "part-own", start, end: start + "what we call".length, target: { kind: "own-card" } },
+      {
+        id: "part-field",
+        start,
+        end: start + "what we call".length,
+        target: { kind: "field", name: "Question" },
+      },
     ]);
+    const before = workspace.listCards().length;
     const promoted = promoteAnnotation(
       INBOX(workspace, workspace.getAnnotation(annotation.id) ?? annotation),
     );
 
-    expect(promoted?.ownCardIds).toHaveLength(1);
-    const own = workspace.getCard(promoted?.ownCardIds[0] ?? "");
-    expect(workspace.displayTitle(own?.id ?? "")).toBe("what we call");
+    // One press, one card: the number a promotion makes no longer depends on the mapping.
+    expect(workspace.listCards()).toHaveLength(before + 1);
+    expect(workspace.getCard(promoted?.cardId ?? "")).toBeDefined();
+    // Every word is still in the passage, so nothing was dropped by mapping part of it.
+    expect(JSON.stringify(workspace.bodyNodes(promoted?.cardId ?? ""))).toContain(QUOTE);
   });
 
   it("should open the card a highlight already has instead of making a second one", () => {

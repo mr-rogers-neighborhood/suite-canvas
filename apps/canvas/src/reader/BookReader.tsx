@@ -1,5 +1,5 @@
 import type { AnnotationPart } from "@suite/graph";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type OpenedBook, openEpub, protectionOf } from "../archive/epub/open";
 import { sanitiseChapter } from "../archive/epub/sanitise";
 import { toast } from "../feedback/toast";
@@ -77,6 +77,15 @@ export function BookReader({
   /** The highlight on the raised surface, by id: a press raises, and the surface is where it is taken apart. */
   const [raisedId, setRaisedId] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  /**
+   * Where to scroll the next chapter to.
+   *
+   * A remembered offset has to wait for the chapter to be in the DOM, and the scroll has to happen once: applying it
+   * on every render would fight a reader who scrolled away from where they were put.
+   */
+  const [pendingOffset, setPendingOffset] = useState(0);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const progressRef = useRef<HTMLSpanElement | null>(null);
 
   // Derived *after* the state it reads. A derived value above the `useState` that feeds it is a temporal dead zone:
   // a crash on the first render of a book that has highlights, and nothing at all in a book that has none.
@@ -105,9 +114,14 @@ export function BookReader({
       .then((book) => {
         if (cancelled) return;
         setState({ status: "open", book });
+        // The remembered place, when the book still has that chapter: a book that was edited since must open on
+        // something, and the top of the first chapter is a better answer than an empty column.
         const first =
-          remembered !== null && book.chapters.includes(remembered) ? remembered : book.chapters[0];
+          remembered !== null && book.chapters.includes(remembered.path)
+            ? remembered.path
+            : book.chapters[0];
         setChapterPath(first ?? null);
+        setPendingOffset(remembered?.offset ?? 0);
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -142,6 +156,138 @@ export function BookReader({
     return { html: sanitised.html, report: sanitised.report };
   }, [chapterXml, chapterPath]);
 
+  // The open book, or null while it loads: everything below is a hook, and a hook cannot sit behind an early return.
+  const opened = state.status === "open" ? state.book : null;
+  const chapterCount = opened?.chapters.length ?? 0;
+  const chapterIndex =
+    opened === null || chapterPath === null ? 0 : Math.max(0, indexOf(opened, chapterPath));
+
+  /**
+   * Where the reader is, written without a render.
+   *
+   * Scrolling must not re-render the reader: a render repaints the whole chapter and its marks, and a reader dragging
+   * the scrollbar would be doing that sixty times a second. So the progress rule is a ref whose width is set directly,
+   * and the stored position is written on a trailing timer rather than on every event.
+   */
+  const rememberTimer = useRef<number | null>(null);
+  const applyScroll = useCallback(() => {
+    const body = bodyRef.current;
+    if (body === null || chapterCount === 0) return;
+    const scrolled =
+      body.scrollHeight <= body.clientHeight
+        ? 0
+        : Math.min(1, body.scrollTop / (body.scrollHeight - body.clientHeight));
+    const bar = progressRef.current;
+    if (bar !== null) {
+      const through = chapterCount === 0 ? 0 : (chapterIndex + scrolled) / chapterCount;
+      bar.style.width = `${String(Math.round(Math.min(1, through) * 100))}%`;
+    }
+    if (chapterPath === null) return;
+    if (rememberTimer.current !== null) window.clearTimeout(rememberTimer.current);
+    rememberTimer.current = window.setTimeout(() => {
+      rememberTimer.current = null;
+      remember(attachmentId, chapterPath, body.scrollTop);
+    }, 250);
+  }, [attachmentId, chapterCount, chapterIndex, chapterPath, remember]);
+
+  const pick = (path: string) => {
+    setChapterPath(path);
+    setPanel("none");
+    // A new chapter starts at its top: carrying the offset over would drop the reader mid-page somewhere they have
+    // never been.
+    setPendingOffset(0);
+    remember(attachmentId, path, 0);
+  };
+
+  const turn = (step: number) => {
+    const next = opened?.chapters[chapterIndex + step];
+    if (next !== undefined) pick(next);
+  };
+
+  // The remembered offset is applied once the chapter is in the DOM, and only once: re-applying it would drag a
+  // reader back to where they were every time anything re-rendered.
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (body === null) return;
+    body.scrollTop = pendingOffset;
+    applyScroll();
+  }, [pendingOffset, applyScroll]);
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (body === null) return;
+    const onScroll = () => applyScroll();
+    body.addEventListener("scroll", onScroll, { passive: true });
+    return () => body.removeEventListener("scroll", onScroll);
+  }, [applyScroll]);
+
+  /**
+   * Turning pages with the keyboard.
+   *
+   * The reader is the one surface where this is expected: a book is turned with the arrows and the space bar, and this
+   * is the only place in the app that does not. It stands aside for anything that owns the key: a field being typed
+   * in, a live selection, a menu, or the raised surface.
+   */
+  useEffect(() => {
+    if (state.status !== "open") return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (raisedId !== null || menu !== null || selection !== null) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest('input, textarea, [contenteditable="true"]')
+      ) {
+        return;
+      }
+      const selected = window.getSelection();
+      if (selected !== null && !selected.isCollapsed && selected.toString().length > 0) return;
+      const body = bodyRef.current;
+      if (event.key === "ArrowRight" || event.key === "PageDown") {
+        if (body !== null && event.key === "PageDown") return;
+        event.preventDefault();
+        turn(1);
+        return;
+      }
+      if (event.key === "ArrowLeft" || event.key === "PageUp") {
+        if (body !== null && event.key === "PageUp") return;
+        event.preventDefault();
+        turn(-1);
+        return;
+      }
+      if (event.key === " " && !event.shiftKey) {
+        event.preventDefault();
+        turn(1);
+        return;
+      }
+      if (event.key === " " && event.shiftKey) {
+        event.preventDefault();
+        turn(-1);
+        return;
+      }
+      if (body === null) return;
+      if (event.key === "Home") {
+        event.preventDefault();
+        body.scrollTop = 0;
+        applyScroll();
+      }
+      if (event.key === "End") {
+        event.preventDefault();
+        body.scrollTop = body.scrollHeight;
+        applyScroll();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  /**
+   * Putting a highlight on the board.
+   *
+   * The card is made and put in the reader's hand, because placing is a gesture: a press on the board puts it down
+   * where they are looking. A highlight whose card already exists is never made twice — the hand takes it back, or the
+   * reader is taken to the card when it is already on a board.
+   */
   if (bytes.status === "loading") {
     return (
       <p className="reader-note" data-testid="book-loading">
@@ -165,18 +311,6 @@ export function BookReader({
   const { book } = state;
   const contents = book.book.toc.length > 0 ? book.book.toc : fallbackContents(book);
 
-  const pick = (path: string) => {
-    setChapterPath(path);
-    setPanel("none");
-    remember(attachmentId, path);
-  };
-  /**
-   * Putting a highlight on the board.
-   *
-   * The card is made and put in the reader's hand, because placing is a gesture: a press on the board puts it down
-   * where they are looking. A highlight whose card already exists is never made twice — the hand takes it back, or the
-   * reader is taken to the card when it is already on a board.
-   */
   const place = (annotationId: string, parts?: readonly AnnotationPart[]) => {
     if (workspace === null) return;
     const found = highlights.annotations.find((entry) => entry.id === annotationId);
@@ -227,6 +361,9 @@ export function BookReader({
         {book.book.creator === null ? null : (
           <span className="reader-meta">{book.book.creator}</span>
         )}
+        <span className="reader-meta" data-testid="reader-where">
+          {`Chapter ${String(chapterIndex + 1)} of ${String(book.chapters.length)}`}
+        </span>
         <span className="ml-auto flex items-center gap-1">
           <button
             type="button"
@@ -268,6 +405,11 @@ export function BookReader({
               <IconGlyph icon="lucide:maximize-2" size={14} />
             </button>
           )}
+        </span>
+        {/* Where the reader is in the book, a chapter at a time: the width is written from the scroll rather than
+            from state, so reading does not re-render the chapter. */}
+        <span className="reader-progress" aria-hidden="true">
+          <span className="reader-progress-bar" ref={progressRef} data-testid="reader-progress" />
         </span>
       </header>
 
@@ -358,6 +500,7 @@ export function BookReader({
         <HighlightMenu
           annotation={highlights.annotations.find((entry) => entry.id === menu.id)}
           styles={highlights.styles}
+          source={{ title: book.book.title, author: book.book.creator }}
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}

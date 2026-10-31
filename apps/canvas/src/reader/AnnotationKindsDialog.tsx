@@ -209,7 +209,6 @@ function KindRow({ style, types, fieldsOf, onChange, onRemove }: KindRowProps) {
                 >
                   <option value="title">The title</option>
                   <option value="body">The passage</option>
-                  <option value="own-card">A card of its own</option>
                   {available.map((name) => (
                     <option key={name} value={`field:${name}`}>
                       {name}
@@ -271,7 +270,6 @@ function targetKey(target: AnnotationPartTarget): string {
 
 function parseSlot(value: string): AnnotationPartTarget {
   if (value === "title") return { kind: "title" };
-  if (value === "own-card") return { kind: "own-card" };
   if (value === "body") return { kind: "body" };
   return { kind: "field", name: value.slice("field:".length) };
 }

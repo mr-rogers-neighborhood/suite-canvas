@@ -10,6 +10,19 @@ import {
 import { type CSSProperties, Fragment, type ReactNode, useEffect, useState } from "react";
 import { ATTACHMENT_ID_PATTERN, attachmentUrl } from "../editor/attachmentNode";
 import { BODY_PLACEHOLDER } from "./CardBodyEditor";
+import type { MentionLabel } from "./mentionLabel";
+
+/**
+ * What a static face cannot work out on its own.
+ *
+ * Only mentions need help: the words of a reference belong to the document, and the face renders a stored body without
+ * touching one. Everything else it draws is in the containers it was handed.
+ */
+interface FaceContext {
+  readonly mentionLabel?: MentionLabel | undefined;
+}
+
+const NO_CONTEXT: FaceContext = {};
 
 function isMap(value: unknown): value is LoroMap {
   return value instanceof LoroMap || (isContainer(value) && getType(value) === "Map");
@@ -84,7 +97,7 @@ function renderDelta(text: LoroText, keyPrefix: string): ReactNode {
   });
 }
 
-function renderInlineChild(child: unknown, key: string): ReactNode {
+function renderInlineChild(child: unknown, key: string, ctx: FaceContext): ReactNode {
   if (isText(child)) {
     return renderDelta(child, key);
   }
@@ -95,13 +108,19 @@ function renderInlineChild(child: unknown, key: string): ReactNode {
     const nodeName = child.get("nodeName");
     if (nodeName === "mention") {
       const cardId = String(getAttr(child, "cardId") ?? "");
-      const label = String(getAttr(child, "label") ?? cardId);
+      const annotationId = String(getAttr(child, "annotationId") ?? "");
+      const stored = String(getAttr(child, "label") ?? "");
+      // The document first, then whatever the node was written with, then a noun: a chip that says `card` is a bad
+      // label, and a chip that says `a3f9c1…` is not a label at all.
+      const label =
+        ctx.mentionLabel?.({ cardId, annotationId }) ??
+        (stored.trim().length > 0 ? stored : annotationId.length > 0 ? "passage" : "card");
       return (
         <span
           key={key}
           className="mention-chip inline-flex items-center gap-0.5 rounded px-1 text-[12px] bg-[var(--accent-tint,#e0e7ff)] text-[var(--accent,#4338ca)]"
         >
-          @{label || "card"}
+          @{label}
         </span>
       );
     }
@@ -112,7 +131,7 @@ function renderInlineChild(child: unknown, key: string): ReactNode {
     if (children.length > 0) {
       return (
         <Fragment key={key}>
-          {children.map((grandChild, idx) => renderInlineChild(grandChild, `${key}-${idx}`))}
+          {children.map((grandChild, idx) => renderInlineChild(grandChild, `${key}-${idx}`, ctx))}
         </Fragment>
       );
     }
@@ -249,7 +268,7 @@ function renderMedia(block: LoroMap, key: string, nodeName: string): ReactNode {
   );
 }
 
-function renderBlock(block: unknown, key: string): ReactNode {
+function renderBlock(block: unknown, key: string, ctx: FaceContext): ReactNode {
   if (isText(block)) {
     return <p key={key}>{renderDelta(block, key)}</p>;
   }
@@ -269,7 +288,7 @@ function renderBlock(block: unknown, key: string): ReactNode {
         </p>
       );
     }
-    const rendered = children.map((child, idx) => renderInlineChild(child, `${key}-${idx}`));
+    const rendered = children.map((child, idx) => renderInlineChild(child, `${key}-${idx}`, ctx));
     const isEmpty = rendered.every((c) => {
       if (c === null || c === undefined || c === "") return true;
       if (Array.isArray(c) && c.length === 0) return true;
@@ -289,7 +308,7 @@ function renderBlock(block: unknown, key: string): ReactNode {
         </Tag>
       );
     }
-    const rendered = children.map((child, idx) => renderInlineChild(child, `${key}-${idx}`));
+    const rendered = children.map((child, idx) => renderInlineChild(child, `${key}-${idx}`, ctx));
     const isEmpty = rendered.every((c) => {
       if (c === null || c === undefined || c === "") return true;
       if (Array.isArray(c) && c.length === 0) return true;
@@ -299,21 +318,27 @@ function renderBlock(block: unknown, key: string): ReactNode {
   }
 
   if (nodeName === "bulletList") {
-    return <ul key={key}>{children.map((child, idx) => renderBlock(child, `${key}-${idx}`))}</ul>;
+    return (
+      <ul key={key}>{children.map((child, idx) => renderBlock(child, `${key}-${idx}`, ctx))}</ul>
+    );
   }
 
   if (nodeName === "orderedList") {
-    return <ol key={key}>{children.map((child, idx) => renderBlock(child, `${key}-${idx}`))}</ol>;
+    return (
+      <ol key={key}>{children.map((child, idx) => renderBlock(child, `${key}-${idx}`, ctx))}</ol>
+    );
   }
 
   if (nodeName === "listItem") {
-    return <li key={key}>{children.map((child, idx) => renderBlock(child, `${key}-${idx}`))}</li>;
+    return (
+      <li key={key}>{children.map((child, idx) => renderBlock(child, `${key}-${idx}`, ctx))}</li>
+    );
   }
 
   if (nodeName === "blockquote") {
     return (
       <blockquote key={key}>
-        {children.map((child, idx) => renderBlock(child, `${key}-${idx}`))}
+        {children.map((child, idx) => renderBlock(child, `${key}-${idx}`, ctx))}
       </blockquote>
     );
   }
@@ -321,7 +346,7 @@ function renderBlock(block: unknown, key: string): ReactNode {
   if (nodeName === "codeBlock") {
     return (
       <pre key={key}>
-        <code>{children.map((child, idx) => renderInlineChild(child, `${key}-${idx}`))}</code>
+        <code>{children.map((child, idx) => renderInlineChild(child, `${key}-${idx}`, ctx))}</code>
       </pre>
     );
   }
@@ -365,7 +390,9 @@ function renderBlock(block: unknown, key: string): ReactNode {
   }
 
   if (children.length > 0) {
-    return <div key={key}>{children.map((child, idx) => renderBlock(child, `${key}-${idx}`))}</div>;
+    return (
+      <div key={key}>{children.map((child, idx) => renderBlock(child, `${key}-${idx}`, ctx))}</div>
+    );
   }
 
   return null;
@@ -424,7 +451,7 @@ function isTitleEmpty(container: LoroMap | null): boolean {
   return true;
 }
 
-function renderTitle(container: LoroMap): ReactNode {
+function renderTitle(container: LoroMap, ctx: FaceContext): ReactNode {
   const children = getChildren(container);
   if (children.length === 0) {
     const text = container.get("text");
@@ -437,11 +464,11 @@ function renderTitle(container: LoroMap): ReactNode {
       return (
         // biome-ignore lint/suspicious/noArrayIndexKey: title paragraph blocks are position-ordered text segments without stable identity.
         <Fragment key={`title-p-${idx}`}>
-          {grandChildren.map((gc, gcIdx) => renderInlineChild(gc, `title-${idx}-${gcIdx}`))}
+          {grandChildren.map((gc, gcIdx) => renderInlineChild(gc, `title-${idx}-${gcIdx}`, ctx))}
         </Fragment>
       );
     }
-    return renderInlineChild(child, `title-${idx}`);
+    return renderInlineChild(child, `title-${idx}`, ctx);
   });
 }
 
@@ -490,10 +517,18 @@ export interface StaticCardTitleProps {
   cardDoc: LoroDoc;
   titleId?: ContainerID | null | undefined;
   className?: string | undefined;
+  /** How to name a reference in the title; absent means the node's own stored label. */
+  mentionLabel?: MentionLabel | undefined;
 }
 
-export function StaticCardTitle({ cardDoc, titleId, className }: StaticCardTitleProps) {
+export function StaticCardTitle({
+  cardDoc,
+  titleId,
+  className,
+  mentionLabel,
+}: StaticCardTitleProps) {
   const container = useLoroContainer(cardDoc, titleId);
+  const ctx: FaceContext = mentionLabel === undefined ? NO_CONTEXT : { mentionLabel };
   const empty = isTitleEmpty(container);
 
   return (
@@ -501,7 +536,7 @@ export function StaticCardTitle({ cardDoc, titleId, className }: StaticCardTitle
       <div
         className={`card-title-editor w-full truncate text-[13px] font-semibold leading-5 text-[var(--ink)] focus:outline-none ${className ?? ""}`}
       >
-        <p>{empty ? <br /> : renderTitle(container as LoroMap)}</p>
+        <p>{empty ? <br /> : renderTitle(container as LoroMap, ctx)}</p>
       </div>
       {empty ? (
         <span
@@ -520,6 +555,8 @@ export interface StaticCardBodyProps {
   contentId?: ContainerID | null | undefined;
   canEdit?: boolean | undefined;
   className?: string | undefined;
+  /** How to name a reference in the body; absent means the node's own stored label. */
+  mentionLabel?: MentionLabel | undefined;
 }
 
 export function StaticCardBody({
@@ -527,8 +564,10 @@ export function StaticCardBody({
   contentId,
   canEdit = true,
   className,
+  mentionLabel,
 }: StaticCardBodyProps) {
   const container = useLoroContainer(cardDoc, contentId);
+  const ctx: FaceContext = mentionLabel === undefined ? NO_CONTEXT : { mentionLabel };
   const empty = isBodyEmpty(container);
 
   return (
@@ -544,7 +583,9 @@ export function StaticCardBody({
         ) : null
       ) : (
         <>
-          {getChildren(container as LoroMap).map((child, idx) => renderBlock(child, `body-${idx}`))}
+          {getChildren(container as LoroMap).map((child, idx) =>
+            renderBlock(child, `body-${idx}`, ctx),
+          )}
           {/* A caret needs somewhere to sit. When a body ends on a block it cannot be
               placed in, the editor appends an empty paragraph the first time it opens,
               and the card grew a line on focus. Drawing the same line here means the
@@ -566,6 +607,7 @@ export interface StaticCardFaceProps {
   contentId?: ContainerID | null | undefined;
   canEdit?: boolean | undefined;
   className?: string | undefined;
+  mentionLabel?: MentionLabel | undefined;
 }
 
 export function StaticCardFace(props: StaticCardFaceProps) {

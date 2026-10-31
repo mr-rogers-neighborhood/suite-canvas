@@ -37,7 +37,6 @@ export function handOverHighlight(input: HandOverInput): HandOverResult | null {
   const promoted = promoteAnnotation({ workspace, annotation, placement: { inbox: true } });
   if (promoted === null) return null;
 
-  const cardIds = [promoted.cardId, ...promoted.ownCardIds];
   const alreadyPlaced = workspace.listCardPlacements(promoted.cardId).length > 0;
   if (promoted.existed && alreadyPlaced) {
     return { cardId: promoted.cardId, existed: true, inHand: false, placedAlready: true };
@@ -52,8 +51,8 @@ export function handOverHighlight(input: HandOverInput): HandOverResult | null {
   }
 
   const stack = usePlaceStackStore.getState();
-  if (stackInHand()) stack.add(cardIds);
-  else stack.start(cardIds);
+  if (stackInHand()) stack.add([promoted.cardId]);
+  else stack.start([promoted.cardId]);
   return {
     cardId: promoted.cardId,
     existed: promoted.existed,

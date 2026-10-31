@@ -56,13 +56,16 @@ export const annotationAnchorSchema = z.discriminatedUnion("kind", [
  * A target is a *destination*, never a promise that something exists there: `field` names a property, and promotion
  * creates it on the promoted type when it is missing. Naming beats an id because a recipe has to survive a type
  * change, which is the whole reason a reader writes one.
+ *
+ * A highlight produces **one** card, so every destination is a place on that card. Schema 5 also had `own-card`, which
+ * asked a part to become a card of its own; schema 6 removed it, because a promotion that makes an unpredictable
+ * number of cards is a promotion nobody can undo in one gesture. The reader normalises a stored `own-card` to `body`,
+ * which is where those words already are: the passage is the card's first block.
  */
 export const annotationPartTargetSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("title") }),
   z.object({ kind: z.literal("body") }),
   z.object({ kind: z.literal("field"), name: z.string().min(1).max(60) }),
-  /** This range becomes a card of its own: the split-a-paragraph-into-atoms workflow. */
-  z.object({ kind: z.literal("own-card") }),
 ]);
 
 /**

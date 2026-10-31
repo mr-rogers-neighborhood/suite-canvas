@@ -11,8 +11,13 @@ export const PORTAL_TYPE_ID = "portal";
 /** Stable field id for the portal's board value; the UI and seeds rely on it. */
 export const PORTAL_BOARD_FIELD_ID = "portal-board";
 
-/** Spatial sections start at version 4. */
-export const SCHEMA_VERSION = 5;
+/**
+ * The shape this build writes.
+ *
+ * 4 added spatial sections. 5 added annotations. 6 removed the `own-card` part target: a highlight produces one card,
+ * and a stored `own-card` reads back as `body` (see `readParts`), which is where those words already are.
+ */
+export const SCHEMA_VERSION = 6;
 
 /** Shown for a workspace that has never been named and has no board to borrow from. */
 export const DEFAULT_WORKSPACE_NAME = "Untitled workspace";

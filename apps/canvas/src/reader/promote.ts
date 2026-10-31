@@ -1,4 +1,4 @@
-import type { Annotation, AnnotationPart, PortableNode, WorkspaceDocument } from "@suite/graph";
+import type { Annotation, PortableNode, WorkspaceDocument } from "@suite/graph";
 import { annotationValue, fieldParts, partFor } from "@suite/graph";
 
 /**
@@ -6,8 +6,12 @@ import { annotationValue, fieldParts, partFor } from "@suite/graph";
  *
  * A promoted highlight becomes **an ordinary card in every way**: it can be tagged, retyped, linked, searched and
  * trashed like anything else, because it is anything else. What it arrives with is the mapping the reader gave it: a
- * part marked `title` names the card, a part marked `field` fills a property, and a part marked `own-card` becomes a
- * card of its own. Everything else stays in the passage.
+ * part marked `title` names the card, and a part marked `field` fills a property. Everything else stays in the
+ * passage.
+ *
+ * **One highlight, one card.** The count used to depend on the mapping — a part marked "a card of its own" made
+ * another — which meant one press could produce an unpredictable number of cards and no single gesture could undo it.
+ * The destinations are now all places on one card.
  *
  * The reference back to the source needs no field of its own: the card points at the annotation, the annotation names
  * its source. A comment on a highlight needs no feature either, because the card is an ordinary card.
@@ -37,10 +41,8 @@ export interface PromoteInput {
 }
 
 export interface PromoteResult {
-  /** The highlight's primary card: the one its record names. */
+  /** The card the highlight became: the one its record names. */
   readonly cardId: string;
-  /** Cards made by `own-card` parts, in reading order. */
-  readonly ownCardIds: readonly string[];
   /** True when the highlight already had a card and nothing was created. */
   readonly existed: boolean;
   /** The passage had no words to borrow, so the card is titled from its style instead. */
@@ -53,7 +55,7 @@ export function promoteAnnotation(input: PromoteInput): PromoteResult | null {
   if (!again && annotation.cardId !== undefined) {
     const existing = workspace.getCard(annotation.cardId);
     if (existing !== undefined && existing.deletedAt == null) {
-      return { cardId: existing.id, ownCardIds: [], existed: true, excerptMissing: false };
+      return { cardId: existing.id, existed: true, excerptMissing: false };
     }
   }
 
@@ -94,28 +96,11 @@ export function promoteAnnotation(input: PromoteInput): PromoteResult | null {
   const cardId = make(title, excerpt);
   workspace.setAnnotationCard(annotation.id, cardId);
 
-  // A part the reader marked `own card` becomes one, and it points at the same highlight: several cards from one
-  // passage are found by their property rather than by a second list.
-  const ownCardIds = partsOfKind(annotation, "own-card").map((text) => make(titleFrom(text), text));
-
   return {
     cardId,
-    ownCardIds,
     existed: false,
     excerptMissing: excerpt === null && titlePart === null,
   };
-}
-
-/** The text of every part with one target kind, in reading order. */
-function partsOfKind(annotation: Annotation, kind: AnnotationPart["target"]["kind"]): string[] {
-  const parts = annotation.anchor.kind === "quote" ? (annotation.parts ?? []) : [];
-  return [...parts]
-    .sort((a, b) => a.start - b.start)
-    .filter((part) => part.target.kind === kind)
-    .map((part) =>
-      annotation.anchor.kind === "quote" ? annotation.anchor.quote.slice(part.start, part.end) : "",
-    )
-    .filter((text) => text.trim().length > 0);
 }
 
 /**

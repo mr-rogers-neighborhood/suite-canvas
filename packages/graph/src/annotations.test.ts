@@ -1,3 +1,4 @@
+import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
 import {
   type Annotation,
@@ -35,6 +36,47 @@ function highlight(
 }
 
 describe("a highlight", () => {
+  it("should read a schema-5 part that asked for a card of its own as part of the passage", () => {
+    // Schema 5 had an `own-card` destination; schema 6 removed it so that one highlight means one card. A record that
+    // fails the schema is a highlight the reader can no longer see, so the normalising reader repairs the target
+    // instead: no migration script, one answer, and the words are already in the passage.
+    const raw = new LoroDoc();
+    const fields = raw.getMap("annotations").ensureMergeableMap("legacy");
+    fields.set("sourceCardId", "book");
+    fields.set("styleId", "style-yellow");
+    fields.set("anchor", { ...QUOTE });
+    fields.set("excerpt", "A second sentence follows it.");
+    fields.set("createdAt", 1);
+    fields.set("parts", [
+      { id: "p1", start: 2, end: 8, target: { kind: "title" } },
+      { id: "p2", start: 9, end: 17, target: { kind: "own-card" } },
+    ]);
+    raw.commit({ origin: "struct:init" });
+
+    const doc = new WorkspaceDocument(raw);
+    const read = doc.getAnnotation("legacy");
+
+    expect(read).toBeDefined();
+    expect(read?.parts?.map((part) => part.target)).toEqual([{ kind: "title" }, { kind: "body" }]);
+  });
+
+  it("should read a schema-5 recipe slot for a card of its own as the passage", () => {
+    const raw = new LoroDoc();
+    const style = raw.getMap("annotationStyles").ensureMergeableMap("legacy-style");
+    style.set("name", "Old kind");
+    style.set("color", "#f5d90a");
+    style.set("order", 0);
+    style.set("recipe", [{ kind: "title" }, { kind: "own-card" }]);
+    raw.commit({ origin: "struct:init" });
+
+    const doc = new WorkspaceDocument(raw);
+
+    expect(doc.getAnnotationStyle("legacy-style")?.recipe).toEqual([
+      { kind: "title" },
+      { kind: "body" },
+    ]);
+  });
+
   it("should be recorded against its source, with its anchor and its style", () => {
     const { workspace, book } = fixture();
     const made = highlight(workspace, book.id);

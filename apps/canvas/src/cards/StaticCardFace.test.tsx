@@ -494,3 +494,106 @@ describe("StaticCardFace caret slot", () => {
     expect(drawnBlocks(faceEnding("media", false))).toBe(2);
   });
 });
+
+/**
+ * A mention's words.
+ *
+ * The unfocused card is a static face with no node views, so it cannot ask a card for its title the way the editor's
+ * chip does. It used to render `@{label || cardId}` and promotion writes no label, so a card made from a highlight
+ * showed `@a3f9…` until it was clicked. The resolver is the fix, and the stored label stays as the fallback for the
+ * surfaces that have no document at all.
+ */
+describe("the words of a mention", () => {
+  function bodyWithMention(attrs: { cardId?: string; annotationId?: string; label?: string }) {
+    const doc = new LoroDoc();
+    const content = doc.getMap("content").ensureMergeableMap("c1");
+    content.set("nodeName", "doc");
+    const children = content.getOrCreateContainer("children", new LoroList());
+    const paragraph = children.insertContainer(0, new LoroMap());
+    paragraph.set("nodeName", "paragraph");
+    const inline = paragraph.getOrCreateContainer("children", new LoroList());
+    const text = inline.insertContainer(0, new LoroText());
+    text.insert(0, "From ");
+    const mention = inline.insertContainer(1, new LoroMap());
+    mention.set("nodeName", "mention");
+    const attributes = mention.getOrCreateContainer("attributes", new LoroMap());
+    for (const [key, value] of Object.entries(attrs)) attributes.set(key, value);
+    doc.commit();
+    return { doc, contentId: content.id };
+  }
+
+  const chip = (container: HTMLElement) => container.querySelector(".mention-chip");
+
+  it("should name a card the document can resolve", () => {
+    const { doc, contentId } = bodyWithMention({ cardId: "book-1" });
+    const { container } = render(
+      <StaticCardBody cardDoc={doc} contentId={contentId} mentionLabel={() => "A Small Book"} />,
+    );
+    expect(chip(container)).toHaveTextContent("@A Small Book");
+  });
+
+  it("should prefer the live name over the label the node was written with", () => {
+    const { doc, contentId } = bodyWithMention({ cardId: "book-1", label: "Old name" });
+    const { container } = render(
+      <StaticCardBody cardDoc={doc} contentId={contentId} mentionLabel={() => "Renamed book"} />,
+    );
+    expect(chip(container)).toHaveTextContent("@Renamed book");
+  });
+
+  it("should say a passage by its words", () => {
+    const { doc, contentId } = bodyWithMention({ annotationId: "a1" });
+    const { container } = render(
+      <StaticCardBody
+        cardDoc={doc}
+        contentId={contentId}
+        mentionLabel={() => "The sentence that mattered."}
+      />,
+    );
+    expect(chip(container)).toHaveTextContent("@The sentence that mattered.");
+  });
+
+  it("should fall back to the stored label when there is no document to ask", () => {
+    const { doc, contentId } = bodyWithMention({ cardId: "book-1", label: "Target Card" });
+    const { container } = render(
+      <StaticCardBody cardDoc={doc} contentId={contentId} mentionLabel={() => null} />,
+    );
+    expect(chip(container)).toHaveTextContent("@Target Card");
+  });
+
+  it("should never print a raw id, even with nothing to resolve it with", () => {
+    const { doc, contentId } = bodyWithMention({ cardId: "target-card-123" });
+    const { container } = render(<StaticCardBody cardDoc={doc} contentId={contentId} />);
+    expect(chip(container)).toHaveTextContent("@card");
+    expect(chip(container)?.textContent).not.toContain("target-card-123");
+  });
+
+  it("should reach a mention nested in a list inside a blockquote", () => {
+    // The resolver is threaded by hand, so a nesting the recursion forgot would silently fall back to a noun.
+    const doc = new LoroDoc();
+    const content = doc.getMap("content").ensureMergeableMap("c1");
+    content.set("nodeName", "doc");
+    const children = content.getOrCreateContainer("children", new LoroList());
+    const quote = children.insertContainer(0, new LoroMap());
+    quote.set("nodeName", "blockquote");
+    const quoteChildren = quote.getOrCreateContainer("children", new LoroList());
+    const list = quoteChildren.insertContainer(0, new LoroMap());
+    list.set("nodeName", "bulletList");
+    const listChildren = list.getOrCreateContainer("children", new LoroList());
+    const item = listChildren.insertContainer(0, new LoroMap());
+    item.set("nodeName", "listItem");
+    const itemChildren = item.getOrCreateContainer("children", new LoroList());
+    const paragraph = itemChildren.insertContainer(0, new LoroMap());
+    paragraph.set("nodeName", "paragraph");
+    const inline = paragraph.getOrCreateContainer("children", new LoroList());
+    const mention = inline.insertContainer(0, new LoroMap());
+    mention.set("nodeName", "mention");
+    const attributes = mention.getOrCreateContainer("attributes", new LoroMap());
+    attributes.set("cardId", "book-1");
+    doc.commit();
+
+    const { container } = render(
+      <StaticCardBody cardDoc={doc} contentId={content.id} mentionLabel={() => "Deep Book"} />,
+    );
+    expect(chip(container)).toHaveTextContent("@Deep Book");
+  });
+});

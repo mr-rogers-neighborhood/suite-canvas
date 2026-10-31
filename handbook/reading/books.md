@@ -38,7 +38,11 @@ Select a range inside the raised passage and say where it goes:
 
 - **Title** — these words name the card.
 - **A property** — these words fill a property, made for you if the type does not have it yet.
-- **Own card** — these words become a card of their own, which is how one paragraph turns into several notes.
+- **A property** you did not map, which is created on the type when you name it.
+
+One highlight makes **one card**, always. The parts decide what that card says, not how many cards there are: a
+paragraph worth three notes is three highlights, and a press that could make an unknown number of cards is a press you
+cannot undo in one gesture.
 
 ## Kinds, and the slots they fill
 
@@ -82,6 +86,29 @@ separate comment system, because there is no separate kind of card.
 
 **Reopen** goes back to the book. **Keep it** cuts the link: the passage stays in the card as a quote, the card becomes
 an ordinary note you own, and the highlight can produce another card later if you want one.
+
+## How it reads
+
+The page is yours to set: **text size**, **width** and a **page** that is the app's own, sepia or dim. They live in
+the appearance panel with the canvas knobs, and they sink into the book and nowhere else — reading at midnight should
+not turn your boards sepia. They are this device's preferences, like density and corner rounding, so a collaborator
+never inherits them.
+
+The book remembers where you were, down to how far down the chapter you had scrolled, and the contents list marks the
+chapter you are in. The rule under the header is your place in the whole book, a chapter at a time.
+
+The keyboard works the way a book does: **right** and **space** for the next chapter, **left** and **shift-space** for
+the one before, **home** and **end** for the top and bottom of this chapter. Text you have selected keeps the space bar
+for itself.
+
+## Marks you can reach
+
+A mark is a control: it takes focus with **tab**, opens with **enter** or **space**, and its menu opens with the
+**menu key** or **shift-F10**. A passage that runs over a bold word or across a paragraph break is painted in pieces
+that all belong to one highlight, and a highlight the chapter cannot find is counted under the header rather than
+quietly left out.
+
+The **Highlights** panel filters: everything, the ones that are not cards yet, or one kind at a time.
 
 ## What it will not do
 

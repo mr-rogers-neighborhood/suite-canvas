@@ -43,7 +43,6 @@ export interface HighlightFocusProps {
 export function slotLabel(target: AnnotationPartTarget): string {
   if (target.kind === "title") return "Title";
   if (target.kind === "body") return "The passage";
-  if (target.kind === "own-card") return "A card of its own";
   return target.name;
 }
 
@@ -152,8 +151,6 @@ export function HighlightFocus({
     setArmed(null);
     window.getSelection()?.removeAllRanges();
   };
-
-  const ownCards = parts.filter((part) => part.target.kind === "own-card").length;
 
   return (
     <div className="raise" data-testid="highlight-raise" role="dialog" aria-label="This highlight">
@@ -314,11 +311,9 @@ export function HighlightFocus({
               data-testid="raise-place"
               onClick={() => onPlace(parts)}
             >
-              {ownCards === 0
-                ? annotation.cardId === undefined
-                  ? "Place"
-                  : "Open its card"
-                : `Place ${String(ownCards + 1)} cards`}
+              {/* One card, always: the count that said "Place 2 cards" was the only place in the reader where the
+                  number of things a press makes was not one. */}
+              {annotation.cardId === undefined ? "Place" : "Open its card"}
             </button>
           </span>
         </footer>
@@ -383,12 +378,8 @@ function SlotRow({
   );
 }
 
-/** The destinations offered for a part the type did not expect. */
-const extraTargets: readonly AnnotationPartTarget[] = [
-  { kind: "title" },
-  { kind: "body" },
-  { kind: "own-card" },
-];
+/** The destinations offered for a part the kind did not expect. */
+const extraTargets: readonly AnnotationPartTarget[] = [{ kind: "title" }, { kind: "body" }];
 
 /** A target as a row key, so the recipe and a part can be compared without caring about object identity. */
 export function targetKey(target: AnnotationPartTarget): string {

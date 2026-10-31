@@ -1,5 +1,5 @@
 import { WorkspaceDocument } from "@suite/graph";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { usePlaceStackStore } from "../canvas/placeStack";
 import { useCanvasStore } from "../store/useCanvasStore";
@@ -173,9 +173,15 @@ describe("a book with a highlight", () => {
     screen.getByTestId("reader-highlights-toggle").click();
     await waitFor(() => expect(screen.getByTestId("book-highlights")).toBeInTheDocument());
 
-    const row = within(screen.getByTestId("book-highlights")).getAllByRole("button")[0];
+    // The row itself, not the filter chips above it and not the Place button beside it.
+    const panel = screen.getByTestId("book-highlights");
+    const row = [...panel.querySelectorAll("button")].find(
+      (button) =>
+        (button.getAttribute("data-testid") ?? "").startsWith("book-highlight-") &&
+        !(button.getAttribute("data-testid") ?? "").startsWith("book-highlight-place-"),
+    );
     if (row === undefined) throw new Error("no highlight row");
-    row.click();
+    fireEvent.click(row);
     await waitFor(() => expect(screen.getByTestId("highlight-raise")).toBeInTheDocument());
   });
 
@@ -220,5 +226,52 @@ describe("a book with a highlight", () => {
     expect(usePlaceStackStore.getState().queue[0]).toBe(cardId);
     usePlaceStackStore.getState().stop();
     useUiStore.setState({ canEditLayout: false });
+  });
+});
+
+describe("where the reader is", () => {
+  it("should say which chapter it is showing", async () => {
+    render(<BookReader attachmentId={"a".repeat(32)} mime="application/epub+zip" name="book" />);
+    await waitFor(() => expect(screen.getByTestId("reader-where")).toBeInTheDocument());
+    expect(screen.getByTestId("reader-where").textContent).toMatch(/^Chapter 1 of \d+$/);
+  });
+
+  it("should turn the page with the arrow keys", async () => {
+    // The reader is the one surface where this is expected and the only one that did not do it.
+    render(<BookReader attachmentId={"a".repeat(32)} mime="application/epub+zip" name="book" />);
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-body").textContent).toContain("The first sentence"),
+    );
+
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-body").textContent).toContain("The same sentence appears"),
+    );
+    expect(screen.getByTestId("reader-where").textContent).toMatch(/^Chapter 2/);
+
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-body").textContent).toContain("The first sentence"),
+    );
+  });
+
+  it("should come back to the chapter it was left on, with where it was left", async () => {
+    window.localStorage.clear();
+    useBookStore.setState({ positions: {} });
+
+    const first = render(
+      <BookReader attachmentId={"a".repeat(32)} mime="application/epub+zip" name="book" />,
+    );
+    await waitFor(() => expect(screen.getByTestId("reader-next")).toBeInTheDocument());
+    screen.getByTestId("reader-next").click();
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-where").textContent).toMatch(/^Chapter 2/),
+    );
+    first.unmount();
+
+    render(<BookReader attachmentId={"a".repeat(32)} mime="application/epub+zip" name="book" />);
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-where").textContent).toMatch(/^Chapter 2/),
+    );
   });
 });

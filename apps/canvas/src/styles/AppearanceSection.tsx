@@ -1,6 +1,12 @@
 import { useId } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
-import { type Appearance, RADIUS_RANGE } from "../theme/appearance";
+import {
+  type Appearance,
+  RADIUS_RANGE,
+  READING_MEASURES,
+  READING_SIZES,
+  READING_THEMES,
+} from "../theme/appearance";
 import { useAppearanceStore } from "../theme/useAppearanceStore";
 import { PaletteEditor } from "./PaletteEditor";
 
@@ -113,6 +119,53 @@ export function AppearanceSection() {
           { value: "reduced", label: "Reduced" },
         ]}
         onSelect={(motion) => change({ motion: motion as Appearance["motion"] })}
+      />
+
+      {/* Reading is its own group: a reader at midnight wants a dim page at 17px without their boards turning
+          sepia, so these sink into the book and nowhere else. */}
+      <h4 className="mt-3 text-[12px] font-semibold" data-testid="appearance-reading">
+        Reading
+      </h4>
+      <p className="mt-0.5 text-[11px] leading-4 text-[var(--ink-muted)]">
+        How a book's page reads on this device. Boards are unaffected.
+      </p>
+
+      <ChipRow
+        label="Text size"
+        testId="appearance-reading-size"
+        value={String(appearance.reading.size)}
+        options={READING_SIZES.map((entry) => ({
+          value: String(entry.value),
+          label: entry.label,
+        }))}
+        onSelect={(size) => change({ reading: { ...appearance.reading, size: Number(size) } })}
+      />
+
+      <ChipRow
+        label="Width"
+        testId="appearance-reading-measure"
+        value={appearance.reading.measure}
+        options={READING_MEASURES.map((entry) => ({ value: entry.value, label: entry.label }))}
+        onSelect={(measure) =>
+          change({
+            reading: {
+              ...appearance.reading,
+              measure: measure as Appearance["reading"]["measure"],
+            },
+          })
+        }
+      />
+
+      <ChipRow
+        label="Page"
+        testId="appearance-reading-theme"
+        value={appearance.reading.theme}
+        options={READING_THEMES.map((entry) => ({ value: entry.value, label: entry.label }))}
+        onSelect={(theme) =>
+          change({
+            reading: { ...appearance.reading, theme: theme as Appearance["reading"]["theme"] },
+          })
+        }
       />
 
       <button

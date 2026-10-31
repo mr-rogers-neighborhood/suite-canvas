@@ -20,7 +20,7 @@ subsets are listed at the end.
 | An existing field changes meaning or type | yes | a new decision in `docs/decisions/` first |
 
 `SCHEMA_VERSION` in `packages/graph/src/loro/constants.ts` is the version of the document shape, currently
-`4`. It moves when a document written by this build can no longer be read by the previous one, or when an
+`6`. It moves when a document written by this build can no longer be read by the previous one, or when an
 old value means something new. Adding an optional field does not move it, because the previous build ignores
 a key it does not know.
 

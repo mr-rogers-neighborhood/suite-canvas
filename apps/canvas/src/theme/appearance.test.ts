@@ -35,7 +35,30 @@ describe("appearance preferences", () => {
       radius: 4,
       canvasBackground: "plain",
       motion: "reduced",
+      // A record written before reading had knobs reads as the defaults, not as undefined.
+      reading: DEFAULT_APPEARANCE.reading,
     });
+  });
+
+  it("should keep the reading knobs a reader set", () => {
+    const stored = readStoredAppearance(
+      storage({
+        [APPEARANCE_STORAGE_KEY]: JSON.stringify({
+          reading: { size: 17, measure: "wide", theme: "dim" },
+        }),
+      }),
+    );
+    expect(stored.reading).toEqual({ size: 17, measure: "wide", theme: "dim" });
+    // The canvas knobs they never touched are still the defaults.
+    expect(stored.density).toBe(DEFAULT_APPEARANCE.density);
+  });
+
+  it("should clamp a text size nobody could have chosen", () => {
+    const stored = readStoredAppearance(
+      storage({ [APPEARANCE_STORAGE_KEY]: JSON.stringify({ reading: { size: 400 } }) }),
+    );
+    expect(stored.reading.size).toBeLessThanOrEqual(17);
+    expect(stored.reading.size).toBeGreaterThanOrEqual(12);
   });
 
   it("survives a hand-edited record one field at a time", () => {
@@ -73,7 +96,13 @@ describe("appearance preferences", () => {
     const root = document.createElement("html");
 
     applyAppearance(
-      { density: "compact", radius: 6, canvasBackground: "plain", motion: "reduced" },
+      {
+        ...DEFAULT_APPEARANCE,
+        density: "compact",
+        radius: 6,
+        canvasBackground: "plain",
+        motion: "reduced",
+      },
       root,
     );
 

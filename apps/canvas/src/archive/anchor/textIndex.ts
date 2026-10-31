@@ -22,21 +22,75 @@ export interface TextIndex {
   readonly runs: readonly TextRun[];
 }
 
+/** The elements whose boundary is a word boundary: anything block-shaped in a chapter. */
+const BLOCKS = new Set([
+  "P",
+  "DIV",
+  "LI",
+  "UL",
+  "OL",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
+  "BLOCKQUOTE",
+  "PRE",
+  "FIGURE",
+  "FIGCAPTION",
+  "TABLE",
+  "TR",
+  "TD",
+  "TH",
+  "SECTION",
+  "ARTICLE",
+  "ASIDE",
+  "HEADER",
+  "FOOTER",
+  "BR",
+]);
+
+function blockOf(node: Node, stop: Node): Node {
+  let current: Node | null = node.parentNode;
+  while (current !== null && current !== stop) {
+    if (current.nodeType === Node.ELEMENT_NODE && BLOCKS.has((current as Element).tagName)) {
+      return current;
+    }
+    current = current.parentNode;
+  }
+  return stop;
+}
+
 /**
  * Index a subtree's text.
  *
- * Blocks are assumed to be separated by whitespace that is already in the markup, because a book's markup
- * says so: a chapter's paragraphs each end with a newline or are separated by an element boundary the
- * renderer puts a space at. Inserting separators here instead would make the stored quote and the rendered
- * text disagree about where a space is, which is the one thing the search cannot tolerate.
+ * Two paragraphs are two words apart, not none: the flat text separates them with one space however the markup
+ * happens to be written. A book's paragraphs are often adjacent (`<p>one</p><p>two</p>`) and sometimes have the
+ * newline between the tags left in, and a reader's selection across them is normalised to single spaces — so the
+ * index has to agree with the selection, or an anchor taken across a paragraph break can never be found again.
+ *
+ * A whitespace-only node becomes no run at all: it contributes its one space to the text and nothing to paint on.
+ * Offsets inside every other node are unchanged, so the map back into the DOM stays exact.
  */
 export function chapterTextIndex(root: Node): TextIndex {
   const runs: TextRun[] = [];
   let text = "";
+  let previousBlock: Node | null = null;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
     const value = node.nodeValue ?? "";
     if (value.length === 0) continue;
+    const block = blockOf(node, root);
+    const boundary = previousBlock !== null && block !== previousBlock;
+    previousBlock = block;
+    if (value.trim().length === 0) {
+      if (text.length > 0 && !text.endsWith(" ")) text += " ";
+      continue;
+    }
+    if ((boundary || value.startsWith("\n") || value.startsWith("\r")) && !text.endsWith(" ")) {
+      text += " ";
+    }
     runs.push({ node, start: text.length, end: text.length + value.length });
     text += value;
   }

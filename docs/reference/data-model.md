@@ -182,9 +182,14 @@ timestamp are different facts and a canvas region has none.
 
 **A highlight can be broken into parts.** `parts: { id, start, end, target }[]`, where the offsets index the
 annotation's own `quote`. That is text, so reflow cannot move them, and they are unambiguous inside their own
-paragraph in a way a second sub-quote would not be. A target is `title`, `body`, `field` (by name, created on promotion when missing) or
-`own-card`. Parts are written whole, because they describe each other: two writers editing different parts would
-produce ranges that overlap or leave gaps.
+paragraph in a way a second sub-quote would not be. A target is `title`, `body` or `field` (by name, created on
+promotion when missing). Parts are written whole, because they describe each other: two writers editing different parts
+would produce ranges that overlap or leave gaps.
+
+Schema 5 also had an `own-card` target, which made a part into a card of its own. Schema 6 removed it: a promotion that
+makes an unpredictable number of cards cannot be undone in one gesture. A stored `own-card` reads back as `body` rather
+than failing the schema, because a record that fails is a highlight the reader cannot see, and the words were in the
+passage anyway.
 
 **A kind is the mapping.** A highlight has a *kind* (the `AnnotationStyle` it was marked with) and a card has a
 *type*; the two words are never swapped, because the library already manages card types under **Types**.
@@ -286,7 +291,7 @@ settled, rather than a code path that builds cards by hand.
 2, which added attachments). `packages/graph/src/portable.ts` exports a document as plain JSON
 (`suite.portable`, version 1) for interchange, and `merge.ts` merges a portable export into a document.
 
-`SCHEMA_VERSION` is 4. It is the version of the document shape the code expects, not the version of the
+`SCHEMA_VERSION` is 6. It is the version of the document shape the code expects, not the version of the
 `.suite` envelope, which carries its own number.
 
 ## Where the schema lives

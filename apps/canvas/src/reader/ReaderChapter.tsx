@@ -1,7 +1,9 @@
 import type { Annotation } from "@suite/graph";
-import { useCallback, useEffect, useRef } from "react";
-import { chapterTextIndex, rangeOf, surroundings } from "../archive/anchor";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { chapterTextIndex, surroundings } from "../archive/anchor";
 import { resolveQuote } from "../archive/anchor/resolve";
+import type { TextIndex } from "../archive/anchor/textIndex";
+import { IconGlyph } from "../icons/IconGlyph";
 
 /**
  * A chapter, drawn, with its highlights painted over the words they cover.
@@ -45,10 +47,15 @@ export function ReaderChapter({
 
   // Painting is done here rather than in the markup, so a highlight is a mark on rendered text and never a
   // second copy of it: the chapter is the source, and the mark is a wrapper around a range.
+  const [unplaced, setUnplaced] = useState(0);
+
   useEffect(() => {
     const root = container.current;
     if (root === null) return;
-    paintHighlights(root, annotations, styles);
+    const report = paintHighlights(root, annotations, styles);
+    // Written only when it changes: painting runs on every annotation change, and a state write per paint is a render
+    // per paint.
+    setUnplaced((current) => (current === report.unplaced ? current : report.unplaced));
     // `html` is not a dependency: React has replaced the container's children by the time this runs, so the ref
     // already points at the new markup.
   }, [annotations, styles]);
@@ -61,43 +68,67 @@ export function ReaderChapter({
   }, [onSelect]);
 
   return (
-    // A chapter is words, not a control: the gesture is the browser's own selection, and there is nothing for a
-    // key handler to do that the browser does not already do.
-    // biome-ignore lint/a11y/noStaticElementInteractions: the interaction is text selection.
-    // biome-ignore lint/a11y/useKeyWithClickEvents: the keyboard path is the marks' own Enter handler, below.
-    <div
-      ref={container}
-      className="reader-chapter"
-      onMouseUp={capture}
-      onPointerDown={(event) => {
-        // A press on a mark starts the drag; the press itself is answered by the click handler below, which fires
-        // only when the pointer never travelled.
-        const mark = (event.target as HTMLElement).closest("mark[data-annotation-id]");
-        const id = mark?.getAttribute("data-annotation-id");
-        if (id === null || id === undefined || id.length === 0) return;
-        // The default press begins the browser's own selection, and a drag then drags that selection across the
-        // shell: the reader ends up with half the window highlighted, which is both ugly and unrelated to what
-        // they were carrying.
-        event.preventDefault();
-        onCarry(id, { x: event.clientX, y: event.clientY }, null);
-      }}
-      onClick={(event) => {
-        // A press on a mark is a press on the highlight, and a press anywhere else is a press on the words: the
-        // selection gesture must not be mistaken for a promotion.
-        const mark = (event.target as HTMLElement).closest("mark[data-annotation-id]");
-        const id = mark?.getAttribute("data-annotation-id");
-        if (id !== null && id !== undefined && id.length > 0) onActivate(id);
-      }}
-      onContextMenu={(event) => {
-        const mark = (event.target as HTMLElement).closest("mark[data-annotation-id]");
-        const id = mark?.getAttribute("data-annotation-id");
-        if (id === null || id === undefined || id.length === 0) return;
-        event.preventDefault();
-        onMenu(id, { x: event.clientX, y: event.clientY });
-      }}
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: the one allowed injection site, after `sanitiseChapter`.
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      {unplaced === 0 ? null : (
+        <p className="reader-note" data-testid="reader-unplaced">
+          <IconGlyph icon="lucide:highlighter" size={13} />
+          {unplaced === 1
+            ? "One highlight is not in this chapter."
+            : `${String(unplaced)} highlights are not in this chapter.`}
+        </p>
+      )}
+      {/* A chapter is words, not a control: the gesture is the browser's own selection. The keyboard path is the marks
+          themselves, which are focusable once painted. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the interaction is text selection. */}
+      <div
+        ref={container}
+        className="reader-chapter"
+        onMouseUp={capture}
+        onKeyDown={(event) => {
+          const mark = (event.target as HTMLElement | null)?.closest?.("mark[data-annotation-id]");
+          const id = mark?.getAttribute("data-annotation-id");
+          if (id === null || id === undefined || id.length === 0) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onActivate(id);
+            return;
+          }
+          if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+            event.preventDefault();
+            const box = mark?.getBoundingClientRect();
+            onMenu(id, { x: box?.right ?? 0, y: box?.bottom ?? 0 });
+          }
+        }}
+        onPointerDown={(event) => {
+          // A press on a mark starts the drag; the press itself is answered by the click handler below, which fires
+          // only when the pointer never travelled.
+          const mark = (event.target as HTMLElement).closest("mark[data-annotation-id]");
+          const id = mark?.getAttribute("data-annotation-id");
+          if (id === null || id === undefined || id.length === 0) return;
+          // The default press begins the browser's own selection, and a drag then drags that selection across the
+          // shell: the reader ends up with half the window highlighted, which is both ugly and unrelated to what
+          // they were carrying.
+          event.preventDefault();
+          onCarry(id, { x: event.clientX, y: event.clientY }, null);
+        }}
+        onClick={(event) => {
+          // A press on a mark is a press on the highlight, and a press anywhere else is a press on the words: the
+          // selection gesture must not be mistaken for a promotion.
+          const mark = (event.target as HTMLElement).closest("mark[data-annotation-id]");
+          const id = mark?.getAttribute("data-annotation-id");
+          if (id !== null && id !== undefined && id.length > 0) onActivate(id);
+        }}
+        onContextMenu={(event) => {
+          const mark = (event.target as HTMLElement).closest("mark[data-annotation-id]");
+          const id = mark?.getAttribute("data-annotation-id");
+          if (id === null || id === undefined || id.length === 0) return;
+          event.preventDefault();
+          onMenu(id, { x: event.clientX, y: event.clientY });
+        }}
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: the one allowed injection site, after `sanitiseChapter`.
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </>
   );
 }
 
@@ -144,47 +175,95 @@ function offsetOf(
   return run === undefined ? null : run.start + offset;
 }
 
+/** What painting a chapter achieved, so the reader can be told when it achieved less than everything. */
+export interface PaintReport {
+  /** Highlights that found their words and were drawn. */
+  readonly painted: number;
+  /** Highlights this chapter holds whose words could not be found, or could not be wrapped. */
+  readonly unplaced: number;
+}
+
 /**
  * Wrappers around every highlight that still finds its words.
  *
  * A highlight that cannot be placed is not painted, and the reader is told rather than shown a mark in the wrong
  * sentence: a highlight in the wrong place is a lie the reader cannot detect.
+ *
+ * A mark is painted **per text node**. `Range.surroundContents` throws as soon as a range partially contains an
+ * element, so a passage covering a bold word, a link or a paragraph break used to be dropped by the `catch` below with
+ * nothing said: "the *first* sentence" simply vanished. Segmenting first means every wrap sits inside one text node,
+ * where `surroundContents` cannot fail, and a mark crossing three elements becomes three adjacent marks that share the
+ * highlight's id and read as one passage.
  */
 function paintHighlights(
   root: HTMLElement,
   annotations: readonly Annotation[],
   styles: readonly { id: string; color: string }[],
-): void {
+): PaintReport {
   const index = chapterTextIndex(root);
-  const placed: { start: number; end: number; color: string; id: string }[] = [];
+  const marks: { segment: Range; color: string; id: string }[] = [];
+  let painted = 0;
+  let unplaced = 0;
 
   for (const annotation of annotations) {
     if (annotation.anchor.kind !== "quote") continue;
     const found = resolveQuote(index.text, annotation.anchor);
-    if (found.status !== "found") continue;
+    const segments = found.status === "found" ? segmentsOf(index, found.start, found.end) : [];
+    if (segments.length === 0) {
+      unplaced += 1;
+      continue;
+    }
     const style = styles.find((entry) => entry.id === annotation.styleId);
-    placed.push({
-      start: found.start,
-      end: found.end,
-      color: style?.color ?? "var(--accent)",
-      id: annotation.id,
-    });
+    const color = style?.color ?? "var(--accent)";
+    for (const segment of segments) marks.push({ segment, color, id: annotation.id });
+    painted += 1;
   }
 
-  // Right to left, so wrapping one span cannot move the offsets of the next.
-  for (const item of placed.sort((a, b) => b.start - a.start)) {
-    const range = rangeOf(index, item.start, item.end);
-    if (range === null) continue;
-    const mark = document.createElement("mark");
-    mark.className = "reader-highlight";
-    mark.dataset.annotationId = item.id;
-    mark.style.background = `color-mix(in srgb, ${item.color} 45%, transparent)`;
-    mark.style.borderBottom = `2px solid ${item.color}`;
+  // Right to left, so wrapping one segment cannot move the offsets of the next: splitting a text node only ever
+  // changes what lies to its right.
+  const ordered = marks.sort((a, b) =>
+    b.segment.compareBoundaryPoints(Range.START_TO_START, a.segment),
+  );
+  for (const item of ordered) {
+    const wrapper = document.createElement("mark");
+    wrapper.className = "reader-highlight";
+    wrapper.dataset.annotationId = item.id;
+    wrapper.style.background = `color-mix(in srgb, ${item.color} 45%, transparent)`;
+    wrapper.style.borderBottom = `2px solid ${item.color}`;
+    // A mark is focusable and a keyboard can operate it: one that needs a mouse is a highlight half the readers
+    // cannot open.
+    wrapper.tabIndex = 0;
+    wrapper.setAttribute("role", "button");
     try {
-      range.surroundContents(mark);
+      item.segment.surroundContents(wrapper);
     } catch {
-      // A range crossing an element boundary cannot be wrapped; the words stay and the mark is skipped rather
-      // than splitting the chapter's markup.
+      // The words stay, and the report tells the reader a mark is missing rather than leaving them to notice.
+      unplaced += 1;
     }
   }
+
+  return { painted, unplaced };
+}
+
+/**
+ * One range per text node the passage covers.
+ *
+ * Taken from the chapter's own text index rather than from a DOM range: the index already says which text node holds
+ * which flat offset, so the intersection of a passage with a node is arithmetic, and no boundary case has to be
+ * reconstructed from a range's containers.
+ */
+function segmentsOf(index: TextIndex, start: number, end: number): Range[] {
+  const segments: Range[] = [];
+  for (const run of index.runs) {
+    const from = Math.max(start, run.start);
+    const to = Math.min(end, run.end);
+    if (to <= from) continue;
+    // The newline between two blocks is part of the passage and has nothing to paint on.
+    if ((run.node.nodeValue ?? "").trim().length === 0) continue;
+    const segment = document.createRange();
+    segment.setStart(run.node, from - run.start);
+    segment.setEnd(run.node, to - run.start);
+    segments.push(segment);
+  }
+  return segments;
 }

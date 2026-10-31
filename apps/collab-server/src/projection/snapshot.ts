@@ -97,7 +97,7 @@ export function readBaseline(shareId: string, deps: SnapshotDeps): WorkspaceDocu
 
 /** Persists the projection just written and makes it the draft's base. */
 export function persistBaseline(room: RoomState, deps: SnapshotDeps): void {
-  const snapshot = room.doc.export({ mode: "snapshot" });
+  const snapshot = room.doc.export({ mode: "shallow-snapshot", frontiers: room.doc.frontiers() });
   try {
     deps.shares.setBaseline(room.shareId, snapshot);
   } catch (error) {

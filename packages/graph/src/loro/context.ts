@@ -102,6 +102,8 @@ export class DocContext {
     // granularity matches the undo stack's. Loro otherwise folds continuous
     // same-message commits from the same second into one change, which would hide
     // a point the history panel could otherwise restore.
+    // Keystroke coalescing during typing in cards is handled separately by
+    // Tiptap's LoroUndoPlugin({ mergeInterval: 1000 }).
     doc.setChangeMergeInterval(-1);
   }
 

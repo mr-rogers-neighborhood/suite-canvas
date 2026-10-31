@@ -273,11 +273,18 @@ export async function prepareWorkspaceBackup(
     exportedAt?: string;
     /** Overrides `BACKUP_SIZE_WARNING_BYTES`; the warning never blocks. */
     sizeWarningBytes?: number;
+    compact?: boolean;
   } = {},
 ): Promise<PreparedWorkspaceBackup> {
   const sources = options.sources ?? defaultAttachmentSources();
   const { attachments, missing } = await gatherAttachments(workspace, sources);
-  const { json } = createWorkspaceFile(workspaceId, workspace, options.exportedAt, attachments);
+  const { json } = createWorkspaceFile(
+    workspaceId,
+    workspace,
+    options.exportedAt,
+    attachments,
+    options.compact ? { compact: true } : undefined,
+  );
   const bytes = backupSizeBytes(json);
   const warnings = [
     backupSizeWarning(bytes, options.sizeWarningBytes),
@@ -299,11 +306,13 @@ export async function downloadWorkspaceBackup(
   title = "workspace",
   options: {
     sources?: readonly AttachmentSource[];
+    compact?: boolean;
     onWarning?: (message: string) => void;
   } = {},
 ): Promise<PreparedWorkspaceBackup> {
   const prepared = await prepareWorkspaceBackup(workspaceId, workspace, {
     ...(options.sources ? { sources: options.sources } : {}),
+    ...(options.compact ? { compact: true } : {}),
   });
   if (prepared.warnings.length > 0) options.onWarning?.(prepared.warnings.join(" "));
   downloadText(`${fileStem(title)}.suite`, prepared.json);

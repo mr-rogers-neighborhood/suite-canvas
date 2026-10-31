@@ -37,6 +37,22 @@ describe("workspace file", () => {
     expect(restored.listTags().map((tag) => tag.name)).toEqual(["reading"]);
   });
 
+  it("should support compact export omitting historical edit logs", () => {
+    const source = workspace();
+    const boardId = source.listBoards()[0]?.id ?? "";
+    // Generate multiple historical commits
+    for (let i = 0; i < 20; i++) {
+      source.renameBoard(boardId, `Name ${i}`);
+    }
+    const full = createWorkspaceFile("ws-1", source);
+    const compact = createWorkspaceFile("ws-1", source, undefined, {}, { compact: true });
+
+    expect(compact.json.length).toBeLessThan(full.json.length);
+    const { workspace: restored } = readWorkspaceFile(compact.json);
+    expect(restored.listBoards()[0]?.name).toBe("Name 19");
+    expect(restored.getCard("c1")?.id).toBe("c1");
+  });
+
   it("should refuse a future file version by name", () => {
     const { file } = createWorkspaceFile("ws-1", workspace());
     expect(() => parseWorkspaceFile({ ...file, version: WORKSPACE_FILE_VERSION + 1 })).toThrow(

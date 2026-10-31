@@ -95,20 +95,32 @@ function base64ToBytes(value: string): Uint8Array {
   return bytes;
 }
 
+export interface CreateWorkspaceFileOptions {
+  /**
+   * When true, exports a shallow snapshot omitting historical edit logs.
+   * Produces significantly smaller files ideal for workspace templates or sharing.
+   */
+  compact?: boolean;
+}
+
 /** Snapshot plus a small manifest, so a person can see what the file holds. */
 export function createWorkspaceFile(
   workspaceId: string,
   workspace: WorkspaceDocument,
   exportedAt = new Date().toISOString(),
   attachments: WorkspaceFileAttachmentInputs = {},
+  options?: CreateWorkspaceFileOptions,
 ): WorkspaceFileExport {
+  const snapshotBytes = options?.compact
+    ? workspace.exportShallowSnapshot()
+    : workspace.exportSnapshot();
   const file: WorkspaceFile = {
     kind: WORKSPACE_FILE_KIND,
     version: WORKSPACE_FILE_VERSION,
     schemaVersion: SCHEMA_VERSION,
     exportedAt,
     workspaceId,
-    document: bytesToBase64(workspace.doc.export({ mode: "snapshot" })),
+    document: bytesToBase64(snapshotBytes),
     manifest: {
       boards: workspace.listBoards().length,
       cards: workspace.listCards().length,

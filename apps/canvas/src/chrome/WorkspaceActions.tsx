@@ -152,15 +152,16 @@ export function WorkspaceActions({ workspaceId, title, onLeave }: WorkspaceActio
     );
   };
 
-  const exportTo = async (kind: "backup" | "json" | "markdown") => {
+  const exportTo = async (kind: "backup" | "compact" | "json" | "markdown") => {
     setError(null);
     setNotice(null);
     try {
-      if (kind === "backup") {
+      if (kind === "backup" || kind === "compact") {
         // The warning lands before the file is written, and never cancels it:
         // a large or incomplete backup is still better than no backup. The
         // message carries the real size, or the cards whose images are missing.
         await downloadWorkspaceBackup(workspaceId, workspace, title, {
+          compact: kind === "compact",
           onWarning: (message) => setNotice(message),
         });
       } else if (kind === "json") downloadWorkspaceJson(workspace, title);
@@ -236,6 +237,18 @@ export function WorkspaceActions({ workspaceId, title, onLeave }: WorkspaceActio
               }}
             >
               Export backup…
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="workspace-export-compact"
+              className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+              onClick={() => {
+                setMenuOpen(false);
+                void exportTo("compact");
+              }}
+            >
+              Export compact (.suite)…
             </button>
             <button
               type="button"

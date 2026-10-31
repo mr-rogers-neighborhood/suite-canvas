@@ -39,11 +39,16 @@ import { Worker } from "node:worker_threads";
  * disk, or it reports that it could not.
  */
 
-/** One accepted write: a snapshot to store, or `null` to delete the row. */
+export type DocumentWriteKind = "save" | "delete" | "update";
+
+/** One accepted write: a snapshot to store, an incremental update, or `null` to delete the row. */
 export interface DocumentWrite {
+  kind?: DocumentWriteKind;
   name: string;
-  /** Tagged snapshot bytes, or `null` for a delete. */
-  state: Uint8Array | null;
+  /** Tagged snapshot bytes for a save; `null` for a delete; absent for an update. */
+  state?: Uint8Array | null;
+  /** Incremental delta update bytes for an update. */
+  updateData?: Uint8Array;
   /** Epoch milliseconds recorded with the row. */
   updatedAt: number;
 }
@@ -52,15 +57,21 @@ export interface DocumentWrite {
 export interface InlineWriter {
   save: (name: string, state: Uint8Array, updatedAt: number) => void;
   remove: (name: string) => void;
+  appendUpdate?: (name: string, updateData: Uint8Array, createdAt: number) => void;
 }
 
 export interface DocumentWriteQueueOptions {
   path: string;
-  /** SQL of the upsert and the delete, handed to the worker so it holds no schema. */
-  statements: { save: string; remove: string };
+  /** SQL of the statements, handed to the worker so it holds no schema. */
+  statements: {
+    save: string;
+    remove: string;
+    appendUpdate?: string;
+    truncateUpdates?: string;
+  };
   /** Pragmas and DDL the worker runs once, before its first batch. */
   setup: readonly string[];
-  /** The same two statements, executed on the main thread if the worker fails. */
+  /** The statements, executed on the main thread if the worker fails. */
   inline: InlineWriter;
   warn: (message: string, fields?: Record<string, unknown>) => void;
   /** Called after a batch is durable, with the number of rows it carried. */
@@ -88,6 +99,8 @@ export interface DocumentWriteQueue {
   pending: (name: string) => DocumentWrite | undefined;
   /** Every name with an accepted write that is not durable yet. */
   pendingAll: () => ReadonlyMap<string, DocumentWrite>;
+  /** Whether there are pending incremental delta updates for this name. */
+  hasPendingUpdates: (name: string) => boolean;
   /** Blocks until every write accepted so far is on disk. */
   flush: () => void;
   close: () => void;
@@ -143,8 +156,20 @@ export function createDocumentWriteQueue(options: DocumentWriteQueueOptions): Do
   }
 
   const writeInline = (write: DocumentWrite): void => {
-    if (write.state === null) options.inline.remove(write.name);
-    else options.inline.save(write.name, write.state, write.updatedAt);
+    const kind =
+      write.kind ??
+      (write.state === null ? "delete" : write.updateData !== undefined ? "update" : "save");
+    if (kind === "save") {
+      options.inline.save(write.name, write.state ?? new Uint8Array(), write.updatedAt);
+    } else if (kind === "update") {
+      options.inline.appendUpdate?.(
+        write.name,
+        write.updateData ?? new Uint8Array(),
+        write.updatedAt,
+      );
+    } else {
+      options.inline.remove(write.name);
+    }
   };
 
   /**
@@ -219,9 +244,16 @@ export function createDocumentWriteQueue(options: DocumentWriteQueueOptions): Do
       id: batch.id,
       ops: batch.ops.map((op) => ({
         seq: op.seq,
-        kind: op.write.state === null ? ("delete" as const) : ("save" as const),
+        kind:
+          op.write.kind ??
+          (op.write.state === null
+            ? ("delete" as const)
+            : op.write.updateData !== undefined
+              ? ("update" as const)
+              : ("save" as const)),
         name: op.write.name,
         state: op.write.state ?? undefined,
+        updateData: op.write.updateData,
         updatedAt: op.write.updatedAt,
       })),
     });
@@ -327,6 +359,14 @@ export function createDocumentWriteQueue(options: DocumentWriteQueueOptions): Do
       for (const [name, entry] of pending) view.set(name, entry.write);
       return view;
     },
+    hasPendingUpdates: (name) => {
+      const isPendingUpdate = (write: DocumentWrite) =>
+        write.name === name && (write.kind === "update" || write.updateData !== undefined);
+      return (
+        queue.some((op) => isPendingUpdate(op.write)) ||
+        flights.some((batch) => batch.ops.some((op) => isPendingUpdate(op.write)))
+      );
+    },
     flush: () => {
       if (closed) return;
       if (mode === "inline" || worker === null) {
@@ -384,7 +424,10 @@ export function createDocumentWriteQueue(options: DocumentWriteQueueOptions): Do
     },
     stats: () => {
       let pendingBytes = 0;
-      for (const entry of pending.values()) pendingBytes += entry.write.state?.byteLength ?? 0;
+      for (const entry of pending.values()) {
+        pendingBytes +=
+          (entry.write.state?.byteLength ?? 0) + (entry.write.updateData?.byteLength ?? 0);
+      }
       return {
         mode,
         queued: queue.length + flights.length,

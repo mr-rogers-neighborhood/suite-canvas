@@ -27,6 +27,16 @@ describe("the workspace menu", () => {
     const rows = screen.getAllByRole("menuitem");
     expect(rows.at(-1)).toHaveFocus();
   });
+
+  it("renders both standard and compact backup export options", () => {
+    render(<WorkspaceActions workspaceId="w1" title="Research" />);
+    fireEvent.click(screen.getByTestId("workspace-menu"));
+
+    expect(screen.getByTestId("workspace-export-backup")).toHaveTextContent("Export backup…");
+    expect(screen.getByTestId("workspace-export-compact")).toHaveTextContent(
+      "Export compact (.suite)…",
+    );
+  });
 });
 
 /**

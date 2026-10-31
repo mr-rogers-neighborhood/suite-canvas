@@ -58,6 +58,13 @@ function memoryDocuments(): DocumentStore {
     save: (name, state) => {
       saved.set(name, state);
     },
+    appendUpdate: (name, update) => {
+      const existing = saved.get(name);
+      const doc = new LoroDoc();
+      if (existing) doc.import(existing);
+      doc.import(update);
+      saved.set(name, doc.export({ mode: "snapshot" }));
+    },
     delete: (name) => {
       saved.delete(name);
     },

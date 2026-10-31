@@ -1,5 +1,5 @@
 diff --git a/dist/server/index.cjs b/dist/server/index.cjs
-index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..a9a882575dabc59db7e802caef7167ba5f66680b 100644
+index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..e0bc310f97f1b7f767e185e2d4bbb630f41def70 100644
 --- a/dist/server/index.cjs
 +++ b/dist/server/index.cjs
 @@ -286,7 +286,8 @@ var SimpleServer = class SimpleServer {
@@ -85,7 +85,7 @@ index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..a9a882575dabc59db7e802caef7167ba
  			const response = {
  				...joinResult.response,
  				permission,
-@@ -472,7 +516,21 @@ var SimpleServer = class SimpleServer {
+@@ -472,13 +516,55 @@ var SimpleServer = class SimpleServer {
  			}
  			const roomDoc = await this.getOrCreateRoomDocument(message.roomId, message.crdt);
  			try {
@@ -101,6 +101,16 @@ index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..a9a882575dabc59db7e802caef7167ba
 +								roomDoc.doc.import(update);
 +							}
 +						}
++						if (typeof this.config.onAppendUpdate === "function") {
++							for (const update of payloads) {
++								try {
++									this.config.onAppendUpdate(message.roomId, message.crdt, update);
++								} catch (appendErr) {
++									console.warn("onAppendUpdate failed:", appendErr);
++								}
++							}
++						}
++						roomDoc.updateCount = (roomDoc.updateCount || 0) + payloads.length;
 +					}
 +				} else {
 +					roomDoc.data = roomDoc.descriptor.adaptor.applyUpdates(roomDoc.data, message.updates);
@@ -108,7 +118,31 @@ index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..a9a882575dabc59db7e802caef7167ba
  			} catch (error) {
  				console.warn("applyUpdates failed for DocUpdate", error);
  				this.sendAck(client.ws, message.batchId, loro_protocol.UpdateStatusCode.InvalidUpdate, message.crdt, message.roomId);
-@@ -577,12 +635,62 @@ var SimpleServer = class SimpleServer {
+ 				return;
+ 			}
+ 			if (roomDoc.descriptor.shouldPersist) roomDoc.dirty = true;
++			const checkpointThreshold = this.config.checkpointUpdateThreshold || 100;
++			if (
++				(roomDoc.updateCount || 0) >= checkpointThreshold &&
++				roomDoc.descriptor.shouldPersist &&
++				typeof this.config.onSaveDocument === "function"
++			) {
++				try {
++					if (roomDoc.doc) {
++						roomDoc.data = roomDoc.doc.export({ mode: "snapshot" });
++					}
++					await this.config.onSaveDocument(message.roomId, message.crdt, roomDoc.data);
++					roomDoc.dirty = false;
++					roomDoc.lastSaved = Date.now();
++					roomDoc.updateCount = 0;
++				} catch (ckptErr) {
++					console.warn("Checkpoint save failed:", ckptErr);
++				}
++			}
+ 			const updatesForBroadcast = message.updates;
+ 			this.sendAck(client.ws, message.batchId, loro_protocol.UpdateStatusCode.Ok, message.crdt, message.roomId);
+ 			if (updatesForBroadcast.length > 0) {
+@@ -577,12 +663,62 @@ var SimpleServer = class SimpleServer {
  		const roomKey = this.getRoomKey(message.roomId, message.crdt);
  		client.rooms.delete(roomKey);
  		client.permissions.delete(roomKey);
@@ -171,7 +205,7 @@ index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..a9a882575dabc59db7e802caef7167ba
  	}
  	async getOrCreateRoomDocument(roomId, crdtType) {
  		const roomKey = this.getRoomKey(roomId, crdtType);
-@@ -598,8 +706,21 @@ var SimpleServer = class SimpleServer {
+@@ -598,8 +734,21 @@ var SimpleServer = class SimpleServer {
  			console.warn("Failed to load document:", error);
  			throw error;
  		}
@@ -193,7 +227,7 @@ index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..a9a882575dabc59db7e802caef7167ba
  			descriptor,
  			lastSaved: Date.now(),
  			dirty: false
-@@ -674,6 +795,9 @@ var SimpleServer = class SimpleServer {
+@@ -674,14 +823,49 @@ var SimpleServer = class SimpleServer {
  			if (!roomDoc.dirty || !roomDoc.descriptor.shouldPersist) continue;
  			try {
  				const { roomId, crdtType } = this.parseRoomKey(roomKey);
@@ -203,7 +237,9 @@ index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..a9a882575dabc59db7e802caef7167ba
  				await this.config.onSaveDocument(roomId, crdtType, roomDoc.data);
  				roomDoc.dirty = false;
  				roomDoc.lastSaved = Date.now();
-@@ -682,6 +806,36 @@ var SimpleServer = class SimpleServer {
++				roomDoc.updateCount = 0;
+ 			} catch (error) {
+ 				console.error("Failed to save document:", error);
  			}
  		}
  	}
@@ -221,6 +257,7 @@ index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..a9a882575dabc59db7e802caef7167ba
 +					}
 +					await this.config.onSaveDocument(roomId, crdtType, roomDoc.data);
 +					roomDoc.dirty = false;
++					roomDoc.updateCount = 0;
 +				} catch (err) {
 +					console.warn(`Failed to save dirty room ${roomId} before eviction:`, err);
 +					continue;
@@ -240,11 +277,23 @@ index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..a9a882575dabc59db7e802caef7167ba
  };
  SimpleServer.DEFAULT_SAVE_INTERVAL = 6e4;
  
+diff --git a/dist/server/index.cjs.oavSGwn b/dist/server/index.cjs.oavSGwn
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/dist/server/index.d.cts b/dist/server/index.d.cts
-index 5e2fa22d06a06f9659b8ca5eeaf26daf0deb7f4e..7e8ccbb49114d5471393b443f50a922f2c33a167 100644
+index 5e2fa22d06a06f9659b8ca5eeaf26daf0deb7f4e..96a99b77eb32272292ddd648d060306d8ed54588 100644
 --- a/dist/server/index.d.cts
 +++ b/dist/server/index.d.cts
-@@ -37,6 +37,23 @@ declare class SimpleServer {
+@@ -7,6 +7,8 @@ interface SimpleServerConfig {
+   saveInterval?: number;
+   onLoadDocument?: (roomId: string, crdtType: CrdtType) => Promise<Uint8Array | null>;
+   onSaveDocument?: (roomId: string, crdtType: CrdtType, data: Uint8Array) => Promise<void>;
++  onAppendUpdate?: (roomId: string, crdtType: CrdtType, update: Uint8Array) => void | Promise<void>;
++  checkpointUpdateThreshold?: number;
+   /** Map join payload (`auth`) to permission; return null to reject. */
+   authenticate?: (roomId: string, crdtType: CrdtType, auth: Uint8Array) => Promise<Permission | null>;
+ }
+@@ -37,6 +39,23 @@ declare class SimpleServer {
    private sendAck;
    private broadcastToRoom;
    private hasOtherClientsInRoom;
@@ -269,10 +318,19 @@ index 5e2fa22d06a06f9659b8ca5eeaf26daf0deb7f4e..7e8ccbb49114d5471393b443f50a922f
    private parseRoomKey;
    private saveAllDirtyDocuments;
 diff --git a/dist/server/index.d.ts b/dist/server/index.d.ts
-index bf393145e8c48f7c115769b3cc163c8c4c40427c..0202e08628e2b82503a9f5cf4f5ac422cf35cbbf 100644
+index bf393145e8c48f7c115769b3cc163c8c4c40427c..f14347298b9762da82b38850ef60e578b06c0854 100644
 --- a/dist/server/index.d.ts
 +++ b/dist/server/index.d.ts
-@@ -37,6 +37,23 @@ declare class SimpleServer {
+@@ -7,6 +7,8 @@ interface SimpleServerConfig {
+   saveInterval?: number;
+   onLoadDocument?: (roomId: string, crdtType: CrdtType) => Promise<Uint8Array | null>;
+   onSaveDocument?: (roomId: string, crdtType: CrdtType, data: Uint8Array) => Promise<void>;
++  onAppendUpdate?: (roomId: string, crdtType: CrdtType, update: Uint8Array) => void | Promise<void>;
++  checkpointUpdateThreshold?: number;
+   /** Map join payload (`auth`) to permission; return null to reject. */
+   authenticate?: (roomId: string, crdtType: CrdtType, auth: Uint8Array) => Promise<Permission | null>;
+ }
+@@ -37,6 +39,23 @@ declare class SimpleServer {
    private sendAck;
    private broadcastToRoom;
    private hasOtherClientsInRoom;
@@ -297,7 +355,7 @@ index bf393145e8c48f7c115769b3cc163c8c4c40427c..0202e08628e2b82503a9f5cf4f5ac422
    private parseRoomKey;
    private saveAllDirtyDocuments;
 diff --git a/dist/server/index.js b/dist/server/index.js
-index 2ba619565b2532df04d4f95c33dc329b5df0c776..d9b26f41a0d904bb6ca0119dd0f3753f617620ff 100644
+index 2ba619565b2532df04d4f95c33dc329b5df0c776..3e12a0a45006767f6cec03047444251af5607e66 100644
 --- a/dist/server/index.js
 +++ b/dist/server/index.js
 @@ -3,7 +3,7 @@ import { WebSocket, WebSocketServer } from "ws";
@@ -392,7 +450,7 @@ index 2ba619565b2532df04d4f95c33dc329b5df0c776..d9b26f41a0d904bb6ca0119dd0f3753f
  			const response = {
  				...joinResult.response,
  				permission,
-@@ -472,7 +516,21 @@ var SimpleServer = class SimpleServer {
+@@ -472,13 +516,55 @@ var SimpleServer = class SimpleServer {
  			}
  			const roomDoc = await this.getOrCreateRoomDocument(message.roomId, message.crdt);
  			try {
@@ -408,6 +466,16 @@ index 2ba619565b2532df04d4f95c33dc329b5df0c776..d9b26f41a0d904bb6ca0119dd0f3753f
 +								roomDoc.doc.import(update);
 +							}
 +						}
++						if (typeof this.config.onAppendUpdate === "function") {
++							for (const update of payloads) {
++								try {
++									this.config.onAppendUpdate(message.roomId, message.crdt, update);
++								} catch (appendErr) {
++									console.warn("onAppendUpdate failed:", appendErr);
++								}
++							}
++						}
++						roomDoc.updateCount = (roomDoc.updateCount || 0) + payloads.length;
 +					}
 +				} else {
 +					roomDoc.data = roomDoc.descriptor.adaptor.applyUpdates(roomDoc.data, message.updates);
@@ -415,7 +483,31 @@ index 2ba619565b2532df04d4f95c33dc329b5df0c776..d9b26f41a0d904bb6ca0119dd0f3753f
  			} catch (error) {
  				console.warn("applyUpdates failed for DocUpdate", error);
  				this.sendAck(client.ws, message.batchId, UpdateStatusCode.InvalidUpdate, message.crdt, message.roomId);
-@@ -577,12 +635,62 @@ var SimpleServer = class SimpleServer {
+ 				return;
+ 			}
+ 			if (roomDoc.descriptor.shouldPersist) roomDoc.dirty = true;
++			const checkpointThreshold = this.config.checkpointUpdateThreshold || 100;
++			if (
++				(roomDoc.updateCount || 0) >= checkpointThreshold &&
++				roomDoc.descriptor.shouldPersist &&
++				typeof this.config.onSaveDocument === "function"
++			) {
++				try {
++					if (roomDoc.doc) {
++						roomDoc.data = roomDoc.doc.export({ mode: "snapshot" });
++					}
++					await this.config.onSaveDocument(message.roomId, message.crdt, roomDoc.data);
++					roomDoc.dirty = false;
++					roomDoc.lastSaved = Date.now();
++					roomDoc.updateCount = 0;
++				} catch (ckptErr) {
++					console.warn("Checkpoint save failed:", ckptErr);
++				}
++			}
+ 			const updatesForBroadcast = message.updates;
+ 			this.sendAck(client.ws, message.batchId, UpdateStatusCode.Ok, message.crdt, message.roomId);
+ 			if (updatesForBroadcast.length > 0) {
+@@ -577,12 +663,62 @@ var SimpleServer = class SimpleServer {
  		const roomKey = this.getRoomKey(message.roomId, message.crdt);
  		client.rooms.delete(roomKey);
  		client.permissions.delete(roomKey);
@@ -478,7 +570,7 @@ index 2ba619565b2532df04d4f95c33dc329b5df0c776..d9b26f41a0d904bb6ca0119dd0f3753f
  	}
  	async getOrCreateRoomDocument(roomId, crdtType) {
  		const roomKey = this.getRoomKey(roomId, crdtType);
-@@ -598,8 +706,21 @@ var SimpleServer = class SimpleServer {
+@@ -598,8 +734,21 @@ var SimpleServer = class SimpleServer {
  			console.warn("Failed to load document:", error);
  			throw error;
  		}
@@ -500,7 +592,7 @@ index 2ba619565b2532df04d4f95c33dc329b5df0c776..d9b26f41a0d904bb6ca0119dd0f3753f
  			descriptor,
  			lastSaved: Date.now(),
  			dirty: false
-@@ -674,6 +795,9 @@ var SimpleServer = class SimpleServer {
+@@ -674,14 +823,49 @@ var SimpleServer = class SimpleServer {
  			if (!roomDoc.dirty || !roomDoc.descriptor.shouldPersist) continue;
  			try {
  				const { roomId, crdtType } = this.parseRoomKey(roomKey);
@@ -510,7 +602,9 @@ index 2ba619565b2532df04d4f95c33dc329b5df0c776..d9b26f41a0d904bb6ca0119dd0f3753f
  				await this.config.onSaveDocument(roomId, crdtType, roomDoc.data);
  				roomDoc.dirty = false;
  				roomDoc.lastSaved = Date.now();
-@@ -682,6 +806,36 @@ var SimpleServer = class SimpleServer {
++				roomDoc.updateCount = 0;
+ 			} catch (error) {
+ 				console.error("Failed to save document:", error);
  			}
  		}
  	}
@@ -528,6 +622,7 @@ index 2ba619565b2532df04d4f95c33dc329b5df0c776..d9b26f41a0d904bb6ca0119dd0f3753f
 +					}
 +					await this.config.onSaveDocument(roomId, crdtType, roomDoc.data);
 +					roomDoc.dirty = false;
++					roomDoc.updateCount = 0;
 +				} catch (err) {
 +					console.warn(`Failed to save dirty room ${roomId} before eviction:`, err);
 +					continue;

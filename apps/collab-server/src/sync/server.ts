@@ -307,12 +307,18 @@ function socketRoomCount(): number | null {
 const server = fragmentOutboundFrames(
   new SimpleServer({
     port,
-    // Coalesce writes so an active editing session does not hammer SQLite.
-    saveInterval: 2000,
+    // Periodic snapshot checkpointing. Micro-delta writes land in SQLite WAL
+    // immediately via onAppendUpdate; full snapshots checkpoint every 5m or 100 updates.
+    saveInterval: 300_000,
+    checkpointUpdateThreshold: 100,
 
     async onLoadDocument(roomId) {
       // Falls back to the keys earlier builds wrote, so an upgrade keeps its data.
       return loadLoroDocument(store, roomId);
+    },
+
+    onAppendUpdate(roomId, _crdtType, update) {
+      store.appendUpdate(loroDocumentKey(roomId), update);
     },
 
     async onSaveDocument(roomId, _crdtType, data) {

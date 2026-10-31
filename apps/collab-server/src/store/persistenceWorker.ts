@@ -21,11 +21,13 @@ import { parentPort, workerData } from "node:worker_threads";
 export interface PersistenceWorkerOp {
   /** Host-assigned sequence number, echoed back so the host can retire state. */
   seq: number;
-  /** `save` upserts a row; `delete` removes one. */
-  kind: "save" | "delete";
+  /** `save` upserts a snapshot row and truncates deltas; `update` appends an incremental delta; `delete` removes both. */
+  kind: "save" | "delete" | "update";
   name: string;
-  /** Snapshot bytes for a `save`; absent for a `delete`. */
+  /** Snapshot bytes for a `save`; absent for a `delete` or `update`. */
   state?: Uint8Array;
+  /** Incremental delta update bytes for an `update`. */
+  updateData?: Uint8Array;
   /** Epoch milliseconds recorded with the row. */
   updatedAt: number;
 }
@@ -43,8 +45,13 @@ export interface PersistenceWorkerData {
   path: string;
   /** `PRAGMA` and DDL statements, in order, run once before the first batch. */
   setup: readonly string[];
-  /** SQL of the two statements the host may send. */
-  statements: { save: string; remove: string };
+  /** SQL of the statements the host may send. */
+  statements: {
+    save: string;
+    remove: string;
+    appendUpdate?: string;
+    truncateUpdates?: string;
+  };
   /** `SharedArrayBuffer` counters: `[appliedBatches, closed, failed, rows]`. */
   signal: SharedArrayBuffer;
 }
@@ -71,7 +78,12 @@ function fail(seq: number, error: unknown): void {
 }
 
 let db: DatabaseSync;
-const statements: { save: StatementSync; remove: StatementSync } = {
+const statements: {
+  save: StatementSync;
+  remove: StatementSync;
+  appendUpdate?: StatementSync;
+  truncateUpdates?: StatementSync;
+} = {
   save: null as unknown as StatementSync,
   remove: null as unknown as StatementSync,
 };
@@ -80,6 +92,12 @@ try {
   for (const statement of data.setup) db.exec(statement);
   statements.save = db.prepare(data.statements.save);
   statements.remove = db.prepare(data.statements.remove);
+  if (data.statements.appendUpdate) {
+    statements.appendUpdate = db.prepare(data.statements.appendUpdate);
+  }
+  if (data.statements.truncateUpdates) {
+    statements.truncateUpdates = db.prepare(data.statements.truncateUpdates);
+  }
 } catch (error) {
   // A store that cannot be opened is the host's fallback to decide on; this
   // thread only has to say so, quickly and unambiguously.
@@ -99,8 +117,12 @@ function apply(message: Extract<PersistenceHostMessage, { type: "batch" }>): voi
     for (const op of message.ops) {
       if (op.kind === "save") {
         statements.save.run(op.name, op.state ?? new Uint8Array(), op.updatedAt);
+        statements.truncateUpdates?.run(op.name);
+      } else if (op.kind === "update") {
+        statements.appendUpdate?.run(op.name, op.updateData ?? new Uint8Array(), op.updatedAt);
       } else {
         statements.remove.run(op.name);
+        statements.truncateUpdates?.run(op.name);
       }
       applied += 1;
     }

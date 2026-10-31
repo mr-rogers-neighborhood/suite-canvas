@@ -447,7 +447,7 @@ export class WorkspaceDocument extends CardsFacade {
   updateField(
     typeId: string,
     fieldId: string,
-    patch: { name?: string; required?: boolean; display?: string | null },
+    patch: { name?: string; required?: boolean; display?: string | null; readOnly?: boolean },
   ): void {
     this.cardTypesApi.updateField(typeId, fieldId, patch);
   }

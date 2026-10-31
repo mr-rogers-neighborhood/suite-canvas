@@ -22,8 +22,9 @@ export function BookView({ node, selected, editor }: NodeViewProps) {
   const name = typeof node.attrs.name === "string" ? node.attrs.name : "Untitled book";
   const bytes = useBookBytes(id);
   const cover = useBookCover(bytes);
-  const focusCard = useUiStore((state) => state.focusCard);
-  const activeBoardId = useUiStore((state) => state.activeBoardId);
+  // Focus mode, not the camera: `focusCard` pans the board to a card and `openCardFocus` opens the surface the
+  // reader is for. Read is a press on this card, so it wants the second.
+  const openCardFocus = useUiStore((state) => state.openCardFocus);
   // The card that owns this body is the one the editor was configured with — the same fact the `@` picker
   // reads — rather than the board's selection, which says what the reader last pressed and not whose body this is.
   const cardId = (editor.storage as { mention?: { cardId?: string } }).mention?.cardId ?? null;
@@ -68,7 +69,7 @@ export function BookView({ node, selected, editor }: NodeViewProps) {
           data-testid="book-read"
           disabled={cover.status !== "ready"}
           onClick={() => {
-            if (cardId !== null && activeBoardId !== null) focusCard(cardId, activeBoardId);
+            if (cardId !== null) openCardFocus(cardId);
           }}
         >
           Read

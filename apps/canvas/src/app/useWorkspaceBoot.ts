@@ -190,6 +190,19 @@ export function useWorkspaceBoot(args: {
     }
   }, [ready, synced, share, readOnly, workspace, workspaceId, setWorkspaceName]);
 
+  // The document is the truth for its own name, but the shell seeds its display
+  // state before the document hydrates, so the canvas showed "Untitled workspace"
+  // while the launcher — which reads the local mirror — showed the real name.
+  // Adopt the stored name as soon as it is readable. A share keeps its own label,
+  // and a rename already writes to the document before it updates the state, so
+  // this can never undo what someone just typed.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: synced is a re-read trigger, not an input.
+  useEffect(() => {
+    if (!ready || share) return;
+    if (!workspace.hasWorkspaceName()) return;
+    setWorkspaceName(workspace.workspaceName());
+  }, [ready, synced, workspace, share, setWorkspaceName]);
+
   // Every icon the document names, asked for once, so the first paint after a reload
   // already has them. A glyph asks for its own set on mount too; this only removes the
   // one empty frame that costs.
@@ -219,16 +232,24 @@ export function useWorkspaceBoot(args: {
     if (activeBoardId === null && newTab) return;
 
     // What the reader asked for, then the template they just chose, then the
-    // board they were last on in this workspace, then the first board. There is
-    // no home board to configure any more: "where I was" is the answer people
-    // gave to that question anyway (ADR-0064 amendment).
+    // board they were last on in this workspace, then the board the link was
+    // shared from, then the first board. There is no home board to configure any
+    // more: "where I was" is the answer people gave to that question anyway
+    // (ADR-0064 amendment).
+    //
+    // The start board sits after "last" on purpose. A first-time visitor has no
+    // last board, so a share opens where it was made; a returning visitor does,
+    // so their own choice wins and the link never pulls them back. A start board
+    // outside the projection is simply not found, and the chain falls through.
     const requested = resolveBoardId();
     const template = templatedBoardId.current;
     const last = readLastBoard(workspaceId);
+    const start = share?.startBoardId ?? null;
     const next =
       boards.find((board) => board.id === requested)?.id ??
       (template === null ? undefined : boards.find((board) => board.id === template)?.id) ??
       (last === null ? undefined : boards.find((board) => board.id === last)?.id) ??
+      (start === null ? undefined : boards.find((board) => board.id === start)?.id) ??
       boards[0]?.id ??
       null;
     if (next && next !== activeBoardId) setActiveBoardId(next);

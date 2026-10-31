@@ -161,6 +161,54 @@ describe("duplicateCard", () => {
   });
 });
 
+describe("alsoPlaceCardOnBoard", () => {
+  it("should add a placement and keep the one it already had", () => {
+    const { workspace, board, other, card } = setup();
+
+    const placement = workspace.alsoPlaceCardOnBoard(card.id, other.id);
+
+    expect(placement.boardId).toBe(other.id);
+    // The whole point: both boards hold the same card, and it is still one card.
+    expect(
+      workspace
+        .listCardPlacements(card.id)
+        .map((entry) => entry.boardId)
+        .sort(),
+    ).toEqual([board.id, other.id].sort());
+    expect(workspace.listBoardCards(board.id).map((entry) => entry.id)).toEqual([card.id]);
+    expect(workspace.listBoardCards(other.id).map((entry) => entry.id)).toEqual([card.id]);
+    expect(workspace.getCard(card.id)?.id).toBe(card.id);
+  });
+
+  it("should place it where it already sits rather than at the origin", () => {
+    const { workspace, other, card } = setup();
+
+    workspace.alsoPlaceCardOnBoard(card.id, other.id);
+
+    expect(workspace.getPlacement(other.id, card.id)).toMatchObject({ x: 100, y: 50 });
+  });
+
+  it("should be a no-op for a board that already holds the card", () => {
+    const { workspace, board, other, card } = setup();
+    workspace.alsoPlaceCardOnBoard(card.id, other.id);
+
+    const again = workspace.alsoPlaceCardOnBoard(card.id, other.id);
+
+    expect(again.boardId).toBe(other.id);
+    expect(workspace.listCardPlacements(card.id)).toHaveLength(2);
+    expect(workspace.getPlacement(board.id, card.id)).toBeDefined();
+  });
+
+  it("should refuse a card or board that does not exist", () => {
+    const { workspace, other, card } = setup();
+
+    expect(() => workspace.alsoPlaceCardOnBoard("missing-card", other.id)).toThrow(/Unknown card/u);
+    expect(() => workspace.alsoPlaceCardOnBoard(card.id, "missing-board")).toThrow(
+      /Unknown board/u,
+    );
+  });
+});
+
 describe("moveCardToBoard", () => {
   it("should move the placement and keep the card's identity and content", () => {
     const { workspace, board, other, card, tag, field, type } = setup();

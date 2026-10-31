@@ -101,7 +101,8 @@ export interface LibraryDrawerProps {
   onTrashMedia?: (id: string) => void;
   onRestoreMedia?: (id: string) => void;
   onDeleteMediaForever?: (id: string) => void;
-  onInsertMedia?: (media: WorkspaceMediaItem) => void;
+  /** Places a media item as a card of its own, so it can live on a board. */
+  onPlaceMediaAsCard?: (media: WorkspaceMediaItem) => void;
   /**
    * Every board as a library row. Boards are already inside `cards`/`inbox`;
    * this is the same set, for the places that need a board by id.

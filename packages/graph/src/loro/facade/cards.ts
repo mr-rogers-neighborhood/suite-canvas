@@ -59,6 +59,15 @@ export class CardsFacade {
     return this.cardsApi.moveCardToBoard(cardId, boardId, position);
   }
 
+  /** Places a card on another board and leaves its other placements alone. */
+  alsoPlaceCardOnBoard(
+    cardId: string,
+    boardId: string,
+    position?: { x: number; y: number },
+  ): Placement {
+    return this.cardsApi.alsoPlaceCardOnBoard(cardId, boardId, position);
+  }
+
   isTrashed(cardId: string): boolean {
     return this.cardsApi.isTrashed(cardId);
   }

@@ -287,6 +287,9 @@ export function ShareDialog({
           scope,
           role,
           boardId: scope === "board" || scope === "selection" ? boardId : null,
+          // Where the author is now, whatever the scope: a workspace link should
+          // open on the board they were sharing from, not on the first board.
+          startBoardId: boardId,
           cardId: scope === "card" ? cardId : null,
           ...(scope === "selection" ? { cardIds: selectionCardIds } : {}),
           // Spent once on the page slug: the reader address is `/s/<slug>`, so

@@ -271,6 +271,14 @@ export function useBoardCommands(
     [workspace, activeBoardId, canCreateContent, setSelectedNodeIds, setPresenceSelection],
   );
 
+  const alsoPlaceCardOnBoard = useCallback(
+    (cardId: string, boardId: string) => {
+      if (!canEditLayout) return;
+      workspace.alsoPlaceCardOnBoard(cardId, boardId);
+    },
+    [workspace, canEditLayout],
+  );
+
   const moveCardToBoard = useCallback(
     (cardId: string, boardId: string) => {
       if (!canEditLayout) return;
@@ -392,6 +400,7 @@ export function useBoardCommands(
     createPortalToNewBoard,
     duplicateCards,
     moveCardToBoard,
+    alsoPlaceCardOnBoard,
     otherBoards,
     arrangeSelection,
     arrangeRadialSelection,

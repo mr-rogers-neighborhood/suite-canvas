@@ -67,6 +67,7 @@ export function useBoardMenu(
       duplicateCards: commands.duplicateCards,
       setSwatches: commands.setSwatches,
       moveCardToBoard: commands.moveCardToBoard,
+      alsoPlaceCardOnBoard: commands.alsoPlaceCardOnBoard,
       otherBoards: commands.otherBoards,
       changeLayer: commands.changeLayer,
       changeLayerBulk: commands.changeLayerBulk,

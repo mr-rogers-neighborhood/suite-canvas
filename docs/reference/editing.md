@@ -103,6 +103,16 @@ A link `media` block stores a URL, alt text and a size. It works with no relay a
 
 Pasting an image runs `PasteImages`, which measures the image, stores the bytes locally, uploads when a relay exists, and marks the node uploaded when the upload lands. A failed upload leaves the local copy in place, so the picture survives a reload. When the relay answers with a stated refusal (a 401, or a 403 for a workspace whose plan excludes uploads), the refusal is raised as a prompt rather than swallowed, because a card that looks uploaded and is not is the worst of the three outcomes.
 
+A media card is the same reference, not a copy. A card of the media type holds one media block in its
+body, made from a library row with "Place as card"; the bytes stay where they are and the card points at
+them. It is created unplaced, so it starts in the Inbox and the reader chooses a board, which is what makes
+media something that can be placed, duplicated, linked and used as a field value.
+
+`media` and `sketch` are field kinds that narrow a card reference by type. The value is the card id a `card`
+field already holds, and `allowedTypeIds` on the definition is the rule, so the graph package needs no
+knowledge of which types exist. A field that names no types narrows nothing, and a caller that cannot say
+what type a card is skips the check rather than refusing a value the document already holds.
+
 ## The face a card shows before it is focused
 
 `StaticCardFace` draws the same body without an editor, and it draws media itself: an image at the relay or at its own address with `loading="lazy"`, `decoding="async"` and the size the node recorded, so a picture arriving late cannot reflow the card; a video with `preload="metadata"`; an embed as its poster still rather than an iframe, because one iframe per card is the cost that made this path worth special-casing. Anything with nothing to point at keeps a labelled chip instead of a blank line.

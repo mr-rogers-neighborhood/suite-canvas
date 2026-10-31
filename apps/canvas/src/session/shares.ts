@@ -58,6 +58,12 @@ export interface Share {
   workspaceId: string;
   boardId: string | null;
   cardId: string | null;
+  /**
+   * The board the author was looking at when the link was made, for a visitor's
+   * first open. Absent on links created before this field existed, and null when
+   * the author had no board in view.
+   */
+  startBoardId?: string | null;
   createdAt: number;
   revokedAt: number | null;
   /** Epoch milliseconds; null means the link does not expire. */
@@ -97,6 +103,11 @@ export interface CreateShareInput {
   scope: ShareScope;
   role: ShareRole;
   boardId?: string | null;
+  /**
+   * The board a visitor should open first. Every scope accepts it: it narrows
+   * nothing, it only says where to start reading.
+   */
+  startBoardId?: string | null;
   cardId?: string | null;
   /** Cards of a selection share; ignored by every other scope. */
   cardIds?: readonly string[];

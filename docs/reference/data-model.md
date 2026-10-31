@@ -54,6 +54,12 @@ malformed value throws at the boundary that read it rather than reaching the can
 A placement is keyed by `placementKey(boardId, cardId)` from `packages/graph/src/loro/constants.ts`, which
 is `${boardId}/${cardId}`. One card can therefore sit on many boards without a second record kind.
 
+Two calls use that. `moveCardToBoard` rewrites the placement and removes the others, dropping the edges that
+can no longer draw; `alsoPlaceCardOnBoard` adds one and leaves the rest, which is what "also place on board"
+means. A card already on the target board answers with the placement it has, so pressing twice is a no-op
+rather than a second instance: two instances of one card on one board would need a placement id, and every
+reader that keys a placement by card id would have to accept many.
+
 `z` is a fractional number. A reorder writes the one placement that moved instead of renumbering the stack,
 and `MIN_RANK_GAP` is the distance below which the board renumbers.
 

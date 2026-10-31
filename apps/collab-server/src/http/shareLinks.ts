@@ -60,6 +60,7 @@ function parseCreateInput(body: unknown): CreateShareInput {
     scope: record.scope as ShareScope,
     role: record.role as ShareRole,
     boardId: (record.boardId as string | null | undefined) ?? null,
+    startBoardId: (record.startBoardId as string | null | undefined) ?? null,
     cardId: (record.cardId as string | null | undefined) ?? null,
   };
   // The target's name is read once, to name the page; the link keeps that name

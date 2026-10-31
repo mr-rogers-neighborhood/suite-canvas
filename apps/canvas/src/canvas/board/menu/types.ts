@@ -36,6 +36,7 @@ export interface BoardMenuContext {
   /** One colour across the cards a menu acts on. */
   setSwatches: (ids: readonly string[], swatch: string | null) => void;
   moveCardToBoard: (cardId: string, boardId: string) => void;
+  alsoPlaceCardOnBoard: (cardId: string, boardId: string) => void;
   otherBoards: (boardId: string | null) => { id: string; name: string }[];
   changeLayer: (nodeId: string, action: LayerAction) => void;
   changeLayerBulk: (ids: string[], action: LayerAction) => void;

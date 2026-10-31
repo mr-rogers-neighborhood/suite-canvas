@@ -365,6 +365,36 @@ export function cardMethods(ctx: DocContext) {
       return placed;
     },
 
+    /**
+     * Places a card on another board **without** removing the placement it already
+     * holds, which is what `moveCardToBoard` does instead.
+     *
+     * The card stays one object, so editing it on either board edits both — the
+     * same property a portal has. Pressing twice is a no-op: a card already on
+     * that board answers with the placement it has, because two instances of one
+     * card on one board is a different feature and not this one.
+     */
+    alsoPlaceCardOnBoard(
+      cardId: string,
+      boardId: string,
+      position?: { x: number; y: number },
+    ): Placement {
+      if (!ctx.api.cards.getCard(cardId)) throw new Error(`Unknown card: ${cardId}`);
+      if (!ctx.api.boards.getBoard(boardId)) throw new Error(`Unknown board: ${boardId}`);
+
+      const existing = ctx.api.placements.getPlacement(boardId, cardId);
+      if (existing) return existing;
+
+      // Where it sits on its first board, so the same thought appears in the same
+      // place on the board it is copied to rather than at the origin.
+      const home = ctx.api.placements.listCardPlacements(cardId)[0];
+      const target = position ?? { x: home?.x ?? 0, y: home?.y ?? 0 };
+      const placed = ctx.api.placements.placeCardInternal(boardId, cardId, target);
+      if (!placed) throw new Error(`Cannot place card ${cardId} on board ${boardId}`);
+      ctx.commit(`${STRUCT_ORIGIN}also-place-card`);
+      return placed;
+    },
+
     isTrashed(cardId: string): boolean {
       return Boolean(ctx.api.cards.getCard(cardId)?.deletedAt);
     },

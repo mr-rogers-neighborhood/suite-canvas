@@ -25,6 +25,8 @@ export interface ShareSession {
   /** Document the shell shows and persists under; the projection room for board/card/selection. */
   workspaceId: string;
   boardId: string | null;
+  /** The board the link was created from, for a visitor's first open. */
+  startBoardId?: string | null;
   cardId: string | null;
   /** Sync room the provider joins. */
   roomId: string;
@@ -256,6 +258,7 @@ export function sessionForShare(token: string, share: Share): SessionConfig {
       role: share.role,
       workspaceId,
       boardId: share.boardId,
+      startBoardId: share.startBoardId ?? null,
       cardId: share.cardId,
       roomId,
     },

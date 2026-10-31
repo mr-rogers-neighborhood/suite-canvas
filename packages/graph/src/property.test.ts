@@ -270,3 +270,54 @@ describe("isPropertyValueValid", () => {
     expect(isPropertyValueValid(board, "c1", { cardId: "c1" })).toBe(true);
   });
 });
+
+describe("narrowed card fields", () => {
+  const mediaField = {
+    id: "f-media",
+    name: "Cover",
+    kind: "media" as const,
+    options: [],
+    order: 0,
+    required: false,
+    allowedTypeIds: ["media"],
+  };
+
+  it("should accept a card of the allowed type", () => {
+    expect(
+      propertyValueError(mediaField, "card-1", {
+        cardTypeOf: () => "media",
+        cardExists: () => true,
+      }),
+    ).toBeNull();
+  });
+
+  it("should refuse a card of another type, naming what it wanted", () => {
+    expect(
+      propertyValueError(mediaField, "card-1", {
+        cardTypeOf: () => "note",
+        cardExists: () => true,
+      }),
+    ).toBe('Field "Cover" expects a media card');
+  });
+
+  it("should stay a card reference for the id and self-reference rules", () => {
+    expect(propertyValueError(mediaField, "", {})).toContain("expects a card id");
+    expect(propertyValueError(mediaField, "card-1", { cardId: "card-1" })).toContain(
+      "cannot point at its own card",
+    );
+    expect(propertyValueError(mediaField, "gone", { cardExists: () => false })).toContain(
+      "does not exist",
+    );
+  });
+
+  it("should skip the type rule when the caller cannot say what the card is", () => {
+    // Refusing on missing information would make an offline or partial view
+    // reject values that are perfectly valid in the document.
+    expect(propertyValueError(mediaField, "card-1", {})).toBeNull();
+  });
+
+  it("should narrow nothing when the field names no types", () => {
+    const open = { ...mediaField, allowedTypeIds: undefined };
+    expect(propertyValueError(open, "card-1", { cardTypeOf: () => "note" })).toBeNull();
+  });
+});

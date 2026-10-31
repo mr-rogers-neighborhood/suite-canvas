@@ -9,6 +9,12 @@ export interface PropertyValidationContext {
   cardExists?: ((cardId: string) => boolean) | undefined;
   /** Whether a board a `board` value points at still exists in the workspace. */
   boardExists?: ((boardId: string) => boolean) | undefined;
+  /**
+   * The primary type of the card a comment points at, for a field that narrows by
+   * type. Absent means the caller cannot check, so the narrowing is skipped
+   * rather than the value refused.
+   */
+  cardTypeOf?: ((cardId: string) => string | undefined) | undefined;
 }
 
 /** `YYYY-MM-DD` and a real calendar day, not just a string that looks close. */
@@ -57,7 +63,9 @@ export function propertyValueError(
         ? null
         : `Field "${field.name}" selected an option that no longer exists: "${unknown}"`;
     }
-    case "card": {
+    case "card":
+    case "media":
+    case "sketch": {
       if (typeof value !== "string" || value.trim().length === 0) {
         return `Field "${field.name}" expects a card id`;
       }
@@ -67,7 +75,7 @@ export function propertyValueError(
       if (context.cardExists && !context.cardExists(value)) {
         return `Field "${field.name}" points at a card that does not exist: "${value}"`;
       }
-      return null;
+      return cardTypeError(field, value, context);
     }
     case "board": {
       // A board value is a board id, so there is no self-reference to check:
@@ -95,6 +103,23 @@ export function propertyValueError(
  * True when a stored value may be published. Malformed draft values are
  * rejected instead of silently written; see `propertyValueError` for the why.
  */
+/** The message when a narrowed field holds a card of the wrong kind, else null. */
+function cardTypeError(
+  field: FieldDefinition,
+  cardId: string,
+  context: PropertyValidationContext,
+): string | null {
+  if (field.kind !== "media" && field.kind !== "sketch") return null;
+  const allowed = field.allowedTypeIds ?? [];
+  if (allowed.length === 0) return null;
+  const actual = context.cardTypeOf?.(cardId);
+  // An unknown type is the caller's gap, not the value's fault: refuse only what
+  // is known to be wrong.
+  if (actual === undefined || allowed.includes(actual)) return null;
+  const noun = field.kind === "media" ? "media" : "sketch";
+  return `Field "${field.name}" expects a ${noun} card`;
+}
+
 export function isPropertyValueValid(
   field: FieldDefinition,
   value: PropertyValue | null | undefined,
@@ -224,7 +249,9 @@ export function readPropertyValue(
         .map((option) => option.label);
       return shown(labels.length > 0 ? labels.join(", ") : unavailable);
     }
-    case "card": {
+    case "card":
+    case "media":
+    case "sketch": {
       if (options.includeCard === false) return shown(empty);
       if (typeof value !== "string" || value.trim().length === 0) return shown(empty);
       const title = options.cardTitle?.trim();
@@ -294,6 +321,8 @@ export function isPropertyValueEmpty(
       return !value.some((id) => field.options.some((option) => option.id === id));
     }
     case "card":
+    case "media":
+    case "sketch":
       return (
         typeof value !== "string" ||
         value.trim().length === 0 ||

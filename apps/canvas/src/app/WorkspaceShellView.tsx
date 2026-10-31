@@ -9,6 +9,7 @@ import type { SurfacePalette } from "../canvas/rules";
 import { SurfacePaintProvider } from "../canvas/surfaceContext";
 import { CardFocusHost } from "../cards/CardFocusHost";
 import { CardInspectorHost } from "../cards/CardInspectorHost";
+import { createMediaCard } from "../cards/mediaCard";
 import { TourOverlayHost } from "../cards/TourOverlayHost";
 import { TypeMenuHost } from "../cards/TypeMenuHost";
 import { BoardGlyph } from "../chrome/BoardGlyph";
@@ -717,6 +718,7 @@ export function WorkspaceShellView({
             trash={trashItems}
             media={mediaItems}
             trashedMedia={trashedMediaItems}
+            onPlaceMediaAsCard={(item) => createMediaCard(workspace, item)}
             onTrashMedia={(id) => useUiStore.getState().trashMedia(id)}
             onRestoreMedia={(id) => useUiStore.getState().restoreMedia(id)}
             onDeleteMediaForever={(id) => {

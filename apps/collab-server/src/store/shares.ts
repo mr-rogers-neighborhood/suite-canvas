@@ -58,6 +58,12 @@ export interface Share {
   role: ShareRole;
   workspaceId: string;
   boardId: string | null;
+  /**
+   * The board the author was looking at when the link was made, for the visitor's
+   * first open. Not a scope: a workspace share keeps publishing the whole
+   * workspace, and this only says where to start reading it.
+   */
+  startBoardId: string | null;
   cardId: string | null;
   createdAt: number;
   revokedAt: number | null;
@@ -100,6 +106,11 @@ export interface CreateShareInput {
   scope: ShareScope;
   role: ShareRole;
   boardId?: string | null;
+  /**
+   * The board to open on the visitor's first visit. Accepted by every scope,
+   * because it narrows nothing: a workspace share still publishes the workspace.
+   */
+  startBoardId?: string | null;
   cardId?: string | null;
   /** Cards of a selection share; ignored by every other scope. */
   cardIds?: readonly string[];
@@ -196,6 +207,8 @@ interface ShareRow {
   workspace_id: string;
   board_id: string | null;
   card_id: string | null;
+  /** Where the link should open. Null on rows created before the column existed. */
+  start_board_id: string | null;
   created_at: number;
   revoked_at: number | null;
   expires_at: number | null;
@@ -310,6 +323,7 @@ export function validateShareInput(input: {
   scope?: unknown;
   role?: unknown;
   boardId?: unknown;
+  startBoardId?: unknown;
   cardId?: unknown;
   cardIds?: unknown;
   name?: unknown;
@@ -329,9 +343,13 @@ export function validateShareInput(input: {
 
   const scope = input.scope as ShareScope;
   const boardId = normalizeId(input.boardId);
+  const startBoardId = normalizeId(input.startBoardId);
   const cardId = normalizeId(input.cardId);
   const cards = normalizeCardIds(input.cardIds);
   if (input.boardId != null && !boardId) return "The board id must be a non-empty string.";
+  if (input.startBoardId != null && !startBoardId) {
+    return "The start board id must be a non-empty string.";
+  }
   if (input.cardId != null && !cardId) return "The card id must be a non-empty string.";
   if (input.expiresAt != null && input.expiresAt !== 0) {
     if (
@@ -395,6 +413,7 @@ function toShare(row: ShareRow, token: string | null): Share {
     role: row.role as ShareRole,
     workspaceId: row.workspace_id,
     boardId: row.board_id ?? null,
+    startBoardId: row.start_board_id ?? null,
     cardId,
     createdAt: row.created_at,
     revokedAt: row.revoked_at ?? null,
@@ -458,6 +477,11 @@ function migrateShareColumns(db: DatabaseSync): void {
   if (!columns.some((column) => column.name === "expires_at")) {
     db.exec("ALTER TABLE shares ADD COLUMN expires_at INTEGER");
   }
+  // A hint for where a visitor starts reading, not a scope. Rows written before
+  // this column simply have no opinion, and the visitor gets today's behaviour.
+  if (!columns.some((column) => column.name === "start_board_id")) {
+    db.exec("ALTER TABLE shares ADD COLUMN start_board_id TEXT");
+  }
   if (!columns.some((column) => column.name === "card_ids")) {
     db.exec("ALTER TABLE shares ADD COLUMN card_ids TEXT");
   }
@@ -488,6 +512,7 @@ export function createShareStore(path: string): ShareStore {
        role TEXT NOT NULL,
        workspace_id TEXT NOT NULL,
        board_id TEXT,
+       start_board_id TEXT,
        card_id TEXT,
        created_at INTEGER NOT NULL,
        revoked_at INTEGER,
@@ -514,8 +539,8 @@ export function createShareStore(path: string): ShareStore {
   migrateShareColumns(db);
 
   const insert = db.prepare(
-    `INSERT INTO shares (id, token_hash, scope, role, workspace_id, board_id, card_id, created_at, revoked_at, expires_at, room_id, card_ids, slug)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+    `INSERT INTO shares (id, token_hash, scope, role, workspace_id, board_id, start_board_id, card_id, created_at, revoked_at, expires_at, room_id, card_ids, slug)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
   );
   const selectByHash = db.prepare("SELECT * FROM shares WHERE token_hash = ?");
   const countByHash = db.prepare("SELECT 1 AS found FROM shares WHERE token_hash = ?");
@@ -624,6 +649,7 @@ export function createShareStore(path: string): ShareStore {
         input.role,
         workspaceId,
         normalizeId(input.boardId),
+        normalizeId(input.startBoardId),
         normalizeId(input.cardId),
         Date.now(),
         input.expiresAt ?? null,

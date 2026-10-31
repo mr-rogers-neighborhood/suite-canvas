@@ -56,7 +56,7 @@ export function LibraryDrawer({
   onTrashMedia,
   onRestoreMedia,
   onDeleteMediaForever,
-  onInsertMedia,
+  onPlaceMediaAsCard,
   boards = [],
   /** Absent when this session may not create boards. */
   onCreateBoard,
@@ -534,6 +534,7 @@ export function LibraryDrawer({
         selectableCount={selectableOrder.length}
         selecting={selecting}
         onToggleSelecting={toggleSelecting}
+        onManageTypes={onManageTypes}
         onCreateInInbox={onCreateInInbox}
         trashCount={trash.length}
         onEmptyTrash={onEmptyTrash}
@@ -547,7 +548,7 @@ export function LibraryDrawer({
           items={media}
           onTrash={onTrashMedia}
           canManage={canManageTrash}
-          onInsert={onInsertMedia}
+          onPlaceAsCard={onPlaceMediaAsCard}
         />
       ) : (
         <>
@@ -594,7 +595,6 @@ export function LibraryDrawer({
             onToggleSection={onToggleSection}
             onToggleGroup={onToggleGroup}
             onClearFilters={onClearFilters}
-            onManageTypes={onManageTypes}
           />
 
           {locateMiss ? (

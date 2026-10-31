@@ -7,14 +7,15 @@ export interface LibraryMediaListProps {
   items?: WorkspaceMediaItem[];
   onTrash?: ((id: string) => void) | undefined;
   canManage?: boolean;
-  onInsert?: ((item: WorkspaceMediaItem) => void) | undefined;
+  /** Places this media as a card of its own, so it can live on a board. */
+  onPlaceAsCard?: ((item: WorkspaceMediaItem) => void) | undefined;
 }
 
 export function LibraryMediaList({
   items = [],
   onTrash,
   canManage = true,
-  onInsert,
+  onPlaceAsCard,
 }: LibraryMediaListProps) {
   const [filter, setFilter] = useState<"all" | "image" | "video" | "youtube">("all");
   const [query, setQuery] = useState("");
@@ -153,13 +154,15 @@ export function LibraryMediaList({
 
                     {/* Actions */}
                     <div className="mt-2 flex items-center justify-between border-t border-[var(--hairline)] pt-1.5">
-                      {onInsert ? (
+                      {onPlaceAsCard ? (
                         <button
                           type="button"
-                          onClick={() => onInsert(item)}
+                          data-testid={`place-media-${item.id}`}
+                          title="Make a card for this media, so you can put it on a board"
+                          onClick={() => onPlaceAsCard(item)}
                           className="rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--brand)] hover:bg-[var(--brand)]/10"
                         >
-                          Insert
+                          Place as card
                         </button>
                       ) : (
                         <span />

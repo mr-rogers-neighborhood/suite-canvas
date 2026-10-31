@@ -20,7 +20,6 @@ export function LibraryFacets({
   onToggleSection,
   onToggleGroup,
   onClearFilters,
-  onManageTypes,
 }: {
   types: CardType[];
   tags: Tag[];
@@ -37,8 +36,6 @@ export function LibraryFacets({
   onToggleSection: (id: string) => void;
   onToggleGroup: () => void;
   onClearFilters: () => void;
-  /** Opens the type editor. Absent on a surface where schema cannot be managed. */
-  onManageTypes?: (() => void) | undefined;
 }) {
   return (
     <div
@@ -87,22 +84,6 @@ export function LibraryFacets({
             </button>
           );
         })}
-
-      {/* The second door into the type editor, where a reader is already looking at
-          types. A facet row can only filter; the shape of the list above it is what
-          this edits, so the two belong on one line. */}
-      {onManageTypes ? (
-        <button
-          type="button"
-          data-testid="library-manage-types"
-          title="Rename types, add fields, set the default look and pick templates."
-          className="library-tab text-[var(--ink-muted)]"
-          onClick={onManageTypes}
-        >
-          <span aria-hidden="true">{"\u2699"}</span>
-          Edit types
-        </button>
-      ) : null}
 
       {tags.length > 0 ? <span className="h-4 w-px bg-[var(--hairline)]" /> : null}
 

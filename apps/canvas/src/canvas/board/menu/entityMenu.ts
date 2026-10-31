@@ -334,6 +334,28 @@ const moveBoardRow: EntityMenuRow = {
   },
 };
 
+const alsoPlaceBoardRow: EntityMenuRow = {
+  id: "also-place-board",
+  group: "transfer",
+  kinds: ["card", "portal"],
+  render: (ctx, target) => {
+    const nodeId = target.anchor;
+    const boards = ctx.otherBoards(ctx.activeBoardId);
+    if (!(ctx.canEditLayout && nodeId && boards.length > 0)) return [];
+    return [
+      {
+        // Not a move: the card stays here and appears there too. One object, so a
+        // change on either board is the same change.
+        label: "Also place on board",
+        items: boards.map((board) => ({
+          label: board.name,
+          onSelect: () => ctx.alsoPlaceCardOnBoard(nodeId, board.id),
+        })),
+      },
+    ];
+  },
+};
+
 const removeRow: EntityMenuRow = {
   id: "remove",
   group: "transfer",
@@ -623,6 +645,7 @@ export const ENTITY_MENU_ROWS: readonly EntityMenuRow[] = [
   arrangeRow,
   positionRow,
   moveBoardRow,
+  alsoPlaceBoardRow,
   removeRow,
   ...connectorRows,
   shareRow,

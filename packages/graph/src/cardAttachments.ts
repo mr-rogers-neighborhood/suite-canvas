@@ -47,6 +47,31 @@ const ATTACHMENT_NODE = "attachment";
 const VIDEO_NODE = "video";
 const IMAGE_NODE = "image";
 const YOUTUBE_NODE = "youtube";
+/**
+ * The one media block new content writes. The four above stay readable forever,
+ * so both shapes have to be walked here: missing this one is how an image could
+ * render perfectly on a card and never appear in the library.
+ */
+const MEDIA_NODE = "media";
+
+/**
+ * Which kind of media a node is, whichever shape wrote it.
+ *
+ * A `media` block says so itself; the four it supersedes each implied it, from
+ * the node name or the MIME type.
+ */
+function mediaKindOfNode(
+  type: string,
+  attributes: Record<string, unknown>,
+  mime: string | null,
+): MediaKind {
+  if (type === MEDIA_NODE) {
+    return attributes.kind === "video" || attributes.kind === "youtube" ? attributes.kind : "image";
+  }
+  if (type === YOUTUBE_NODE) return "youtube";
+  if (type === VIDEO_NODE || (mime?.startsWith("video/") ?? false)) return "video";
+  return "image";
+}
 
 function dimension(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
@@ -61,7 +86,8 @@ function visitMedia(
       node.type === ATTACHMENT_NODE ||
       node.type === VIDEO_NODE ||
       node.type === IMAGE_NODE ||
-      node.type === YOUTUBE_NODE
+      node.type === YOUTUBE_NODE ||
+      node.type === MEDIA_NODE
     ) {
       visit(node.type, node.attrs ?? {});
     }
@@ -74,7 +100,15 @@ function visitAttachments(
   visit: (attributes: Record<string, unknown>) => void,
 ): void {
   for (const node of nodes) {
-    if (node.type === ATTACHMENT_NODE || node.type === VIDEO_NODE) visit(node.attrs ?? {});
+    if (
+      node.type === ATTACHMENT_NODE ||
+      node.type === VIDEO_NODE ||
+      // A media block holds bytes only when it names an id; a link image names an
+      // address and has nothing for a backup to copy.
+      (node.type === MEDIA_NODE && typeof node.attrs?.id === "string")
+    ) {
+      visit(node.attrs ?? {});
+    }
     if (node.content) visitAttachments(node.content, visit);
   }
 }
@@ -114,12 +148,7 @@ export function documentMedia(workspace: WorkspaceDocument): WorkspaceMediaItem[
               : typeof attributes.alt === "string"
                 ? attributes.alt
                 : null;
-        const kind: MediaKind =
-          type === YOUTUBE_NODE
-            ? "youtube"
-            : type === VIDEO_NODE || (mime?.startsWith("video/") ?? false)
-              ? "video"
-              : "image";
+        const kind = mediaKindOfNode(type, attributes, mime);
 
         byId.set(id, {
           id,

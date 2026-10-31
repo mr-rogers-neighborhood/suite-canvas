@@ -19,6 +19,11 @@ export const fieldKinds = [
   "checkbox",
   "card",
   "board",
+  // A card reference narrowed to a kind of card. The value is the same card id a
+  // `card` field holds; `allowedTypeIds` is what makes it a media or a sketch
+  // field, so the shape stays one thing and the rule stays data.
+  "media",
+  "sketch",
   // Composing kinds (ADR-0057):
   // a number with a presentation, a record, and an ordered repeatable.
   "rating",
@@ -148,6 +153,11 @@ export const fieldDefinitionSchema = z.object({
   itemKind: listItemKindSchema.optional(),
   /** For a `rating`: the scale top, half steps and icon set. Absent means 5 marks. */
   rating: ratingPresentationSchema.optional(),
+  /**
+   * Types the referenced card must be one of. Only meaningful on the narrowed
+   * card kinds; a field that names none narrows nothing.
+   */
+  allowedTypeIds: z.array(entityIdSchema).optional(),
 });
 
 /** A schema-bearing classification. Exactly one is primary on a card. */

@@ -33,6 +33,7 @@ export function LibraryHeader({
   selectableCount,
   selecting,
   onToggleSelecting,
+  onManageTypes,
   onCreateInInbox,
   trashCount,
   onEmptyTrash,
@@ -54,6 +55,8 @@ export function LibraryHeader({
   selectableCount: number;
   selecting: boolean;
   onToggleSelecting: () => void;
+  /** Opens the type editor. Absent on a surface where schema cannot be managed. */
+  onManageTypes?: (() => void) | undefined;
   onCreateInInbox: () => void;
   trashCount: number;
   onEmptyTrash: () => void;
@@ -183,6 +186,17 @@ export function LibraryHeader({
             onClick={onToggleSelecting}
           >
             Select
+          </button>
+        ) : null}
+        {onManageTypes ? (
+          <button
+            type="button"
+            data-testid="library-types"
+            className="library-action"
+            title="Rename types, add fields, set the default look and pick templates."
+            onClick={onManageTypes}
+          >
+            Types
           </button>
         ) : null}
         {tab === "inbox" ? (

@@ -72,6 +72,10 @@ export function ReaderChapter({
         const mark = (event.target as HTMLElement).closest("mark[data-annotation-id]");
         const id = mark?.getAttribute("data-annotation-id");
         if (id === null || id === undefined || id.length === 0) return;
+        // The default press begins the browser's own selection, and a drag then drags that selection across the
+        // shell: the reader ends up with half the window highlighted, which is both ugly and unrelated to what
+        // they were carrying.
+        event.preventDefault();
         onCarry(id, { x: event.clientX, y: event.clientY }, null);
       }}
       onClick={(event) => {

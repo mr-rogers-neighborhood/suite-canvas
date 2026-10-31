@@ -43,7 +43,7 @@ picker asks which kind, and the same upload puts the block where you asked: at t
 writing, or in a new card at the point you right-clicked. The card is made after you choose the file, so cancelling
 the dialog leaves nothing behind.
 
-On the card you get the cover: the title and author the book declares, its picture if it has one, and **Read**. The
+On the card you get the book itself: the cover fills it the way a picture fills an image card, with the title, the author and the chapter count beneath, and **Read** under those. A book whose bytes have not arrived yet shows an empty tile rather than a broken picture. The
 reading itself happens large, with the app's chrome still live around it — so a highlight can be carried out of the
 book and onto the board.
 

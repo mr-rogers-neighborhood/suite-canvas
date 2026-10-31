@@ -25,11 +25,16 @@ export function HighlightDropLayer() {
   useEffect(() => {
     if (carried === null) return;
     const up = (event: PointerEvent) => {
+      // The carry always ends here, whether or not the release lands on the board. A carry that outlives its own
+      // gesture is worse than a cancelled drag: the reader is stuck holding something they cannot put down, and the
+      // surface stays out of the way.
+      useHighlightDrag.getState().release();
       const boardId = useUiStore.getState().activeBoardId;
       if (workspace === null || boardId === null) return;
-      const overCanvas = document
-        .elementFromPoint(event.clientX, event.clientY)
-        ?.closest('[data-testid="canvas-board"], .react-flow');
+      const under = document.elementFromPoint(event.clientX, event.clientY);
+      const overCanvas = under?.closest(
+        '[data-testid="canvas-board"], .react-flow, .react-flow__pane, [data-board-id]',
+      );
       if (overCanvas === null || overCanvas === undefined) return;
       const annotation = workspace.getAnnotation(carried.annotationId);
       if (annotation === undefined) return;
@@ -45,7 +50,11 @@ export function HighlightDropLayer() {
       });
     };
     window.addEventListener("pointerup", up);
-    return () => window.removeEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
   }, [carried, workspace, screenToFlowPosition]);
 
   if (carried === null || screen === null) return null;

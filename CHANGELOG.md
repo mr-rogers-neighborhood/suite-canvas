@@ -2,6 +2,23 @@
 
 ### Added
 
+- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
+  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
+  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
+  not arrived shows an empty tile rather than a broken picture.
+
+### Fixed
+
+- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
+  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
+  focus surface lets the pointer through to the board underneath.
+- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
+  selection and the drag then dragged it across the window.
+
+## [Unreleased]
+
+### Added
+
 - A book can be uploaded: **New media → Book** on the canvas, or `/media` in a card body. The picker is now the one
   place a media kind is chosen and it serves two targets, so at a caret it inserts and on the canvas it makes a card
   at the point you pressed. The card is made after the file is chosen, so a cancelled dialog leaves nothing behind.
@@ -20,6 +37,23 @@
   permission check, the local copy and the relay attempt live in one place.
 - `WorkspaceDocument` gained `bodyNodes`, the reader's pair to `setBodyNodes`, so a surface can draw a block out of a
   body without mounting an editor.
+
+## [Unreleased]
+
+### Added
+
+- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
+  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
+  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
+  not arrived shows an empty tile rather than a broken picture.
+
+### Fixed
+
+- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
+  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
+  focus surface lets the pointer through to the board underneath.
+- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
+  selection and the drag then dragged it across the window.
 
 ## [Unreleased]
 
@@ -51,6 +85,23 @@
 
 ### Added
 
+- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
+  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
+  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
+  not arrived shows an empty tile rather than a broken picture.
+
+### Fixed
+
+- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
+  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
+  focus surface lets the pointer through to the board underneath.
+- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
+  selection and the drag then dragged it across the window.
+
+## [Unreleased]
+
+### Added
+
 - A book can be uploaded: **New media → Book** on the canvas, or `/media` in a card body. The picker is now the one
   place a media kind is chosen and it serves two targets, so at a caret it inserts and on the canvas it makes a card
   at the point you pressed. The card is made after the file is chosen, so a cancelled dialog leaves nothing behind.
@@ -69,6 +120,23 @@
   permission check, the local copy and the relay attempt live in one place.
 - `WorkspaceDocument` gained `bodyNodes`, the reader's pair to `setBodyNodes`, so a surface can draw a block out of a
   body without mounting an editor.
+
+## [Unreleased]
+
+### Added
+
+- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
+  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
+  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
+  not arrived shows an empty tile rather than a broken picture.
+
+### Fixed
+
+- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
+  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
+  focus surface lets the pointer through to the board underneath.
+- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
+  selection and the drag then dragged it across the window.
 
 ## [Unreleased]
 
@@ -84,6 +152,23 @@
 
 ### Added
 
+- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
+  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
+  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
+  not arrived shows an empty tile rather than a broken picture.
+
+### Fixed
+
+- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
+  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
+  focus surface lets the pointer through to the board underneath.
+- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
+  selection and the drag then dragged it across the window.
+
+## [Unreleased]
+
+### Added
+
 - A book can be uploaded: **New media → Book** on the canvas, or `/media` in a card body. The picker is now the one
   place a media kind is chosen and it serves two targets, so at a caret it inserts and on the canvas it makes a card
   at the point you pressed. The card is made after the file is chosen, so a cancelled dialog leaves nothing behind.
@@ -102,6 +187,23 @@
   permission check, the local copy and the relay attempt live in one place.
 - `WorkspaceDocument` gained `bodyNodes`, the reader's pair to `setBodyNodes`, so a surface can draw a block out of a
   body without mounting an editor.
+
+## [Unreleased]
+
+### Added
+
+- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
+  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
+  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
+  not arrived shows an empty tile rather than a broken picture.
+
+### Fixed
+
+- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
+  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
+  focus surface lets the pointer through to the board underneath.
+- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
+  selection and the drag then dragged it across the window.
 
 ## [Unreleased]
 
@@ -133,6 +235,23 @@
 
 ### Added
 
+- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
+  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
+  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
+  not arrived shows an empty tile rather than a broken picture.
+
+### Fixed
+
+- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
+  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
+  focus surface lets the pointer through to the board underneath.
+- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
+  selection and the drag then dragged it across the window.
+
+## [Unreleased]
+
+### Added
+
 - A book can be uploaded: **New media → Book** on the canvas, or `/media` in a card body. The picker is now the one
   place a media kind is chosen and it serves two targets, so at a caret it inserts and on the canvas it makes a card
   at the point you pressed. The card is made after the file is chosen, so a cancelled dialog leaves nothing behind.
@@ -151,6 +270,23 @@
   permission check, the local copy and the relay attempt live in one place.
 - `WorkspaceDocument` gained `bodyNodes`, the reader's pair to `setBodyNodes`, so a surface can draw a block out of a
   body without mounting an editor.
+
+## [Unreleased]
+
+### Added
+
+- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
+  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
+  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
+  not arrived shows an empty tile rather than a broken picture.
+
+### Fixed
+
+- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
+  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
+  focus surface lets the pointer through to the board underneath.
+- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
+  selection and the drag then dragged it across the window.
 
 ## [Unreleased]
 

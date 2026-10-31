@@ -121,10 +121,11 @@ function renderInlineChild(child: unknown, key: string): ReactNode {
 }
 
 /** Which renderer a media-ish block wants, without the editor's node factory. */
-function staticMediaKind(block: LoroMap, nodeName: string): "image" | "video" | "youtube" {
+function staticMediaKind(block: LoroMap, nodeName: string): "image" | "video" | "youtube" | "epub" {
   if (nodeName === "media") {
     const kind = getAttr(block, "kind");
-    return kind === "video" || kind === "youtube" ? kind : "image";
+    if (kind === "video" || kind === "youtube" || kind === "epub") return kind;
+    return "image";
   }
   if (nodeName === "image") return "image";
   if (nodeName === "video") return "video";
@@ -184,6 +185,22 @@ function renderMedia(block: LoroMap, key: string, nodeName: string): ReactNode {
         data-media-embed="youtube"
         className="my-1 aspect-video w-full rounded object-cover"
       />
+    );
+  }
+
+  if (kind === "epub") {
+    // A book has no picture to draw without reading its package, and this face is synchronous on purpose: it is
+    // what a board of forty cards draws before anyone clicks. So a book reads as a book — its name and its kind —
+    // and the cover, the chapters and Read are one press away in the card itself.
+    return (
+      <div
+        key={key}
+        data-media-book="epub"
+        className="attachment-chip my-1 inline-flex items-center gap-1.5 rounded border border-[var(--hairline,#e2e8f0)] bg-black/5 dark:bg-white/5 px-2 py-0.5 text-xs text-[var(--ink-muted)]"
+      >
+        <span aria-hidden="true">{"\u{1f4d6}"}</span>
+        <span className="truncate max-w-[200px]">{name || "Book"}</span>
+      </div>
     );
   }
 

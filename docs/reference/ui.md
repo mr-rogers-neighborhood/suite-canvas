@@ -32,7 +32,8 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Command palette | `apps/canvas/src/command/CommandPalette.tsx` | Navigation and actions from one query |
 | Presence | `apps/canvas/src/presence/` and `apps/canvas/src/cursor/` | Peer cursors, name tags, avatars and the status cursor |
 | Book reader | `apps/canvas/src/reader/BookReader.tsx` | An EPUB read large, in focus mode: contents, one chapter at a time, the highlight palette, and a press or a drag that promotes a highlight to a card |
-| Book cover | `apps/canvas/src/editor/BookView.tsx` | The block in the card body: the title, author and cover the package declares, and **Read** |
+| Book card | `apps/canvas/src/cards/BookCardFace.tsx` | The card on the canvas: the cover filling it, the title, author and chapter count, and **Read** |
+| Book block | `apps/canvas/src/editor/BookView.tsx` | The block itself, for a card that holds a book among other content: the same cover, details and **Read** |
 | Media picker | `apps/canvas/src/editor/MediaPickerHost.tsx` | The one table of media kinds, applied to an editor target or a board target |
 | Handbook | `apps/canvas/src/handbook/HandbookBubble.tsx` | The contextual article list, the article, its spotlight and the feedback form, in one shell float. **Shut** (see below) |
 | Account | `apps/canvas/src/auth/SignInEntry.tsx` and `AccountPanel.tsx` | Sign in or the account menu, and one dialog for the account, members, devices and the plan |
@@ -321,6 +322,12 @@ resolver: three passes, most specific first, with ambiguity reported rather than
 `annotationStyles` are document roots; a medium registers through `AnnotationMedium` so the PDF and video work are
 a module each. Promotion (`reader/promote.ts`) makes an ordinary card holding a read-only `annotation` property
 whose value is `{ annotationId }`.
+
+**A book card draws itself.** `NodeCard` branches to `BookCardFace` for a card holding a book, the way it branches
+to `ViewCardFace` for a view. The cover is extracted once per session by `reader/bookCoverCache.ts` and published to a
+store the face subscribes to: a face draws synchronously and a board of forty of them must not open forty archives
+before first paint, so the tile appears, then the picture. Read is a `nodrag nopan` press on the card, because a node
+is otherwise a drag surface.
 
 **The block is a cover; reading is a surface.** `BookView` reads only the package (title, author, declared cover)
 and offers Read; `CardFocusHost` branches to `BookFocus` for a card holding a book, as it already branches to

@@ -45,7 +45,26 @@ export function beginHighlightDrag(
 ): void {
   const store = useHighlightDrag.getState();
   let carrying = false;
+  const root = document.documentElement;
 
+  // A drag that crosses a dozen surfaces must not be a text selection on any of them. The attribute is the same
+  // trick a resize handle uses: one rule on the root, removed on release however the gesture ended.
+  const beginCarry = () => {
+    root.dataset.carryingHighlight = "true";
+    store.carry(annotationId);
+  };
+
+  const finish = (event: PointerEvent) => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", finish);
+    window.removeEventListener("pointercancel", finish);
+    delete root.dataset.carryingHighlight;
+    const dragging = useHighlightDrag.getState().carried !== null;
+    useHighlightDrag.getState().release();
+    // A press that never became a drag is a press on the mark, which the mark's own handler answers.
+    if (!dragging || onDrop === null) return;
+    onDrop(annotationId, { x: event.clientX, y: event.clientY });
+  };
   const move = (event: PointerEvent) => {
     if (!carrying) {
       const far =
@@ -53,21 +72,14 @@ export function beginHighlightDrag(
         Math.abs(event.clientY - start.y) > HIGHLIGHT_DRAG_THRESHOLD;
       if (!far) return;
       carrying = true;
-      store.carry(annotationId);
+      beginCarry();
     }
     useHighlightDrag.getState().move({ x: event.clientX, y: event.clientY });
   };
 
-  const up = (event: PointerEvent) => {
-    window.removeEventListener("pointermove", move);
-    window.removeEventListener("pointerup", up);
-    const dragging = useHighlightDrag.getState().carried !== null;
-    useHighlightDrag.getState().release();
-    // A press that never became a drag is a press on the mark, which the mark's own handler answers.
-    if (!dragging || onDrop === null) return;
-    onDrop(annotationId, { x: event.clientX, y: event.clientY });
-  };
-
   window.addEventListener("pointermove", move);
-  window.addEventListener("pointerup", up);
+  window.addEventListener("pointerup", finish);
+  // A gesture can also end without a release — a system dialog, a lost window. The carry is cleared either way,
+  // because a reader stuck with a ghost they cannot put down is worse than a cancelled drag.
+  window.addEventListener("pointercancel", finish);
 }

@@ -336,10 +336,17 @@
 .card-focus[data-concealed="true"] {
   transform: translateY(calc(100% - 56px));
   opacity: 0.35;
-  pointer-events: none;
   transition:
     transform 140ms ease-out,
     opacity 140ms ease-out;
+}
+
+/*
+ * Nothing inside a concealing surface may answer a pointer, or the drop would hit the book instead of the board
+ * underneath it. Inherited, and stated for children as well because a `pointer-events` of their own would win.
+ */
+.card-focus[data-concealed="true"] * {
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -369,4 +376,106 @@
 
 .reader-highlight:hover {
   filter: brightness(0.97);
+}
+
+/* ---------- A book card on the canvas: the cover is the card ---------- */
+
+.book-card {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+/*
+ * The cover fills what the card is: an image card draws its picture this way, and a book is the same shape of thing.
+ * `cover` rather than `contain` because a jacket is a picture with its own proportions; the box is what the card owns.
+ */
+.book-card-art {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--segmented-bg);
+  color: var(--ink-muted);
+}
+
+.book-card-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.book-card-placeholder {
+  font-size: 34px;
+  opacity: 0.5;
+}
+
+.book-card-text {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 2px 4px;
+}
+
+.book-card-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.book-card-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+
+.book-card-read {
+  flex: none;
+  margin: 0 2px 2px;
+  padding: 3px 10px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.book-card-read:hover {
+  background: color-mix(in srgb, var(--ink) 88%, black);
+}
+
+.book-card-read:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * Carrying a highlight suspends selection everywhere.
+ *
+ * The press that starts the drag is a press on text, and without this the browser selects as the pointer travels:
+ * the reader ends up with the shell highlighted, which looks like a bug because it is one.
+ */
+[data-carrying-highlight="true"],
+[data-carrying-highlight="true"] body {
+  cursor: grabbing;
+}
+
+[data-carrying-highlight="true"] .reader-chapter,
+[data-carrying-highlight="true"] .book-card {
+  user-select: none;
 }

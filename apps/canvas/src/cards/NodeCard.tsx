@@ -13,7 +13,10 @@ import { ContextMenu, type ContextMenuItem } from "../dialogs/ContextMenu";
 import { IconGlyph } from "../icons/IconGlyph";
 import { PeerNameTag } from "../presence/PeerNameTag";
 import { PresenceAvatars } from "../presence/PresenceAvatars";
+import { isBookCard } from "../reader/isBookCard";
 import type { InteractionMode } from "../store/interactionMode";
+import { useCanvasStore } from "../store/useCanvasStore";
+import { BookCardFace } from "./BookCardFace";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import type { CardMeta } from "./cardMeta";
 import { StaticCardFace, StaticCardTitle } from "./StaticCardFace";
@@ -210,7 +213,10 @@ function CardBodyArea({
   onBlur,
   onOpenCardPanel,
 }: CardBodyAreaProps) {
+  const workspace = useCanvasStore((state) => state.workspace);
   if (isViewCard(card)) return <ViewCardFace card={card} />;
+  // A book card draws itself: the cover, what the book says about it, and Read. Same arrangement as a view card.
+  if (isBookCard(workspace, card.id)) return <BookCardFace card={card} />;
   // A pinned card keeps the one editor, in the shell, so the board holds a static face.
   if (editing === "body" && contentId !== null && contentId !== undefined && !pinned) {
     return (

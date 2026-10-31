@@ -33,6 +33,8 @@ Marks are the Tiptap defaults: `bold`, `italic`, `strike`, `code`, `link`, `unde
 
 `apps/canvas/src/cards/formatCommands.ts` holds `FORMAT_COMMANDS`, and every formatting control draws from it: bold, italic, strikethrough, six heading levels, two lists, quote, code block and divider. Each entry carries its glyph, its name, its `/` keywords, its Tiptap command and the predicate that decides whether it is pressed where the caret sits.
 
+`formatMenus()` is the view the two rows draw. It folds the six heading commands into one `Heading` entry (`HEADING_MENU`) that carries the levels plus `PARAGRAPH_COMMAND`, and leaves every other command as its own entry in table order. The table stays the source, so a command added to it still appears, and the heading entry is the one place a menu is deeper than a row. The paragraph command is deliberately not in `FORMAT_COMMANDS`: it is the heading menu's way out, not a seventh button.
+
 The table exists because the three surfaces had drifted. The `/` menu offered six heading levels, a quote, a code block and a divider; the toolbar offered three levels and no quote; the bubble inherited whatever the toolbar had. A command available in one place and missing from another is a question the reader has to answer twice, so the renderers became readers of the table instead:
 
 | Surface | File | Placement |
@@ -85,7 +87,9 @@ Three row kinds exist. A card inserts a `mention`; a field of the card being edi
 
 There is no Tour step row while tours are paused. The `tourStep` node, its schema entry and `presentTour` all stay; only the menu row that advertised a paused feature is gone, and the block can still be inserted directly.
 
-A heading row converts rather than toggles: `/h1` inside an H1 keeps it an H1, where the toolbar button removes the level. That is the one place the two behaviours differ, and it is `slashRun` on the table entry.
+Headings are one row, not six. `/h1` still finds it, because the row carries every level's keywords, and Enter applies the level the query names, so a reader who typed `/h3` never opens a menu. A query that names no level (`/heading`) or a click on the row opens the levels in place: Paragraph, then H1 to H6. The levels expand under the row rather than in a flyout, because the suggestion plugin keeps focus in the editor and a second listbox would have no focus of its own, so its rows could be seen but not announced. ArrowRight opens them, ArrowLeft or Escape closes them, and arrow keys then move between levels while Enter applies one.
+
+The toolbar collapses the same group into one `Heading` button that shows the level the caret is in (`H2`, or `Text`) and opens a `role="menu"` of the same seven rows, each marked `aria-checked`. Choosing a level **sets** it rather than toggling it, in both surfaces: choosing H2 while in an H2 means "make this an H2", and Paragraph is how a reader leaves. That is `slashRun` on the table entry, which is why the two surfaces now agree about a level the caret is already in.
 
 Each row runs a command against the current block after deleting the typed `/query`, so the query never becomes text. The menu keeps the editor's selection while a row is clicked: `onMouseDown` on the list calls `preventDefault`, because a focus change would collapse the range the command needs.
 

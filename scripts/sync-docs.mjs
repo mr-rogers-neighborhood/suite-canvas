@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Mirrors `docs/` into `apps/docs/src/content/docs/` for the Starlight site.
+ * Mirrors `docs/` into `apps/docs/src/content/docs/` for the Fumadocs site.
  *
  * The repository's Markdown is plain (`docs/README.md`, no frontmatter), while
- * Starlight's content collection requires a `title` and a `slug`-shaped path.
+ * a Fumadocs page needs a `title`, a `description` and a place in a sidebar.
  * So this script is the adapter: it copies the tree, injects the frontmatter
  * the site needs, and rewrites the links a browser cannot resolve.
  *
@@ -18,11 +18,11 @@
  *      site has no page for them.
  *   5. HTML comments are dropped; they carry no published meaning.
  *
- * The sidebar is `sidebar` in `apps/docs/astro.config.mjs`: Starlight
- * autogenerates a group per section directory, so the `meta.json` files the
- * Fumadocs build needed are gone. The two frontmatter keys that carry site
- * meaning are `lastModified`, which the dashboard sorts by, and `sidebar.order`,
- * which lifts a section's index page above its articles.
+ * The sidebar is generated as `_meta.json` per directory, because that is what
+ * Fumadocs reads: the sections in their authored order, a section's index page
+ * first, and every other page in file order. The one frontmatter key the site
+ * adds beyond `title` and `description` is `lastModified`, which the portal
+ * sorts by.
  *
  * The output is a pure function of `docs/`: the target is deleted first, entries
  * are walked in sorted order, and nothing is read from the previous run.
@@ -41,7 +41,7 @@ const contentDir = join(root, "apps/docs/src/content/docs");
 
 const GITHUB_BLOB = "https://github.com/mr-rogers-neighborhood/suite-canvas/blob/main/";
 const GITHUB_TREE = "https://github.com/mr-rogers-neighborhood/suite-canvas/tree/main/";
-const GITHUB_EDIT = "https://github.com/mr-rogers-neighborhood/suite-canvas/edit/main/";
+const _GITHUB_EDIT = "https://github.com/mr-rogers-neighborhood/suite-canvas/edit/main/";
 
 /** Per-machine files that must not be published. */
 const SKIPPED = new Set(["scratchpad.md"]);
@@ -67,14 +67,48 @@ const DESCRIPTION_LIMIT = 160;
  * The site path of a folder's index page. `/` is the dashboard, so the root
  * README is published as `/overview`; every other folder keeps `index.md`.
  */
-function indexPath(folder) {
-  return folder === "" ? "overview.md" : `${folder}/index.md`;
+function _indexPath(folder) {
+  return folder === "" ? "overview.mdx" : `${folder}/index.mdx`;
 }
 
 /** Where a page lands under `apps/docs/src/content/docs`. */
 function targetPath(rel) {
-  if (rel === "README.md") return "overview.md";
-  return rel.replace(/(^|\/)README\.md$/, "$1index.md");
+  if (rel === "README.md") return "overview.mdx";
+  return rel.replace(/(^|\/)README\.md$/, "$1index.mdx").replace(/\.md$/, ".mdx");
+}
+
+/**
+ * Makes a page safe to parse as MDX.
+ *
+ * Fumadocs renders MDX, and MDX treats `<` and `{` as the start of JSX: an autolink written as
+ * `<https://example.com>` and a brace in prose both fail the build rather than rendering. Autolinks
+ * become ordinary Markdown links (the same thing the reader saw), and anything left is escaped —
+ * outside code fences and inline code, where escaping would change what the code says.
+ */
+function mdxSafe(body) {
+  const lines = body.split("\n");
+  let fenced = false;
+  return lines
+    .map((line) => {
+      if (/^\s*(```|~~~)/.test(line)) {
+        fenced = !fenced;
+        return line;
+      }
+      if (fenced) return line;
+      return line
+        .split(/(`[^`]*`)/)
+        .map((part, index) =>
+          index % 2 === 1
+            ? part
+            : part
+                .replace(/<((?:https?|mailto):[^>\s]+)>/g, "[$1]($1)")
+                .replace(/</g, "\\<")
+                .replace(/\{/g, "\\{")
+                .replace(/\}/g, "\\}"),
+        )
+        .join("");
+    })
+    .join("\n");
 }
 
 /**
@@ -102,8 +136,8 @@ async function walk(dir, prefix = "") {
 }
 
 /**
- * Copy every non-Markdown file next to the pages. Starlight resolves a relative
- * `src` against the page's file, so the copy is what makes an image load.
+ * Copy every non-Markdown file next to the pages. A relative `src` resolves
+ * against the page's file, so the copy is what makes an image load.
  */
 async function copyAssets(prefix = "") {
   const entries = await readdir(join(sourceDir, prefix), { withFileTypes: true });
@@ -248,7 +282,9 @@ function rewriteHref(href, rel, files, dirs) {
     const folder = internal.replace(/\/$/, "");
     const prefix = folder === "" ? "" : `${folder}/`;
     if (files.has(`${prefix}README.md`) || files.has(`${prefix}index.md`)) {
-      return withHash(relativeHref(baseDir, indexPath(folder)), hash);
+      // The site serves a folder's index at the folder's own URL, which is the shape Fumadocs
+      // and every static host agree on. A relative `.md` would be a path that only exists here.
+      return withHash(folder === "" ? "/docs/" : `/docs/${folder}/`, hash);
     }
     // A folder with no index page has no URL on the site; point at the source.
     const target = folder === "" ? "docs" : `docs/${folder}`;
@@ -256,12 +292,12 @@ function rewriteHref(href, rel, files, dirs) {
   }
 
   if (internal.endsWith(".md")) {
-    const file =
-      posix.basename(internal) === "README.md"
-        ? `${posix.dirname(internal)}/index.md`.replace(/^\.\//, "")
-        : internal;
     if (!files.has(internal)) return href;
-    return withHash(relativeHref(baseDir, file), hash);
+    const slug =
+      posix.basename(internal) === "README.md"
+        ? posix.dirname(internal)
+        : internal.replace(/\.md$/, "").replace(/\/index$/, "");
+    return withHash(slug === "" ? "/docs/" : `/docs/${slug}/`, hash);
   }
 
   // A non-Markdown file next to the pages (an image, a fixture) keeps its href:
@@ -269,7 +305,7 @@ function rewriteHref(href, rel, files, dirs) {
   return href;
 }
 
-function relativeHref(fromDir, target) {
+function _relativeHref(fromDir, target) {
   const relative = posix.relative(fromDir, target);
   return relative.startsWith(".") ? relative : `./${relative}`;
 }
@@ -297,23 +333,15 @@ function rewriteLinks(body, rel, files, dirs) {
 }
 
 /**
- * The frontmatter the site adds to one page: the title and description Starlight
- * needs, the date the dashboard sorts by, the sidebar position of a section
- * index, and the GitHub edit target for a page whose file is a `README.md`.
+ * The frontmatter the site adds to one page: the title and description a
+ * Fumadocs page needs, and the date the portal sorts by.
  */
-function siteFields(rel, title, description, modified) {
+function siteFields(_rel, title, description, modified) {
+  // The sidebar order lives in the generated `_meta.json` files now, so a page's frontmatter
+  // carries only what the page itself says.
   const fields = [`title: ${yamlString(title)}`];
   if (description !== undefined) fields.push(`description: ${yamlString(description)}`);
   fields.push(`lastModified: ${yamlString(modified)}`);
-  if (posix.basename(rel) === "README.md") {
-    fields.push(`editUrl: ${yamlString(`${GITHUB_EDIT}docs/${rel}`)}`);
-  }
-  // A section's index page leads its group, and the group already carries the
-  // section name, so the sidebar entry says what the page is rather than
-  // repeating the heading above it.
-  if (posix.basename(rel).replace(/\.md$/, "") === "index") {
-    fields.push('sidebar: { label: "Overview", order: 0 }');
-  }
   return fields;
 }
 
@@ -375,11 +403,59 @@ await mkdir(contentDir, { recursive: true });
 
 for (const rel of files) {
   const source = await readFile(join(sourceDir, rel), "utf8");
-  const page = rewriteLinks(convertPage(source, rel, lastModified(rel)), rel, fileSet, dirSet);
+  const page = mdxSafe(
+    rewriteLinks(convertPage(source, rel, lastModified(rel)), rel, fileSet, dirSet),
+  );
   const target = join(contentDir, targetPath(rel));
   await mkdir(dirname(target), { recursive: true });
   await writeFile(target, page, "utf8");
 }
+
+/**
+ * The sidebar, as data: Fumadocs reads a `_meta.json` per directory, so the order of the sections
+ * and of the pages inside them is a file the build can diff rather than configuration.
+ */
+const SECTION_ORDER = ["tutorials", "how-to", "reference", "explanation"];
+
+function sectionTitle(name) {
+  return name === "how-to" ? "How-to" : name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+async function writeMeta() {
+  const rootPages = ["overview", ...SECTION_ORDER.filter((name) => dirSet.has(name))];
+  await writeFile(
+    join(contentDir, "_meta.json"),
+    `${JSON.stringify({ title: "Developer documentation", pages: rootPages }, null, 2)}\n`,
+    "utf8",
+  );
+
+  for (const dir of dirs) {
+    if (!dir) continue;
+    const prefix = `${dir}/`;
+    const pages = files
+      .filter((rel) => rel.startsWith(prefix) && !rel.slice(prefix.length).includes("/"))
+      .map((rel) => posix.basename(targetPath(rel)).replace(/\.mdx$/, ""))
+      .sort((left, right) => {
+        // A section's index page leads it, and a numbered file keeps its authored order.
+        if (left === "index") return -1;
+        if (right === "index") return 1;
+        return left.localeCompare(right);
+      });
+    const nested = dirs
+      .filter(
+        (candidate) =>
+          candidate.startsWith(prefix) && !candidate.slice(prefix.length).includes("/"),
+      )
+      .map((candidate) => posix.basename(candidate));
+    await writeFile(
+      join(contentDir, dir, "_meta.json"),
+      `${JSON.stringify({ title: sectionTitle(posix.basename(dir)), pages: [...pages, ...nested] }, null, 2)}\n`,
+      "utf8",
+    );
+  }
+}
+
+await writeMeta();
 
 const assets = await copyAssets("");
 

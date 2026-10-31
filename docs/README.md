@@ -16,6 +16,20 @@ edges. [CHANGELOG.md](../CHANGELOG.md) lists what each version changes.
 
 Start with [Run Suite locally](tutorials/run-locally.md) if this is your first checkout.
 
+## Two entrances
+
+The docs site has two front doors, because it has two readers.
+
+| Entrance | Source | For |
+| --- | --- | --- |
+| Developer documentation | `docs/` (this page's tree) | Building, running, deploying and changing Suite |
+| User handbook | `handbook/` | Using the interface: one article per element, menu, system and sub-system |
+
+`docs/` stays developer documentation and never bleeds into the handbook; `handbook/` is the same
+Markdown the app's own handbook shows, so an article written for a reader of the product is also a
+page of the site. The portal at the site root links to both, and neither appears in the other's
+sidebar.
+
 Each section index lists its pages newest first. The docs site adds full-text search, a tabbed
 dashboard, and LLM endpoints:
 
@@ -24,8 +38,8 @@ pnpm docs:site        # http://localhost:3001
 pnpm docs:site:build  # production build
 ```
 
-`/llms.txt` is the summary an agent reads first, `/llms-full.txt` is every page, and any page is
-available as Markdown by dropping the trailing slash from its URL and appending `.md`.
+`/llms.txt` is the summary an agent reads first, `/llms-full.txt` is every page in both spaces, and any
+page is available as Markdown by dropping the trailing slash from its URL and appending `.md`.
 
 ## Elsewhere in the repository
 

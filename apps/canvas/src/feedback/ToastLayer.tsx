@@ -98,6 +98,7 @@ export function ToastLayer() {
     <section
       className="toast-layer"
       data-testid="toast-layer"
+      data-handbook-region="toast-layer"
       data-reduced={reduced ? "true" : undefined}
       data-inspector={inspectorOpen ? "open" : undefined}
       // A named region rather than a second live region: the announcements ride

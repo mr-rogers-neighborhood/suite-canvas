@@ -1,45 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CardBodyEditor } from "../cards/CardBodyEditor";
 import { StaticCardTitle } from "../cards/StaticCardFace";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { type PinRect, usePinStore } from "../store/pinStore";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
-import { type FloatRect, planFloats } from "./floatPlan";
-
-/** The chrome a pin must not sit under, in the same order the floats are laid out. */
-const SHELL_SELECTORS = [
-  '[data-testid="title-bar"]',
-  '[data-testid="dock"]',
-  '[data-testid="card-inspector"]',
-];
-
-/** What the shell measures now, in viewport coordinates. */
-function shellObstacles(): FloatRect[] {
-  const found: FloatRect[] = [];
-  for (const [index, selector] of SHELL_SELECTORS.entries()) {
-    const element = document.querySelector(selector);
-    if (!element) continue;
-    const rect = element.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) continue;
-    found.push({
-      id: `shell-${String(index)}`,
-      x: rect.left,
-      y: rect.top,
-      width: rect.width,
-      height: rect.height,
-    });
-  }
-  return found;
-}
-
-interface Gesture {
-  readonly cardId: string;
-  readonly mode: "move" | "resize";
-  readonly startX: number;
-  readonly startY: number;
-  readonly rect: PinRect;
-}
+import { useFloatGesture } from "./floatGesture";
+import { planFloats } from "./floatPlan";
+import { shellBounds, shellObstacles } from "./shellObstacles";
 
 /**
  * The cards a reader pinned to the shell.
@@ -61,7 +29,6 @@ export function PinnedCards() {
   const workspace = useCanvasStore((state) => state.workspace);
   const localUser = usePresenceStore((state) => state.localUser);
   const snapshot = useWorkspaceSnapshot();
-  const gesture = useRef<Gesture | null>(null);
   const [rolled, setRolled] = useState<readonly string[]>([]);
 
   /** Settle the pins around the chrome, the way the board settles cards around each other. */
@@ -75,7 +42,7 @@ export function PinnedCards() {
     const plan = planFloats({
       moving,
       obstacles: shellObstacles(),
-      bounds: { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight },
+      bounds: shellBounds(),
     });
     // The plan names its rects by position in the pinned order, so the ids line up again
     // here rather than being tracked through the solver.
@@ -93,43 +60,19 @@ export function PinnedCards() {
     return () => window.removeEventListener("resize", settle);
   }, [settle, pinned.length]);
 
-  useEffect(() => {
-    const move = (event: PointerEvent) => {
-      const current = gesture.current;
-      if (!current) return;
-      const dx = event.clientX - current.startX;
-      const dy = event.clientY - current.startY;
-      const next =
-        current.mode === "move"
-          ? { ...current.rect, x: current.rect.x + dx, y: current.rect.y + dy }
-          : {
-              ...current.rect,
-              width: Math.max(180, current.rect.width + dx),
-              height: Math.max(80, current.rect.height + dy),
-            };
-      setRect(current.cardId, next);
-    };
-    const up = () => {
-      if (gesture.current === null) return;
-      gesture.current = null;
-      // A pin dropped somewhere illegal is settled on release rather than while it moves:
-      // fighting the solver under the pointer would feel like the card is alive.
-      settle();
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
-    return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-    };
-  }, [setRect, settle]);
+  const gesture = useFloatGesture({
+    onMove: (cardId, rect) => setRect(cardId, rect),
+    onEnd: settle,
+  });
 
   if (pinned.length === 0 || workspace === null) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-[40]" data-testid="pinned-cards">
+    <div
+      className="pointer-events-none fixed inset-0 z-[40]"
+      data-testid="pinned-cards"
+      data-handbook-region="pinned-cards"
+    >
       {pinned.map((cardId) => {
         const rect = rects[cardId];
         const card = snapshot.cards.find((entry) => entry.id === cardId);
@@ -159,13 +102,7 @@ export function PinnedCards() {
                 const target = event.target as HTMLElement;
                 if (target.closest("button")) return;
                 event.preventDefault();
-                gesture.current = {
-                  cardId,
-                  mode: "move",
-                  startX: event.clientX,
-                  startY: event.clientY,
-                  rect,
-                };
+                gesture.start(event, { id: cardId, rect, mode: "move" });
               }}
               // Fold and unfold from the header, which is also the drag handle: move and
               // fold are then two gestures with one home each, never the same press.
@@ -235,13 +172,7 @@ export function PinnedCards() {
                   if (event.button !== 0) return;
                   event.preventDefault();
                   event.stopPropagation();
-                  gesture.current = {
-                    cardId,
-                    mode: "resize",
-                    startX: event.clientX,
-                    startY: event.clientY,
-                    rect,
-                  };
+                  gesture.start(event, { id: cardId, rect, mode: "resize" });
                 }}
                 className="absolute right-0 bottom-0 h-3 w-3 cursor-nwse-resize rounded-tl border-t border-l border-[var(--hairline)] bg-[var(--surface)]"
                 style={{ touchAction: "none" }}

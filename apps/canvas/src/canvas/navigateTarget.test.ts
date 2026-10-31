@@ -150,6 +150,10 @@ describe("planNavigation", () => {
   it("returns null for a link that does not exist", () => {
     expect(planNavigation({ kind: "link", id: "e9" }, scene())).toBeNull();
   });
+
+  it("returns null for a region of the shell, which is never somewhere to fly to", () => {
+    expect(planNavigation({ kind: "ui", id: "title-bar" }, scene())).toBeNull();
+  });
 });
 
 describe("targetOfFocus", () => {

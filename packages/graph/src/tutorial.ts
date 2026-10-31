@@ -202,6 +202,10 @@ export function isDeadTarget(target: Target, exists: TargetExistence): boolean {
       return !exists.section(target.id);
     case "link":
       return !exists.link(target.id);
+    case "ui":
+      // A region of the shell is not in the document, so it cannot be removed from it.
+      // A step naming one is a handbook pointer, not a tour anchor.
+      return false;
   }
 }
 

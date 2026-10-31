@@ -7,6 +7,7 @@ import {
   tourSteps,
 } from "@suite/graph";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { targetElement } from "../canvas/targetElement";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
@@ -59,23 +60,6 @@ function sameBox(left: Box | null, right: Box | null): boolean {
   );
 }
 
-/** The element a target names, or null when nothing on screen stands for it. */
-function targetElement(target: Target | null): Element | null {
-  if (!target) return null;
-  const id = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(target.id) : target.id;
-  switch (target.kind) {
-    case "card":
-      return document.querySelector(`[data-node-id="${id}"]`);
-    case "section":
-      return document.querySelector(`[data-testid="section-region-${id}"]`);
-    case "link":
-      return document.querySelector(`[data-id="${id}"]`);
-    case "board":
-      // A board is the surface itself; there is nothing to outline on it.
-      return null;
-  }
-}
-
 /**
  * Moves the camera to a step's stored viewport through the existing request
  * channel (ADR-0058);
@@ -113,6 +97,10 @@ function boardOfTarget(
         workspace.listPlacements().find((placement) => placement.cardId === target.id)?.boardId ??
         null
       );
+    case "ui":
+      // A region of the shell is on whatever board is in front of the reader, so a step
+      // naming one never needs a board switch.
+      return null;
   }
 }
 
@@ -244,6 +232,7 @@ function TourOverlay({ tutorialId }: { tutorialId: string }) {
     <section
       className="tour-overlay"
       data-testid="tour-overlay"
+      data-handbook-region="tour-overlay"
       data-tutorial-id={tutorialId}
       data-step={index}
       ref={host}

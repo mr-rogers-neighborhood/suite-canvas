@@ -9,6 +9,36 @@ A release is the commit a `v*` tag points at. The image built for that tag is
 `ghcr.io/<owner>/suite:v<version>`; the digest recorded in the release notes is
 the artifact to roll back to. See [docs/how-to/release.md](docs/how-to/release.md).
 
+## [Unreleased]
+
+### Added
+
+- A handbook inside the app: a float in the corner of the board that lists the articles matching what is
+  on screen, counts the things they document, and points a line at the element an article is about.
+  It ships behind a development flag while the surface is rough; a production build keeps the
+  floating explain panel, so `explain` always has somewhere to send its answer.
+  Resting on a row outlines its subject; opening the article keeps the outline, and a subject that is
+  not on this board is opened only on a press.
+- `explain` now has somewhere to send its answer. The gathered context renders inside the handbook,
+  a single selected thing jumps to its article, several leave the list filtered, and **Point at
+  something** turns the next click into a target, including a region of the shell.
+- The articles are Markdown in `handbook/`, one per user-facing element and system, rendered by
+  `scripts/sync-handbook.mjs` into the app and into the docs site from the same source. The generator
+  refuses an article naming an unknown region of the interface, and a documented region with no
+  article.
+- The docs site has two entrances, developer documentation and the user handbook, and is built on
+  Fumadocs rather than Starlight.
+- Feedback is part of the handbook: the same form the launcher uses files a message against the article
+  it was opened from, with the article's title attached.
+
+### Changed
+
+- The saved-views menu always offers **New view…**, including from an unfiltered library, and the bar
+  sits after the outline toggle and before search.
+- The six heading commands are one accessible menu in the toolbar and one row in the `/` menu. Choosing
+  a level sets it rather than toggling it, and `/h3` still applies H3 without opening the menu.
+- Pins and the handbook share one drag and resize gesture, and one list of shell obstacles.
+
 ## [0.1.0-alpha.1] - 2026-10-29
 
 The first public release of Suite. The product is the one the hosted deployment runs; what this

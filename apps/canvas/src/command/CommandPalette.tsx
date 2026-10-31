@@ -85,6 +85,7 @@ export function CommandPalette({ items, onClose }: CommandPaletteProps) {
         aria-modal="true"
         aria-label="Command palette"
         data-testid="command-palette"
+        data-handbook-region="command-palette"
         tabIndex={-1}
         onKeyDown={onKeyDown}
         className="relative w-[min(560px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] shadow-2xl outline-none"

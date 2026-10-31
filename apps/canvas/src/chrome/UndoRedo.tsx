@@ -27,7 +27,11 @@ export function UndoRedo() {
   };
 
   return (
-    <span className="flex shrink-0 items-center" data-testid="nav-history">
+    <span
+      className="flex shrink-0 items-center"
+      data-testid="nav-history"
+      data-handbook-region="undo-redo"
+    >
       <button
         type="button"
         data-testid="nav-undo"

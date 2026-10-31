@@ -1,0 +1,50 @@
+[
+  {
+    "id": "getting-around",
+    "title": "Getting around",
+    "order": 10,
+    "description": "The shape of a workspace: boards, the dock, the library, and how the camera and selection behave."
+  },
+  {
+    "id": "chrome",
+    "title": "Title bar and controls",
+    "order": 20,
+    "description": "Everything along the top of the window, and the controls that sit beside the board name."
+  },
+  {
+    "id": "boards",
+    "title": "Boards and sections",
+    "order": 30,
+    "description": "Boards hold the layout; sections group it. Portals move you between boards."
+  },
+  {
+    "id": "cards",
+    "title": "Cards",
+    "order": 40,
+    "description": "Writing, types, properties, media, mentions and links."
+  },
+  {
+    "id": "library",
+    "title": "The library",
+    "order": 50,
+    "description": "Every card, board and trashed record in one list, with search, facets and saved views."
+  },
+  {
+    "id": "panels",
+    "title": "Panels and overlays",
+    "order": 60,
+    "description": "The inspector, the command palette, hover peeks, pins, toasts and the handbook itself."
+  },
+  {
+    "id": "collaboration",
+    "title": "People and sync",
+    "order": 70,
+    "description": "Cursors, presence, saving, offline behaviour and what a share link shows."
+  },
+  {
+    "id": "account",
+    "title": "Account and plans",
+    "order": 80,
+    "description": "Signing in, membership, devices and the plan that keeps a workspace in an account."
+  }
+]

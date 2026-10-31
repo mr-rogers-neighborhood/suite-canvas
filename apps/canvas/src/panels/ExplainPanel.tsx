@@ -7,6 +7,11 @@ import { useWorkspaceSnapshot } from "../store/workspaceStore";
 export interface ExplainPanelProps {
   /** Defaults to the live selection and document; tests inject their own. */
   context?: ExplainContext | undefined;
+  /**
+   * `floating` stands on its own over the board; `embedded` renders inside the handbook,
+   * which is where explain mode's answer now lives.
+   */
+  variant?: "floating" | "embedded";
 }
 
 /**
@@ -22,7 +27,7 @@ export interface ExplainPanelProps {
  * It is deliberately *not* an inspector: the inspector is about one thing and this is
  * about a set, which is why it stands on its own and disappears with the purpose.
  */
-export function ExplainPanel({ context }: ExplainPanelProps) {
+export function ExplainPanel({ context, variant = "floating" }: ExplainPanelProps) {
   const purpose = useUiStore((state) => state.purpose);
   const selectedIds = useUiStore((state) => state.selectedNodeIds);
   const snapshot = useWorkspaceSnapshot();
@@ -45,9 +50,10 @@ export function ExplainPanel({ context }: ExplainPanelProps) {
   const model = context ?? live;
 
   return (
-    <aside
-      className="explain-panel"
+    <section
+      className={variant === "embedded" ? "explain-panel explain-panel--embedded" : "explain-panel"}
       data-testid="explain-panel"
+      data-variant={variant}
       aria-label="Context"
       // The canvas claims pointerdown for panning and selection; a panel over it has to
       // say that a press here is not a press on the canvas.
@@ -118,6 +124,6 @@ export function ExplainPanel({ context }: ExplainPanelProps) {
       <p className="explain-panel__note" data-testid="explain-footer">
         Read-only: the context is what you selected. Saving it as a view is its own gate.
       </p>
-    </aside>
+    </section>
   );
 }

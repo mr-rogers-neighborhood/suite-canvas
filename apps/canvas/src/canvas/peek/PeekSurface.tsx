@@ -31,6 +31,7 @@ export function PeekSurface({ peek, onOpen, onEnter, onLeave }: PeekSurfaceProps
     <div
       className="fixed z-50 flex max-w-[280px] flex-col gap-1 rounded-xl border border-[var(--hairline)] bg-[var(--surface)] px-3 py-2 text-[12px] text-[var(--ink)] shadow-lg"
       data-testid="peek-surface"
+      data-handbook-region="peek-surface"
       data-peek-surface=""
       data-target-kind={entity.target.kind}
       data-target-id={entity.target.id}

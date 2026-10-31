@@ -14,6 +14,7 @@ import {
 } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { regionLabel } from "../handbook/regions";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore, type ViewportState } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -113,6 +114,10 @@ export function targetLabel(workspace: WorkspaceDocument, target: Target): strin
       return workspace.getSection(target.id)?.title.trim() || "Untitled section";
     case "link":
       return "Link";
+    case "ui":
+      // A region of the shell has no title in the document; its label is the one the
+      // handbook registry gives it, which is also what a reader would point at.
+      return regionLabel(target.id);
   }
 }
 
@@ -128,7 +133,9 @@ export function useTargetLabel(target: Target | null): string {
     if (!target) return "No target yet";
     // The snapshot is the trigger, not the source: titles live in containers.
     void snapshot;
-    if (!targetExistence(workspace)[target.kind](target.id)) return "Removed";
+    if (target.kind !== "ui" && !targetExistence(workspace)[target.kind](target.id)) {
+      return "Removed";
+    }
     return targetLabel(workspace, target);
   }, [workspace, snapshot, target]);
 }

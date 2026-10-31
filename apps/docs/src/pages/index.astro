@@ -1,52 +1,75 @@
 ---
+import { getCollection } from "astro:content";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
-import DashboardCards from "../components/DashboardCards.astro";
-import DashboardTabs from "../components/DashboardTabs.astro";
-import { dashboardPages } from "../lib/pages";
-
-const pages = await dashboardPages();
+import Layout from "../layouts/Layout.astro";
 
 /**
- * The version the release notes ship, read from the package that bumps it. The
- * path is relative to this package, which is the working directory for every
- * script that builds the site.
+ * The portal: the one page this app owns, and the two ways into it.
+ *
+ * The developer pages and the user handbook are written for different readers, so they get
+ * different entrances rather than one sidebar that mixes "how to deploy the relay" with "what the
+ * inspector does".
  */
+const docs = await getCollection("docs");
+const handbook = await getCollection("handbook");
+
 function releaseVersion(): string | undefined {
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(join(process.cwd(), "..", "..", "package.json"), "utf8"));
+    const parsed: unknown = JSON.parse(
+      readFileSync(join(process.cwd(), "..", "..", "package.json"), "utf8"),
+    );
+    if (typeof parsed === "object" && parsed !== null && "version" in parsed) {
+      const { version } = parsed as { version?: unknown };
+      return typeof version === "string" ? version : undefined;
+    }
   } catch {
-    return undefined;
-  }
-  if (typeof parsed === "object" && parsed !== null && "version" in parsed) {
-    const { version } = parsed as { version?: unknown };
-    if (typeof version === "string") return version;
+    // A site built from a partial checkout still renders; it just has no version to name.
   }
   return undefined;
 }
 
 const version = releaseVersion();
+const developerPages = docs.filter((entry) => entry.id !== "overview").length;
 ---
 
-<StarlightPage
-  frontmatter={{
-    title: "Suite documentation",
-    description:
-      "Documentation for Suite, a local-first collaborative canvas with a typed object graph.",
-    hero: {
-      title: "Suite documentation",
-      tagline:
-        "A local-first, collaborative canvas. A workspace owns its cards, boards are views of those cards, and every write is validated in @suite/graph.",
-      actions: [
-        { text: "Run Suite locally", link: "/tutorials/run-locally/", variant: "primary" },
-        { text: "Open the app", link: "https://app.suite.run", variant: "secondary" },
-      ],
-    },
-  }}
+<Layout
+  title="Suite documentation"
+  description="Suite is a local-first collaborative canvas. Two ways in: the developer documentation, and the handbook that explains the interface."
 >
-  {version === undefined ? null : <p class="dashboard-version">Version {version}</p>}
-  <DashboardCards pages={pages} />
-  <DashboardTabs pages={pages} />
-</StarlightPage>
+  <main class="portal">
+    <header class="flex flex-col gap-2">
+      <h1 class="text-3xl font-semibold">Suite</h1>
+      <p class="portal-meta">
+        A local-first, collaborative canvas. One Loro document per workspace, a typed object graph
+        validated by <code>@suite/graph</code>, and a React 19 canvas.
+      </p>
+      {version ? <p class="portal-meta">Version {version}</p> : null}
+    </header>
+
+    <div class="portal-entrances">
+      <a class="portal-entrance" href="/docs/overview">
+        <h2>Developer documentation</h2>
+        <p>
+          How the thing is built and how to run it: tutorials, how-to, reference and the reasoning
+          behind the shape.
+        </p>
+        <span class="portal-meta">{developerPages} pages</span>
+      </a>
+      <a class="portal-entrance" href="/handbook/getting-around/board">
+        <h2>User handbook</h2>
+        <p>
+          What every part of the interface does, written for the person using it. The same articles
+          the app shows in its own handbook.
+        </p>
+        <span class="portal-meta">{handbook.length} articles</span>
+      </a>
+    </div>
+
+    <p class="portal-meta">
+      Agents read <a href="/llms.txt">/llms.txt</a> first, and <a href="/llms-full.txt">/llms-full.txt</a>
+      for everything. Any page is also Markdown: drop the trailing slash from its URL and append
+      <code>.md</code>.
+    </p>
+  </main>
+</Layout>

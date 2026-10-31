@@ -45,7 +45,11 @@ export function InspectorTabs({
     document.getElementById(tabId(next.id))?.focus();
   };
   return (
-    <div className={className ?? "card-panel-tabs px-3 pb-2"} data-testid={testId}>
+    <div
+      className={className ?? "card-panel-tabs px-3 pb-2"}
+      data-testid={testId}
+      data-handbook-region="inspector-tabs"
+    >
       <div
         role="tablist"
         aria-label={ariaLabel}

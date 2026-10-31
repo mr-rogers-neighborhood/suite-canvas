@@ -114,6 +114,15 @@
       }
     },
     {
+      // A generated file is not a source file: `scripts/sync-handbook.mjs` writes it, and
+      // `pnpm docs:check` fails when it is stale. Reformatting it here would make the two
+      // disagree on every run.
+      "includes": ["apps/canvas/src/handbook/articles.generated.ts"],
+      "formatter": { "enabled": false },
+      "assist": { "enabled": false },
+      "linter": { "enabled": false }
+    },
+    {
       // One logging path: request handlers log through `logging.ts`, which
       // writes JSON lines with a request id and redacted capability paths.
       // Only the logger itself, and the licence CLI whose stdout/stderr *is*

@@ -20,7 +20,7 @@ This page is the map. Each subsystem has its own reference page, and the reasoni
 | `services/auth` | Identity, organizations, invitations, seats, licence checks |
 | `services/billing` | Stripe webhook, hosted licence issue |
 | `apps/control-plane` | Accounts, billing and the Postgres they share, in one process of its own |
-| `apps/docs` | Starlight site built from `docs/` |
+| `apps/docs` | Fumadocs site over `docs/` and `handbook/` |
 | `apps/site` | Marketing page for `suite.run` |
 | `e2e` | Playwright journeys, grouped by area |
 | `scripts` | Docs, limits, shape and docs-symbol checks |

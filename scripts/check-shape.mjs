@@ -3,7 +3,8 @@
  *
  *   1. No source file over 900 lines, except data files that are lists.
  *   2. No function signature with more than 6 parameters.
- *   3. No `dangerouslySetInnerHTML`, `eval`, or `new Function`.
+ *   3. No `dangerouslySetInnerHTML`, `eval`, or `new Function`, except in the two files whose
+ *      HTML is built from this repository's own source rather than from a reader or a request.
  *   4. `WorkspaceDocument.observe` has one call site: the snapshot store.
  *   5. Graph roots are written through `@suite/graph`, not raw Loro.
  *
@@ -48,7 +49,20 @@ const OBSERVE_ALLOWED = "apps/canvas/src/store/workspaceSnapshotStore.ts";
  * bundled package. Anything else that reaches for this API is the rule's target, so the
  * exemption is one exact path rather than a pattern.
  */
-const DYNAMIC_HTML_ALLOWED = "apps/canvas/src/icons/IconGlyph.tsx";
+/**
+ * The few places allowed to inject HTML, each with the reason it is not an injection.
+ *
+ * The rule is about content that could carry a script: a peer's card, a share link, a request. Icon
+ * markup and the handbook's articles are both authored in this repository and rendered at build
+ * time, so neither has a path from a reader to the markup.
+ */
+const DYNAMIC_HTML_ALLOWED = new Map([
+  ["apps/canvas/src/icons/IconGlyph.tsx", "icon markup authored in the repository"],
+  [
+    "apps/canvas/src/handbook/HandbookBubble.tsx",
+    "article HTML rendered from handbook/*.md by scripts/sync-handbook.mjs",
+  ],
+]);
 
 const GRAPH_ROOTS = [
   "boards",
@@ -117,7 +131,7 @@ for (const file of files) {
     }
     if (
       /dangerouslySetInnerHTML|\beval\s*\(|\bnew Function\s*\(/.test(line) &&
-      !(rel === DYNAMIC_HTML_ALLOWED && line.includes("dangerouslySetInnerHTML"))
+      !(DYNAMIC_HTML_ALLOWED.has(rel) && line.includes("dangerouslySetInnerHTML"))
     ) {
       problems.push(`${rel}:${index + 1}: banned dynamic-HTML or dynamic-code API.`);
     }

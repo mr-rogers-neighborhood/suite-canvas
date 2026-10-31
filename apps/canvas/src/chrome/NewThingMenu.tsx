@@ -55,6 +55,7 @@ export function NewThingMenu({
     <div
       ref={focusFirstMenuItem}
       role="menu"
+      data-handbook-region="new-thing-menu"
       data-testid={`${prefix}-type-menu`}
       data-direction={direction}
       onKeyDown={menuKeyDown}

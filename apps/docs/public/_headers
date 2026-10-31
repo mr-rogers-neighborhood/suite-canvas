@@ -5,10 +5,10 @@
 # `docs.suite.run` should not have a different posture depending on whether it came
 # from Caddy or from Pages.
 #
-# `script-src` needs `'unsafe-inline'` because Starlight emits inline module scripts
-# for the theme toggle, the sidebar and the search index. There is no user content on
-# this origin, which is what makes the relaxation acceptable here and nowhere else.
-# `connect-src` stays `'self'`: Pagefind fetches its index from this origin.
+# `script-src` needs `'unsafe-inline'` because Fumadocs hydrates React islands and
+# writes the theme before the first paint. There is no user content on this origin,
+# which is what makes the relaxation acceptable here and nowhere else.
+# `connect-src` stays `'self'`: the search dialog fetches its static index from here.
 
 /*
   Referrer-Policy: no-referrer

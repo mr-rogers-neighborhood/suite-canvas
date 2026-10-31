@@ -120,6 +120,7 @@ export function LinkInspector({
     <aside
       className="card-inspector link-inspector"
       data-testid="link-inspector"
+      data-handbook-region="card-inspector"
       aria-label="Link info"
     >
       <header className="flex items-start gap-2 border-b border-[var(--hairline)] px-3 py-2.5">

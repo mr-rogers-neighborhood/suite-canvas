@@ -13,7 +13,7 @@ Read [docs/README.md](docs/README.md) for the four documentation sections, and
   (`@xyflow/react`), Tiptap 3 for every card.
 - Document: Loro CRDT, IndexedDB snapshot and update log, `loro-websocket` for sync.
 - Graph: `@suite/graph` with Zod schemas over a typed `WorkspaceDocument`.
-- Docs and marketing: Astro in `apps/docs` (Starlight) and `apps/site`. The app is a Vite SPA
+- Docs and marketing: Astro in `apps/docs` (Fumadocs) and `apps/site`. The app is a Vite SPA
   served at `app.suite.run`; neither Astro project hosts it.
 - Quality: Biome, Vitest and React Testing Library, Playwright, Storybook, commitlint.
 
@@ -29,7 +29,8 @@ Read [docs/README.md](docs/README.md) for the four documentation sections, and
 | `services/auth` | Accounts, organizations, invitations, licensing. Built and tested, not mounted |
 | `services/billing` | Licence and Stripe webhook verification, run with `node --test` |
 | `e2e` | Playwright specs, tagged `@smoke` for the smoke tier |
-| `docs` | Tutorials, how-to, reference and explanation |
+| `docs` | Developer documentation: tutorials, how-to, reference and explanation |
+| `handbook` | The user handbook: one Markdown article per interface element and system, shown in the app and on the docs site |
 | `deploy` | Caddyfile, headers, backup and restore scripts, drill records |
 | `scripts` | `docs-check`, `generate-limits`, `scratchpad`, `db-verify` |
 

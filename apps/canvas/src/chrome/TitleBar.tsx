@@ -144,7 +144,10 @@ export function TitleBar({
   const presentation = syncPresentation({ phase, status, peerCount, role, claim, reason });
 
   return (
-    <header className="app-bar relative z-20 flex h-11 shrink-0 items-center gap-3 px-4">
+    <header
+      className="app-bar relative z-20 flex h-11 shrink-0 items-center gap-3 px-4"
+      data-handbook-region="title-bar"
+    >
       <a
         href="/"
         aria-label="Back to workspace launcher"
@@ -205,6 +208,7 @@ export function TitleBar({
             <button
               type="button"
               data-testid="workspace-name"
+              data-handbook-region="workspace-name"
               aria-haspopup="menu"
               aria-expanded={nameMenuOpen}
               title={`${workspaceName} — switch workspace`}
@@ -371,6 +375,7 @@ export function TitleBar({
         <button
           type="button"
           data-testid="command-bar"
+          data-handbook-region="command-bar"
           aria-label="Search or run a command"
           aria-keyshortcuts="Meta+K Control+K"
           title="Search or run a command (⌘K)"
@@ -390,6 +395,7 @@ export function TitleBar({
           <button
             type="button"
             data-testid="sync-status"
+            data-handbook-region="sync-status"
             data-status={status}
             data-role={role}
             aria-expanded={statusOpen}

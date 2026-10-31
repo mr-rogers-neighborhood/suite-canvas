@@ -77,7 +77,10 @@ export function LibraryHeader({
   const tabs = TABS.filter((entry) => canManageTrash || entry.id !== "trash");
 
   return (
-    <div className="library-header flex flex-wrap items-center gap-1 border-b border-[var(--hairline)] px-2 py-1.5">
+    <div
+      className="library-header flex flex-wrap items-center gap-1 border-b border-[var(--hairline)] px-2 py-1.5"
+      data-handbook-region="library-tabs"
+    >
       <div
         role="tablist"
         aria-label="Library sections"

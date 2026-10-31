@@ -166,6 +166,84 @@ export const FORMAT_COMMANDS: readonly FormatCommand[] = [
 /** The ids of every formatting command, in table order, for a renderer or a test. */
 export const FORMAT_IDS: readonly string[] = FORMAT_COMMANDS.map((command) => command.id);
 
+/**
+ * The way back to a paragraph.
+ *
+ * It is not in `FORMAT_COMMANDS`: a toolbar button for "remove the heading" and a `/` row for
+ * it would be two more controls in a row that is already the longest thing in the bubble. The
+ * heading menu offers it, because a menu of six levels with no exit is a menu you have to
+ * guess your way out of.
+ */
+export const PARAGRAPH_COMMAND: FormatCommand = {
+  id: "paragraph",
+  title: "Paragraph",
+  glyph: "\u00b6",
+  hint: "Body text",
+  keywords: ["paragraph", "body", "text", "plain", "p"],
+  group: "heading",
+  run: (chain) => chain.setParagraph(),
+  active: (editor) => editor.isActive("paragraph"),
+};
+
+/** One row of a formatting menu: a plain command, or the collapsed heading control. */
+export type FormatMenu =
+  | { readonly kind: "command"; readonly command: FormatCommand }
+  | {
+      readonly kind: "heading";
+      readonly id: "heading";
+      readonly title: string;
+      readonly hint: string;
+      readonly glyph: string;
+      /** Levels 1 to 6, in order. */
+      readonly levels: readonly FormatCommand[];
+      /** The way back to body text. */
+      readonly paragraph: FormatCommand;
+    };
+
+export const HEADING_MENU: Extract<FormatMenu, { kind: "heading" }> = {
+  kind: "heading",
+  id: "heading",
+  title: "Heading",
+  hint: "Title, subtitle or body text",
+  glyph: "H",
+  levels: FORMAT_COMMANDS.filter((command) => command.id.startsWith("heading-")),
+  paragraph: PARAGRAPH_COMMAND,
+};
+
+/**
+ * The table as a menu: the six heading commands become one entry, everything else stands.
+ *
+ * The table stays the source — a command added to it appears in the menu without an edit
+ * here — and this is only a view over it, which is why the heading entry carries the same
+ * `FormatCommand` objects the toolbar used to draw as buttons.
+ */
+export function formatMenus(commands: readonly FormatCommand[] = FORMAT_COMMANDS): FormatMenu[] {
+  const menus: FormatMenu[] = [];
+  let headingAdded = false;
+  for (const command of commands) {
+    if (command.group === "heading" && command.id.startsWith("heading-")) {
+      if (!headingAdded) menus.push(HEADING_MENU);
+      headingAdded = true;
+      continue;
+    }
+    menus.push({ kind: "command", command });
+  }
+  return menus;
+}
+
+/**
+ * The heading level the caret is in, or 0 for body text.
+ *
+ * The toolbar and the menu both read the same `active` record, so this is the one place that
+ * turns six booleans into the value the heading button displays.
+ */
+export function activeHeading(active: Readonly<Record<string, boolean>>): number {
+  for (let level = 1; level <= 6; level += 1) {
+    if (active[`heading-${String(level)}`] === true) return level;
+  }
+  return 0;
+}
+
 /** The pressed state of every command, as one object the toolbar reads. */
 export function activeCommands(editor: Editor): Record<string, boolean> {
   const state: Record<string, boolean> = {};

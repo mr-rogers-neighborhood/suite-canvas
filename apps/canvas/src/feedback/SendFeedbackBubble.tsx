@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { captchaSiteKey } from "../auth/captchaKey";
-import { TurnstileWidget } from "../auth/TurnstileWidget";
-import { type FeedbackCapability, feedbackCapability, sendFeedback } from "./feedbackClient";
-import { toast } from "./toast";
+import { useEffect, useState } from "react";
+import { FeedbackComposer } from "./FeedbackComposer";
+import type { sendFeedback } from "./feedbackClient";
+import { type FeedbackAvailability, useFeedbackCapability } from "./useFeedbackCapability";
 
 /**
  * The one thing a person can say without knowing where to say it.
@@ -12,6 +11,9 @@ import { toast } from "./toast";
  * field, no diagnostics — the message carries the build and the surface on its
  * own, because a person filing a thought should not be doing triage.
  *
+ * The form itself is `FeedbackComposer`, which the handbook's footer also uses: the
+ * launcher keeps this trigger, and the board hands its corner to the handbook.
+ *
  * It stays hidden until the deployment says it takes feedback, so a self-host
  * with no desk never offers a form that cannot send.
  */
@@ -19,7 +21,7 @@ export interface SendFeedbackBubbleProps {
   surface?: string;
   signedIn?: boolean;
   /** Replaced by a test; a build reads the deployment. */
-  available?: () => Promise<FeedbackCapability>;
+  available?: () => Promise<FeedbackAvailability>;
   /** Replaced by a test; a build reads the deployment. */
   siteKey?: string | null;
   send?: typeof sendFeedback;
@@ -28,42 +30,12 @@ export interface SendFeedbackBubbleProps {
 export function SendFeedbackBubble({
   surface = "board",
   signedIn = false,
-  available = feedbackCapability,
-  siteKey = captchaSiteKey(),
-  send = sendFeedback,
+  available,
+  siteKey,
+  send,
 }: SendFeedbackBubbleProps) {
-  const [shown, setShown] = useState(false);
-  const [needsChallenge, setNeedsChallenge] = useState(false);
   const [open, setOpen] = useState(false);
-  const [text, setText] = useState("");
-  const [token, setToken] = useState("");
-  const [busy, setBusy] = useState(false);
-  const box = useRef<HTMLTextAreaElement | null>(null);
-  // Stable across renders: the challenge must not be torn down because the words in the
-  // box changed, which is what an inline arrow on `onToken` would do.
-  const acceptToken = useCallback((next: string | null) => setToken(next ?? ""), []);
-
-  useEffect(() => {
-    let live = true;
-    void available().then((capability) => {
-      if (!live) return;
-      setShown(capability.configured);
-      // A challenge the deployment asks for but this build cannot render must not
-      // become a form that always fails: the server is the authority on whether a
-      // token is required, and a build with no site key is a broken deployment, not
-      // a reason to hide the bubble. `deploy/preflight.sh` refuses that pair.
-      setNeedsChallenge(capability.captcha);
-    });
-    return () => {
-      live = false;
-    };
-  }, [available]);
-
-  // Closing the form drops the token with it: a Turnstile token is single-use, and
-  // holding a spent one is how a second message fails for no visible reason.
-  useEffect(() => {
-    if (!open) setToken("");
-  }, [open]);
+  const capability = useFeedbackCapability(available);
 
   useEffect(() => {
     if (!open) return;
@@ -74,94 +46,21 @@ export function SendFeedbackBubble({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  if (!shown) return null;
-
-  const challengeNeeded = needsChallenge && siteKey !== null;
-  const ready = text.trim().length > 0 && (!challengeNeeded || token.length > 0);
-
-  const submit = async () => {
-    const words = text.trim();
-    if (words.length === 0 || busy || !ready) return;
-    setBusy(true);
-    const outcome = await send({
-      text: words,
-      surface,
-      signedIn,
-      ...(challengeNeeded ? { captchaToken: token } : {}),
-    });
-    setBusy(false);
-    if (outcome.ok) {
-      setText("");
-      setToken("");
-      setOpen(false);
-      toast.success("Thanks — your message is on its way.");
-      return;
-    }
-    // A spent or expired token is not the sender's mistake: ask the widget for a
-    // fresh one and leave their words where they are.
-    if (outcome.reason === "captcha") setToken("");
-    toast.failure(outcome.message);
-  };
+  if (!capability.configured) return null;
 
   return (
     <div className="pointer-events-none absolute right-4 bottom-4 z-30 flex flex-col items-end gap-2">
       {open ? (
-        <div
-          role="dialog"
-          aria-label="Send feedback"
-          data-testid="feedback-dialog"
-          className="pointer-events-auto w-[300px] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-3 shadow-lg"
-        >
-          <label className="text-[12px] font-medium text-[var(--ink)]" htmlFor="feedback-text">
-            What is on your mind?
-          </label>
-          <textarea
-            id="feedback-text"
-            ref={box}
-            data-testid="feedback-text"
-            rows={4}
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") void submit();
-            }}
-            className="mt-1.5 w-full resize-none rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1.5 text-[12px] leading-5 text-[var(--ink)] outline-none focus:ring-1 focus:ring-blue-400"
+        <div className="pointer-events-auto w-[300px] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-3 shadow-lg">
+          <FeedbackComposer
+            surface={surface}
+            signedIn={signedIn}
+            captcha={capability.captcha}
+            {...(siteKey === undefined ? {} : { siteKey })}
+            {...(send === undefined ? {} : { send })}
+            onCancel={() => setOpen(false)}
+            onSent={() => setOpen(false)}
           />
-          {challengeNeeded ? (
-            // Compact and interaction-only: the full-size widget is 300px wide and filled
-            // this popover, and a managed challenge that passes silently has nothing to
-            // say, so it stays out of the way until Cloudflare wants an answer.
-            <div className="mt-2 max-w-[150px]" data-testid="feedback-captcha">
-              <TurnstileWidget
-                siteKey={siteKey}
-                onToken={acceptToken}
-                size="compact"
-                appearance="interaction-only"
-              />
-            </div>
-          ) : null}
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-[10px] text-[var(--ink-muted)]">Sends your app version too</span>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                data-testid="feedback-cancel"
-                className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-                onClick={() => setOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                data-testid="feedback-send"
-                disabled={busy || !ready}
-                onClick={() => void submit()}
-                className="rounded-md bg-[var(--ink)] px-2.5 py-1 text-[11px] font-medium text-[var(--surface)] disabled:opacity-40"
-              >
-                {busy ? "Sending…" : "Send"}
-              </button>
-            </div>
-          </div>
         </div>
       ) : null}
       <button

@@ -103,9 +103,6 @@ export function ViewsBar({
   const container = useRef<HTMLDivElement | null>(null);
 
   const activeView = views.find((view) => view.id === activeViewId);
-  const hasSearch = query.trim().length > 0;
-  const hasFacets = typeFilter.length > 0 || tagFilter.length > 0 || sectionFilter.length > 0;
-  const canSaveCurrent = canManageViews && (hasSearch || hasFacets);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -172,7 +169,12 @@ export function ViewsBar({
   };
 
   return (
-    <div ref={container} className="relative flex min-w-0 items-center" data-testid="views-bar">
+    <div
+      ref={container}
+      className="relative flex min-w-0 items-center"
+      data-testid="views-bar"
+      data-handbook-region="views-bar"
+    >
       <button
         type="button"
         aria-haspopup="menu"
@@ -328,7 +330,13 @@ export function ViewsBar({
             ))
           )}
 
-          {canSaveCurrent && !saving ? (
+          {/*
+            Always offered, including when the library shows everything: "all cards" is a
+            legitimate view to start from, and a create control that appears only once you
+            have already filtered is a control nobody finds. The old row was gated on a
+            search or a facet, which is why the menu had no way in for a first view.
+          */}
+          {canManageViews && !saving ? (
             <button
               type="button"
               role="menuitem"
@@ -341,7 +349,7 @@ export function ViewsBar({
                 setConfirmId(null);
               }}
             >
-              Save current search as view…
+              New view…
             </button>
           ) : null}
 

@@ -120,7 +120,7 @@ export function Dock({
   });
 
   return (
-    <div className="dock" role="toolbar" aria-label="Card library">
+    <div className="dock" role="toolbar" aria-label="Card library" data-handbook-region="dock">
       <button
         type="button"
         aria-pressed={libraryOpen}

@@ -175,13 +175,31 @@ describe("ViewsBar", () => {
     expect(workspace.listViews()).toHaveLength(1);
   });
 
-  it("should offer no save action when the library has no query or facets", () => {
+  it("should create a view from an unfiltered library", () => {
     const workspace = fixture();
     render(<ViewsBar workspace={workspace} canManage />);
 
     fireEvent.click(screen.getByTestId("views-menu-button"));
     expect(screen.getByTestId("views-empty")).toBeInTheDocument();
-    expect(screen.queryByTestId("views-save")).not.toBeInTheDocument();
+
+    // The menu has to offer a way in before anything is filtered: "all cards" is a view.
+    fireEvent.click(screen.getByTestId("views-save"));
+    const input = screen.getByTestId("views-save-input");
+    expect(input).toHaveValue("View 1");
+
+    fireEvent.change(input, { target: { value: "Everything" } });
+    fireEvent.click(screen.getByTestId("views-save-commit"));
+
+    const [saved] = workspace.listViews();
+    expect(saved?.name).toBe("Everything");
+    expect(saved?.query).toMatchObject({
+      typeIds: [],
+      tagIds: [],
+      sectionIds: [],
+      scope: "all",
+      order: "title",
+    });
+    expect(useUiStore.getState().activeViewId).toBe(saved?.id);
   });
 
   it("should show the applied view in the library and fill its query", () => {

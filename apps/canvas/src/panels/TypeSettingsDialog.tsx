@@ -303,6 +303,7 @@ export function TypeSettingsDialog({
         aria-label="Card types"
         tabIndex={-1}
         data-testid="type-settings"
+        data-handbook-region="type-settings"
         className="relative flex h-[min(560px,calc(100vh-3rem))] w-[min(760px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] shadow-xl"
       >
         <div className="flex w-52 shrink-0 flex-col border-r border-[var(--hairline)]">

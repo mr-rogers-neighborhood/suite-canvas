@@ -46,10 +46,13 @@ stryker.log
 .scratchpad.md
 .scratchpad-seen
 
-# The Starlight content is generated from `docs/` by `scripts/sync-docs.mjs`:
+# The site's content is generated from `docs/` and `handbook/`:
 # pages, frontmatter and the copied assets are build input, not source. Edit
 # `docs/` instead.
 apps/docs/src/content/docs/
+# The handbook pages are generated from `handbook/` by `scripts/sync-handbook.mjs`:
+# edit the Markdown at the repository root, not the copies.
+apps/docs/src/content/handbook/
 apps/docs/dist/
 apps/docs/.astro/
 apps/site/dist/

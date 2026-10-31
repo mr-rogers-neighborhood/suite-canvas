@@ -87,6 +87,7 @@ export function InteractionModeToggle() {
     <button
       type="button"
       data-testid="interaction-mode"
+      data-handbook-region="interaction-mode"
       data-mode={mode}
       aria-label={copy.label}
       // Not a checkbox: "pressed" says only that a mode other than the default is on, so

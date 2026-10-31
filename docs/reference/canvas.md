@@ -205,6 +205,11 @@ which is the last thing there is to put down.
 deliberately small: `explore` is the resting state and needs no button, and `explain` is the only value a
 reader chooses from the canvas itself.
 
+`explain` gathers the selection into a read-only context, which is drawn inside the
+[handbook](./ui.md) when the build has one and as a panel over the board when it does not: the gathered entities sit above the articles
+that answer them, one selected thing opens its article, and **Point at something** turns the next
+click into a target, including a region of the shell.
+
 There is no placement run: no shapes, no anchors, no bar. Cards are placed one at a time, by a drop, a
 dock action, a double-click, or from a stack — pick rows in the library, press `Place N`, and the stack
 follows the pointer, one press per card (`canvas/placeStack.ts`, `canvas/PlaceStackCursor.tsx`).

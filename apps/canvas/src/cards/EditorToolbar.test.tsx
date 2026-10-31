@@ -55,11 +55,56 @@ describe("the formatting toolbar", () => {
     expect(screen.getByRole("toolbar", { name: "Formatting" })).toBeInTheDocument();
   });
 
-  it("should draw every command in the shared table, in its order", () => {
+  it("should draw every command in the shared table, with the headings collapsed", () => {
     renderToolbar();
     const names = screen.getAllByRole("button").map((button) => button.getAttribute("aria-label"));
-    // The format table, then the one insert control that earns a place here.
-    expect(names).toEqual([...FORMAT_COMMANDS.map(buttonName), "Add media"]);
+    // The six heading commands are one menu now, so the row is the non-heading commands plus
+    // that control and the one insert control that earns a place here.
+    const visible = FORMAT_COMMANDS.filter((command) => command.group !== "heading").map(
+      buttonName,
+    );
+    expect(names).toEqual([
+      ...visible.slice(0, 3),
+      "Heading: Text",
+      ...visible.slice(3),
+      "Add media",
+    ]);
+  });
+
+  it("should show the heading level the caret is in", () => {
+    renderToolbar({ "heading-2": true });
+    expect(screen.getByTestId("format-heading")).toHaveTextContent("H2");
+    expect(screen.getByTestId("format-heading")).toHaveAttribute("aria-label", "Heading: H2");
+  });
+
+  it("should open a level menu and mark the current level", () => {
+    renderToolbar({ "heading-3": true });
+    fireEvent.click(screen.getByTestId("format-heading"));
+
+    const menu = screen.getByRole("menu", { name: "Heading" });
+    expect(menu).toBeInTheDocument();
+    expect(screen.getByTestId("format-heading-heading-3")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByTestId("format-heading-heading-1")).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByTestId("format-heading-paragraph")).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("should close the level menu on Escape and give focus back to the trigger", () => {
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("format-heading"));
+    expect(screen.getByRole("menu", { name: "Heading" })).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole("menu", { name: "Heading" }), { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Heading" })).not.toBeInTheDocument();
+  });
+
+  it("should set the chosen level rather than toggling the one already on", () => {
+    const recorded = renderToolbar({ "heading-2": true });
+    fireEvent.click(screen.getByTestId("format-heading"));
+    fireEvent.click(screen.getByTestId("format-heading-heading-2"));
+
+    // Choosing H2 while in an H2 means "make this an H2"; Paragraph is how a reader leaves.
+    expect(recorded).toContain("setHeading");
+    expect(recorded).not.toContain("toggleHeading");
   });
 
   it("should keep each visible glyph inside its accessible name", () => {
@@ -77,22 +122,30 @@ describe("the formatting toolbar", () => {
 
   it("should run the command the button names", () => {
     const recorded = renderToolbar();
-    const heading2 = FORMAT_COMMANDS.find((command) => command.id === "heading-2");
-    if (!heading2) throw new Error("heading-2 missing from the table");
-    fireEvent.click(byName(heading2));
-    expect(recorded).toContain("toggleHeading");
+    const bold = FORMAT_COMMANDS[0] as FormatCommand;
+    fireEvent.click(byName(bold));
+    expect(recorded).toContain("toggleBold");
   });
 
   it("should run every command it draws, so none is a decorative glyph", () => {
     const recorded = renderToolbar();
     const buttons = screen
       .getAllByRole("button")
-      .filter((button) => button.getAttribute("aria-label") !== "Add media");
-    expect(buttons).toHaveLength(FORMAT_COMMANDS.length);
+      .filter((button) => button.getAttribute("aria-label") !== "Add media")
+      .filter((button) => button.getAttribute("aria-haspopup") !== "menu");
+    const expected = FORMAT_COMMANDS.filter((command) => command.group !== "heading");
+    expect(buttons).toHaveLength(expected.length);
     for (const button of buttons) fireEvent.click(button);
     // `focus` and `run` are the chain's own ends, recorded like any other link in it.
     const commands = recorded.filter((name) => name !== "focus" && name !== "run");
-    expect(commands).toHaveLength(FORMAT_COMMANDS.length);
+    expect(commands).toHaveLength(expected.length);
+  });
+
+  it("should run the paragraph command from the heading menu", () => {
+    const recorded = renderToolbar({ "heading-2": true });
+    fireEvent.click(screen.getByTestId("format-heading"));
+    fireEvent.click(screen.getByTestId("format-heading-paragraph"));
+    expect(recorded).toContain("setParagraph");
   });
 
   it("should open the media picker instead of inserting blindly", () => {

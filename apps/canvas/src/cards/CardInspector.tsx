@@ -194,7 +194,12 @@ export function CardInspector({
   // card on this board is located, a card that is not is placed.
   const currentBoard = where.entries.find((entry) => entry.isCurrent) ?? null;
   return (
-    <aside className="card-inspector" data-testid="card-inspector" aria-label="Card info">
+    <aside
+      className="card-inspector"
+      data-testid="card-inspector"
+      aria-label="Card info"
+      data-handbook-region="card-inspector"
+    >
       <header className="flex items-start gap-2 border-b border-[var(--hairline)] px-3 py-2.5">
         <div className="min-w-0 flex-1">
           {/*

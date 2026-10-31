@@ -224,7 +224,10 @@ function StepRow({
 }) {
   const step = stored.step;
   const primary = step?.targets[0] ?? null;
-  const dead = primary ? targetExistence(workspace)[primary.kind](primary.id) === false : false;
+  const dead =
+    primary && primary.kind !== "ui"
+      ? targetExistence(workspace)[primary.kind](primary.id) === false
+      : false;
   const label = primary ? targetLabel(workspace, primary) : "No target yet";
   const extra = Math.max(0, (step?.targets.length ?? 0) - 1);
 

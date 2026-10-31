@@ -1,0 +1,64 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/*
+ * The docs site wears the app's accent: the same brand blue the canvas uses, so a reader moving
+ * between `docs.suite.run` and `app.suite.run` does not change palette.
+ */
+:root {
+  --color-fd-primary: #0a84ff;
+}
+
+:root.dark {
+  --color-fd-primary: #4aa3ff;
+}
+
+/* The portal: two entrances, one for the developer pages and one for the handbook. */
+.portal {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 4rem 1.5rem 5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+}
+
+.portal-entrances {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.portal-entrance {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.5rem;
+  border: 1px solid var(--color-fd-border);
+  border-radius: 16px;
+  background: var(--color-fd-card);
+  transition: border-color 120ms ease;
+}
+
+.portal-entrance:hover {
+  border-color: var(--color-fd-primary);
+}
+
+.portal-entrance h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.portal-entrance p {
+  margin: 0;
+  color: var(--color-fd-muted-foreground);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.portal-meta {
+  color: var(--color-fd-muted-foreground);
+  font-size: 0.875rem;
+}

@@ -23,7 +23,7 @@
     "dev:db": "docker compose --profile local-db -f compose.yaml -f compose.dev.yaml up -d --wait postgres",
     "dev:db:stop": "docker compose --profile local-db -f compose.yaml -f compose.dev.yaml stop postgres",
     "dev:env": "node scripts/dev-env.mjs",
-    "docs:check": "node scripts/docs-check.mjs && node scripts/generate-doc-indexes.mjs --check && node scripts/generate-limits.mjs --check",
+    "docs:check": "node scripts/docs-check.mjs && node scripts/generate-doc-indexes.mjs --check && node scripts/generate-limits.mjs --check && node scripts/sync-handbook.mjs --check",
     "docs:index": "node scripts/generate-doc-indexes.mjs",
     "docs:site": "pnpm --filter @suite/docs dev",
     "docs:site:build": "pnpm --filter @suite/docs build",
@@ -74,7 +74,8 @@
     "test:watch": "vitest",
     "typecheck": "turbo run typecheck",
     "up": "docker compose --profile local-db build && docker compose --profile local-db up -d && node scripts/doctor.mjs",
-    "verify": "node scripts/scratchpad.mjs --quiet && pnpm lint && pnpm typecheck && pnpm test && pnpm turbo run test --filter=@suite/billing && pnpm test:stories && pnpm build && pnpm docs:check && pnpm docs:symbols && pnpm shape && pnpm security:deps && pnpm security:secrets"
+    "verify": "node scripts/scratchpad.mjs --quiet && pnpm lint && pnpm typecheck && pnpm test && pnpm turbo run test --filter=@suite/billing && pnpm test:stories && pnpm build && pnpm docs:check && pnpm docs:symbols && pnpm shape && pnpm security:deps && pnpm security:secrets",
+    "handbook": "node scripts/sync-handbook.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
@@ -87,10 +88,12 @@
     "husky": "^9.1.7",
     "knip": "^6.43.0",
     "lint-staged": "^17.6.0",
+    "marked": "^18.1.2",
     "pg": "^8.23.1",
     "turbo": "^2.11.10",
     "typescript": "~5.9.3",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "yaml": "^2.9.1"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc}": "biome check --write"

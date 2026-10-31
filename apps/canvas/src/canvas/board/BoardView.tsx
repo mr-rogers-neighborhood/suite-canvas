@@ -102,6 +102,7 @@ export function BoardView() {
   return (
     <div
       data-testid="canvas-board"
+      data-handbook-region="canvas-surface"
       ref={boardRoot}
       className={`h-full w-full ${selectedConnector ? "connector-active" : ""}`}
       // Capture, not bubble: React Flow stops the pane's pointerdown from

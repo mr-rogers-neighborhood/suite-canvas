@@ -19,7 +19,7 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, sync and storage status, **Share** (`ShareAction.tsx`, its own control beside the status pill), the workspace menu, the account slot, the theme toggle |
 | Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history and outline buttons in `app/WorkspaceShellView.tsx` | Home, the open boards with their peer counts, undo, redo, version history and the outline, in one row |
 | Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface, plus the plan wall and the retry for whoever just paid |
-| Views bar | `apps/canvas/src/chrome/ViewsBar.tsx` | Saved views, applying one, renaming and deleting one. **Development only** (see below) |
+| Views bar | `apps/canvas/src/chrome/ViewsBar.tsx` | Saved views: creating one (including from an unfiltered library), applying one, renaming and deleting one. It sits after the outline toggle and before search. **Development only** (see below) |
 | Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new sketch, new section, new portal, type settings. The menu itself is `apps/canvas/src/chrome/NewThingMenu.tsx`, shared with the library |
 | Outline rail | `apps/canvas/src/canvas/BoardOutline.tsx` | The active board's section tree, in reading order, with counts and presence. Hidden while the board has no sections |
 | Inspector | `apps/canvas/src/cards/CardInspectorHost.tsx` | The one panel for the selected card or container |
@@ -27,6 +27,7 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Library drawer | `apps/canvas/src/library/LibraryDrawer.tsx` | Every card, board and trashed record, with search, facets and **Add new**, which opens the dock's own menu from the top of the list |
 | Command palette | `apps/canvas/src/command/CommandPalette.tsx` | Navigation and actions from one query |
 | Presence | `apps/canvas/src/presence/` and `apps/canvas/src/cursor/` | Peer cursors, name tags, avatars and the status cursor |
+| Handbook | `apps/canvas/src/handbook/HandbookBubble.tsx` | The contextual article list, the article, its spotlight and the feedback form, in one shell float. **Development only** (see below) |
 | Account | `apps/canvas/src/auth/SignInEntry.tsx` and `AccountPanel.tsx` | Sign in or the account menu, and one dialog for the account, members, devices and the plan |
 | Launcher | `apps/canvas/src/launcher/WorkspaceLauncher.tsx` | Recents with rename, export and delete, import, and the same account entry the title bar has |
 
@@ -123,10 +124,16 @@ is not visible to a peer until it uploads.
 ### Saved views are a development-only door
 
 `ViewsBar` is rendered behind `import.meta.env.DEV` in `WorkspaceShellView.tsx`, so a production bundle
-drops it and the component with it. The bar itself works: saving, renaming, deleting, applying. Its
-specs run too, because the e2e run serves a dev build. What is unfinished is the surface around it:
-there is no way back to the unfiltered list that reads as one, and an alpha is the wrong place to
-explain a half-built control.
+drops it and the component with it. The bar itself works: creating, renaming, deleting, applying, and
+placing a view's results. Its specs run too, because the e2e run serves a dev build. What is unfinished
+is the surface around it: the overlay cannot yet author a lens, a collection or a render, and an alpha
+is the wrong place to explain a half-built control.
+
+**Creating one is always offered.** The menu's `New view…` row saves whatever the library shows,
+including an unfiltered list, because "all cards" is a legitimate query to start from and a create
+control that appears only after you have filtered is a control nobody finds. The name starts from the
+search text when there is one. The active view is a chip in the library header whose `×` returns the
+reader to the unfiltered list, so there is a way back from everything this bar can apply.
 
 The guard is the whole switch. Removing it publishes the bar, and the release that does it should say so
 in its notes.
@@ -167,7 +174,7 @@ What an inspector shows is one table, `apps/canvas/src/inspector/capabilities.ts
 
 `InspectorTabs` draws the strip for all of them: one tab stop, arrow-key movement, and the selected tab the only one with `tabIndex=0`, so the panels differ in their body and not in their controls.
 
-`ContainerPanel` covers the container selection (section or portal), `LinkInspector` covers one edge, and `ExplainPanel` shows the explain context. `TypeSettingsDialog` edits the type registry and its fields. Each of these writes through `@suite/graph`; none keeps a copy of the record it edits.
+`ContainerPanel` covers the container selection (section or portal), `LinkInspector` covers one edge, and `ExplainPanel` shows the explain context, embedded in the handbook rather than floating over the board. `TypeSettingsDialog` edits the type registry and its fields. Each of these writes through `@suite/graph`; none keeps a copy of the record it edits.
 
 Two panels read a card's metadata without owning it. `apps/canvas/src/panels/AnnotationReader.tsx` shows the passage an annotation card points into, resolved against the source's text (ADR-0072). A record keeps the quoted text and the offsets it was captured at; the quote is the anchor and the offsets are a hint, so an edit above the passage shifts the range silently. Stale means one thing: the source no longer contains the quote at all, or the source card is gone. Only that state asks the reader to act. `apps/canvas/src/panels/BlueprintInstallPanel.tsx` shows what installing a type blueprint would write, one checkbox per field, and it reads its own footer from `planBlueprintInstall` rather than counting on its own.
 
@@ -186,6 +193,54 @@ A rest on a rendered entity names it (ADR-0055). `apps/canvas/src/canvas/peek/pe
 Escape, a pointer press anywhere, a scroll and a zoom all dismiss, and those listeners live in the hook rather than in each surface, so no surface can forget one. Keyboard access is the same resolve: `focus` opens the peek at once, with no delay, and `PeekSurface` renders in place rather than through a portal so Tab from the trigger reaches its one button. The surface never takes focus itself, and it is a reading: a name, a kind, one line of context and a route to open the thing. Editing stays in the inspector.
 
 The outline rail is the first surface wired to it: `BoardOutline.tsx` gives each section row a `peek` controller, and the rail renders one `PeekSurface` for all of its rows.
+
+## The handbook
+
+The handbook explains the interface from inside it. Its articles are Markdown files in `handbook/` at the
+repository root, one per user-facing element or system, and the same files are published by the docs
+site: `scripts/sync-handbook.mjs` renders them twice, once as a typed module for the app
+(`apps/canvas/src/handbook/articles.generated.ts`, HTML already rendered) and once as pages with a
+`meta.json` sidebar. Editing an article is editing a file, and `pnpm docs:check` fails when either output
+is stale.
+
+An article names its subject in frontmatter, `targets: [{ kind, id }]`, where `kind` is `ui`, `card`,
+`board` or `section`. `ui` names a region of the shell from `apps/canvas/src/handbook/regions.ts`, and
+each region is an element carrying `data-handbook-region`; a region is present exactly when its element
+is. The generator refuses an article that names a region the registry does not declare, and refuses a
+registry entry no article documents, so "documented" is a claim the build checks.
+
+| Piece | File | What it decides |
+| --- | --- | --- |
+| Matching | `handbook/match.ts` | Which articles this screen answers, and the badge's count |
+| Presence | `handbook/usePresentTargets.ts` | What counts as on screen: placed cards and sections, the active board, rendered regions |
+| The surface | `handbook/HandbookBubble.tsx` | The pill, the list, the article, the feedback pane, the picker |
+| The spotlight | `handbook/HandbookSpotlight.tsx`, `spotlightGeometry.ts` | The line from the row to the element, and the outline around it |
+
+The bubble is a float, so it moves like a pin: `canvas/floatGesture.ts` owns the drag and resize, and
+`planFloats` keeps it clear of the chrome, the pins and whatever an open article is pointing at. It
+remembers two rects, one for the pill and one for the panel, and both survive a reload; the article,
+the explain scope and the open pane do not, because they answer a question asked a minute ago.
+
+The badge counts **items**, not articles: two articles about the title bar are still one thing on
+screen. The open header says both numbers (`N items · M articles`) because ADR-0045 called it a
+"present count" and the request called it a count of items, and the honest answer is the pair.
+
+Explain mode is the same surface from the other direction. A selection becomes a scope, the panel
+opens, and one selected thing jumps to its article; several leave the list filtered. **Point at
+something** arms a capture-phase press that turns the next click into a `Target`, and the pressed
+element's nearest region or card answers. Leaving explain clears the scope, not the pane.
+
+**The handbook is a development-only door.** `handbook/availability.ts` exports one flag, read by
+the shell that mounts the bubble and by the board that mounts the floating explain panel, because the
+two halves have to agree: inside a build with the handbook, explain's context renders in the bubble;
+outside one it renders as a panel over the board, so `explain` never gathers a selection and shows
+nothing. `import.meta.env.DEV` is a literal Vite inlines, so a production bundle drops both branches
+and the components with them. Removing the flag is the whole change when the surface is ready, and
+the release that does it should say so in its notes.
+
+Feedback is the second pane. `feedback/FeedbackComposer.tsx` is the form the launcher already used,
+now shared: the handbook files a message against `handbook:<articleId>` with the article's title
+prepended, so a report about a paragraph arrives saying which paragraph.
 
 ## Error codes
 

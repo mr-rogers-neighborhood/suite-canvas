@@ -539,6 +539,7 @@ export function LibraryDrawer({
       role="dialog"
       aria-label="Library"
       data-testid="library-drawer"
+      data-handbook-region="library-drawer"
       data-wide={boardScope ? "true" : undefined}
       data-full={full ? "true" : undefined}
       /**

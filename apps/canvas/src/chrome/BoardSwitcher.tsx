@@ -243,7 +243,7 @@ export function BoardSwitcher({
   // "New board" they cannot use, no pin they do not own.
   if (navigation === "board") {
     return (
-      <div className="relative min-w-0" ref={root}>
+      <div className="relative min-w-0" ref={root} data-handbook-region="board-switcher">
         <span
           data-testid="board-switcher"
           title={active?.name ?? "No board"}
@@ -257,7 +257,7 @@ export function BoardSwitcher({
   }
 
   return (
-    <div className="relative min-w-0" ref={root}>
+    <div className="relative min-w-0" ref={root} data-handbook-region="board-switcher">
       <button
         type="button"
         aria-haspopup="menu"

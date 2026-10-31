@@ -43,7 +43,7 @@ export function OutlineTree({
   const peersBySection = useMemo(() => outlinePeerIds(peers), [peers]);
 
   return (
-    <div className="board-outline" data-testid="outline-rail">
+    <div className="board-outline" data-testid="outline-rail" data-handbook-region="board-outline">
       {open ? (
         <nav
           className="board-outline__panel"

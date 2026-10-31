@@ -28,8 +28,9 @@ import { PerfOverlay } from "../dev/PerfOverlay";
 import { purgeAttachment } from "../editor/attachmentNode";
 import { MediaPickerHost } from "../editor/MediaPickerHost";
 import { FeedbackHost } from "../feedback/FeedbackHost";
-import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
 import type { SyncClaim, SyncRefusal } from "../feedback/syncState";
+import { handbookEnabled } from "../handbook/availability";
+import { HandbookBubble } from "../handbook/HandbookBubble";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { LibraryDrawer, type LibraryItem } from "../library/LibraryDrawer";
 import { BOARD_TYPE_FACET } from "../library/libraryTypes";
@@ -506,22 +507,6 @@ export function WorkspaceShellView({
                 onSetIcon={(boardId, icon) => workspace.setBoardIcon(boardId, icon)}
                 onTogglePin={pins.togglePin}
               />
-              {/*
-                Saved views are unfinished, so they are a development-only door.
-                The component is complete enough to drive and its specs run against
-                the dev server, but the surface around it is not: a reader who is
-                handed "Save view" today gets a control with no way back to what it
-                filtered, and an alpha is the wrong place to explain that.
-
-                `import.meta.env.DEV` is a literal Vite inlines, so a production
-                bundle drops this branch and the component with it. Removing the
-                guard is the whole change when the feature is ready, and
-                `docs/reference/ui.md` says so — an unmounted component with green
-                unit tests is how the bar went missing for a day (5f0a6da6).
-              */}
-              {workspaceSurface && import.meta.env.DEV ? (
-                <ViewsBar canManage={canManageSchema} />
-              ) : null}
               {pinnedBoards.length === 0 ? null : (
                 /* A gap, because a tab touching the switcher reads as part of it. */
                 <span className="ml-1 flex shrink-0 items-center gap-0.5">
@@ -561,6 +546,7 @@ export function WorkspaceShellView({
                 <button
                   type="button"
                   data-testid="board-new-tab"
+                  data-handbook-region="new-tab"
                   aria-label="New tab"
                   title="New tab"
                   className="inline-flex h-6 shrink-0 items-center rounded px-1.5 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
@@ -582,6 +568,7 @@ export function WorkspaceShellView({
                   <button
                     type="button"
                     data-testid="history-toggle"
+                    data-handbook-region="history-toggle"
                     aria-label="Version history"
                     aria-pressed={historyOpen}
                     title="Version history"
@@ -595,6 +582,7 @@ export function WorkspaceShellView({
                   <button
                     type="button"
                     data-testid="outline-control"
+                    data-handbook-region="outline-control"
                     aria-label="Board outline"
                     aria-pressed={outlineOpen}
                     title="Board outline ([)"
@@ -606,6 +594,25 @@ export function WorkspaceShellView({
                     </span>
                   </button>
                 </span>
+              ) : null}
+              {/*
+                Saved views sit after the board's own controls and before search: a view
+                is a way to look at the board, so it belongs with the outline rather than
+                between the board's name and its pinned tabs.
+
+                They are unfinished, so the bar is a development-only door. The component
+                is complete enough to drive and its specs run against the dev server, but
+                the surface around it is not: an alpha is the wrong place to explain a
+                half-built control.
+
+                `import.meta.env.DEV` is a literal Vite inlines, so a production bundle
+                drops this branch and the component with it. Removing the guard is the
+                whole change when the feature is ready, and `docs/reference/ui.md` says so
+                — an unmounted component with green unit tests is how the bar went missing
+                for a day (5f0a6da6).
+              */}
+              {workspaceSurface && import.meta.env.DEV ? (
+                <ViewsBar canManage={canManageSchema} />
               ) : null}
             </>
           ) : null}
@@ -822,7 +829,12 @@ export function WorkspaceShellView({
 
         {/* Toasts, the live regions and the failure routing, once for the shell. */}
         <FeedbackHost />
-        {share === null ? <SendFeedbackBubble signedIn={phase === "signed-in"} /> : null}
+
+        {/* The handbook replaces the board's feedback bubble: it is the same corner, the same
+            words and a reader's own reading aid, and a share link has neither. It is a
+            development-only door while the surface is rough, which is why the board also keeps
+            the floating explain panel for a production build (see `handbook/availability.ts`). */}
+        {share === null && handbookEnabled ? <HandbookBubble /> : null}
         <PerfOverlay />
       </div>
     </SurfacePaintProvider.Provider>

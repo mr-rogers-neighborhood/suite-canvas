@@ -94,6 +94,10 @@ export function planNavigation(target: Target, scene: NavigationScene): Navigati
       if (!edge || !hasBoard(scene, edge.boardId)) return null;
       return { kind: "link", edgeId: edge.id, ...boardStep(scene, edge.boardId) };
     }
+    case "ui":
+      // A shell region is already in front of the reader, or it is not rendered and
+      // there is nowhere to fly to. Either way this is not a navigation.
+      return null;
   }
 }
 

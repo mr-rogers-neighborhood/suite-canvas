@@ -1,6 +1,7 @@
 import "@xyflow/react/dist/style.css";
 import { StatusCursorLayer } from "../../cursor/StatusCursorLayer";
 import { ContextMenu, type ContextMenuItem } from "../../dialogs/ContextMenu";
+import { handbookEnabled } from "../../handbook/availability";
 import { ExplainPanel } from "../../panels/ExplainPanel";
 import { NudgeHint } from "../BoardHints";
 import { DropOffer } from "../DropOffer";
@@ -59,7 +60,9 @@ export function BoardOverlays({ ui, projection, links, menuItems }: BoardOverlay
         <NudgeHint count={selectedNodeIds.length} lifted={selectedNodeIds.length > 1} />
       ) : null}
       <DropOffer />
-      <ExplainPanel />
+      {/* Explain's gathered context lives in the handbook when this build has one, and stands
+          on its own over the board when it does not. */}
+      {handbookEnabled ? null : <ExplainPanel />}
       <StatusCursorLayer />
       <LibraryDropPreview />
       <PlaceStackCursor />

@@ -315,12 +315,11 @@
 # exist yet; a request for anything under a missing root is a 404, not a Caddy
 # startup failure, which is what lets this route ship before the site does.
 #
-# Two relaxations the other hosts do not need. Starlight emits inline
-# `<script type="module">` for the theme toggle, the sidebar and the search
-# index, so `script-src` needs `'unsafe-inline'`; there is no user content on
-# this origin, which is what makes that acceptable here and nowhere else.
-# `connect-src` stays `'self'` because Pagefind fetches its index from this
-# origin, so the docs host may not call the API.
+# Two relaxations the other hosts do not need. Fumadocs hydrates React islands and
+# writes the theme before the first paint, so `script-src` needs `'unsafe-inline'`;
+# there is no user content on this origin, which is what makes that acceptable here
+# and nowhere else. `connect-src` stays `'self'` because the search dialog fetches
+# its static index from this origin, so the docs host may not call the API.
 {$SUITE_DOCS_HOST:docs.suite.run} {
 	encode zstd gzip
 	import suite_security_headers

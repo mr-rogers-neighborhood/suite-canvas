@@ -1,0 +1,124 @@
+/*
+ * The handbook panel and the prose inside it.
+ *
+ * The article bodies are Markdown rendered at build time, so they arrive as plain HTML with no
+ * Tailwind classes to style them. These rules are the smallest set that makes a paragraph, a
+ * list, a link and a code span read like the rest of the app rather than like a browser default.
+ */
+
+.handbook-article {
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.handbook-article > * + * {
+  margin-top: 8px;
+}
+
+.handbook-article h2,
+.handbook-article h3 {
+  margin-top: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.handbook-article p {
+  margin: 0;
+}
+
+.handbook-article ul,
+.handbook-article ol {
+  margin: 0;
+  padding-left: 16px;
+  list-style: disc;
+}
+
+.handbook-article ol {
+  list-style: decimal;
+}
+
+.handbook-article code {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--segmented-bg, rgb(0 0 0 / 6%));
+  font-size: 11px;
+}
+
+.handbook-article a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--hairline);
+  text-underline-offset: 2px;
+}
+
+.handbook-article a:hover {
+  text-decoration-color: currentcolor;
+}
+
+.handbook-article blockquote {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--hairline);
+  color: var(--ink-muted);
+}
+
+/* The bubble itself: a shell surface, so it carries the same border and shadow as a panel. */
+.handbook-bubble {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.handbook-bubble__count {
+  font-variant-numeric: tabular-nums;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--segmented-bg, rgb(0 0 0 / 6%));
+  color: var(--ink);
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.handbook-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.handbook-row:hover,
+.handbook-row[data-active="true"] {
+  background: var(--segmented-bg, rgb(0 0 0 / 6%));
+}
+
+/* The grab handle for resizing: small, in the corner, and never in the way of a row. */
+.handbook-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  border-bottom-right-radius: 11px;
+  background: linear-gradient(
+    135deg,
+    transparent 50%,
+    var(--hairline) 50%,
+    var(--hairline) 60%,
+    transparent 60%,
+    transparent 70%,
+    var(--hairline) 70%,
+    var(--hairline) 80%,
+    transparent 80%
+  );
+}

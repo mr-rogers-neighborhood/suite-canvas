@@ -188,3 +188,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/*
+ * The context panel inside the handbook bubble. The floating panel positions itself over the
+ * board; embedded, it is a block in the bubble's own column and must not carry the border or
+ * the shadow of a second surface.
+ */
+.explain-panel--embedded {
+  position: static;
+  width: 100%;
+  max-height: none;
+  padding: 0 0 8px;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}

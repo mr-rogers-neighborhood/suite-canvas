@@ -123,6 +123,7 @@ export function ContainerPanel({
     <aside
       className="card-inspector container-inspector"
       data-testid="container-inspector"
+      data-handbook-region="card-inspector"
       data-kind={model.kind}
       aria-label={portal ? "Portal info" : "Section info"}
     >

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buttonName, FORMAT_COMMANDS, type FormatCommand } from "./formatCommands";
+import {
+  activeHeading,
+  buttonName,
+  FORMAT_COMMANDS,
+  type FormatCommand,
+  formatMenus,
+  HEADING_MENU,
+  PARAGRAPH_COMMAND,
+} from "./formatCommands";
 
 function record(apply: (chain: never) => unknown): string[] {
   const calls: string[] = [];
@@ -61,5 +69,51 @@ describe("the shared formatting table", () => {
   it("should never mark a divider as pressed, because the caret cannot sit in one", () => {
     const editor = { isActive: () => true } as unknown as Parameters<FormatCommand["active"]>[0];
     expect(command("divider").active(editor)).toBe(false);
+  });
+});
+
+describe("the formatting menu view", () => {
+  it("should collapse the six heading commands into one entry in table order", () => {
+    const menus = formatMenus();
+    const headings = menus.filter((menu) => menu.kind === "heading");
+    expect(headings).toHaveLength(1);
+
+    // The heading entry sits where the first heading command sat, so the row's groups keep
+    // their order: marks, then headings, then blocks.
+    const order = menus.map((menu) => (menu.kind === "heading" ? menu.id : menu.command.id));
+    expect(order).toEqual([
+      "bold",
+      "italic",
+      "strike",
+      "heading",
+      "bullet-list",
+      "ordered-list",
+      "quote",
+      "code-block",
+      "divider",
+    ]);
+  });
+
+  it("should carry every level and a way back to body text", () => {
+    expect(HEADING_MENU.levels.map((command) => command.id)).toEqual([
+      "heading-1",
+      "heading-2",
+      "heading-3",
+      "heading-4",
+      "heading-5",
+      "heading-6",
+    ]);
+    expect(HEADING_MENU.paragraph).toBe(PARAGRAPH_COMMAND);
+  });
+
+  it("should keep the paragraph command out of the table, so it is not a seventh button", () => {
+    expect(FORMAT_COMMANDS.some((command) => command.id === "paragraph")).toBe(false);
+  });
+
+  it("should report the heading level the caret is in", () => {
+    expect(activeHeading({})).toBe(0);
+    expect(activeHeading({ "heading-1": false, "heading-4": true })).toBe(4);
+    // Body text is the absence of a heading, not a heading of level zero.
+    expect(activeHeading({ "heading-1": false })).toBe(0);
   });
 });

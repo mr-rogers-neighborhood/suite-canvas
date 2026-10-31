@@ -48,6 +48,7 @@ export function LibrarySearchRow({
         type="search"
         value={query}
         data-testid="library-search"
+        data-handbook-region="library-search"
         aria-label="Search cards and boards"
         placeholder="Search cards and boards"
         autoComplete="off"

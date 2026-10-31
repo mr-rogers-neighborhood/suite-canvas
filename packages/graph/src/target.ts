@@ -6,8 +6,15 @@ import { entityIdSchema } from "./schema.js";
  * names an edge itself, while a link endpoint names a card/board/section an edge
  * points at. Adding a kind is an explicit edit to ADR-0044, because every
  * consumer has to decide how it navigates and how it outlines.
+ *
+ * `ui` names a region of the shell — the title bar, the dock, the inspector — by the id
+ * the handbook registry gives it. It is the one kind that is not in the document: its id
+ * is authored in `apps/canvas/src/handbook/regions.ts` and rendered as a
+ * `data-handbook-region` attribute, so a region is present exactly when that element is.
+ * Nothing navigates to it, and it can never be dead, because the element either exists
+ * on this screen or the article simply does not match.
  */
-export const targetKinds = ["card", "board", "section", "link"] as const;
+export const targetKinds = ["card", "board", "section", "link", "ui"] as const;
 
 export const targetKindSchema = z.enum(targetKinds);
 

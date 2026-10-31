@@ -66,6 +66,7 @@ export function ShareAction({ workspaceId, boardId, title }: ShareActionProps) {
       <button
         type="button"
         data-testid="share-action"
+        data-handbook-region="share-action"
         title={
           canManageLinks
             ? "Share this workspace, a board or a card."

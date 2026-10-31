@@ -1,6 +1,15 @@
 import type { Editor } from "@tiptap/react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { openMediaPicker } from "../editor/mediaPicker";
-import { buttonName, FORMAT_COMMANDS, type FormatCommand } from "./formatCommands";
+import { useEscapeLayer } from "../shell/escapeLayers";
+import {
+  activeHeading,
+  buttonName,
+  type FormatCommand,
+  type FormatMenu,
+  formatMenus,
+} from "./formatCommands";
 
 /**
  * The formatting controls for a card body, in one place.
@@ -35,23 +44,68 @@ function buttonClass(active: boolean): string {
   ].join(" ");
 }
 
-/** Separators follow the table's groups, so adding a command does not need a layout edit. */
-function withGroupBreaks(commands: readonly FormatCommand[]): (FormatCommand | null)[] {
-  const laidOut: (FormatCommand | null)[] = [];
+/** Separators follow the menu's groups, so adding a command does not need a layout edit. */
+function withGroupBreaks(menus: readonly FormatMenu[]): (FormatMenu | null)[] {
+  const laidOut: (FormatMenu | null)[] = [];
   let group = "";
-  for (const command of commands) {
-    if (group !== "" && command.group !== group) laidOut.push(null);
-    group = command.group;
-    laidOut.push(command);
+  for (const menu of menus) {
+    const next = menu.kind === "command" ? menu.command.group : "heading";
+    if (group !== "" && next !== group) laidOut.push(null);
+    group = next;
+    laidOut.push(menu);
   }
   return laidOut;
 }
 
+/**
+ * Where the heading menu sits: under its trigger, kept inside the window.
+ *
+ * Fixed coordinates rather than an absolutely positioned child, because both hosts clip: the
+ * bubble menu is inside a transformed canvas layer, and the inspector's column is narrow
+ * enough that a menu hanging off its edge would be cut in half.
+ */
+function menuPosition(trigger: HTMLElement | null): { left: number; top: number } {
+  if (!trigger) return { left: 8, top: 8 };
+  const rect = trigger.getBoundingClientRect();
+  const width = 152;
+  const estimated = 232;
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+  const below = rect.bottom + 4;
+  const top =
+    below + estimated > window.innerHeight ? Math.max(8, rect.top - estimated - 4) : below;
+  return { left, top };
+}
+
 export function EditorToolbar({ editor, active, wrap = true, className }: EditorToolbarProps) {
+  const [headingOpen, setHeadingOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 0, top: 0 });
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const close = useCallback(() => setHeadingOpen(false), []);
+  useEscapeLayer(close, headingOpen);
+
+  useEffect(() => {
+    if (!headingOpen) return;
+    const onPointer = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (menuRef.current?.contains(target) === true) return;
+      if (trigger.current?.contains(target) === true) return;
+      close();
+    };
+    window.addEventListener("pointerdown", onPointer);
+    return () => window.removeEventListener("pointerdown", onPointer);
+  }, [headingOpen, close]);
+
   const run = (command: FormatCommand) => {
     if (!editor) return;
-    command.run(editor.chain().focus()).run();
+    // The menu sets the level rather than toggling it: choosing H2 while already in an H2
+    // means "make this an H2", and Paragraph is how you leave. A toggle would turn the level
+    // the reader just chose into body text.
+    (command.slashRun ?? command.run)(editor.chain().focus()).run();
   };
+
+  const level = activeHeading(active);
 
   return (
     <div
@@ -64,8 +118,8 @@ export function EditorToolbar({ editor, active, wrap = true, className }: Editor
         className ?? "",
       ].join(" ")}
     >
-      {withGroupBreaks(FORMAT_COMMANDS).map((command, index) => {
-        if (!command) {
+      {withGroupBreaks(formatMenus()).map((menu, index) => {
+        if (!menu) {
           return (
             <span
               key={`break-${String(index)}`}
@@ -73,6 +127,92 @@ export function EditorToolbar({ editor, active, wrap = true, className }: Editor
             />
           );
         }
+        if (menu.kind === "heading") {
+          const label = level === 0 ? "Text" : `H${String(level)}`;
+          return (
+            <span key="heading" className="flex shrink-0 items-center">
+              <button
+                ref={trigger}
+                type="button"
+                data-testid="format-heading"
+                aria-haspopup="menu"
+                aria-expanded={headingOpen}
+                aria-label={`Heading: ${label}`}
+                aria-pressed={level > 0}
+                title="Heading"
+                className={`inline-flex items-center gap-0.5 ${buttonClass(level > 0)}`}
+                onClick={() => {
+                  setPosition(menuPosition(trigger.current));
+                  setHeadingOpen((open) => !open);
+                }}
+              >
+                {label}
+                <span aria-hidden="true" className="text-[9px] leading-none opacity-70">
+                  {"\u25be"}
+                </span>
+              </button>
+              {headingOpen ? (
+                <div
+                  ref={(node) => {
+                    // Focus the first row, so the menu's own keys work from the first frame.
+                    if (node) focusFirstMenuItem(node);
+                    menuRef.current = node;
+                  }}
+                  role="menu"
+                  aria-label="Heading"
+                  data-testid="format-heading-menu"
+                  style={{ position: "fixed", left: position.left, top: position.top }}
+                  className="z-50 w-[152px] rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      close();
+                      trigger.current?.focus();
+                      return;
+                    }
+                    menuKeyDown(event);
+                  }}
+                  onMouseDown={(event) => event.preventDefault()}
+                >
+                  {[menu.paragraph, ...menu.levels].map((command) => {
+                    const rowLevel = command.id === "paragraph" ? 0 : Number(command.id.slice(8));
+                    const checked = rowLevel === level;
+                    return (
+                      <button
+                        key={command.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={checked}
+                        data-testid={`format-heading-${command.id}`}
+                        className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12px] ${
+                          checked
+                            ? "bg-[var(--segmented-bg)] text-[var(--ink)]"
+                            : "text-[var(--ink-muted)] hover:bg-[var(--segmented-bg)]"
+                        }`}
+                        onClick={() => {
+                          run(command);
+                          close();
+                          trigger.current?.focus();
+                        }}
+                      >
+                        <span aria-hidden="true" className="w-5 text-center opacity-70">
+                          {command.glyph}
+                        </span>
+                        <span className="min-w-0 truncate">{command.title}</span>
+                        {checked ? (
+                          <span aria-hidden="true" className="ml-auto opacity-70">
+                            {"\u2713"}
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </span>
+          );
+        }
+        const command = menu.command;
         const on = active[command.id] === true;
         return (
           <button

@@ -67,6 +67,7 @@ export function ThemeToggle() {
         aria-label={`Theme: ${active?.label ?? "Auto"}`}
         title={`Theme: ${active?.label ?? "Auto"}`}
         data-testid="theme-toggle"
+        data-handbook-region="theme-toggle"
         data-mode={mode}
         className="theme-picker__button"
         onClick={() => setOpen((value) => !value)}

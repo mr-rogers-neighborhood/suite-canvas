@@ -870,17 +870,18 @@ serves the canvas, the relay's socket and the control plane, none of which is a 
 | Host | Serves | Where it is built |
 | --- | --- | --- |
 | `app.suite.run` | canvas, relay, control plane | the box, `docker compose` |
-| `docs.suite.run` | `docs/` as a Starlight site | `apps/docs/dist`, uploaded by `pnpm deploy:docs` |
+| `docs.suite.run` | the developer docs and the user handbook, as a Fumadocs site | `apps/docs/dist`, uploaded by `pnpm deploy:docs` |
 | `suite.run` | the marketing page | `apps/site/dist`, uploaded by `pnpm deploy:site` |
 
 `_headers` in each site's `public/` directory is the Cloudflare equivalent of the Caddy policy, and it
 is copied into `dist` at build time. Keep the two in step: the same page should not have a different
 security posture depending on whether it was served from Pages or from the box. The docs site allows
-inline scripts because Starlight emits them; the marketing page does not need to.
+inline scripts because Fumadocs emits them and because its search index is fetched by the page; the
+marketing page does not need to.
 
 ## Docs site
 
-The reader-facing docs are a static Astro site in `apps/docs`, built from `docs/`. It needs no
+The reader-facing docs are a static Astro site in `apps/docs`, built from `docs/` and `handbook/`. It needs no
 database, no volume and no relay: the image is the built tree at `/srv/docs`, which is the default of
 `SUITE_DOCS_ROOT` in `deploy/Caddyfile` and the root the `docs.suite.run` site block serves.
 
@@ -897,8 +898,7 @@ tree with Caddy's file server on port 3001. The same build runs locally with `pn
 The marketing page is the same shape in `apps/site`: `/srv/marketing`, `SUITE_MARKETING_ROOT`, and
 `pnpm site:build`.
 
-Starlight ships inline scripts for the theme, the search dialog and the sidebar, and the dashboard adds
-one for its tabs and filter. The docs host therefore carries `script-src 'self' 'unsafe-inline'`, and
+Fumadocs runs in React islands: the theme, the sidebar and the search dialog are hydrated on every page. The docs host therefore carries `script-src 'self' 'unsafe-inline'`, and
 it is the only host that does: there is no user content on that origin, which is what makes the
 relaxation safe there and nowhere else. The marketing page has no scripts and keeps `'self'`.
 

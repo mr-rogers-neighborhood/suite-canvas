@@ -18,6 +18,13 @@ describe("targetSchema", () => {
     expect(targetSchema.safeParse({ kind: "card", id: "" }).success).toBe(false);
     expect(targetSchema.safeParse({ kind: "card" }).success).toBe(false);
   });
+
+  it("accepts a UI region id, which is the one kind not minted by the document", () => {
+    expect(targetSchema.parse({ kind: "ui", id: "title-bar" })).toEqual({
+      kind: "ui",
+      id: "title-bar",
+    });
+  });
 });
 
 describe("targetKey", () => {

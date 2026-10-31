@@ -38,18 +38,18 @@ describe("filterSlashItems", () => {
   });
 
   it("should match keywords as well as titles", () => {
-    expect(filterSlashItems("h1").map((entry) => entry.id)).toEqual(["heading-1"]);
+    expect(filterSlashItems("h1").map((entry) => entry.id)).toEqual(["heading"]);
+    expect(filterSlashItems("h4").map((entry) => entry.id)).toEqual(["heading"]);
     expect(filterSlashItems("quo").map((entry) => entry.id)).toEqual(["quote"]);
     // Every level answers to "heading", which is how a reader who has not learned the
     // `/h4` shorthand still finds the block.
-    expect(filterSlashItems("HEADING").map((entry) => entry.id)).toEqual([
-      "heading-1",
-      "heading-2",
-      "heading-3",
-      "heading-4",
-      "heading-5",
-      "heading-6",
-    ]);
+    expect(filterSlashItems("HEADING").map((entry) => entry.id)).toEqual(["heading"]);
+  });
+
+  it("should fold the six heading levels into one row that carries all of them", () => {
+    const heading = item("heading");
+    expect(heading.levels?.map((level) => level.level)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(SLASH_ITEMS.some((entry) => entry.id.startsWith("heading-"))).toBe(false);
   });
 
   it("should match one word against several blocks", () => {
@@ -71,7 +71,21 @@ describe("filterSlashItems", () => {
 
   it("should offer every formatting command the toolbar draws", () => {
     const ids = filterSlashItems("").map((entry) => entry.id);
-    for (const command of FORMAT_COMMANDS) expect(ids).toContain(command.id);
+    const collapsed = new Set([
+      "heading-1",
+      "heading-2",
+      "heading-3",
+      "heading-4",
+      "heading-5",
+      "heading-6",
+    ]);
+    for (const command of FORMAT_COMMANDS) {
+      // The heading commands are the one row the menu collapses, and that row is the tab's
+      // stand-in for all six.
+      if (collapsed.has(command.id)) continue;
+      expect(ids).toContain(command.id);
+    }
+    expect(ids).toContain("heading");
   });
 
   it("should not offer the tour step while tours are paused", () => {
@@ -84,10 +98,31 @@ describe("filterSlashItems", () => {
 describe("slash commands", () => {
   it("should turn the typed query into a heading and leave no `/h1` behind", () => {
     const current = createEditor("/h1");
-    item("heading-1").run(current, { from: 1, to: 4 });
+    const level = item("heading").levels?.find((entry) => entry.level === 1);
+    level?.apply(current, { from: 1, to: 4 });
 
     expect(firstNode(current)?.type.name).toBe("heading");
     expect(firstNode(current)?.attrs.level).toBe(1);
+    expect(current.state.doc.textContent).toBe("");
+  });
+
+  it("should return a heading to body text from the same row", () => {
+    const current = createEditor("/h2");
+    const heading = item("heading").levels?.find((entry) => entry.level === 2);
+    heading?.apply(current, { from: 1, to: 4 });
+    expect(firstNode(current)?.type.name).toBe("heading");
+
+    const paragraph = item("heading").levels?.find((entry) => entry.level === 0);
+    paragraph?.apply(current, { from: 1, to: 1 });
+    expect(firstNode(current)?.type.name).toBe("paragraph");
+  });
+
+  it("should apply the level a plain `/heading` does not name as H2", () => {
+    const current = createEditor("/heading");
+    item("heading").run(current, { from: 1, to: 9 });
+
+    expect(firstNode(current)?.type.name).toBe("heading");
+    expect(firstNode(current)?.attrs.level).toBe(2);
     expect(current.state.doc.textContent).toBe("");
   });
 

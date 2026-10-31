@@ -1,6 +1,8 @@
+import type { AnnotationPart } from "@suite/graph";
 import { useEffect, useMemo, useState } from "react";
 import { type OpenedBook, openEpub, protectionOf } from "../archive/epub/open";
 import { sanitiseChapter } from "../archive/epub/sanitise";
+import { toast } from "../feedback/toast";
 import { IconGlyph } from "../icons/IconGlyph";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
@@ -9,8 +11,8 @@ import { useBookPosition, useBookStore } from "./bookStore";
 import { HighlightFocus } from "./HighlightFocus";
 import { HighlightMenu } from "./HighlightMenu";
 import { HighlightPalette } from "./HighlightPalette";
-import { beginHighlightDrag, useHighlightDrag } from "./highlightDrag";
-import { promoteAnnotation } from "./promote";
+import { handOverHighlight } from "./handOver";
+import { beginHighlightDrag } from "./highlightDrag";
 import { type PendingSelection, ReaderChapter } from "./ReaderChapter";
 import { useBookBytes } from "./useBookBytes";
 import { useHighlights } from "./useHighlights";
@@ -68,8 +70,9 @@ export function BookReader({
   const remember = useBookStore((store) => store.remember);
   const highlights = useHighlights(sourceCardId ?? "");
   const workspace = useCanvasStore((state) => state.workspace);
-  const activeBoardId = useUiStore((state) => state.activeBoardId);
+  const canEditLayout = useUiStore((state) => state.canEditLayout);
   const openCardFocus = useUiStore((state) => state.openCardFocus);
+  const openAnnotationKinds = useUiStore((state) => state.openAnnotationKinds);
   const [selection, setSelection] = useState<PendingSelection | null>(null);
   /** The highlight on the raised surface, by id: a press raises, and the surface is where it is taken apart. */
   const [raisedId, setRaisedId] = useState<string | null>(null);
@@ -167,6 +170,26 @@ export function BookReader({
     setPanel("none");
     remember(attachmentId, path);
   };
+  /**
+   * Putting a highlight on the board.
+   *
+   * The card is made and put in the reader's hand, because placing is a gesture: a press on the board puts it down
+   * where they are looking. A highlight whose card already exists is never made twice — the hand takes it back, or the
+   * reader is taken to the card when it is already on a board.
+   */
+  const place = (annotationId: string, parts?: readonly AnnotationPart[]) => {
+    if (workspace === null) return;
+    const found = highlights.annotations.find((entry) => entry.id === annotationId);
+    if (found === undefined) return;
+    const outcome = handOverHighlight({
+      workspace,
+      annotation: parts === undefined ? found : { ...found, parts: [...parts] },
+      canEditPlacement: canEditLayout,
+    });
+    if (outcome === null) return;
+    if (outcome.placedAlready) openCardFocus(outcome.cardId);
+    else if (!outcome.inHand) toast.neutral("Saved to the inbox: this board is read-only for you.");
+  };
 
   return (
     <div
@@ -256,10 +279,7 @@ export function BookReader({
             setRaisedId(id);
             setPanel("none");
           }}
-          onCarry={(id, point) => {
-            useHighlightDrag.getState().carry(id);
-            useHighlightDrag.getState().move(point);
-          }}
+          onPlace={(id) => place(id)}
         />
       ) : null}
 
@@ -306,19 +326,13 @@ export function BookReader({
           styles={highlights.styles}
           slots={highlights.styles.find((entry) => entry.id === raised.styleId)?.recipe ?? []}
           fieldNames={fieldNames}
+          onEditKinds={openAnnotationKinds}
           onPlace={(parts) => {
             if (workspace === null) return;
             workspace.setAnnotationParts(raised.id, [...parts]);
-            const promoted = promoteAnnotation({
-              workspace,
-              annotation: { ...raised, parts: [...parts] },
-              boardId: activeBoardId,
-            });
-            if (promoted?.existed === true && activeBoardId !== null) {
-              // A highlight that already came out of the book takes the reader to that card rather than making a
-              // second one: the record names one card, and a silent duplicate would orphan the first from it.
-              openCardFocus(promoted.cardId);
-            }
+            // A highlight that already came out of the book is not made twice: its card goes back in the hand, or the
+            // reader is taken to it when it is already on a board.
+            place(raised.id, [...parts]);
             highlights.refresh();
             setRaisedId(null);
           }}
@@ -355,15 +369,7 @@ export function BookReader({
             workspace?.setAnnotationStyle(menu.id, styleId);
             highlights.refresh();
           }}
-          onPlace={() => {
-            const annotation = highlights.annotations.find((entry) => entry.id === menu.id);
-            if (annotation === undefined || workspace === null) return;
-            const promoted = promoteAnnotation({ workspace, annotation, boardId: activeBoardId });
-            if (promoted?.existed === true && activeBoardId !== null)
-              openCardFocus(promoted.cardId);
-            highlights.refresh();
-            setMenu(null);
-          }}
+          onPlace={() => place(menu.id)}
           onRemove={() => {
             workspace?.deleteAnnotation(menu.id);
             highlights.refresh();

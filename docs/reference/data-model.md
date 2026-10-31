@@ -186,9 +186,11 @@ paragraph in a way a second sub-quote would not be. A target is `title`, `body`,
 `own-card`. Parts are written whole, because they describe each other: two writers editing different parts would
 produce ranges that overlap or leave gaps.
 
-**A style is the mapping.** `templateTypeId` is the card type it produces and `recipe` is the ordered destinations it
-fills; `patchAnnotationStyle` writes both. The raise surface draws those destinations as slots, and a part outside the
-recipe is kept and shown rather than refused.
+**A kind is the mapping.** A highlight has a *kind* (the `AnnotationStyle` it was marked with) and a card has a
+*type*; the two words are never swapped, because the library already manages card types under **Types**.
+`templateTypeId` is the card type a kind produces and `recipe` is the ordered destinations it fills;
+`patchAnnotationStyle` writes both. The raise surface draws those destinations as slots, and a part outside the recipe
+is kept and shown rather than refused.
 
 **A mention can name a highlight.** The mention node carries `annotationId`, which the publish validator's allowlist
 names: without it, any document containing one is rejected. A chip of one shows the passage and opens where it came
@@ -197,6 +199,17 @@ from.
 **A style may carry a recipe**: the targets it expects a highlight to be broken into. It seeds; the highlight decides.
 `promoteAnnotation` opens the card a highlight already has rather than making a second one, and `again` is the
 explicit way to make another.
+
+**`cardId` is a link a reader can take back.** `setAnnotationCard(id, null)` clears it, which is what **Keep it** on a
+promoted card does: the quote is already in the card's body as ordinary text, the card's `annotation` property is
+cleared as the app, and the highlight may produce another card later. The highlight is never deleted by de-linking,
+because the mark is still in the book.
+
+**Promotion says where it is going.** `promoteAnnotation` takes a `Placement` union, `{ onBoard: { boardId,
+position } }` or `{ inbox: true }`, rather than an optional board and an optional point. A caller that names a board
+must say where the card goes, so the state that wrote neither (a card in the inbox that its creator believed was on a
+board) is unrepresentable. **Place** in the reader is an inbox promotion followed by `usePlaceStackStore`, because
+placing is a gesture and the press that follows is what chooses the point.
 
 `annotationStyles` is the palette: `{ id, name, color, templateTypeId?, order }`. Shared across media, and data
 rather than code — nothing branches on a style's id. A style naming a `templateTypeId` is how "green highlights

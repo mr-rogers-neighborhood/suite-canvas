@@ -12,8 +12,7 @@ import { NewThingMenu } from "../chrome/NewThingMenu";
 import { newThingMenuModel } from "../chrome/newThingMenu";
 import { useSavedViews } from "../chrome/ViewsBar";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
-import { AnnotationTypesDialog } from "../reader/AnnotationTypesDialog";
-import { useHighlightDrag } from "../reader/highlightDrag";
+import { handOverHighlight } from "../reader/handOver";
 import { useAnnotations } from "../reader/useHighlights";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
@@ -123,6 +122,8 @@ export function LibraryDrawer({
   const setLibraryQuery = useUiStore((state) => state.setLibraryQuery);
   const views = useSavedViews(workspace);
   const openCardFocus = useUiStore((state) => state.openCardFocus);
+  const openAnnotationKinds = useUiStore((state) => state.openAnnotationKinds);
+  const canEditLayout = useUiStore((state) => state.canEditLayout);
   /** The workspace's highlights, re-read when one changes: this list is the reader's record of what they marked. */
   const annotations = useAnnotations(workspace);
   const annotationStyles = workspace?.listAnnotationStyles() ?? [];
@@ -134,6 +135,11 @@ export function LibraryDrawer({
     }
     return titles;
   }, [annotations, workspace]);
+  /** The cards on the board being looked at, so a row can say where its card actually is. */
+  const annotationOnBoard = useMemo(() => {
+    if (workspace === null || activeBoardId === null) return new Set<string>();
+    return new Set(workspace.listBoardPlacements(activeBoardId).map((entry) => entry.cardId));
+  }, [workspace, activeBoardId]);
   const annotationBookTitles = useMemo(() => {
     const titles = new Map<string, string>();
     for (const annotation of annotations) {
@@ -147,8 +153,6 @@ export function LibraryDrawer({
   const openNewView = useViewsStore((state) => state.openNew);
   const newView = useCallback(() => openNewView(views.length), [openNewView, views.length]);
   const [activeResult, setActiveResult] = useState(0);
-  /** The annotation types editor, which is the tab's own dialog rather than the shell's. */
-  const [typesOpen, setTypesOpen] = useState(false);
   /**
    * The list's order. A saved view carries its own when it is applied, so this
    * starts wherever the last view left it and the reader can change it after.
@@ -589,28 +593,31 @@ export function LibraryDrawer({
 
       {/* The selection bar replaces the search row while a selection exists: what a
           reader picks rows for is acting on them together. */}
-      {typesOpen && workspace !== null ? (
-        <AnnotationTypesDialog workspace={workspace} onClose={() => setTypesOpen(false)} />
-      ) : null}
-
       {tab === "annotations" ? (
         <LibraryAnnotationList
           annotations={annotations}
           styles={annotationStyles}
           cardTitles={annotationCardTitles}
+          onBoardCards={annotationOnBoard}
           bookTitles={annotationBookTitles}
           onOpen={(annotation) => {
             close();
             openCardFocus(annotation.sourceCardId);
           }}
-          onCarry={(annotation, point) => {
-            // The same carry the book uses: one piece of state, and the board's own drop layer promotes on release.
-            // A second drop path for the drawer would be a second rule for where a highlight lands.
-            useHighlightDrag.getState().carry(annotation.id);
-            useHighlightDrag.getState().move(point);
+          onPlace={(annotation) => {
+            if (workspace === null) return;
+            // The same hand the book uses, so a press and a drag mean the same thing wherever the highlight is shown.
+            const outcome = handOverHighlight({
+              workspace,
+              annotation,
+              canEditPlacement: canEditLayout,
+            });
+            if (outcome?.placedAlready === true) openCardFocus(outcome.cardId);
+            // The drawer gets out of the way of the press that is about to place the card.
+            else if (outcome?.inHand === true) close();
           }}
           onRemove={(annotation) => workspace?.deleteAnnotation(annotation.id)}
-          onEditTypes={() => setTypesOpen(true)}
+          onEditKinds={openAnnotationKinds}
         />
       ) : tab === "media" ? (
         <LibraryMediaList

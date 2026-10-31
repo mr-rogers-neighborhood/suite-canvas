@@ -16,6 +16,7 @@ import { PresenceAvatars } from "../presence/PresenceAvatars";
 import { isBookCard } from "../reader/isBookCard";
 import type { InteractionMode } from "../store/interactionMode";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { AnnotationCardFace, annotationOfCard } from "./AnnotationCardFace";
 import { BookCardFace } from "./BookCardFace";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import type { CardMeta } from "./cardMeta";
@@ -299,6 +300,7 @@ export function NodeCard({
   armedConnectorId = null,
   draftActive = false,
 }: NodeCardProps) {
+  const nodeWorkspace = useCanvasStore((state) => state.workspace);
   // One decision, in one file: `cardIcon` walks style, then the card's own icon, then
   // the type's, and a type with no icon keeps the glyph it has always had.
   const resolved = card ? resolveCardIcon(card, type.icon) : null;
@@ -729,6 +731,11 @@ export function NodeCard({
 
       {collapsed ? null : (
         <>
+          {/* The passage first, then the writing: a card that came out of a book says what it is before it says what
+              the reader made of it. */}
+          {annotationOfCard(nodeWorkspace, card) === null ? null : (
+            <AnnotationCardFace card={card} />
+          )}
           {/* biome-ignore lint/a11y/noStaticElementInteractions: the nested ProseMirror editor owns keyboard interaction */}
           {/* biome-ignore lint/a11y/useKeyWithClickEvents: the title overlay and the Inspector's Edit action are the keyboard path into this editor */}
           <div

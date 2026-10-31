@@ -36,6 +36,7 @@ import { LibraryDrawer, type LibraryItem } from "../library/LibraryDrawer";
 import { BOARD_TYPE_FACET } from "../library/libraryTypes";
 import { BOARD_STARTERS } from "../library/TemplateGallery";
 import { TypeSettingsHost } from "../panels/TypeSettingsHost";
+import { AnnotationKindsHost } from "../reader/AnnotationKindsHost";
 import { pinnedOrder, useBoardPins } from "../session/boardPins";
 import type { ShareSession } from "../session/session";
 import {
@@ -665,6 +666,7 @@ export function WorkspaceShellView({
           <TypeMenuHost />
           <AppearanceHost />
           <CardFocusHost />
+          <AnnotationKindsHost />
           <TourOverlayHost />
           {/* Restoring writes a change, so history belongs to a session that may
               write; a viewer's copy is the relay's, and undo is the owner's. */}

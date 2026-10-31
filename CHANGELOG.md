@@ -2,6 +2,34 @@
 
 ### Added
 
+- An annotation card wears its passage: a strip above the body with the highlight's kind colour down the left, the
+  words, the book it came from, **Reopen** and **Keep it**. The body underneath stays editable, because a comment on a
+  passage belongs in the card that came from it.
+
+### Changed
+
+- **Place** puts the card in your hand instead of picking a place for you. The surface steps aside, one press on the
+  board puts the card down, and placing several highlights in a row fills one stack. A highlight whose card is already
+  on a board opens that card.
+- A highlight's type is called a **kind** throughout the interface. A kind is what a highlight is; a type is what a
+  card is, and the library already had a Types button.
+- The kinds editor belongs to the shell rather than to the library: it scrolls its own body under a fixed header and
+  footer, and Escape closes it without closing the drawer it was opened from.
+- Library and outline rows carry a **Place** button beside the drag, and say where their card is: the title when it is
+  on this board, `in the inbox` when it is not, **Not a card yet** before it is anything.
+
+### Fixed
+
+- Pressing **Place** created the card in the inbox. The promotion was given a board and no point, so it wrote no
+  placement: the board showed nothing, and a second press "opened" a card nobody could see.
+- Dragging a highlight out of the library or the book's Highlights panel made nothing. Both rows rolled their own
+  gesture that never armed the carry, so the drag was still a text selection and the release depended on which
+  `pointerup` listener ran first. There is one dropper now, and every carry ends through it.
+- A cancelled drag placed the highlight at the top-left corner of the canvas: `pointercancel` carries no coordinates,
+  and the release was treated as a drop at the origin.
+
+### Added
+
 - Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
   slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
   type's own text properties.

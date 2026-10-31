@@ -2,6 +2,14 @@ import { WorkspaceDocument } from "@suite/graph";
 import { describe, expect, it } from "vitest";
 import { promoteAnnotation, titleFrom } from "./promote";
 
+/** The two calls that name no board: everything a highlight makes arrives unplaced, and only a gesture puts it down. */
+function INBOX(
+  workspace: WorkspaceDocument,
+  annotation: Parameters<typeof promoteAnnotation>[0]["annotation"],
+) {
+  return { workspace, annotation, placement: { inbox: true as const } };
+}
+
 function fixture() {
   const workspace = new WorkspaceDocument();
   workspace.ensureDefaultTypes();
@@ -29,8 +37,7 @@ describe("promoting a highlight", () => {
     const promoted = promoteAnnotation({
       workspace,
       annotation,
-      boardId: board.id,
-      position: { x: 40, y: 60 },
+      placement: { onBoard: { boardId: board.id, position: { x: 40, y: 60 } } },
     });
 
     expect(promoted).not.toBeNull();
@@ -43,7 +50,7 @@ describe("promoting a highlight", () => {
 
   it("should carry a read-only annotation property that names the record", () => {
     const { workspace, annotation } = fixture();
-    const promoted = promoteAnnotation({ workspace, annotation });
+    const promoted = promoteAnnotation(INBOX(workspace, annotation));
     const card = workspace.getCard(promoted?.cardId ?? "");
     const type = workspace.getType(card?.primaryTypeId ?? "");
     const field = type?.fields.find((entry) => entry.kind === "annotation");
@@ -54,13 +61,13 @@ describe("promoting a highlight", () => {
 
   it("should record the promotion on the highlight, so the book knows the passage left", () => {
     const { workspace, annotation } = fixture();
-    const promoted = promoteAnnotation({ workspace, annotation });
+    const promoted = promoteAnnotation(INBOX(workspace, annotation));
     expect(workspace.getAnnotation(annotation.id)?.cardId).toBe(promoted?.cardId);
   });
 
   it("should leave the highlight alone when it deletes the card: the reader wrote the card", () => {
     const { workspace, annotation } = fixture();
-    const promoted = promoteAnnotation({ workspace, annotation });
+    const promoted = promoteAnnotation(INBOX(workspace, annotation));
     workspace.deleteAnnotation(annotation.id);
     expect(workspace.getCard(promoted?.cardId ?? "")).toBeDefined();
   });
@@ -70,7 +77,7 @@ describe("promoting a highlight", () => {
     const claim = workspace.createType({ name: "Claim" });
     workspace.patchAnnotationStyle("style-yellow", { templateTypeId: claim.id });
 
-    const promoted = promoteAnnotation({ workspace, annotation });
+    const promoted = promoteAnnotation(INBOX(workspace, annotation));
     expect(workspace.getCard(promoted?.cardId ?? "")?.primaryTypeId).toBe(claim.id);
   });
 
@@ -81,7 +88,7 @@ describe("promoting a highlight", () => {
       styleId: "style-blue",
       anchor: { kind: "time", locator: "episode 1", startMs: 0, endMs: 900 },
     });
-    const promoted = promoteAnnotation({ workspace, annotation: silent });
+    const promoted = promoteAnnotation(INBOX(workspace, silent));
     expect(promoted?.excerptMissing).toBe(true);
     expect(workspace.displayTitle(promoted?.cardId ?? "")).toBe("Reference");
   });
@@ -101,7 +108,7 @@ describe("what a promoted card says", () => {
   it("should open with the quote and then name where it came from", () => {
     const { workspace, annotation, book } = fixture();
     workspace.setTitleText(book.id, "A Small Book");
-    const promoted = promoteAnnotation({ workspace, annotation });
+    const promoted = promoteAnnotation(INBOX(workspace, annotation));
     const nodes = workspace.bodyNodes(promoted?.cardId ?? "");
 
     expect(nodes[0]?.type).toBe("blockquote");
@@ -122,7 +129,7 @@ describe("what a promoted card says", () => {
       styleId: "style-blue",
       anchor: { kind: "time", locator: "episode 1", startMs: 0, endMs: 900 },
     });
-    const promoted = promoteAnnotation({ workspace, annotation: silent });
+    const promoted = promoteAnnotation(INBOX(workspace, silent));
     const nodes = workspace.bodyNodes(promoted?.cardId ?? "");
 
     expect(nodes.map((node) => node.type)).toEqual(["paragraph"]);
@@ -132,7 +139,7 @@ describe("what a promoted card says", () => {
 
   it("should make a real reference, so the card and the book know each other", () => {
     const { workspace, annotation, book } = fixture();
-    const promoted = promoteAnnotation({ workspace, annotation });
+    const promoted = promoteAnnotation(INBOX(workspace, annotation));
     workspace.ensureReferences();
 
     // A reference is the graph's own direction: the card points at the book, which is what makes a backlink.
@@ -168,13 +175,13 @@ describe("parts of a highlight", () => {
 
   it("should title the card from the part the reader marked, not from the first words", () => {
     const { workspace, annotation } = partsFixture();
-    const promoted = promoteAnnotation({ workspace, annotation });
+    const promoted = promoteAnnotation(INBOX(workspace, annotation));
     expect(workspace.displayTitle(promoted?.cardId ?? "")).toBe("the domain");
   });
 
   it("should fill a named property, creating it on the type when it is missing", () => {
     const { workspace, annotation } = partsFixture();
-    const promoted = promoteAnnotation({ workspace, annotation });
+    const promoted = promoteAnnotation(INBOX(workspace, annotation));
     const card = workspace.getCard(promoted?.cardId ?? "");
     const field = workspace
       .getType(card?.primaryTypeId ?? "")
@@ -186,7 +193,7 @@ describe("parts of a highlight", () => {
 
   it("should keep the whole passage in the body, because parts carve pieces out of what was marked", () => {
     const { workspace, annotation } = partsFixture();
-    const promoted = promoteAnnotation({ workspace, annotation });
+    const promoted = promoteAnnotation(INBOX(workspace, annotation));
     const quote = workspace.bodyNodes(promoted?.cardId ?? "")[0];
 
     expect(quote?.type).toBe("blockquote");
@@ -200,10 +207,9 @@ describe("parts of a highlight", () => {
       ...(annotation.parts ?? []),
       { id: "part-own", start, end: start + "what we call".length, target: { kind: "own-card" } },
     ]);
-    const promoted = promoteAnnotation({
-      workspace,
-      annotation: workspace.getAnnotation(annotation.id) ?? annotation,
-    });
+    const promoted = promoteAnnotation(
+      INBOX(workspace, workspace.getAnnotation(annotation.id) ?? annotation),
+    );
 
     expect(promoted?.ownCardIds).toHaveLength(1);
     const own = workspace.getCard(promoted?.ownCardIds[0] ?? "");
@@ -212,11 +218,10 @@ describe("parts of a highlight", () => {
 
   it("should open the card a highlight already has instead of making a second one", () => {
     const { workspace, annotation } = partsFixture();
-    const first = promoteAnnotation({ workspace, annotation });
-    const second = promoteAnnotation({
-      workspace,
-      annotation: workspace.getAnnotation(annotation.id) ?? annotation,
-    });
+    const first = promoteAnnotation(INBOX(workspace, annotation));
+    const second = promoteAnnotation(
+      INBOX(workspace, workspace.getAnnotation(annotation.id) ?? annotation),
+    );
 
     expect(second?.existed).toBe(true);
     expect(second?.cardId).toBe(first?.cardId);
@@ -225,10 +230,9 @@ describe("parts of a highlight", () => {
 
   it("should make another card when the reader asks for one deliberately", () => {
     const { workspace, annotation } = partsFixture();
-    const first = promoteAnnotation({ workspace, annotation });
+    const first = promoteAnnotation(INBOX(workspace, annotation));
     const second = promoteAnnotation({
-      workspace,
-      annotation: workspace.getAnnotation(annotation.id) ?? annotation,
+      ...INBOX(workspace, workspace.getAnnotation(annotation.id) ?? annotation),
       again: true,
     });
 

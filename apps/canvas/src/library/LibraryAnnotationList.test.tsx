@@ -1,6 +1,7 @@
 import type { Annotation, AnnotationStyle } from "@suite/graph";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { useHighlightDrag } from "../reader/highlightDrag";
 import { LibraryAnnotationList } from "./LibraryAnnotationList";
 
 /**
@@ -33,21 +34,22 @@ function annotation(patch: Partial<Annotation> = {}): Annotation {
 
 function draw(overrides: Partial<Parameters<typeof LibraryAnnotationList>[0]> = {}) {
   const onOpen = vi.fn();
-  const onCarry = vi.fn();
+  const onPlace = vi.fn();
   const onRemove = vi.fn();
   render(
     <LibraryAnnotationList
       annotations={[annotation()]}
       styles={styles}
       cardTitles={new Map()}
+      onBoardCards={new Set()}
       bookTitles={new Map([["book-1", "A Small Book"]])}
       onOpen={onOpen}
-      onCarry={onCarry}
+      onPlace={onPlace}
       onRemove={onRemove}
       {...overrides}
     />,
   );
-  return { onOpen, onCarry, onRemove };
+  return { onOpen, onPlace, onRemove };
 }
 
 describe("the library's annotations", () => {
@@ -55,16 +57,33 @@ describe("the library's annotations", () => {
     draw();
     expect(screen.getByText("A Small Book")).toBeInTheDocument();
     expect(screen.getByText("A passage worth keeping.")).toBeInTheDocument();
-    expect(screen.getByText("Not on the board")).toBeInTheDocument();
+    expect(screen.getByText("Not a card yet")).toBeInTheDocument();
   });
 
-  it("should name the card a highlight became", () => {
+  it("should name the card a highlight became, and say when it is only in the inbox", () => {
     draw({
       annotations: [annotation({ cardId: "card-1" })],
       cardTitles: new Map([["card-1", "Worth keeping"]]),
     });
+    expect(screen.getByText("Worth keeping, in the inbox")).toBeInTheDocument();
+    expect(screen.queryByText("Not a card yet")).toBeNull();
+  });
+
+  it("should say when a highlight's card is on the board being looked at", () => {
+    draw({
+      annotations: [annotation({ cardId: "card-1" })],
+      cardTitles: new Map([["card-1", "Worth keeping"]]),
+      onBoardCards: new Set(["card-1"]),
+    });
     expect(screen.getByText("Worth keeping")).toBeInTheDocument();
-    expect(screen.queryByText("Not on the board")).toBeNull();
+    expect(screen.queryByText("Worth keeping, in the inbox")).toBeNull();
+  });
+
+  it("should place a highlight with a button, for a reader who is not dragging", () => {
+    const { onPlace, onOpen } = draw();
+    fireEvent.click(screen.getByTestId("library-annotation-place-a1"));
+    expect(onPlace).toHaveBeenCalledWith(expect.objectContaining({ id: "a1" }));
+    expect(onOpen).not.toHaveBeenCalled();
   });
 
   it("should open the passage on a press", () => {
@@ -73,19 +92,23 @@ describe("the library's annotations", () => {
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: "a1" }));
   });
 
-  it("should start a carry on a drag, because a drag is what promotes one", () => {
-    const { onCarry } = draw();
+  it("should carry a highlight on a drag, through the same gesture the reader uses", () => {
+    draw();
     const row = screen.getByTestId("library-annotation-a1");
 
-    fireEvent.pointerDown(row, { clientX: 10, clientY: 10 });
-    // A press that never travelled is a press, not a drag: nothing is carried.
+    // A press that never travelled is a press, not a drag: nothing is in the reader's hand.
+    fireEvent.pointerDown(row, { clientX: 10, clientY: 10, button: 0 });
     fireEvent.pointerUp(window, { clientX: 10, clientY: 10 });
-    expect(onCarry).not.toHaveBeenCalled();
+    expect(useHighlightDrag.getState().carried).toBeNull();
 
-    fireEvent.pointerDown(row, { clientX: 10, clientY: 10 });
+    fireEvent.pointerDown(row, { clientX: 10, clientY: 10, button: 0 });
     fireEvent.pointerMove(window, { clientX: 60, clientY: 40 });
-    expect(onCarry).toHaveBeenCalledWith(expect.objectContaining({ id: "a1" }), { x: 60, y: 40 });
+    expect(useHighlightDrag.getState().carried).toEqual({ annotationId: "a1" });
+    // The root attribute is what stops the drag being a text selection on the way to the board.
+    expect(document.documentElement.dataset.carryingHighlight).toBe("true");
     fireEvent.pointerUp(window, { clientX: 60, clientY: 40 });
+    expect(useHighlightDrag.getState().carried).toBeNull();
+    expect(document.documentElement.dataset.carryingHighlight).toBeUndefined();
   });
 
   it("should say a workspace has no highlights rather than showing an empty list", () => {
@@ -94,9 +117,10 @@ describe("the library's annotations", () => {
         annotations={[]}
         styles={styles}
         cardTitles={new Map()}
+        onBoardCards={new Set()}
         bookTitles={new Map()}
         onOpen={vi.fn()}
-        onCarry={vi.fn()}
+        onPlace={vi.fn()}
         onRemove={vi.fn()}
       />,
     );

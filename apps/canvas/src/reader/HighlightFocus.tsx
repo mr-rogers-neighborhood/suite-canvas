@@ -36,7 +36,7 @@ export interface HighlightFocusProps {
   onRemove: () => void;
   onClose: () => void;
   /** Open the editor for what each type fills, so a mapping is changed where mappings live. */
-  onEditTypes?: (() => void) | undefined;
+  onEditKinds?: (() => void) | undefined;
 }
 
 /** The label a destination wears on a row. */
@@ -57,7 +57,7 @@ export function HighlightFocus({
   onStyle,
   onRemove,
   onClose,
-  onEditTypes,
+  onEditKinds,
 }: HighlightFocusProps) {
   const quote = annotation.anchor.kind === "quote" ? annotation.anchor.quote : "";
   const [parts, setParts] = useState<AnnotationPart[]>(() =>
@@ -166,21 +166,21 @@ export function HighlightFocus({
               ? "The whole passage"
               : `${String(parts.length)} of ${String(Math.max(parts.length, slots.length))} filled`}
           </span>
-          {onEditTypes === undefined ? null : (
+          {onEditKinds === undefined ? null : (
             <button
               type="button"
               className="views-button views-button--quiet ml-auto"
-              data-testid="raise-edit-types"
-              onClick={onEditTypes}
+              data-testid="raise-edit-kinds"
+              onClick={onEditKinds}
             >
               <IconGlyph icon="lucide:sliders-horizontal" size={11} />
-              Types
+              Kinds
             </button>
           )}
           <button
             type="button"
             className={
-              onEditTypes === undefined ? "views-icon-button ml-auto" : "views-icon-button"
+              onEditKinds === undefined ? "views-icon-button ml-auto" : "views-icon-button"
             }
             aria-label="Close"
             data-testid="raise-close"

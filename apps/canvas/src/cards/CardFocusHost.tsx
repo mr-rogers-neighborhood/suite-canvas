@@ -1,6 +1,7 @@
 import { useReactFlow, type Viewport } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { prefersReducedMotion } from "../canvas/localEasing";
+import { usePlaceStackStore } from "../canvas/placeStack";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { BookFocus } from "../reader/BookFocus";
 import { useHighlightDrag } from "../reader/highlightDrag";
@@ -38,6 +39,10 @@ export function CardFocusHost() {
 
   const workspace = useCanvasStore((state) => state.workspace);
   const carrying = useHighlightDrag((state) => state.carried !== null);
+  // Something in the reader's hand — a carried highlight, or a card they were handed from Place — means the next press
+  // belongs to the board. A focus surface floating over it would eat that press.
+  const inHand = usePlaceStackStore((state) => state.queue.length > 0);
+  const concealed = carrying || inHand;
   const model = useCardPanelModel(cardFocusId, "focus");
   const sketch = model ? isWhiteboardCard(model.card) : false;
   // A book reads in this surface rather than in its body: a selection inside `contentEditable` belongs to
@@ -136,7 +141,7 @@ export function CardFocusHost() {
 
   if (book) {
     return (
-      <CardFocusSurface title={model.title} onClose={close} concealed={carrying}>
+      <CardFocusSurface title={model.title} onClose={close} concealed={concealed}>
         <div className="book-focus" data-testid="book-focus">
           <BookFocus cardId={model.card.id} />
         </div>

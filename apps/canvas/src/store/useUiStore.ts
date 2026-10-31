@@ -212,6 +212,14 @@ interface UiState extends SessionCapabilities {
   /** Card shown on the full-canvas focus surface, if any. */
   cardFocusId: string | null;
   /**
+   * The kinds of highlight there are, and what each one becomes.
+   *
+   * A shell surface rather than a drawer panel: it is opened from the library, from the raise surface in a book and
+   * from the card panel, so it cannot belong to any of them — a dialog led by the drawer's state could be unmounted by
+   * closing the drawer it was opened from.
+   */
+  annotationKindsOpen: boolean;
+  /**
    * Viewer shorthand; capability flags remain the gate for every write path.
    * It is UI state (not read from the session in each component) so tests and
    * stories can render a read-only surface without a `?share=` URL. Editor
@@ -394,6 +402,8 @@ interface UiState extends SessionCapabilities {
   clearPortalEntry: () => void;
   openCardFocus: (cardId: string) => void;
   closeCardFocus: () => void;
+  openAnnotationKinds: () => void;
+  closeAnnotationKinds: () => void;
   setLibraryOpen: (open: boolean, reason?: LibraryReason) => void;
   /** The named style rules: the list and its editor. */
   setLibraryTab: (tab: LibraryTab) => void;
@@ -482,6 +492,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   viewportRequest: null,
   portalEntry: null,
   cardFocusId: null,
+  annotationKindsOpen: false,
   readOnly: getSession().readOnly,
   setReadOnly: (readOnly) => set({ readOnly }),
   setCapabilities: (capabilities) => set(capabilities),
@@ -640,6 +651,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   clearPortalEntry: () => set({ portalEntry: null }),
   openTypeMenu: (cardId, anchor) => set({ typeMenu: { cardId, anchor } }),
   closeTypeMenu: () => set({ typeMenu: null }),
+  openAnnotationKinds: () => set({ annotationKindsOpen: true }),
+  closeAnnotationKinds: () => set({ annotationKindsOpen: false }),
   openCardFocus: (cardFocusId) =>
     // Focus owns the canvas: the drawer would duplicate the same card and
     // reserve a strip of the focus surface.

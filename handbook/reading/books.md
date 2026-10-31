@@ -40,12 +40,15 @@ Select a range inside the raised passage and say where it goes:
 - **A property** — these words fill a property, made for you if the type does not have it yet.
 - **Own card** — these words become a card of their own, which is how one paragraph turns into several notes.
 
-## Types, and the slots they fill
+## Kinds, and the slots they fill
 
-A highlight's colour is its **type**, and a type knows what it produces: a Claim gets a Claim card, with a Question and
-a Source. **Types** in the library's Annotations tab is where that is set: a colour, a name, the card type it makes,
+A highlight's colour is its **kind**, and a kind knows what it produces: a Claim gets a Claim card, with a Question and
+a Source. **Kinds** in the library's Annotations tab is where that is set: a colour, a name, the card type it makes,
 and the list of slots it fills. Choosing a card type offers its own properties as slots, so the mapping starts from
 what the type already knows.
+
+A kind is what a highlight *is*; a type is what a card *is*. The library's own **Types** button manages card types, and
+it is a different thing on purpose rather than a second name for the same one.
 
 The raised passage then wears those slots as rows, empty until you fill them: select the words that answer a row and
 they land in it. The passage keeps the type's colour and the filled ranges are **dotted**, so one highlight can show
@@ -60,12 +63,25 @@ they are one gesture with four starting points.
 Typing `@` in a card body offers your highlights beside your cards: picking one inserts a chip that names the passage,
 in its colour, and pressing that chip opens where the passage came from.
 
-**Done** keeps the parts and leaves the highlight where it is. **Place** makes the cards, and says how many it will
-make before you press it. A highlight that has already been placed opens its card rather than making a second one.
+**Done** keeps the parts and leaves the highlight where it is. **Place** makes the cards and hands them to your
+pointer, and says how many it will make before you press it: the surface steps aside, one press on the board puts the
+top card down, and pressing Place again before you place adds to the stack rather than starting a new one. A highlight
+whose card is already on a board opens that card instead of making a second one.
 
 The highlights you have made collect in the book's **Highlights** panel, beside its contents, with the ones that
 became cards marked. They are also in the library's **Annotations** tab, grouped by book — pressing one opens the
-passage, and dragging one onto the board places it there.
+passage, the arrow beside it places the card, and dragging one onto the board puts it down where you let go. A row
+says where its card is: the card's title when it is on this board, `in the inbox` when it is not, and **Not a card
+yet** before it is anything at all.
+
+## What the card says
+
+A card made from a highlight wears the passage above its body: the kind's colour down the left, the words, and the
+book it came from. The writing underneath is yours, and it is where a comment on the passage belongs — there is no
+separate comment system, because there is no separate kind of card.
+
+**Reopen** goes back to the book. **Keep it** cuts the link: the passage stays in the card as a quote, the card becomes
+an ordinary note you own, and the highlight can produce another card later if you want one.
 
 ## What it will not do
 

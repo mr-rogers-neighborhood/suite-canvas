@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { dropHighlight } from "./highlightDrop";
 
 /**
  * A highlight being carried out of the book.
@@ -62,8 +63,15 @@ export function beginHighlightDrag(
     const dragging = useHighlightDrag.getState().carried !== null;
     useHighlightDrag.getState().release();
     // A press that never became a drag is a press on the mark, which the mark's own handler answers.
-    if (!dragging || onDrop === null) return;
-    onDrop(annotationId, { x: event.clientX, y: event.clientY });
+    if (!dragging) return;
+    // A cancelled gesture has no pointer position — a `pointercancel` carries zeroes — so offering it to the board
+    // would place the card in the top-left corner of the canvas. A gesture the system took away places nothing.
+    if (event.type !== "pointerup") return;
+    // One release, one decision: the caller that knows where a point lands says whether this became a card, and a
+    // release that was not over the board drops the highlight. The gesture never promotes anything itself, so the
+    // four surfaces that can carry a highlight cannot disagree about what letting go means.
+    if (onDrop !== null) onDrop(annotationId, { x: event.clientX, y: event.clientY });
+    else dropHighlight(annotationId, { x: event.clientX, y: event.clientY });
   };
   const move = (event: PointerEvent) => {
     if (!carrying) {

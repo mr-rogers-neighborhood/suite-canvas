@@ -4,22 +4,25 @@ import { IconGlyph } from "../icons/IconGlyph";
 import { useEscapeLayer } from "../shell/escapeLayers";
 
 /**
- * The annotation types a workspace has, and what each one produces.
+ * The kinds of highlight a workspace has, and what each one produces.
  *
  * This is the only place a mapping is written, and it is deliberately not the raise surface: a mapping is a decision
  * about a *kind* of note — "a Claim gets a Question and a Source" — and a decision about a kind does not belong in the
  * moment of marking one. The raise surface links here instead of growing a second, half-featured copy.
  *
- * Everything below writes through the style setters that already exist. A type is colour, name, the card type it
+ * A **kind** is what a highlight is; a **type** is what a card is. The two words are never swapped, because the library
+ * already has a Types panel and "Types" beside "Types" was the least useful label in the app.
+ *
+ * Everything below writes through the style setters that already exist. A kind is colour, name, the card type it
  * produces, and the ordered list of slots it fills; the last two are the mapping, and they are what the raise surface
  * turns into rows.
  */
-export interface AnnotationTypesDialogProps {
+export interface AnnotationKindsDialogProps {
   workspace: WorkspaceDocument;
   onClose: () => void;
 }
 
-export function AnnotationTypesDialog({ workspace, onClose }: AnnotationTypesDialogProps) {
+export function AnnotationKindsDialog({ workspace, onClose }: AnnotationKindsDialogProps) {
   const panel = useRef<HTMLDivElement | null>(null);
   useEscapeLayer(onClose, true);
 
@@ -35,33 +38,33 @@ export function AnnotationTypesDialog({ workspace, onClose }: AnnotationTypesDia
   const reread = () => setStyles(workspace.listAnnotationStyles());
 
   return (
-    <div className="ann-types-scrim" data-testid="annotation-types">
-      <button type="button" className="ann-types-scrim-hit" aria-label="Close" onClick={onClose} />
+    <div className="ann-kinds-scrim" data-testid="annotation-kinds">
+      <button type="button" className="ann-kinds-scrim-hit" aria-label="Close" onClick={onClose} />
       <div
         ref={panel}
         role="dialog"
         aria-modal="true"
-        aria-label="Annotation types"
+        aria-label="Annotation kinds"
         tabIndex={-1}
-        className="ann-types"
+        className="ann-kinds"
       >
-        <header className="ann-types-head">
-          <span className="ann-types-title">Annotation types</span>
-          <span className="ann-types-sub">What each kind of highlight becomes</span>
+        <header className="ann-kinds-head">
+          <span className="ann-kinds-title">Kinds of highlight</span>
+          <span className="ann-kinds-sub">What each one becomes</span>
           <button
             type="button"
             className="views-icon-button ml-auto"
             aria-label="Close"
-            data-testid="annotation-types-close"
+            data-testid="annotation-kinds-close"
             onClick={onClose}
           >
             <IconGlyph icon="lucide:x" size={14} />
           </button>
         </header>
 
-        <ul className="ann-types-list">
+        <ul className="ann-kinds-list">
           {styles.map((style) => (
-            <TypeRow
+            <KindRow
               key={style.id}
               style={style}
               types={types.map((type) => ({ id: type.id, name: type.name }))}
@@ -82,15 +85,15 @@ export function AnnotationTypesDialog({ workspace, onClose }: AnnotationTypesDia
           ))}
         </ul>
 
-        <footer className="ann-types-foot">
+        <footer className="ann-kinds-foot">
           <button
             type="button"
             className="views-button"
-            data-testid="annotation-type-add"
+            data-testid="annotation-kind-add"
             onClick={() => {
               const next = styles.length;
               workspace.addAnnotationStyle({
-                name: "New type",
+                name: "New kind",
                 color: "#8b93a7",
                 order: next,
               });
@@ -98,7 +101,15 @@ export function AnnotationTypesDialog({ workspace, onClose }: AnnotationTypesDia
             }}
           >
             <IconGlyph icon="lucide:plus" size={12} />
-            Add a type
+            Add a kind
+          </button>
+          <button
+            type="button"
+            className="views-button views-button--primary"
+            data-testid="annotation-kinds-done"
+            onClick={onClose}
+          >
+            Done
           </button>
         </footer>
       </div>
@@ -106,7 +117,7 @@ export function AnnotationTypesDialog({ workspace, onClose }: AnnotationTypesDia
   );
 }
 
-interface TypeRowProps {
+interface KindRowProps {
   style: AnnotationStyle;
   types: readonly { id: string; name: string }[];
   fieldsOf: (typeId: string) => string[];
@@ -119,14 +130,14 @@ interface TypeRowProps {
   onRemove: () => void;
 }
 
-function TypeRow({ style, types, fieldsOf, onChange, onRemove }: TypeRowProps) {
+function KindRow({ style, types, fieldsOf, onChange, onRemove }: KindRowProps) {
   const recipe = style.recipe ?? [];
   // The names a slot can point at: the produced type's own properties, plus whatever a slot already names, so a
   // recipe written before the type changed keeps its slots visible rather than silently dropping them.
   const available = [...new Set([...fieldsOf(style.templateTypeId ?? ""), ...slotNames(recipe)])];
 
   return (
-    <li className="ann-type" data-testid={`annotation-type-${style.id}`}>
+    <li className="ann-type" data-testid={`annotation-kind-${style.id}`}>
       <div className="ann-type-head">
         <input
           type="color"
@@ -138,7 +149,7 @@ function TypeRow({ style, types, fieldsOf, onChange, onRemove }: TypeRowProps) {
         />
         <input
           className="views-input ann-type-name"
-          aria-label="Type name"
+          aria-label="Kind name"
           data-testid={`ann-type-name-${style.id}`}
           defaultValue={style.name}
           onBlur={(event) => {
@@ -148,7 +159,7 @@ function TypeRow({ style, types, fieldsOf, onChange, onRemove }: TypeRowProps) {
         />
         <select
           className="views-input ann-type-target"
-          aria-label="Card type this makes"
+          aria-label="The card type this kind makes"
           data-testid={`ann-type-template-${style.id}`}
           value={style.templateTypeId ?? ""}
           onChange={(event) =>
@@ -179,7 +190,7 @@ function TypeRow({ style, types, fieldsOf, onChange, onRemove }: TypeRowProps) {
         <span className="ann-type-slots-label">Fills</span>
         {recipe.length === 0 ? (
           <span className="ann-type-empty">
-            Nothing yet: a highlight of this type makes a card from the whole passage.
+            Nothing yet: a highlight of this kind makes a card from the whole passage.
           </span>
         ) : (
           <ul className="ann-type-slot-list">

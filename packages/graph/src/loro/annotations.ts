@@ -187,15 +187,17 @@ export function annotationsMethods(ctx: DocContext) {
     },
 
     /**
-     * Records the card a highlight was promoted into.
+     * Records the card a highlight was promoted into, or forgets it.
      *
-     * The one later write a highlight takes: the card is a decision the reader made after reading, and the
-     * record keeps the link so the book can show which passages have already left it.
+     * The one later write a highlight takes: the card is a decision the reader made after reading, and the record keeps
+     * the link so the book can show which passages have already left it. `null` is a reader saying the card is theirs
+     * now — the passage stays in the card's body as ordinary text, and the highlight can produce a card again.
      */
-    setAnnotationCard(id: string, cardId: string): Annotation | undefined {
+    setAnnotationCard(id: string, cardId: string | null): Annotation | undefined {
       const fields = ctx.annotationsMap.get(id);
       if (!isMap(fields)) return undefined;
-      fields.set("cardId", cardId);
+      if (cardId === null) fields.delete("cardId");
+      else fields.set("cardId", cardId);
       ctx.commit(`${STRUCT_ORIGIN}annotate-promoted`);
       notify();
       return ctx.api.annotations.getAnnotation(id);

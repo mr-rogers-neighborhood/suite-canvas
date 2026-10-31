@@ -1,6 +1,7 @@
 import type { Annotation, AnnotationStyle } from "@suite/graph";
 import { partText } from "@suite/graph";
 import { IconGlyph } from "../icons/IconGlyph";
+import { beginHighlightDrag } from "./highlightDrag";
 
 /**
  * The marks a reader has made in this book, in the order they were made.
@@ -14,11 +15,11 @@ export interface BookHighlightsProps {
   annotations: readonly Annotation[];
   styles: readonly AnnotationStyle[];
   onOpen: (annotationId: string) => void;
-  /** A press that travels picks the highlight up, and the board's drop layer decides where it lands. */
-  onCarry: (annotationId: string, point: { x: number; y: number }) => void;
+  /** Put this highlight in the reader's hand, so a press on the board can put it down. */
+  onPlace: (annotationId: string) => void;
 }
 
-export function BookHighlights({ annotations, styles, onOpen, onCarry }: BookHighlightsProps) {
+export function BookHighlights({ annotations, styles, onOpen, onPlace }: BookHighlightsProps) {
   if (annotations.length === 0) {
     return (
       <p className="reader-note" data-testid="book-highlights-empty">
@@ -48,19 +49,8 @@ export function BookHighlights({ annotations, styles, onOpen, onCarry }: BookHig
                 onPointerDown={(event) => {
                   // Travel makes it a drag, exactly as a painted mark and a library row behave: one gesture means one
                   // thing wherever a highlight is shown.
-                  const start = { x: event.clientX, y: event.clientY };
-                  const move = (moving: PointerEvent) => {
-                    if (Math.hypot(moving.clientX - start.x, moving.clientY - start.y) < 4) return;
-                    window.removeEventListener("pointermove", move);
-                    window.removeEventListener("pointerup", stop);
-                    onCarry(annotation.id, { x: moving.clientX, y: moving.clientY });
-                  };
-                  const stop = () => {
-                    window.removeEventListener("pointermove", move);
-                    window.removeEventListener("pointerup", stop);
-                  };
-                  window.addEventListener("pointermove", move);
-                  window.addEventListener("pointerup", stop);
+                  if (event.button !== 0) return;
+                  beginHighlightDrag(annotation.id, { x: event.clientX, y: event.clientY }, null);
                 }}
                 onClick={() => onOpen(annotation.id)}
               >
@@ -75,6 +65,16 @@ export function BookHighlights({ annotations, styles, onOpen, onCarry }: BookHig
                     <IconGlyph icon="lucide:check" size={11} />
                   </span>
                 )}
+              </button>
+              <button
+                type="button"
+                className="views-icon-button"
+                aria-label="Place this highlight on the board"
+                title="Place on the board"
+                data-testid={`book-highlight-place-${annotation.id}`}
+                onClick={() => onPlace(annotation.id)}
+              >
+                <IconGlyph icon="lucide:import" size={12} />
               </button>
             </li>
           );

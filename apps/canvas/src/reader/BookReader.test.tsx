@@ -1,7 +1,9 @@
 import { WorkspaceDocument } from "@suite/graph";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { usePlaceStackStore } from "../canvas/placeStack";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { useUiStore } from "../store/useUiStore";
 import { BookReader } from "./BookReader";
 import { useBookStore } from "./bookStore";
 
@@ -175,5 +177,48 @@ describe("a book with a highlight", () => {
     if (row === undefined) throw new Error("no highlight row");
     row.click();
     await waitFor(() => expect(screen.getByTestId("highlight-raise")).toBeInTheDocument());
+  });
+
+  it("should put the card in the reader's hand when Place is pressed", async () => {
+    // Place used to name a board and no point, so the card was made and written nowhere: the board showed nothing and
+    // a second press "opened" a card nobody could see. It now arrives in the hand the library's own placing uses.
+    const workspace = useCanvasStore.getState().workspace;
+    const annotation = workspace?.addAnnotation({
+      sourceCardId: bookCardId,
+      styleId: "style-yellow",
+      anchor: {
+        kind: "quote",
+        locator: "2",
+        quote: "The first sentence of the book.",
+        prefix: "",
+        suffix: "",
+      },
+      excerpt: "The first sentence of the book.",
+    });
+    useUiStore.setState({ canEditLayout: true });
+    usePlaceStackStore.getState().stop();
+
+    render(
+      <BookReader
+        attachmentId={"a".repeat(32)}
+        mime="application/epub+zip"
+        name="book"
+        sourceCardId={bookCardId}
+      />,
+    );
+    await waitFor(() => expect(screen.getByTestId("reader-highlights-toggle")).toBeInTheDocument());
+    screen.getByTestId("reader-highlights-toggle").click();
+    await waitFor(() => expect(screen.getByTestId("book-highlights")).toBeInTheDocument());
+
+    screen.getByTestId(`book-highlight-place-${annotation?.id ?? ""}`).click();
+
+    await waitFor(() => expect(usePlaceStackStore.getState().queue).toHaveLength(1));
+    const cardId = workspace?.getAnnotation(annotation?.id ?? "")?.cardId;
+    expect(cardId).toBeDefined();
+    // Made, and not placed: the press that follows is what puts it on the board.
+    expect(workspace?.listCardPlacements(cardId ?? "")).toHaveLength(0);
+    expect(usePlaceStackStore.getState().queue[0]).toBe(cardId);
+    usePlaceStackStore.getState().stop();
+    useUiStore.setState({ canEditLayout: false });
   });
 });

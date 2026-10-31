@@ -12,12 +12,21 @@ import { annotationValue, fieldParts, partFor } from "@suite/graph";
  * The reference back to the source needs no field of its own: the card points at the annotation, the annotation names
  * its source. A comment on a highlight needs no feature either, because the card is an ordinary card.
  */
+/**
+ * Where a promoted card lands.
+ *
+ * A board with no point on it is not a placement — it used to write neither, which left the card in the inbox while
+ * the caller believed it had put the card on a board. The union makes that call unrepresentable, and the inbox is
+ * the only way to say "nowhere yet" — which is the truth, because a card in the reader's hand has no board.
+ */
+export type Placement =
+  | { readonly onBoard: { readonly boardId: string; readonly position: { x: number; y: number } } }
+  | { readonly inbox: true };
+
 export interface PromoteInput {
   workspace: WorkspaceDocument;
   annotation: Annotation;
-  /** Where the cards land. Absent means the inbox, which is where an unplaced thought belongs. */
-  boardId?: string | null;
-  position?: { x: number; y: number };
+  placement: Placement;
   /**
    * Make another card even though this highlight already has one.
    *
@@ -39,7 +48,7 @@ export interface PromoteResult {
 }
 
 export function promoteAnnotation(input: PromoteInput): PromoteResult | null {
-  const { workspace, annotation, boardId = null, position, again = false } = input;
+  const { workspace, annotation, placement: target, again = false } = input;
 
   if (!again && annotation.cardId !== undefined) {
     const existing = workspace.getCard(annotation.cardId);
@@ -51,7 +60,10 @@ export function promoteAnnotation(input: PromoteInput): PromoteResult | null {
   const style = workspace.getAnnotationStyle(annotation.styleId);
   const titlePart = partFor(annotation, "title");
   const excerpt = annotation.excerpt ?? null;
-  const placement = boardId !== null && position !== undefined ? { boardId, position } : {};
+  const placement =
+    "onBoard" in target
+      ? { boardId: target.onBoard.boardId, position: target.onBoard.position }
+      : {};
 
   const make = (title: string, quote: string | null): string => {
     // The style's template is how "green highlights become Claim cards" without a branch on a type.

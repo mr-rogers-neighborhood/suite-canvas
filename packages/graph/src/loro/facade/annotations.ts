@@ -45,7 +45,8 @@ export class AnnotationsFacade {
     return this.annotationsApi.setAnnotationParts(id, parts);
   }
 
-  setAnnotationCard(id: string, cardId: string): Annotation | undefined {
+  /** The card a highlight produced, or `null` when the reader has taken the card over. */
+  setAnnotationCard(id: string, cardId: string | null): Annotation | undefined {
     return this.annotationsApi.setAnnotationCard(id, cardId);
   }
 

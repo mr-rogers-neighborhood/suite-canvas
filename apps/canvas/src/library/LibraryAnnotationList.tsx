@@ -1,13 +1,14 @@
 import type { Annotation, AnnotationStyle } from "@suite/graph";
 import { partText } from "@suite/graph";
 import { IconGlyph } from "../icons/IconGlyph";
+import { beginHighlightDrag } from "../reader/highlightDrag";
 
 /**
  * The highlights a workspace has made, grouped by the book they came from.
  *
  * The Annotations tab lists **highlights**, not only the cards they became: "track my annotations" is the question a
- * reader asks, and a highlight is the thing they made. Each row says what it is — the words, the colour, whether it
- * has left the book — and each is pressable and draggable, which is how one becomes a card.
+ * reader asks, and a highlight is the thing they made. Each row says what it is — the words, the kind, where it went —
+ * and each can be carried to the board or placed with a button, which are the same act for a mouse and a keyboard.
  *
  * A row is not a `LibraryItem`: an item is a card or a board, and a highlight is neither. The list is its own
  * component for the same reason `LibraryMediaList` is, and for the same reason it is honest about it.
@@ -17,37 +18,40 @@ export interface LibraryAnnotationListProps {
   styles: readonly AnnotationStyle[];
   /** Card id → the title of the card a highlight became, for the rows that have one. */
   cardTitles: ReadonlyMap<string, string>;
+  /** The cards that are on the board being looked at, so a row can say where its card actually is. */
+  onBoardCards: ReadonlySet<string>;
   /** Book card id → its title, for the group headings. */
   bookTitles: ReadonlyMap<string, string>;
   onOpen: (annotation: Annotation) => void;
-  /** A press that travels carries the highlight to the board, which is how it becomes a card. */
-  onCarry: (annotation: Annotation, point: { x: number; y: number }) => void;
+  /** Put this highlight in the reader's hand, which is what a drag out of the drawer does. */
+  onPlace: (annotation: Annotation) => void;
   onRemove: (annotation: Annotation) => void;
   /** Open the editor for the kinds of highlight there are, and what each one becomes. */
-  onEditTypes?: (() => void) | undefined;
+  onEditKinds?: (() => void) | undefined;
 }
 
 export function LibraryAnnotationList({
   annotations,
   styles,
   cardTitles,
+  onBoardCards,
   bookTitles,
   onOpen,
-  onCarry,
+  onPlace,
   onRemove,
-  onEditTypes,
+  onEditKinds,
 }: LibraryAnnotationListProps) {
-  const typesButton =
-    onEditTypes === undefined ? null : (
+  const kindsButton =
+    onEditKinds === undefined ? null : (
       <div className="library-annotations-head">
         <button
           type="button"
           className="views-button views-button--quiet"
-          data-testid="library-annotation-types"
-          onClick={onEditTypes}
+          data-testid="library-annotation-kinds"
+          onClick={onEditKinds}
         >
           <IconGlyph icon="lucide:sliders-horizontal" size={12} />
-          Types
+          Kinds
         </button>
       </div>
     );
@@ -67,7 +71,7 @@ export function LibraryAnnotationList({
 
   return (
     <div className="library-annotations" data-testid="library-annotations">
-      {typesButton}
+      {kindsButton}
       {books.map(([bookId, entries]) => (
         <section key={bookId} className="library-annotation-book">
           <h3 className="library-annotation-book-title">{bookTitles.get(bookId) ?? "A book"}</h3>
@@ -77,6 +81,16 @@ export function LibraryAnnotationList({
               const words = annotation.excerpt ?? quoteOf(annotation);
               const card =
                 annotation.cardId === undefined ? undefined : cardTitles.get(annotation.cardId);
+              const onBoard =
+                annotation.cardId === undefined ? false : onBoardCards.has(annotation.cardId);
+              const where =
+                card === undefined ? (
+                  <span className="library-annotation-unplaced">Not a card yet</span>
+                ) : onBoard ? (
+                  <span className="library-annotation-card">{card}</span>
+                ) : (
+                  <span className="library-annotation-unplaced">{card}, in the inbox</span>
+                );
               return (
                 <li key={annotation.id} className="library-annotation-row-wrap">
                   <button
@@ -84,22 +98,14 @@ export function LibraryAnnotationList({
                     className="library-annotation-row"
                     data-testid={`library-annotation-${annotation.id}`}
                     onPointerDown={(event) => {
-                      // A press that travels is a drag, and a drag is a promotion: the same rule the library's card
-                      // rows follow, so one gesture means one thing across the drawer.
-                      const start = { x: event.clientX, y: event.clientY };
-                      const move = (moving: PointerEvent) => {
-                        if (Math.hypot(moving.clientX - start.x, moving.clientY - start.y) < 4)
-                          return;
-                        window.removeEventListener("pointermove", move);
-                        window.removeEventListener("pointerup", up);
-                        onCarry(annotation, { x: moving.clientX, y: moving.clientY });
-                      };
-                      const up = () => {
-                        window.removeEventListener("pointermove", move);
-                        window.removeEventListener("pointerup", up);
-                      };
-                      window.addEventListener("pointermove", move);
-                      window.addEventListener("pointerup", up);
+                      // The same gesture the reader's own marks use: a threshold, a root attribute that stops the drag
+                      // being a text selection, and one release that asks the board where the highlight landed.
+                      if (event.button !== 0) return;
+                      beginHighlightDrag(
+                        annotation.id,
+                        { x: event.clientX, y: event.clientY },
+                        null,
+                      );
                     }}
                     onClick={() => onOpen(annotation)}
                   >
@@ -116,13 +122,17 @@ export function LibraryAnnotationList({
                         </span>
                       )}
                     </span>
-                    <span className="library-annotation-where">
-                      {card === undefined ? (
-                        <span className="library-annotation-unplaced">Not on the board</span>
-                      ) : (
-                        <span className="library-annotation-card">{card}</span>
-                      )}
-                    </span>
+                    <span className="library-annotation-where">{where}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="views-icon-button"
+                    aria-label={`Place the highlight “${words.slice(0, 40)}” on the board`}
+                    title="Place on the board"
+                    data-testid={`library-annotation-place-${annotation.id}`}
+                    onClick={() => onPlace(annotation)}
+                  >
+                    <IconGlyph icon="lucide:import" size={12} />
                   </button>
                   <button
                     type="button"

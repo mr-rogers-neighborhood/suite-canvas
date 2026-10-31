@@ -101,6 +101,18 @@ describe("a highlight", () => {
     expect(workspace.getCard(card.id)).toBeDefined();
   });
 
+  it("should forget the card when the reader takes it over", () => {
+    const { workspace, book, board } = fixture();
+    const made = highlight(workspace, book.id);
+    const card = workspace.createCard({ boardId: board.id, position: { x: 10, y: 10 } });
+
+    workspace.setAnnotationCard(made.id, card.id);
+    expect(workspace.setAnnotationCard(made.id, null)?.cardId).toBeUndefined();
+    expect(workspace.getAnnotation(made.id)?.cardId).toBeUndefined();
+    // The highlight is still a highlight: de-linking is about the card, not about the passage.
+    expect(workspace.getAnnotation(made.id)).toBeDefined();
+  });
+
   it("should restyle without touching where it is", () => {
     const { workspace, book } = fixture();
     const made = highlight(workspace, book.id);

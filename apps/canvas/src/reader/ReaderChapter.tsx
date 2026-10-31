@@ -22,6 +22,12 @@ export interface ReaderChapterProps {
   onSelect: (selection: PendingSelection) => void;
   /** A press on a painted highlight: the card it becomes, or the passage reopened. */
   onActivate: (annotationId: string) => void;
+  /** A press that travels: the highlight is carried out of the book. */
+  onCarry: (
+    annotationId: string,
+    start: { x: number; y: number },
+    onDrop: ((annotationId: string, screen: { x: number; y: number }) => void) | null,
+  ) => void;
 }
 
 export function ReaderChapter({
@@ -30,6 +36,7 @@ export function ReaderChapter({
   styles,
   onSelect,
   onActivate,
+  onCarry,
 }: ReaderChapterProps) {
   const container = useRef<HTMLDivElement | null>(null);
 
@@ -59,6 +66,14 @@ export function ReaderChapter({
       ref={container}
       className="reader-chapter"
       onMouseUp={capture}
+      onPointerDown={(event) => {
+        // A press on a mark starts the drag; the press itself is answered by the click handler below, which fires
+        // only when the pointer never travelled.
+        const mark = (event.target as HTMLElement).closest("mark[data-annotation-id]");
+        const id = mark?.getAttribute("data-annotation-id");
+        if (id === null || id === undefined || id.length === 0) return;
+        onCarry(id, { x: event.clientX, y: event.clientY }, null);
+      }}
       onClick={(event) => {
         // A press on a mark is a press on the highlight, and a press anywhere else is a press on the words: the
         // selection gesture must not be mistaken for a promotion.

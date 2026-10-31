@@ -126,6 +126,8 @@ export interface CreateFieldInput {
   name: string;
   kind: FieldDefinition["kind"];
   required?: boolean;
+  /** A field the app fills: the inspector shows it and refuses to edit it. */
+  readOnly?: boolean;
   /** Initial labels for select and multi-select fields. */
   options?: string[];
   /**

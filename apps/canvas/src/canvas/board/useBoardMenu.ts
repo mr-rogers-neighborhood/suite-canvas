@@ -67,7 +67,7 @@ export function useBoardMenu(
       createPortalToNewBoard: commands.createPortalToNewBoard,
       createViewAt: commands.createViewAt,
       createViewFromSelection: commands.createViewFromSelection,
-      openMediaLibrary: commands.openMediaLibrary,
+      createMediaAt: commands.createMediaAt,
       duplicateCards: commands.duplicateCards,
       setSwatches: commands.setSwatches,
       moveCardToBoard: commands.moveCardToBoard,

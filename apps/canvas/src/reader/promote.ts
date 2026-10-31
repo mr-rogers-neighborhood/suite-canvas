@@ -1,4 +1,4 @@
-import type { Annotation, WorkspaceDocument } from "@suite/graph";
+import type { Annotation, PortableNode, WorkspaceDocument } from "@suite/graph";
 import { annotationValue } from "@suite/graph";
 
 /**
@@ -45,6 +45,10 @@ export function promoteAnnotation({
 
   workspace.setTitleText(card.id, titleFrom(excerpt ?? style?.name ?? "Highlight"));
 
+  // The body opens with the passage, then a paragraph holding the way back to it. A comment on a highlight is the
+  // next block after that, which is the whole reason an annotation card is an ordinary card.
+  workspace.setBodyNodes(card.id, bodyFor(annotation, sourceTitle(workspace, annotation)));
+
   const fieldId = ensureAnnotationField(workspace, card.primaryTypeId);
   if (fieldId !== null) {
     workspace.setProperty(card.id, fieldId, annotationValue(annotation.id) as never);
@@ -82,4 +86,44 @@ export function titleFrom(text: string): string {
   if (trimmed.length === 0) return "Highlight";
   const sentence = trimmed.split(/(?<=[.!?])\s/u)[0] ?? trimmed;
   return sentence.length <= 60 ? sentence : `${sentence.slice(0, 57)}…`;
+}
+
+/** The title of the source, or null when it has none to show. */
+function sourceTitle(workspace: WorkspaceDocument, annotation: Annotation): string | null {
+  const source = workspace.getCard(annotation.sourceCardId);
+  if (source === undefined) return null;
+  return workspace.displayTitle(source.id) || null;
+}
+
+/**
+ * What a promoted card says.
+ *
+ * The quote as a blockquote, then one paragraph naming where it came from. The paragraph carries the source's own
+ * card as a mention, so the reference is a real backlink in the graph rather than a second kind of link: the book
+ * knows which cards came out of it, and the card knows which book it came from, through one mechanism.
+ */
+function bodyFor(annotation: Annotation, source: string | null): PortableNode[] {
+  const quote = annotation.excerpt ?? "";
+  const paragraph: PortableNode = {
+    type: "paragraph",
+    content: [
+      { type: "text", text: annotation.anchor.kind === "time" ? "From the recording" : "From" },
+    ],
+  };
+  const nodes: PortableNode[] = [];
+  if (quote.length > 0) {
+    nodes.push({
+      type: "blockquote",
+      content: [{ type: "paragraph", content: [{ type: "text", text: quote }] }],
+    });
+  }
+  if (source !== null) {
+    paragraph.content = [
+      ...(paragraph.content ?? []),
+      { type: "text", text: ` “${source}”, ` },
+      { type: "mention", attrs: { cardId: annotation.sourceCardId } },
+    ];
+  }
+  nodes.push(paragraph);
+  return nodes;
 }

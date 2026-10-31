@@ -169,9 +169,10 @@ const canvasRows: EntityMenuRow[] = [
     kinds: ["canvas"],
     render: (ctx) => {
       if (!ctx.canCreateContent) return [];
-      // Media is added in one place: the library's media list, where a file, a link or an embed is
-      // chosen and the card that carries it is made. The board has no card body to put one in.
-      return [{ label: "New media…", onSelect: () => ctx.openMediaLibrary() }];
+      // One picker, two targets: this row adds a block in a card at the click, and the `/` menu adds one at a
+      // caret. The kind is chosen in the same table either way, so the two cannot drift.
+      const position = ctx.menu.flowPosition ?? { x: 0, y: 0 };
+      return [{ label: "New media…", onSelect: () => ctx.createMediaAt(position) }];
     },
   },
   {

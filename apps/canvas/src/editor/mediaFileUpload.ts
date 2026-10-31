@@ -80,3 +80,30 @@ export function promptYouTubeEmbed(editor: Editor): void {
     })
     .run();
 }
+
+/**
+ * Triggers a native file picker for a book.
+ *
+ * One file, `.epub` only. A book is the one media kind whose bytes are also the thing the app reads rather than
+ * draws, so a file that is not an EPUB is refused by the picker rather than accepted and then refused by the
+ * reader.
+ */
+export function uploadBookFile(editor: Editor): void {
+  const permission = canUploadMedia();
+  if (!permission.allowed) {
+    announceUploadRefusal(permission);
+    return;
+  }
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "application/epub+zip,.epub";
+  input.multiple = false;
+  input.style.display = "none";
+  input.onchange = () => {
+    const file = input.files?.[0];
+    if (file !== undefined) void insertMediaFiles(editor.view, [file]);
+    input.remove();
+  };
+  document.body.appendChild(input);
+  input.click();
+}

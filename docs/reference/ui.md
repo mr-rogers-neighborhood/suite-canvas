@@ -31,7 +31,9 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Library drawer | `apps/canvas/src/library/LibraryDrawer.tsx` | Every card, board and trashed record, with search, facets and **Add new**, which opens the dock's own menu from the top of the list |
 | Command palette | `apps/canvas/src/command/CommandPalette.tsx` | Navigation and actions from one query |
 | Presence | `apps/canvas/src/presence/` and `apps/canvas/src/cursor/` | Peer cursors, name tags, avatars and the status cursor |
-| Book reader | `apps/canvas/src/reader/BookReader.tsx` | An EPUB on a card: contents, one chapter at a time, the highlight palette, and a press that promotes a highlight to a card |
+| Book reader | `apps/canvas/src/reader/BookReader.tsx` | An EPUB read large, in focus mode: contents, one chapter at a time, the highlight palette, and a press or a drag that promotes a highlight to a card |
+| Book cover | `apps/canvas/src/editor/BookView.tsx` | The block in the card body: the title, author and cover the package declares, and **Read** |
+| Media picker | `apps/canvas/src/editor/MediaPickerHost.tsx` | The one table of media kinds, applied to an editor target or a board target |
 | Handbook | `apps/canvas/src/handbook/HandbookBubble.tsx` | The contextual article list, the article, its spotlight and the feedback form, in one shell float. **Shut** (see below) |
 | Account | `apps/canvas/src/auth/SignInEntry.tsx` and `AccountPanel.tsx` | Sign in or the account menu, and one dialog for the account, members, devices and the plan |
 | Launcher | `apps/canvas/src/launcher/WorkspaceLauncher.tsx` | Recents with rename, export and delete, import, and the same account entry the title bar has |
@@ -299,6 +301,14 @@ Feedback is the second pane. `feedback/FeedbackComposer.tsx` is the form the lau
 now shared: the handbook files a message against `handbook:<articleId>` with the article's title
 prepended, so a report about a paragraph arrives saying which paragraph.
 
+## Adding media
+
+Two surfaces ask the same question. `/media` and the toolbar insert a block **at a caret**; the canvas's **New
+media…** makes a card **at a point**. `useMediaPicker` holds the *target* rather than an editor, so a kind is defined
+once (`MEDIA_CHOICES`) and both targets reach it. `prepareMediaFile` owns the upload either way (permission check,
+local copy, relay attempt), and `placeBlock` decides between `insertMediaNode` and a media card in the shape
+`createMediaCard` writes. The card is made after a file is chosen, so a cancelled dialog leaves nothing behind.
+
 ## Reading a book
 
 A book is a `media` block with `kind: "epub"`, so it takes the path every attachment takes: this browser's copy
@@ -312,8 +322,18 @@ resolver: three passes, most specific first, with ambiguity reported rather than
 a module each. Promotion (`reader/promote.ts`) makes an ordinary card holding a read-only `annotation` property
 whose value is `{ annotationId }`.
 
+**The block is a cover; reading is a surface.** `BookView` reads only the package (title, author, declared cover)
+and offers Read; `CardFocusHost` branches to `BookFocus` for a card holding a book, as it already branches to
+`WhiteboardFocus` for a whiteboard. Three reasons, in order: ProseMirror owns the selection inside `contentEditable`
+and the highlight gesture is a selection; a node view is re-created whenever its node is replaced, so a live reader
+would restart on chapter one; and a chapter needs its own viewport rather than a scroll inside the card's.
+
 **Reading position is reader state.** Per workspace and per attachment, in `localStorage`; a book opens where this
 reader stopped and never writes that fact into the document.
+
+**A highlight can be carried out.** A press that travels past `HIGHLIGHT_DRAG_THRESHOLD` puts the highlight in
+`useHighlightDrag`, the focus surface conceals itself the way the library drawer does, and a release over the canvas
+promotes it at that point. A release anywhere else creates nothing, so a changed mind leaves no card behind.
 
 ## Error codes
 

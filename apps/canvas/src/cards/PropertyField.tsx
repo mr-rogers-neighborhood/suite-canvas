@@ -1,5 +1,5 @@
 import type { Card, FieldDefinition, PropertyValue } from "@suite/graph";
-import { isPropertyValueEmpty } from "@suite/graph";
+import { formatPropertyValue, isPropertyValueEmpty } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
 import { fieldKindEntry } from "../field/fieldKindRegistry";
 // Populates the registry: a kind exists once the module that owns it is
@@ -151,6 +151,20 @@ export function FieldValueInput({
   testId,
   className,
 }: FieldValueInputProps) {
+  // A field the app fills is a reading, not an input: a template wrote it, an import wrote it, a promotion wrote
+  // it, and the graph refuses a change from anyone else. Showing the value is the whole of its editor.
+  if (field.readOnly === true) {
+    return (
+      <span
+        className="views-cell-plain"
+        data-testid={testId}
+        title="This field is filled by the app"
+      >
+        {formatPropertyValue(field, value) || "—"}
+      </span>
+    );
+  }
+
   // A kind that registered its own editor takes precedence: that is what lets a
   // composite kind ship without editing this switch (ADR-0057).
   const registered = fieldKindEntry(field.kind);

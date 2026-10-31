@@ -15,7 +15,7 @@ function OpenPicker() {
       extensions: [StarterKit.configure({ undoRedo: false })],
       content: "",
     });
-    useMediaPicker.getState().openPicker(editor);
+    useMediaPicker.getState().openPicker({ kind: "editor", editor });
     return () => {
       useMediaPicker.getState().closePicker();
       editor.destroy();

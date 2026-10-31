@@ -2,37 +2,24 @@
 
 ### Added
 
-- Reading a book on the canvas: an `.epub` dropped onto a board becomes a card, and the reader draws it a
-  chapter at a time in the app's own type, with the book's contents in the header. No EPUB dependency: the ZIP
-  reader the vault importer already had now lives in `archive/zip.ts` and both use it, and the container,
-  package, spine and contents are read on top of it.
-- Highlights: select a sentence, press a colour, and the passage is marked. The mark is stored as the words
-  themselves, so it survives a resize, a theme change and the same book at another width. Four styles to start,
-  shared across every medium, and a style may name a template.
-- Pressing a highlight makes an ordinary card that knows where it came from: a read-only `Highlight` property
-  points at the passage, the title comes from the first sentence, and the library's new **Annotations** tab is
-  every card that came from a mark. A comment on a highlight is the next block in that card's body, because the
-  card is a normal card.
-- `application/epub+zip` joins the attachment allowlist on both sides, with the extension its download name uses.
-- A media block this build has no renderer for now says so instead of drawing a broken image.
+- A book can be uploaded: **New media → Book** on the canvas, or `/media` in a card body. The picker is now the one
+  place a media kind is chosen and it serves two targets, so at a caret it inserts and on the canvas it makes a card
+  at the point you pressed. The card is made after the file is chosen, so a cancelled dialog leaves nothing behind.
+- A book block draws a cover: the title, author and cover picture the package declares, and **Read**. Reading
+  happens large, in focus mode, where selecting a sentence is a selection rather than a fight with the editor.
+- A highlight can be carried out of the book onto the board: a press that travels picks it up, the book steps aside,
+  and a release over the canvas makes the card there. A release anywhere else creates nothing.
+- A promoted card now opens with its passage: the quote as a blockquote, then a paragraph naming the source with a
+  mention, so the backlink is the graph's own reference.
+- A field can be marked read-only. `setProperty` refuses a change from a reader with a named reason, and the one way
+  around it is the flag the code that fills the field passes. The flag travels in a share and does not hide a value.
 
 ### Changed
 
-- The annotation model is written medium-neutral from the first day: the anchor is a `quote`, `page` or `time`
-  union and a medium registers itself, so a PDF page and a span of video are a module each rather than a schema
-  change. Fake PDF and video media in a test guard that.
-- The projection's container copier carries plain JSON values. It dropped them silently, so a share lost every
-  payload stored as an object.
-
-## [Unreleased]
-
-### Changed
-
-- Views and the handbook are shut in every build, not only in production. `views/availability.ts` and
-  `handbook/availability.ts` are constants now, and the projection float, the two canvas rows that made a
-  view and the library's Views tab gained the guard they were missing. Nothing is deleted: saved views and
-  view cards in an existing document still open, the handbook's articles still ship to the docs site, and
-  `explain` answers in the floating panel again.
+- `insertMediaFiles` split into `prepareMediaFile` and an insert, because two targets now need the same upload: the
+  permission check, the local copy and the relay attempt live in one place.
+- `WorkspaceDocument` gained `bodyNodes`, the reader's pair to `setBodyNodes`, so a surface can draw a block out of a
+  body without mounting an editor.
 
 ## [Unreleased]
 
@@ -59,6 +46,111 @@
   change. Fake PDF and video media in a test guard that.
 - The projection's container copier carries plain JSON values. It dropped them silently, so a share lost every
   payload stored as an object.
+
+## [Unreleased]
+
+### Added
+
+- A book can be uploaded: **New media → Book** on the canvas, or `/media` in a card body. The picker is now the one
+  place a media kind is chosen and it serves two targets, so at a caret it inserts and on the canvas it makes a card
+  at the point you pressed. The card is made after the file is chosen, so a cancelled dialog leaves nothing behind.
+- A book block draws a cover: the title, author and cover picture the package declares, and **Read**. Reading
+  happens large, in focus mode, where selecting a sentence is a selection rather than a fight with the editor.
+- A highlight can be carried out of the book onto the board: a press that travels picks it up, the book steps aside,
+  and a release over the canvas makes the card there. A release anywhere else creates nothing.
+- A promoted card now opens with its passage: the quote as a blockquote, then a paragraph naming the source with a
+  mention, so the backlink is the graph's own reference.
+- A field can be marked read-only. `setProperty` refuses a change from a reader with a named reason, and the one way
+  around it is the flag the code that fills the field passes. The flag travels in a share and does not hide a value.
+
+### Changed
+
+- `insertMediaFiles` split into `prepareMediaFile` and an insert, because two targets now need the same upload: the
+  permission check, the local copy and the relay attempt live in one place.
+- `WorkspaceDocument` gained `bodyNodes`, the reader's pair to `setBodyNodes`, so a surface can draw a block out of a
+  body without mounting an editor.
+
+## [Unreleased]
+
+### Changed
+
+- Views and the handbook are shut in every build, not only in production. `views/availability.ts` and
+  `handbook/availability.ts` are constants now, and the projection float, the two canvas rows that made a
+  view and the library's Views tab gained the guard they were missing. Nothing is deleted: saved views and
+  view cards in an existing document still open, the handbook's articles still ship to the docs site, and
+  `explain` answers in the floating panel again.
+
+## [Unreleased]
+
+### Added
+
+- A book can be uploaded: **New media → Book** on the canvas, or `/media` in a card body. The picker is now the one
+  place a media kind is chosen and it serves two targets, so at a caret it inserts and on the canvas it makes a card
+  at the point you pressed. The card is made after the file is chosen, so a cancelled dialog leaves nothing behind.
+- A book block draws a cover: the title, author and cover picture the package declares, and **Read**. Reading
+  happens large, in focus mode, where selecting a sentence is a selection rather than a fight with the editor.
+- A highlight can be carried out of the book onto the board: a press that travels picks it up, the book steps aside,
+  and a release over the canvas makes the card there. A release anywhere else creates nothing.
+- A promoted card now opens with its passage: the quote as a blockquote, then a paragraph naming the source with a
+  mention, so the backlink is the graph's own reference.
+- A field can be marked read-only. `setProperty` refuses a change from a reader with a named reason, and the one way
+  around it is the flag the code that fills the field passes. The flag travels in a share and does not hide a value.
+
+### Changed
+
+- `insertMediaFiles` split into `prepareMediaFile` and an insert, because two targets now need the same upload: the
+  permission check, the local copy and the relay attempt live in one place.
+- `WorkspaceDocument` gained `bodyNodes`, the reader's pair to `setBodyNodes`, so a surface can draw a block out of a
+  body without mounting an editor.
+
+## [Unreleased]
+
+### Added
+
+- Reading a book on the canvas: an `.epub` dropped onto a board becomes a card, and the reader draws it a
+  chapter at a time in the app's own type, with the book's contents in the header. No EPUB dependency: the ZIP
+  reader the vault importer already had now lives in `archive/zip.ts` and both use it, and the container,
+  package, spine and contents are read on top of it.
+- Highlights: select a sentence, press a colour, and the passage is marked. The mark is stored as the words
+  themselves, so it survives a resize, a theme change and the same book at another width. Four styles to start,
+  shared across every medium, and a style may name a template.
+- Pressing a highlight makes an ordinary card that knows where it came from: a read-only `Highlight` property
+  points at the passage, the title comes from the first sentence, and the library's new **Annotations** tab is
+  every card that came from a mark. A comment on a highlight is the next block in that card's body, because the
+  card is a normal card.
+- `application/epub+zip` joins the attachment allowlist on both sides, with the extension its download name uses.
+- A media block this build has no renderer for now says so instead of drawing a broken image.
+
+### Changed
+
+- The annotation model is written medium-neutral from the first day: the anchor is a `quote`, `page` or `time`
+  union and a medium registers itself, so a PDF page and a span of video are a module each rather than a schema
+  change. Fake PDF and video media in a test guard that.
+- The projection's container copier carries plain JSON values. It dropped them silently, so a share lost every
+  payload stored as an object.
+
+## [Unreleased]
+
+### Added
+
+- A book can be uploaded: **New media → Book** on the canvas, or `/media` in a card body. The picker is now the one
+  place a media kind is chosen and it serves two targets, so at a caret it inserts and on the canvas it makes a card
+  at the point you pressed. The card is made after the file is chosen, so a cancelled dialog leaves nothing behind.
+- A book block draws a cover: the title, author and cover picture the package declares, and **Read**. Reading
+  happens large, in focus mode, where selecting a sentence is a selection rather than a fight with the editor.
+- A highlight can be carried out of the book onto the board: a press that travels picks it up, the book steps aside,
+  and a release over the canvas makes the card there. A release anywhere else creates nothing.
+- A promoted card now opens with its passage: the quote as a blockquote, then a paragraph naming the source with a
+  mention, so the backlink is the graph's own reference.
+- A field can be marked read-only. `setProperty` refuses a change from a reader with a named reason, and the one way
+  around it is the flag the code that fills the field passes. The flag travels in a share and does not hide a value.
+
+### Changed
+
+- `insertMediaFiles` split into `prepareMediaFile` and an insert, because two targets now need the same upload: the
+  permission check, the local copy and the relay attempt live in one place.
+- `WorkspaceDocument` gained `bodyNodes`, the reader's pair to `setBodyNodes`, so a surface can draw a block out of a
+  body without mounting an editor.
 
 ## [Unreleased]
 

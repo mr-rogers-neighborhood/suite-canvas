@@ -576,11 +576,28 @@ export function cardMethods(ctx: DocContext) {
      * Writes one property value. `null` clears the key, the same as
      * `clearProperty`, so a picker can commit either gesture with one call.
      */
-    setProperty(cardId: string, fieldId: string, value: PropertyValue | null): void {
+    setProperty(
+      cardId: string,
+      fieldId: string,
+      value: PropertyValue | null,
+      /**
+       * The app writing a field a reader may not edit.
+       *
+       * A read-only field is one the *reader* cannot change — a template fills it, an import fills it, a promotion
+       * fills it. The write that fills it is this same call with this flag, so there is one writer and the refusal
+       * is a rule about who is asking rather than a second code path.
+       */
+      options: { asApp?: boolean } = {},
+    ): void {
       const card = ctx.api.cards.getCard(cardId);
       if (!card) throw new Error(`Unknown card: ${cardId}`);
       const field = ctx.api.cards.fieldForCard(card, fieldId);
       if (!field) throw new Error(`Unknown field on this card: ${fieldId}`);
+      if (field.readOnly === true && options.asApp !== true) {
+        throw new Error(
+          `Field "${field.name}" is read-only: it is filled by the app, not by a reader`,
+        );
+      }
       if (value === null) {
         ctx.api.cards.clearProperty(cardId, fieldId);
         return;

@@ -10,6 +10,14 @@ export interface CardFocusSurfaceProps {
    * clickable and the app chrome is never covered.
    */
   insetRight?: number;
+  /**
+   * Whether the surface is out of the way.
+   *
+   * A drag that has to cross this surface — a highlight being carried onto the board — needs to see what it is
+   * dropping on. The library drawer steps aside for the same reason, and it is the same trick: the surface shrinks
+   * to a strip instead of disappearing, so the drag has somewhere to come back to.
+   */
+  concealed?: boolean;
   children: ReactNode;
 }
 
@@ -27,6 +35,7 @@ export function CardFocusSurface({
   title,
   onClose,
   insetRight = 0,
+  concealed = false,
   children,
 }: CardFocusSurfaceProps) {
   const panel = useRef<HTMLElement | null>(null);
@@ -52,6 +61,7 @@ export function CardFocusSurface({
       tabIndex={-1}
       className="card-focus"
       data-testid="card-focus"
+      data-concealed={concealed ? "true" : undefined}
       aria-label={`Focused card: ${title || "Untitled"}`}
       style={insetRight > 0 ? { paddingRight: insetRight } : undefined}
       onKeyDown={(event) => {

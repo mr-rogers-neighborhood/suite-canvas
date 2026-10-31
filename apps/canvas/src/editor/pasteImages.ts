@@ -16,7 +16,7 @@ import {
 } from "./attachmentNode";
 import { imageAltFromSrc, imageLinkFromText } from "./imageLinkNode";
 import { closeImageUrlPrompt } from "./imageUrlPrompt";
-import { insertMediaAfter, insertMediaNode } from "./mediaNode";
+import { insertMediaAfter, insertMediaNode, type MediaAttrs } from "./mediaNode";
 
 /** One pasted image on its way to the relay. */
 export interface PasteUpload {
@@ -198,112 +198,91 @@ function clipboardText(event: ClipboardEvent): string {
 }
 
 /** Inserts one image block for the bytes that just landed. */
-function insertImageAttachment(
-  view: EditorView,
-  attrs: {
-    id: string;
-    mime: string;
-    width: number | null;
-    height: number | null;
-    name: string;
-    bytes: number;
-  },
-): void {
-  insertMediaNode(view, { kind: "image", ...attrs });
-}
-
-function insertVideoAttachment(
-  view: EditorView,
-  attrs: {
-    id: string;
-    mime: string;
-    width: number | null;
-    height: number | null;
-    name: string;
-    bytes: number;
-    duration: number | null;
-  },
-): void {
-  insertMediaNode(view, { kind: "video", ...attrs });
-}
-
-export async function insertMediaFiles(
-  view: EditorView,
-  files: File[],
+/**
+ * One file, prepared: its bytes stored and uploaded, and the attributes a `media` block needs.
+ *
+ * Split out from the insert because there are now two places a block can land — at the caret of an editor, and in
+ * a card made where the reader right-clicked — and the upload is the same work either way. The permission check,
+ * the local copy and the relay attempt live here so no caller can skip one of them.
+ */
+export async function prepareMediaFile(
+  file: File,
   options: PasteImagesOptions = {},
-): Promise<void> {
+): Promise<MediaAttrs | null> {
   const upload = options.upload === undefined ? relayUploader() : options.upload;
   const storeLocal = options.storeLocal ?? storeLocalAttachment;
   const measure = options.measure ?? measureImage;
   const newId = options.newId ?? attachmentId;
 
-  for (const file of files) {
-    const mime = clipboardMime(file.type);
-    if (!isAttachmentMime(mime)) continue;
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const id = newId();
+  const mime = clipboardMime(file.type);
+  if (!isAttachmentMime(mime)) return null;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const id = newId();
 
-    let uploaded = false;
-    if (upload !== null) {
-      try {
-        await upload({ id, bytes, mime });
-        uploaded = true;
-      } catch (error) {
-        // A relay that is unreachable right now is not a lost paste: keep the
-        // bytes locally and let the node render here, exactly as offline does.
-        // But a stated refusal is not unreachability — a 401 or a 403 means the
-        // bytes will never reach a collaborator, so say so instead of leaving the
-        // reader with a card that looks uploaded and is not.
-        console.warn("[attachments] upload failed; keeping the media locally", error);
-        const status = uploadStatus(error);
-        if (status === 401 || status === 403) {
-          announceUploadRefusal({
-            allowed: false,
-            reason:
-              status === 401
-                ? "Sign in to upload files: an upload needs an account."
-                : "This workspace's plan does not include file uploads.",
-          });
-        }
+  let uploaded = false;
+  if (upload !== null) {
+    try {
+      await upload({ id, bytes, mime });
+      uploaded = true;
+    } catch (error) {
+      // A relay that is unreachable right now is not a lost file: keep the bytes locally and let the block render
+      // here, exactly as offline does. But a stated refusal is not unreachability — a 401 or a 403 means the bytes
+      // will never reach a collaborator, so say so instead of leaving a card that looks uploaded and is not.
+      console.warn("[attachments] upload failed; keeping the media locally", error);
+      const status = uploadStatus(error);
+      if (status === 401 || status === 403) {
+        announceUploadRefusal({
+          allowed: false,
+          reason:
+            status === 401
+              ? "Sign in to upload files: an upload needs an account."
+              : "This workspace's plan does not include file uploads.",
+        });
       }
     }
-    if (uploaded) {
-      // If this browser still holds a local copy under the id (a retry, or a
-      // paste whose earlier attempt failed), the fact that the relay accepted
-      // the bytes is recorded beside it, so the pending caption goes away. No
-      // retry loop exists today; this keeps the store truthful for one added
-      // later rather than growing a background uploader here.
-      await markAttachmentUploaded(id);
-    }
-    if (!uploaded) {
-      // LOCAL-ONLY: with no relay (standalone build, offline tab, share session)
-      // these bytes live in this browser's IndexedDB and nowhere else. The card
-      // renders here, but a share viewer has no way to fetch them until the node
-      // is uploaded under the same id, so the image is missing for that reader.
-      await storeLocal(id, bytes, mime);
-    }
+  }
+  if (uploaded) await markAttachmentUploaded(id);
+  // LOCAL-ONLY otherwise: with no relay (standalone build, offline tab, share session) these bytes live in this
+  // browser's IndexedDB and nowhere else.
+  else await storeLocal(id, bytes, mime);
 
-    if (mime.startsWith("video/")) {
-      insertVideoAttachment(view, {
-        id,
-        mime,
-        width: null,
-        height: null,
-        name: file.name || options.fallbackName || "Attached video",
-        bytes: bytes.byteLength,
-        duration: null,
-      });
-    } else {
-      const size = await measure(bytes, mime);
-      insertImageAttachment(view, {
-        id,
-        mime,
-        width: size?.width ?? null,
-        height: size?.height ?? null,
-        name: file.name || options.fallbackName || "Pasted image",
-        bytes: bytes.byteLength,
-      });
-    }
+  const name = file.name || options.fallbackName || "Attached file";
+  if (mime === "application/epub+zip") {
+    return { kind: "epub", id, mime, name, bytes: bytes.byteLength };
+  }
+  if (mime.startsWith("video/")) {
+    return {
+      kind: "video",
+      id,
+      mime,
+      width: null,
+      height: null,
+      name,
+      bytes: bytes.byteLength,
+      duration: null,
+    };
+  }
+  const size = await measure(bytes, mime);
+  return {
+    kind: "image",
+    id,
+    mime,
+    width: size?.width ?? null,
+    height: size?.height ?? null,
+    name,
+    bytes: bytes.byteLength,
+  };
+}
+
+/** Files into one editor, at the caret: the paste, the drop and the picker's editor target. */
+export async function insertMediaFiles(
+  view: EditorView,
+  files: File[],
+  options: PasteImagesOptions = {},
+): Promise<void> {
+  for (const file of files) {
+    const attrs = await prepareMediaFile(file, options);
+    if (attrs !== null) insertMediaNode(view, attrs);
   }
 }
 

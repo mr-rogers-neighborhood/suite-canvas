@@ -1,5 +1,5 @@
 import { type LoroList, LoroMap, LoroText, type Value } from "loro-crdt";
-import type { PortableNode } from "../../portable.js";
+import { loroTreeToJson, type PortableNode } from "../../portable.js";
 import { ALLOWED_MARKS, ALLOWED_NODES } from "../../publish/validation/richTextSchema.js";
 import { loroAttributes, loroChildren } from "../../records/containers.js";
 import { STRUCT_ORIGIN } from "../constants.js";
@@ -129,6 +129,17 @@ export function richTextMethods(ctx: DocContext) {
       replaceChildren(ctx.api.cards.getContent(cardId), nodes);
       ctx.commit(RICH_TEXT_ORIGIN);
       return true;
+    },
+
+    /**
+     * A card's body as a tree, the way `setBodyNodes` wrote it.
+     *
+     * The reader's pair: a surface that draws a block out of a body — a book, a media figure — needs the nodes
+     * without mounting the editor, and a second way of reading a body would be a second answer to what a body is.
+     */
+    bodyNodes(cardId: string): PortableNode[] {
+      const content = ctx.api.cards.peekContent(cardId);
+      return content === undefined ? [] : (loroTreeToJson(content)[0]?.content ?? []);
     },
 
     /** One-line title: the common case for an imported note or a template card. */

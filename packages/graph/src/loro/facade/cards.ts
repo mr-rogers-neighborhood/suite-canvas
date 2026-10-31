@@ -167,6 +167,11 @@ export class CardsFacade extends AnnotationsFacade {
     return this.cardsApi.setTitleNodes(cardId, nodes);
   }
 
+  /** A card's body as a tree, which is what a surface that draws a block out of it needs. */
+  bodyNodes(cardId: string): PortableNode[] {
+    return this.cardsApi.bodyNodes(cardId);
+  }
+
   setBodyNodes(cardId: string, nodes: readonly PortableNode[]): boolean {
     return this.cardsApi.setBodyNodes(cardId, nodes);
   }
@@ -223,8 +228,13 @@ export class CardsFacade extends AnnotationsFacade {
     return this.cardsApi.viewCardFields(card);
   }
 
-  setProperty(cardId: string, fieldId: string, value: PropertyValue | null): void {
-    this.cardsApi.setProperty(cardId, fieldId, value);
+  setProperty(
+    cardId: string,
+    fieldId: string,
+    value: PropertyValue | null,
+    options: { asApp?: boolean } = {},
+  ): void {
+    this.cardsApi.setProperty(cardId, fieldId, value, options);
   }
 
   clearProperty(cardId: string, fieldId: string): void {

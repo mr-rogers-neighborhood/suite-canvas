@@ -7,6 +7,7 @@ import { viewsEnabled } from "../../views/availability";
 import { NudgeHint } from "../BoardHints";
 import { DropOffer } from "../DropOffer";
 import { EdgeDescriptionInput } from "../EdgeDescription";
+import { HighlightDropLayer } from "../HighlightDropLayer";
 import { LibraryDropPreview } from "../PeerLibraryDragLayer";
 import { PlaceStackCursor } from "../PlaceStackCursor";
 import { PortalTransitionLayer } from "../PortalTransitionLayer";
@@ -64,6 +65,7 @@ export function BoardOverlays({ ui, projection, links, menuItems }: BoardOverlay
       <DropOffer />
       {/* Nothing can project while the views surfaces are shut, and a float with no way to open it
           would be chrome for a feature the reader cannot reach. */}
+      <HighlightDropLayer />
       {viewsEnabled ? <ProjectionFloat /> : null}
       {/* Explain's gathered context lives in the handbook when this build has one, and stands
           on its own over the board when it does not. */}

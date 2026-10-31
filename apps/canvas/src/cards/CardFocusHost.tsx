@@ -2,7 +2,11 @@ import { useReactFlow, type Viewport } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { prefersReducedMotion } from "../canvas/localEasing";
 import { usePresenceStore } from "../collab/usePresenceStore";
+import { BookFocus } from "../reader/BookFocus";
+import { useHighlightDrag } from "../reader/highlightDrag";
+import { isBookCard } from "../reader/isBookCard";
 import { isShareSession } from "../session/session";
+import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { CardFocusSurface } from "./CardFocusSurface";
 import { CardPanel } from "./CardPanel";
@@ -32,8 +36,13 @@ export function CardFocusHost() {
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const canManageSchema = useUiStore((state) => state.canManageSchema);
 
+  const workspace = useCanvasStore((state) => state.workspace);
+  const carrying = useHighlightDrag((state) => state.carried !== null);
   const model = useCardPanelModel(cardFocusId, "focus");
   const sketch = model ? isWhiteboardCard(model.card) : false;
+  // A book reads in this surface rather than in its body: a selection inside `contentEditable` belongs to
+  // ProseMirror, and the highlight gesture is a selection. `WhiteboardFocus` is the same arrangement.
+  const book = model ? isBookCard(workspace, model.card.id) : false;
   const { getViewport, setViewport } = useReactFlow();
   const savedViewport = useRef<Viewport | null>(null);
   const cardId = model?.card.id ?? null;
@@ -124,6 +133,16 @@ export function CardFocusHost() {
 
   const focusEditing =
     editingNodeId === model.card.id && editingSurface === "focus" ? editingField : null;
+
+  if (book) {
+    return (
+      <CardFocusSurface title={model.title} onClose={close} concealed={carrying}>
+        <div className="book-focus" data-testid="book-focus">
+          <BookFocus cardId={model.card.id} />
+        </div>
+      </CardFocusSurface>
+    );
+  }
 
   if (sketch) {
     return (

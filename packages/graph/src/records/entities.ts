@@ -121,6 +121,7 @@ export function fieldFromMap(id: string, fields: LoroMap): FieldDefinition {
   const itemKind = listItemKindSchema.safeParse(fields.get("itemKind"));
   const rating = ratingPresentationSchema.safeParse(fields.get("rating"));
   const display = readString(fields, "display");
+  const readOnly = readBoolean(fields, "readOnly");
   return fieldDefinitionSchema.parse({
     id,
     name: readString(fields, "name") ?? "Field",
@@ -129,6 +130,7 @@ export function fieldFromMap(id: string, fields: LoroMap): FieldDefinition {
     order: readNumber(fields, "order") ?? Number.MAX_SAFE_INTEGER,
     options,
     ...(display ? { display } : {}),
+    ...(readOnly === true ? { readOnly } : {}),
     ...(subFields.length > 0 ? { subFields } : {}),
     ...(itemKind.success ? { itemKind: itemKind.data } : {}),
     ...(rating.success ? { rating: rating.data } : {}),

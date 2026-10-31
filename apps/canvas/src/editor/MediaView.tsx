@@ -27,11 +27,7 @@ export function MediaView(props: NodeViewProps) {
   if (!isKnownMediaKind(props.node.attrs.kind)) return <UnknownMediaView {...props} />;
   const kind = mediaKindOf(props.node.attrs.kind);
 
-  if (kind === "epub") {
-    // The card that owns the editor is what a highlight is recorded against.
-    const cardId = (props.extension.options as { cardId?: string }).cardId ?? "";
-    return <BookView {...props} sourceCardId={cardId} />;
-  }
+  if (kind === "epub") return <BookView {...props} />;
   if (kind === "youtube") return <YouTubeView {...props} />;
   if (kind === "video") return <VideoView {...props} />;
 

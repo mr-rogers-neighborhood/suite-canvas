@@ -6,6 +6,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useBookPosition, useBookStore } from "./bookStore";
 import { HighlightPalette } from "./HighlightPalette";
+import { beginHighlightDrag } from "./highlightDrag";
 import { promoteAnnotation } from "./promote";
 import { type PendingSelection, ReaderChapter } from "./ReaderChapter";
 import { useBookBytes } from "./useBookBytes";
@@ -244,6 +245,9 @@ export function BookReader({
             annotations={highlights.annotations}
             styles={highlights.styles}
             onSelect={setSelection}
+            onCarry={(annotationId, start, onDrop) =>
+              beginHighlightDrag(annotationId, start, onDrop)
+            }
             onActivate={(annotationId) => {
               const annotation = highlights.annotations.find((entry) => entry.id === annotationId);
               if (annotation === undefined || workspace === null) return;

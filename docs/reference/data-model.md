@@ -184,6 +184,12 @@ timestamp are different facts and a canvas region has none.
 rather than code — nothing branches on a style's id. A style naming a `templateTypeId` is how "green highlights
 become Claim cards" is expressed with the templates the graph already has.
 
+**A field can be read-only.** `readOnly?: boolean` on a field definition is a decision a reader makes about their own
+schema (filled by a template, an import, a promotion) and `setProperty` refuses a change from anyone else with a
+named reason. The single way around it is `{ asApp: true }`, which is how the code that owns the field writes it. The
+`annotation` kind keeps its own lock, which is a different fact: the flag is about a field, the kind is about where
+the truth lives. The flag travels in a projection and does not hide the value.
+
 **A projection carries the highlights of the sources it includes** and reports the rest as `withheldAnnotations`,
 the same rule a private card reference follows.
 

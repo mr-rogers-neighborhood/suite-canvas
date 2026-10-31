@@ -321,6 +321,7 @@ export function cardTypesMethods(ctx: DocContext) {
       field.set("kind", input.kind);
       field.set("required", input.required ?? false);
       field.set("order", order);
+      if (input.readOnly === true) field.set("readOnly", true);
       if (input.kind === "select" || input.kind === "multiSelect") {
         const options = field.ensureMergeableMap("options");
         (input.options ?? []).forEach((label, index) => {
@@ -369,12 +370,16 @@ export function cardTypesMethods(ctx: DocContext) {
     updateField(
       typeId: string,
       fieldId: string,
-      patch: { name?: string; required?: boolean; display?: string | null },
+      patch: { name?: string; required?: boolean; display?: string | null; readOnly?: boolean },
     ): void {
       const field = ctx.api.cardTypes.typeFields(typeId)?.get(fieldId);
       if (!isMap(field)) return;
       if (patch.name !== undefined) field.set("name", patch.name.trim() || "Field");
       if (patch.required !== undefined) field.set("required", patch.required);
+      if (patch.readOnly !== undefined) {
+        if (patch.readOnly) field.set("readOnly", true);
+        else if (field.get("readOnly") !== undefined) field.delete("readOnly");
+      }
       if (patch.display !== undefined) {
         const display = normalizeTemplate(patch.display);
         if (display) field.set("display", display);

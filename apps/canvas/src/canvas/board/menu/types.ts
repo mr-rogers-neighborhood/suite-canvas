@@ -38,8 +38,8 @@ export interface BoardMenuContext {
   createViewAt: (position: { x: number; y: number }) => void;
   /** A view whose context is what is selected right now, opened as a draft. */
   createViewFromSelection: () => void;
-  /** The library's own media list, which is where media is added and placed. */
-  openMediaLibrary: () => void;
+  /** The media picker at the click: it asks which kind, then makes the card that holds it. */
+  createMediaAt: (position: { x: number; y: number }) => void;
   duplicateCards: (ids: string[]) => void;
   /** One colour across the cards a menu acts on. */
   setSwatches: (ids: readonly string[], swatch: string | null) => void;

@@ -8,6 +8,7 @@ import type { Node } from "@xyflow/react";
 import { useCallback } from "react";
 import { ensureViewType, VIEW_TYPE_ID } from "../../cards/viewCard";
 import { ensureWhiteboardType } from "../../cards/whiteboard";
+import { openMediaPickerOnBoard } from "../../editor/mediaPicker";
 import { useUiStore } from "../../store/useUiStore";
 import { useViewsStore } from "../../store/viewsStore";
 import { installBlueprintCard } from "../blueprints/blueprint";
@@ -250,17 +251,19 @@ export function useBoardCommands(
   }, [workspace, canManageSchema]);
 
   /**
-   * Media is added where it can be seen: the library's media list.
+   * Media at the click: ask which kind, then make the card that holds it.
    *
-   * A media card is a card whose body holds a media node, so there is nothing to create until a
-   * file, a link or an embed has been chosen. Opening that list is the door; the card it makes is
-   * placed by dragging it out, which is the flow that already exists.
+   * The picker decides the kind and the target decides where it lands, so this is one call and the same table the
+   * `/` menu uses. The card is made after a file is chosen, because a cancelled dialog must not leave an empty card
+   * on the board — which is the one place this differs from `New view`, where the card *is* the thing being made.
    */
-  const openMediaLibrary = useCallback(() => {
-    const state = useUiStore.getState();
-    state.setLibraryTab("media");
-    state.setLibraryOpen(true);
-  }, []);
+  const createMediaAt = useCallback(
+    (position: { x: number; y: number }) => {
+      if (!canCreateContent || !activeBoardId) return;
+      openMediaPickerOnBoard(activeBoardId, position);
+    },
+    [activeBoardId, canCreateContent],
+  );
 
   const createWhiteboardAt = useCallback(
     (position: { x: number; y: number }) => {
@@ -460,7 +463,7 @@ export function useBoardCommands(
     createPortalToNewBoard,
     createViewAt,
     createViewFromSelection,
-    openMediaLibrary,
+    createMediaAt,
     duplicateCards,
     moveCardToBoard,
     alsoPlaceCardOnBoard,

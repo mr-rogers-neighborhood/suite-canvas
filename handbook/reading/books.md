@@ -35,3 +35,17 @@ a page-image textbook — draws the text it can find and not the pages it cannot
 
 The book's own stylesheet is dropped on purpose, because it would fight the app's type and could reach the network
 for a font. Pictures inside the book are drawn from the book's own files and never fetched from anywhere else.
+
+## Getting a book onto the board
+
+**Right-click the canvas → New media → Book**, or press `/media` in a card body and pick Book. Either way the same
+picker asks which kind, and the same upload puts the block where you asked: at the caret of the card you are
+writing, or in a new card at the point you right-clicked. The card is made after you choose the file, so cancelling
+the dialog leaves nothing behind.
+
+On the card you get the cover: the title and author the book declares, its picture if it has one, and **Read**. The
+reading itself happens large, with the app's chrome still live around it — so a highlight can be carried out of the
+book and onto the board.
+
+Carrying a highlight takes a small drag. The book steps out of the way while the highlight is in your hand, and if
+you let go anywhere but the board, nothing is made.

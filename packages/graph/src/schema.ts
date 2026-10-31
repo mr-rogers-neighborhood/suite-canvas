@@ -150,6 +150,14 @@ export const fieldDefinitionSchema = z.object({
    */
   display: z.string().min(1).max(160).optional(),
   /**
+   * A field the app fills, which a reader may not edit.
+   *
+   * A decision a reader makes about their own schema — "this column is written by a template / an import / a
+   * link" — so it travels in a projection and does not hide the value: a share already redacts what it does not
+   * include, and a field that vanished from a shared card would read as data loss.
+   */
+  readOnly: z.boolean().optional(),
+  /**
    * A `group`'s members, or a `list`'s item shape (ADR-0057 §6). For a list of
    * scalars it holds exactly one entry — the item's own kind, id `"item"` —
    * so "one entry" reads the same in both cases.

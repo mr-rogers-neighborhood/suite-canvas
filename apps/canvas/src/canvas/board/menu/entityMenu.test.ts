@@ -33,7 +33,7 @@ function makeContext(overrides: Record<string, unknown> = {}): BoardMenuContext 
     createSectionAt: vi.fn(),
     createViewAt: vi.fn(),
     createViewFromSelection: vi.fn(),
-    openMediaLibrary: vi.fn(),
+    createMediaAt: vi.fn(),
     arrangeSelection: vi.fn(),
     changeLayer: vi.fn(),
     changeLayerBulk: vi.fn(),
@@ -218,12 +218,13 @@ describe("the create group", () => {
     expect(byLabel(items, "New view of these cards")).toBeUndefined();
   });
 
-  it("should open one media list rather than inventing a second uploader", () => {
-    const openMediaLibrary = vi.fn();
-    const items = canvasMenu({ openMediaLibrary });
+  it("should ask which kind of media at the press, rather than opening a list somewhere else", () => {
+    const createMediaAt = vi.fn();
+    const items = canvasMenu({ canCreateContent: true, createMediaAt });
 
     byLabel(items, "New media…")?.onSelect?.();
-    expect(openMediaLibrary).toHaveBeenCalledTimes(1);
+    // The picker lands a block in a card at this point, so the row hands over the point and not the library.
+    expect(createMediaAt).toHaveBeenCalledWith({ x: 80, y: 40 });
   });
 
   it("should offer nothing that makes content to a session that cannot", () => {

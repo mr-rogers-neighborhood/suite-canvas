@@ -96,3 +96,45 @@ describe("a card's title from a passage", () => {
     expect(titleFrom("a".repeat(80)).length).toBe(58);
   });
 });
+
+describe("what a promoted card says", () => {
+  it("should open with the quote and then name where it came from", () => {
+    const { workspace, annotation, book } = fixture();
+    workspace.setTitleText(book.id, "A Small Book");
+    const promoted = promoteAnnotation({ workspace, annotation });
+    const nodes = workspace.bodyNodes(promoted?.cardId ?? "");
+
+    expect(nodes[0]?.type).toBe("blockquote");
+    expect(nodes[0]?.content?.[0]?.content?.[0]).toEqual({ type: "text", text: "The words." });
+    // The reference is the source card itself, so the backlink is the graph's own mechanism.
+    expect(nodes[1]?.content?.some((node) => node.type === "mention")).toBe(true);
+    expect(
+      nodes[1]?.content?.some(
+        (node) => node.type === "text" && (node.text ?? "").includes("A Small Book"),
+      ),
+    ).toBe(true);
+  });
+
+  it("should carry no quote block when the passage had no words", () => {
+    const { workspace, book } = fixture();
+    const silent = workspace.addAnnotation({
+      sourceCardId: book.id,
+      styleId: "style-blue",
+      anchor: { kind: "time", locator: "episode 1", startMs: 0, endMs: 900 },
+    });
+    const promoted = promoteAnnotation({ workspace, annotation: silent });
+    const nodes = workspace.bodyNodes(promoted?.cardId ?? "");
+
+    expect(nodes.map((node) => node.type)).toEqual(["paragraph"]);
+    expect(nodes[0]?.content?.some((node) => node.text === "From the recording")).toBe(true);
+  });
+
+  it("should make a real reference, so the card and the book know each other", () => {
+    const { workspace, annotation, book } = fixture();
+    const promoted = promoteAnnotation({ workspace, annotation });
+    workspace.ensureReferences();
+
+    // A reference is the graph's own direction: the card points at the book, which is what makes a backlink.
+    expect(workspace.referencesFor(promoted?.cardId ?? "")).toContain(book.id);
+  });
+});

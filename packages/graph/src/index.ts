@@ -4,8 +4,8 @@ export {
   behaviourTypeIds,
   isBehaviourType,
 } from "./behaviours.js";
-export type { CardAttachment } from "./cardAttachments.js";
-export { documentAttachmentIds, documentAttachments } from "./cardAttachments.js";
+export type { CardAttachment, MediaKind, WorkspaceMediaItem } from "./cardAttachments.js";
+export { documentAttachmentIds, documentAttachments, documentMedia } from "./cardAttachments.js";
 export {
   CONNECTOR_ANCHORS,
   createConnectorId,

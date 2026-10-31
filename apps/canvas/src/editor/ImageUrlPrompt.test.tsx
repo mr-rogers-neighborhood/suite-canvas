@@ -51,9 +51,15 @@ function openFromSlashMenu(instance: Editor): void {
 
 describe("the slash menu's image item", () => {
   it("should be listed for `image` and `url`, next to the other blocks", () => {
-    expect(filterSlashItems("image").map((entry) => entry.id)).toEqual(["image-url"]);
+    expect(filterSlashItems("image").map((entry) => entry.id)).toEqual([
+      "image-upload",
+      "image-url",
+    ]);
     expect(filterSlashItems("url").map((entry) => entry.id)).toEqual(["image-url"]);
-    expect(filterSlashItems("picture").map((entry) => entry.id)).toEqual(["image-url"]);
+    expect(filterSlashItems("picture").map((entry) => entry.id)).toEqual([
+      "image-upload",
+      "image-url",
+    ]);
   });
 
   it("should ask for a URL in the editor and insert the node on Enter", async () => {

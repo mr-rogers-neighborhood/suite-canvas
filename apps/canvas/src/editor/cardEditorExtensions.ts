@@ -9,6 +9,8 @@ import { PropertyBlock } from "./PropertyBlock";
 import { PasteImages } from "./pasteImages";
 import { SlashCommands } from "./SlashCommands";
 import { TourStep } from "./TourStep";
+import { Video } from "./videoNode";
+import { YouTube } from "./youtubeNode";
 
 export interface CardBodySchemaOptions {
   /** Card that owns the body; mentions and property blocks resolve against it. */
@@ -48,6 +50,10 @@ export function cardBodySchemaExtensions({
     // Images are nodes that name their bytes by id; the bytes live beside the
     // document, so a share projection copies metadata only.
     Attachment,
+    // Attached video bytes beside the document.
+    Video,
+    // YouTube video embed via privacy-preserving iframe.
+    YouTube,
     // A link image names a URL and holds no bytes, so it works in every
     // edition, including a standalone build with no relay at all.
     ImageLink,

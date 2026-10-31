@@ -5,7 +5,9 @@ import {
   openBillingPortal,
   type PlanCatalogue,
   readEntitlement,
+  readStorageUsage,
   readSubscription,
+  type StorageUsage,
   type SubscriptionView,
   startCheckout,
 } from "./billing";
@@ -60,6 +62,7 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [mode, setMode] = useState<PlanCatalogue["mode"] | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionView | null>(null);
+  const [usage, setUsage] = useState<StorageUsage | null>(null);
   const [load, setLoad] = useState<Load>("idle");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +76,7 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
 
   /** One read, so the first paint and Retry cannot disagree about what happened. */
   const read = useCallback(async (): Promise<void> => {
+    void readStorageUsage().then(setUsage);
     if (signedOut) {
       setAnswered(true);
       setLoad("done");
@@ -162,11 +166,13 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
   const quota =
     view === null
       ? []
-      : view.quota.length > 0
-        ? view.quota
-        : unpaid
-          ? [freeWorkspaceLine()]
-          : quotaLines(view.limits);
+      : Object.keys(view.limits ?? {}).length > 0
+        ? quotaLines(view.limits, usage)
+        : view.quota.length > 0
+          ? view.quota
+          : unpaid
+            ? [freeWorkspaceLine()]
+            : [];
 
   return (
     <div data-testid="plan-panel" className="text-[12px]">
@@ -282,13 +288,14 @@ export function PlanPanel({ entitlement, readOnMount = true, onNotice }: PlanPan
               plan={plan}
               busy={busy === plan.name}
               onChoose={(name) => void upgrade(name)}
+              currentUsage={usage}
             />
           ))}
-          <SelfHostCard />
+          <SelfHostCard currentUsage={usage} />
         </div>
       ) : (
         <div className="mt-3">
-          <SelfHostCard />
+          <SelfHostCard currentUsage={usage} />
         </div>
       )}
 

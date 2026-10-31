@@ -26,6 +26,8 @@ export const RICH_TEXT_NODE_NAMES = [
   "propertyBlock",
   "attachment",
   "image",
+  "video",
+  "youtube",
   "tourStep",
 ] as const;
 
@@ -58,6 +60,10 @@ export const RICH_TEXT_NODE_ATTRIBUTE_NAMES = {
   attachment: ["id", "mime", "width", "height", "name", "bytes"],
   // A link image: an address to fetch, a label, and the size it draws at.
   image: ["src", "alt", "width", "height"],
+  // An attached video: metadata for video bytes stored beside the document.
+  video: ["id", "mime", "width", "height", "name", "bytes", "duration"],
+  // A YouTube embed: video ID and privacy-enhanced embed source.
+  youtube: ["videoId", "src", "title", "width", "height"],
   // A tour step: its stable id, the targets it points at, the camera it asks
   // for, its caption and how a reader leaves it (ADR-0054).
   tourStep: ["stepId", "targets", "viewport", "caption", "advance"],
@@ -94,6 +100,10 @@ export const ATTACHMENT_MIME_TYPES = new Set([
   "image/gif",
   "image/webp",
   "image/avif",
+  "video/mp4",
+  "video/webm",
+  "video/ogg",
+  "video/quicktime",
 ]);
 
 export const ATTACHMENT_MAX_NAME_BYTES = 200;

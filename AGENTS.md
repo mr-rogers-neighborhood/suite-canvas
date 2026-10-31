@@ -133,16 +133,18 @@ comment is shorthand, and the prose around it states the decision.
 
 ## Tools for the deployment
 
-`.vscode/mcp.json` adds four MCP servers, all of them workspace-scoped so they do not load in other
-projects: `cloudflare` (`https://mcp.cloudflare.com/mcp`), `stripe` (`https://mcp.stripe.com`), `resend`
-(`https://mcp.resend.com/mcp`), and `aws-mcp`, which the AWS Agent Toolkit writes itself. None of them
-carries a secret: each authenticates with OAuth on first use, and Stripe is authorised against the
-**sandbox** so a live charge is never one tool call away.
+`.mcp.json` at the workspace root is the live source for tools, in the portable `mcpServers`
+format: `cloudflare` (`https://mcp.cloudflare.com/mcp`), `resend` (`https://mcp.resend.com/mcp`) and
+`cloudwatch` (`awslabs.cloudwatch-mcp-server`, `suite` profile, `us-east-2`). `.vscode/mcp.json` still
+carries `stripe`, which VS Code forwards to the session. None of them carries a secret: each
+authenticates with OAuth on first use, and Stripe is authorised against the **sandbox** so a live charge
+is never one tool call away.
 
-They are trimmed on purpose. A server's whole tool list crowding out the task at hand is worse than not
-having it, so **Chat: Open Customizations → Tools** is where each server is cut to the handful of tools a
-job needs; turn the rest back on for the length of that job. The same panel is where a server is switched
-off entirely, which is what the end of a deployment phase should look like.
+Every server names its tools in an explicit `"tools"` allowlist. `"tools": ["*"]` took the loaded surface
+to 182 against a 128-tool limit, and most of that surface went unused: `resend` offered 99 tools of which
+four had ever run, and none of the 19 CloudWatch tools had run at all. Naming the tools is what keeps the
+session inside the limit, so `"*"` is the thing to avoid rather than a default to copy. To bring a tool
+back, add its name from the server's `tools/list` response.
 
 <!-- BEGIN AWS Agent Toolkit rules -->
 

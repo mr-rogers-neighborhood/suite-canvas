@@ -157,6 +157,41 @@ export const GroupedBySection: Story = {
 
 export const Trash: Story = { args: { tab: "trash" } };
 
+export const Media: Story = {
+  args: {
+    tab: "media",
+    counts: { inbox: 2, cards: 6, media: 2, trash: 1 },
+    media: [
+      {
+        id: "att-1",
+        kind: "image",
+        url: "https://example.com/cat.jpg",
+        mime: "image/jpeg",
+        name: "Cat Photo",
+        width: 1200,
+        height: 800,
+        bytes: 1024 * 250,
+        duration: null,
+        videoId: null,
+        cards: [{ id: "c1", title: "Project Brief" }],
+      },
+      {
+        id: "yt-1",
+        kind: "youtube",
+        url: null,
+        mime: null,
+        name: "Demo Video",
+        width: null,
+        height: null,
+        bytes: null,
+        duration: null,
+        videoId: "dQw4w9WgXcQ",
+        cards: [{ id: "c2", title: "Interview notes" }],
+      },
+    ],
+  },
+};
+
 export const SearchQuery: Story = {
   args: {
     tab: "cards",

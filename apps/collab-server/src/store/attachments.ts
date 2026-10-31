@@ -26,6 +26,10 @@ export const ATTACHMENT_MIME_TYPES = [
   "image/gif",
   "image/webp",
   "image/avif",
+  "video/mp4",
+  "video/webm",
+  "video/ogg",
+  "video/quicktime",
 ] as const;
 
 export type AttachmentMime = (typeof ATTACHMENT_MIME_TYPES)[number];
@@ -34,7 +38,7 @@ export type AttachmentMime = (typeof ATTACHMENT_MIME_TYPES)[number];
  * Largest single upload. The per-workspace cap in `limits.ts` is the quota; this
  * is the memory bound one request may reach before the body is even stored.
  */
-export const MAX_ATTACHMENT_BYTES = 16 * 1024 * 1024;
+export const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 
 /** Schema version stamped into `PRAGMA user_version`; bump only with a migration. */
 export const ATTACHMENT_STORE_SCHEMA = 1;
@@ -66,10 +70,10 @@ export function attachmentMimeProblem(value: string | undefined | null): string 
   const mime = normalizeMime(value);
   if ((ATTACHMENT_MIME_TYPES as readonly string[]).includes(mime)) return null;
   if (mime === "image/svg+xml") {
-    return "SVG is not accepted: an SVG is markup and can carry script. Paste a PNG, JPEG, GIF, WebP or AVIF image instead.";
+    return "SVG is not accepted: an SVG is markup and can carry script. Upload a PNG, JPEG, GIF, WebP, AVIF image or MP4, WebM, OGG, QuickTime video instead.";
   }
   if (mime === "text/html" || mime === "application/xhtml+xml" || mime === "text/xml") {
-    return "HTML is not accepted: attachments are image bytes, and the relay never hosts a page. Paste a PNG, JPEG, GIF, WebP or AVIF image instead.";
+    return "HTML is not accepted: attachments are media bytes, and the relay never hosts a page. Upload a supported image or video instead.";
   }
   return `Unsupported attachment type "${mime || "unknown"}"; the relay accepts ${ATTACHMENT_MIME_TYPES.join(", ")}.`;
 }
@@ -135,6 +139,8 @@ export interface AttachmentStore {
   delete: (id: string) => boolean;
   /** Bytes stored for one workspace, the number the cap compares against. */
   usage: (workspaceId: string) => number;
+  /** Bytes stored across multiple workspaces. */
+  usageForWorkspaces: (workspaceIds: readonly string[]) => number;
   /** Deletes every row of `workspaceId` whose id is not in `referencedIds`. */
   gc: (workspaceId: string, referencedIds: Iterable<string>) => number;
   /**
@@ -243,6 +249,17 @@ export function createSqliteAttachmentStore(
     return Number(row?.bytes ?? 0);
   };
 
+  const usageForWorkspaces = (workspaceIds: readonly string[]): number => {
+    const valid = workspaceIds.map((id) => id.trim()).filter((id) => id.length > 0);
+    if (valid.length === 0) return 0;
+    const placeholders = valid.map(() => "?").join(",");
+    const stmt = db.prepare(
+      `SELECT COALESCE(SUM(size), 0) AS bytes FROM attachments WHERE workspace_id IN (${placeholders})`,
+    );
+    const row = stmt.get(...valid) as UsageRow | undefined;
+    return Number(row?.bytes ?? 0);
+  };
+
   return {
     put: (workspaceId, bytes, mime, putOptions = {}) => {
       const id = putOptions.id ?? newAttachmentId();
@@ -308,6 +325,7 @@ export function createSqliteAttachmentStore(
     },
 
     usage,
+    usageForWorkspaces,
 
     gc: (workspaceId, referencedIds) => {
       const keep = new Set(referencedIds);

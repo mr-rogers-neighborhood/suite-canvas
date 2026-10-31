@@ -104,6 +104,10 @@ const fixtures: Readonly<Record<string, Fixture>> = {
     available: { state: { libraryTab: "inbox" } },
     unavailable: { state: { libraryTab: "cards" } },
   },
+  "library.tab.media": {
+    available: { state: { libraryTab: "inbox" } },
+    unavailable: { state: { libraryTab: "media" } },
+  },
   "library.tab.trash": { unavailable: { state: { libraryTab: "trash" } } },
   "theme.toggle": { unavailable: { state: { workspaceSurface: false } } },
   "board.create": { unavailable: { capabilities: [] } },

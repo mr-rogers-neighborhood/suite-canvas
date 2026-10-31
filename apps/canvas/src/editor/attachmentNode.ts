@@ -11,6 +11,10 @@ export const ATTACHMENT_MIME_TYPES = [
   "image/gif",
   "image/webp",
   "image/avif",
+  "video/mp4",
+  "video/webm",
+  "video/ogg",
+  "video/quicktime",
 ] as const;
 
 export type AttachmentMime = (typeof ATTACHMENT_MIME_TYPES)[number];
@@ -216,6 +220,39 @@ async function readLocalRecord(id: string): Promise<LocalRecord | null> {
   }
 }
 
+/** Total bytes stored in local IndexedDB for attachments. */
+export async function readLocalAttachmentBytesTotal(): Promise<number> {
+  const database = openLocalDatabase();
+  if (database === null) return 0;
+  try {
+    const db = await database;
+    try {
+      return await new Promise<number>((resolve) => {
+        let total = 0;
+        const transaction = db.transaction(LOCAL_STORE, "readonly");
+        const request = transaction.objectStore(LOCAL_STORE).openCursor();
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (cursor) {
+            const record = cursor.value as LocalRecord | undefined;
+            if (record?.bytes) {
+              total += record.bytes.byteLength ?? record.bytes.length ?? 0;
+            }
+            cursor.continue();
+          } else {
+            resolve(total);
+          }
+        };
+        request.onerror = () => resolve(0);
+      });
+    } finally {
+      db.close();
+    }
+  } catch {
+    return 0;
+  }
+}
+
 /** Writes one record whole. Never throws: a paste must still land. */
 async function putLocalRecord(record: LocalRecord): Promise<void> {
   const database = openLocalDatabase();
@@ -307,5 +344,22 @@ export async function deleteLocalAttachment(id: string): Promise<void> {
     }
   } catch (error) {
     console.warn("[attachments] could not drop the local copy", error);
+  }
+}
+
+/**
+ * Drops the attachment locally and, if connected to a relay, deletes it from the relay store.
+ */
+export async function purgeAttachment(id: string): Promise<void> {
+  await deleteLocalAttachment(id);
+  const { isStandalone } = await import("../session/mode");
+  if (!isStandalone() && typeof navigator !== "undefined" && navigator.onLine) {
+    try {
+      const { credentialAuthorization } = await import("../auth/credential");
+      const headers = await credentialAuthorization();
+      await fetch(attachmentUrl(id), { method: "DELETE", headers });
+    } catch {
+      // ignore
+    }
   }
 }

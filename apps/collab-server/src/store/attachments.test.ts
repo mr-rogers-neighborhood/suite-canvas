@@ -19,11 +19,14 @@ describe("attachment content types", () => {
   it("accepts the image types it can serve and refuses markup with a reason", () => {
     expect(attachmentMimeProblem("image/png")).toBeNull();
     expect(attachmentMimeProblem("IMAGE/JPEG; charset=binary")).toBeNull();
+    expect(attachmentMimeProblem("video/mp4")).toBeNull();
+    expect(attachmentMimeProblem("video/webm")).toBeNull();
     expect(isAttachmentMime("image/webp")).toBe(true);
+    expect(isAttachmentMime("video/mp4")).toBe(true);
 
     const html = attachmentMimeProblem("text/html");
     expect(html).toContain("HTML is not accepted");
-    expect(html).toContain("PNG");
+    expect(html).toContain("image or video");
 
     const svg = attachmentMimeProblem("image/svg+xml");
     expect(svg).toContain("SVG is not accepted");
@@ -103,6 +106,19 @@ describe("attachment store", () => {
     expect(attachments.get(other.id)).not.toBeNull();
     expect(attachments.delete(kept.id)).toBe(true);
     expect(attachments.delete(kept.id)).toBe(false);
+    attachments.close();
+  });
+
+  it("calculates usage across multiple workspaces", () => {
+    const attachments = store();
+    attachments.put("ws-1", PNG, "image/png");
+    attachments.put("ws-2", PNG, "image/png");
+    attachments.put("ws-3", PNG, "image/png");
+
+    expect(attachments.usageForWorkspaces(["ws-1", "ws-2"])).toBe(PNG.byteLength * 2);
+    expect(attachments.usageForWorkspaces(["ws-1"])).toBe(PNG.byteLength);
+    expect(attachments.usageForWorkspaces([])).toBe(0);
+    expect(attachments.usageForWorkspaces(["ws-nonexistent"])).toBe(0);
     attachments.close();
   });
 });

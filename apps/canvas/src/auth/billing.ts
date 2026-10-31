@@ -381,3 +381,54 @@ export async function openBillingPortal(input: {
     input.options ?? {},
   );
 }
+
+export interface StorageUsage {
+  attachmentBytes?: number;
+  documentBytes?: number;
+}
+
+/**
+ * Reads real-time media and document storage usage from the collab relay,
+ * falling back to local IndexedDB byte totals when offline or standalone.
+ */
+export async function readStorageUsage(workspaceId?: string | null): Promise<StorageUsage> {
+  if (typeof window === "undefined") {
+    return { attachmentBytes: 0, documentBytes: 0 };
+  }
+  let localBytes = 0;
+  try {
+    const { readLocalAttachmentBytesTotal } = await import("../editor/attachmentNode");
+    localBytes = await readLocalAttachmentBytesTotal();
+  } catch {
+    // ignore
+  }
+
+  const { isStandalone } = await import("../session/mode");
+  if (isStandalone() || (typeof navigator !== "undefined" && !navigator.onLine)) {
+    return { attachmentBytes: localBytes, documentBytes: 0 };
+  }
+
+  try {
+    const { credentialAuthorization } = await import("./credential");
+    const { collabHttpBase } = await import("../session/endpoints");
+    const { pageLocation } = await import("../editor/attachmentNode");
+    const headers = await credentialAuthorization();
+    const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+    const response = await fetch(
+      `${collabHttpBase(pageLocation())}/api/attachments/usage${query}`,
+      { headers },
+    );
+    if (response.ok) {
+      const data = (await response.json()) as { ok: boolean; attachmentBytes?: number };
+      const serverBytes = Number(data.attachmentBytes) || 0;
+      return {
+        attachmentBytes: Math.max(localBytes, serverBytes),
+        documentBytes: 0,
+      };
+    }
+  } catch {
+    // fallback to localBytes
+  }
+
+  return { attachmentBytes: localBytes, documentBytes: 0 };
+}

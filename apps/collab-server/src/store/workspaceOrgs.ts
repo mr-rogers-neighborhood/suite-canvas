@@ -59,6 +59,8 @@ export interface WorkspaceOrgStore {
    * which is the only direction that cannot refuse somebody who is inside their plan.
    */
   countForOrganization: (organizationId: string) => number;
+  /** Workspaces this relay has recorded for one organization. */
+  listForOrganization: (organizationId: string) => string[];
   /** Drops a workspace's row, for a workspace delete. Returns rows removed. */
   remove: (workspaceId: string) => number;
   close: () => void;
@@ -108,6 +110,9 @@ export function createWorkspaceOrgStore(path: string): WorkspaceOrgStore {
   const countByOrg = db.prepare(
     "SELECT count(*) AS n FROM workspace_orgs WHERE organization_id = ?",
   );
+  const selectByOrg = db.prepare(
+    "SELECT workspace_id FROM workspace_orgs WHERE organization_id = ?",
+  );
 
   const rowOf = (workspaceId: string): WorkspaceOrgRow | null =>
     (select.get(workspaceId) as WorkspaceOrgRow | undefined) ?? null;
@@ -147,6 +152,12 @@ export function createWorkspaceOrgStore(path: string): WorkspaceOrgStore {
       if (!isText(organizationId, MAX_ID_LENGTH)) return 0;
       const row = countByOrg.get(organizationId.trim()) as { n: number } | undefined;
       return row === undefined ? 0 : Number(row.n);
+    },
+
+    listForOrganization: (organizationId) => {
+      if (!isText(organizationId, MAX_ID_LENGTH)) return [];
+      const rows = selectByOrg.all(organizationId.trim()) as Array<{ workspace_id: string }>;
+      return rows.map((r) => r.workspace_id);
     },
 
     remove: (workspaceId) => {

@@ -15,6 +15,7 @@ import {
   normalizeMime,
 } from "../store/attachments.js";
 import { defaultLicenceClaimStore } from "../store/licenceClaims.js";
+import type { WorkspaceOrgStore } from "../store/workspaceOrgs.js";
 import type { WorkspaceAccess } from "./access.js";
 import { HttpError, toProblem } from "./errors.js";
 import { applyCors, CORS_HEADERS, sendEmpty, sendJson, sendProblem } from "./respond.js";
@@ -61,6 +62,10 @@ const EXTENSIONS: Readonly<Record<string, string>> = {
   "image/gif": ".gif",
   "image/webp": ".webp",
   "image/avif": ".avif",
+  "video/mp4": ".mp4",
+  "video/webm": ".webm",
+  "video/ogg": ".ogv",
+  "video/quicktime": ".mov",
 };
 
 export interface AttachmentRequestOptions {
@@ -76,6 +81,8 @@ export interface AttachmentRequestOptions {
    * claim recorded beside the workspace, which is `Infinity` on a self-host.
    */
   licenceBytes?: (workspaceId: string) => number | null;
+  /** Store mapping workspaces to organizations. */
+  orgs?: WorkspaceOrgStore;
 }
 
 /** The hosting licence's per-attachment cap, or null when there is no relay licence. */
@@ -220,6 +227,37 @@ async function remove(
   sendJson(response, 200, { id, deleted: true });
 }
 
+interface UsageContext {
+  request: IncomingMessage;
+  response: ServerResponse;
+  store: AttachmentStore;
+  access: WorkspaceAccess;
+  options: AttachmentRequestOptions;
+  url: URL;
+}
+
+async function handleUsage(context: UsageContext): Promise<void> {
+  const { request, response, store, access, options, url } = context;
+  const workspaceId = url.searchParams.get("workspaceId");
+  if (workspaceId && workspaceId.trim().length > 0) {
+    await access.forWorkspace(request, workspaceId.trim());
+    const bytes = store.usage(workspaceId.trim());
+    sendJson(response, 200, { ok: true, attachmentBytes: bytes });
+    return;
+  }
+
+  const claims = await access.session(request);
+  const orgId = claims.organizationId;
+  if (!orgId) {
+    sendJson(response, 200, { ok: true, attachmentBytes: 0 });
+    return;
+  }
+  const orgStore = options.orgs;
+  const workspaceIds = orgStore ? orgStore.listForOrganization(orgId) : [];
+  const bytes = store.usageForWorkspaces(workspaceIds);
+  sendJson(response, 200, { ok: true, attachmentBytes: bytes });
+}
+
 /**
  * Serves the attachment API and returns false for every other path, so the
  * caller can keep trying its own routes.
@@ -255,6 +293,12 @@ export async function handleAttachmentRequest(
 
     const store = options.store ?? defaultAttachmentStore(options.cap ?? attachmentCap);
     const id = decodeSegment(parts[0] ?? "");
+
+    if (id === "usage") {
+      if (method !== "GET") throw HttpError.methodNotAllowed();
+      await handleUsage({ request, response, store, access, options, url });
+      return true;
+    }
 
     if (method === "POST") {
       await upload({ request, response, store, access, workspaceId: id, options });

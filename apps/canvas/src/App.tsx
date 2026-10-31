@@ -607,13 +607,22 @@ function WorkspaceShell({
   const { activeBoardName, boardPaint, boardPainted, sectionOrder, sectionIdsFor } =
     useBoardDerivations({ snapshot, activeBoardId });
 
-  const { unplaced, allCards, trashed, boardItems, inboxItems, cardItems, trashItems } =
-    useLibraryItems({
-      snapshot,
-      workspace,
-      sectionIdsFor,
-      libraryOpen,
-    });
+  const {
+    unplaced,
+    allCards,
+    trashed,
+    boardItems,
+    inboxItems,
+    cardItems,
+    trashItems,
+    mediaItems,
+    trashedMediaItems,
+  } = useLibraryItems({
+    snapshot,
+    workspace,
+    sectionIdsFor,
+    libraryOpen,
+  });
 
   const {
     locateCard,
@@ -721,6 +730,8 @@ function WorkspaceShell({
         cardFocusId={cardFocusId}
         inboxItems={inboxItems}
         cardItems={cardItems}
+        mediaItems={mediaItems}
+        trashedMediaItems={trashedMediaItems}
         boardEntries={boardItems}
         unplaceBoardCards={unplaceBoardCards}
         deleteBoard={deleteBoard}

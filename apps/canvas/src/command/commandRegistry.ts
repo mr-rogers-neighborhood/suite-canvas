@@ -324,6 +324,15 @@ export const commands: readonly CommandDefinition[] = [
     run: (context) => context.actions.openLibraryTab("cards"),
   }),
   define({
+    id: "library.tab.media",
+    label: "Show media",
+    group: "navigation",
+    owner: "library",
+    capabilities: [],
+    available: (context) => context.state.libraryTab !== "media",
+    run: (context) => context.actions.openLibraryTab("media"),
+  }),
+  define({
     id: "library.tab.trash",
     label: "Show the trash",
     group: "navigation",

@@ -46,7 +46,7 @@ export interface DropOffer {
  * the Board facet. A second list would need a second set of actions for the same
  * gesture (open, place, drag).
  */
-export type LibraryTab = "inbox" | "cards" | "trash";
+export type LibraryTab = "inbox" | "cards" | "media" | "trash";
 
 /**
  * Who asked for the library. `mode` means a mode opened it as its own starting
@@ -214,6 +214,7 @@ interface UiState extends SessionCapabilities {
   /** Who asked for the drawer: the reader, who is also the one who closes it. */
   libraryReason: LibraryReason;
   libraryTab: LibraryTab;
+  trashedMediaIds: string[];
   selectedNodeIds: string[];
   selectedEdgeIds: string[];
   /**
@@ -393,6 +394,9 @@ interface UiState extends SessionCapabilities {
   setLibraryOpen: (open: boolean, reason?: LibraryReason) => void;
   /** The named style rules: the list and its editor. */
   setLibraryTab: (tab: LibraryTab) => void;
+  trashMedia: (id: string) => void;
+  restoreMedia: (id: string) => void;
+  emptyMediaTrash: () => void;
   setSelectedNodeIds: (ids: string[]) => void;
   setSelectedEdgeIds: (ids: string[]) => void;
   selectSection: (id: string | null) => void;
@@ -481,6 +485,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   libraryOpen: false,
   libraryReason: "reader",
   libraryTab: "inbox",
+  trashedMediaIds: [],
   selectedNodeIds: [],
   selectedEdgeIds: [],
   selectedSectionId: null,
@@ -646,6 +651,17 @@ export const useUiStore = create<UiState>((set, get) => ({
     })),
   setLibraryOpen: (libraryOpen, libraryReason = "reader") => set({ libraryOpen, libraryReason }),
   setLibraryTab: (libraryTab) => set({ libraryTab }),
+  trashMedia: (id) =>
+    set((state) => ({
+      trashedMediaIds: state.trashedMediaIds.includes(id)
+        ? state.trashedMediaIds
+        : [...state.trashedMediaIds, id],
+    })),
+  restoreMedia: (id) =>
+    set((state) => ({
+      trashedMediaIds: state.trashedMediaIds.filter((mId) => mId !== id),
+    })),
+  emptyMediaTrash: () => set({ trashedMediaIds: [] }),
   setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
   setSelectedEdgeIds: (selectedEdgeIds) => set({ selectedEdgeIds }),
   setLibraryDrag: (libraryDrag) => set({ libraryDrag }),

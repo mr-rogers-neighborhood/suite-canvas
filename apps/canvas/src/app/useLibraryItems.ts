@@ -1,8 +1,9 @@
-import type { WorkspaceDocument } from "@suite/graph";
+import { documentMedia, type WorkspaceDocument, type WorkspaceMediaItem } from "@suite/graph";
 import { useCallback, useMemo } from "react";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { toBoardItems } from "../library/libraryBoards";
 import type { LibraryItem } from "../library/libraryTypes";
+import { useUiStore } from "../store/useUiStore";
 
 export interface UseLibraryItemsOptions {
   snapshot: WorkspaceSnapshot;
@@ -19,6 +20,8 @@ export interface UseLibraryItemsResult {
   inboxItems: LibraryItem[];
   cardItems: LibraryItem[];
   trashItems: LibraryItem[];
+  mediaItems: WorkspaceMediaItem[];
+  trashedMediaItems: WorkspaceMediaItem[];
 }
 
 /**
@@ -95,6 +98,34 @@ export function useLibraryItems({
     return trashed.map(toItem);
   }, [libraryOpen, trashed, toItem]);
 
+  const trashedCardIds = useMemo(() => new Set(trashed), [trashed]);
+  const trashedMediaIdsList = useUiStore((state) => state.trashedMediaIds);
+  const trashedMediaIds = useMemo(() => new Set(trashedMediaIdsList), [trashedMediaIdsList]);
+
+  const allMedia = useMemo(() => {
+    void cards;
+    return documentMedia(workspace);
+  }, [workspace, cards]);
+
+  const mediaItems = useMemo(() => {
+    if (!libraryOpen) return [];
+    return allMedia.filter((item) => {
+      if (trashedMediaIds.has(item.id)) return false;
+      const hasLiveCard = item.cards.some((c) => !trashedCardIds.has(c.id));
+      return hasLiveCard || item.cards.length === 0;
+    });
+  }, [libraryOpen, allMedia, trashedMediaIds, trashedCardIds]);
+
+  const trashedMediaItems = useMemo(() => {
+    if (!libraryOpen) return [];
+    return allMedia.filter((item) => {
+      if (trashedMediaIds.has(item.id)) return true;
+      const allCardsTrashed =
+        item.cards.length > 0 && item.cards.every((c) => trashedCardIds.has(c.id));
+      return allCardsTrashed;
+    });
+  }, [libraryOpen, allMedia, trashedMediaIds, trashedCardIds]);
+
   return {
     unplaced,
     allCards,
@@ -103,5 +134,7 @@ export function useLibraryItems({
     inboxItems,
     cardItems,
     trashItems,
+    mediaItems,
+    trashedMediaItems,
   };
 }

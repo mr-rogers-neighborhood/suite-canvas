@@ -1,6 +1,7 @@
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { Extension } from "@tiptap/react";
+import { canUploadMedia } from "../auth/mediaUploadGating";
 import { collabHttpBase } from "../session/endpoints";
 import { isStandalone } from "../session/mode";
 import { getSession } from "../session/session";
@@ -15,6 +16,7 @@ import {
 } from "./attachmentNode";
 import { imageLinkFromText, insertImageNodeAt } from "./imageLinkNode";
 import { closeImageUrlPrompt } from "./imageUrlPrompt";
+import { VIDEO_NODE_NAME } from "./videoNode";
 
 /** One pasted image on its way to the relay. */
 export interface PasteUpload {
@@ -199,10 +201,32 @@ function insertAttachment(
   }
 }
 
-async function insertImages(
+function insertVideoAttachment(
+  view: EditorView,
+  attrs: {
+    id: string;
+    mime: string;
+    width: number | null;
+    height: number | null;
+    name: string;
+    bytes: number;
+    duration: number | null;
+  },
+): void {
+  if (view.isDestroyed) return;
+  const type = view.state.schema.nodes[VIDEO_NODE_NAME];
+  if (!type) return;
+  try {
+    view.dispatch(view.state.tr.replaceSelectionWith(type.create(attrs)).scrollIntoView());
+  } catch (error) {
+    console.warn("[attachments] could not insert the video here", error);
+  }
+}
+
+export async function insertMediaFiles(
   view: EditorView,
   files: File[],
-  options: PasteImagesOptions,
+  options: PasteImagesOptions = {},
 ): Promise<void> {
   const upload = options.upload === undefined ? relayUploader() : options.upload;
   const storeLocal = options.storeLocal ?? storeLocalAttachment;
@@ -223,7 +247,7 @@ async function insertImages(
       } catch (error) {
         // A relay that is unreachable right now is not a lost paste: keep the
         // bytes locally and let the node render here, exactly as offline does.
-        console.warn("[attachments] upload failed; keeping the image locally", error);
+        console.warn("[attachments] upload failed; keeping the media locally", error);
       }
     }
     if (uploaded) {
@@ -242,17 +266,31 @@ async function insertImages(
       await storeLocal(id, bytes, mime);
     }
 
-    const size = await measure(bytes, mime);
-    insertAttachment(view, {
-      id,
-      mime,
-      width: size?.width ?? null,
-      height: size?.height ?? null,
-      name: file.name || options.fallbackName || "Pasted image",
-      bytes: bytes.byteLength,
-    });
+    if (mime.startsWith("video/")) {
+      insertVideoAttachment(view, {
+        id,
+        mime,
+        width: null,
+        height: null,
+        name: file.name || options.fallbackName || "Attached video",
+        bytes: bytes.byteLength,
+        duration: null,
+      });
+    } else {
+      const size = await measure(bytes, mime);
+      insertAttachment(view, {
+        id,
+        mime,
+        width: size?.width ?? null,
+        height: size?.height ?? null,
+        name: file.name || options.fallbackName || "Pasted image",
+        bytes: bytes.byteLength,
+      });
+    }
   }
 }
+
+export const insertImages = insertMediaFiles;
 
 /**
  * Pastes images as attachment nodes.
@@ -261,6 +299,17 @@ async function insertImages(
  * the bytes go to the relay (or, with no relay, to IndexedDB), which is what
  * keeps a share projection from carrying a copy of every image.
  */
+function dragDropMedia(event: DragEvent): File[] {
+  const files = event.dataTransfer?.files;
+  if (!files || files.length === 0) return [];
+  const valid: File[] = [];
+  for (const file of Array.from(files)) {
+    const mime = clipboardMime(file.type);
+    if (isAttachmentMime(mime)) valid.push(file);
+  }
+  return valid;
+}
+
 export const PasteImages = Extension.create<PasteImagesOptions>({
   name: "pasteImages",
 
@@ -270,9 +319,30 @@ export const PasteImages = Extension.create<PasteImagesOptions>({
       new Plugin({
         key: PASTE_IMAGES_KEY,
         props: {
+          handleDrop: (view, event) => {
+            const files = dragDropMedia(event);
+            if (files.length > 0) {
+              const permission = canUploadMedia();
+              if (!permission.allowed) {
+                alert(permission.reason ?? "Uploads are not permitted on this plan.");
+                return true;
+              }
+              closeImageUrlPrompt(view);
+              void insertMediaFiles(view, files, options).catch((error: unknown) => {
+                console.error("[attachments] drop failed", error);
+              });
+              return true;
+            }
+            return false;
+          },
           handlePaste: (view, event) => {
             const files = clipboardImages(event);
             if (files.length > 0) {
+              const permission = canUploadMedia();
+              if (!permission.allowed) {
+                alert(permission.reason ?? "Uploads are not permitted on this plan.");
+                return true;
+              }
               // Bytes win over a URL when a clipboard carries both: the user
               // had a real image, and dropping it for a link would lose the
               // pixels they copied (and leave them dependent on a third party).

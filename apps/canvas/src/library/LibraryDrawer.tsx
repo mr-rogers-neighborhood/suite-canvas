@@ -16,6 +16,7 @@ import { useUiStore } from "../store/useUiStore";
 import { LibraryFacets } from "./LibraryFacets";
 import { LibraryHeader } from "./LibraryHeader";
 import { LibraryList } from "./LibraryList";
+import { LibraryMediaList } from "./LibraryMediaList";
 import { LibraryOverlays } from "./LibraryOverlays";
 import { type LibraryRowContext, LibraryRowList } from "./LibraryRows";
 import { LibrarySearchRow } from "./LibrarySearchRow";
@@ -50,6 +51,12 @@ export function LibraryDrawer({
   inbox,
   cards,
   trash,
+  media = [],
+  trashedMedia = [],
+  onTrashMedia,
+  onRestoreMedia,
+  onDeleteMediaForever,
+  onInsertMedia,
   boards = [],
   /** Absent when this session may not create boards. */
   onCreateBoard,
@@ -535,108 +542,169 @@ export function LibraryDrawer({
 
       {/* The selection bar replaces the search row while a selection exists: what a
           reader picks rows for is acting on them together. */}
-      {selecting || selection.ids.length > 0 ? (
-        <LibrarySelectionBar
-          selected={selected}
-          canManageTrash={canManageTrash}
-          onPlace={onPlaceCards}
-          onTrash={onTrash}
-          onSelectAll={selectAllRows}
-          onClear={clearSelection}
+      {tab === "media" ? (
+        <LibraryMediaList
+          items={media}
+          onTrash={onTrashMedia}
+          canManage={canManageTrash}
+          onInsert={onInsertMedia}
         />
-      ) : null}
-
-      <LibrarySearchRow
-        inputRef={searchInput}
-        query={query}
-        onQuery={updateQuery}
-        onNavigate={(step) =>
-          setActiveResult((current) => (current + step + ordered.length) % ordered.length)
-        }
-        onPick={() => {
-          const target = ordered[Math.min(activeResult, ordered.length - 1)];
-          if (target !== undefined) onOpenCard(target.id);
-        }}
-        enabled={searching && ordered.length > 0}
-        sort={sort}
-        onSort={setSort}
-      />
-
-      <LibraryFacets
-        types={types}
-        tags={tags}
-        countsByFacet={countsByFacet}
-        boardScope={boardScope}
-        sectionOrder={sectionOrder}
-        typeFilter={typeFilter}
-        tagFilter={tagFilter}
-        sectionFilter={sectionFilter}
-        groupBySection={groupBySection}
-        filtering={filtering}
-        onToggleType={onToggleType}
-        onToggleTag={onToggleTag}
-        onToggleSection={onToggleSection}
-        onToggleGroup={onToggleGroup}
-        onClearFilters={onClearFilters}
-        onManageTypes={onManageTypes}
-      />
-
-      {locateMiss ? (
-        <p
-          className="border-b border-[var(--hairline)] px-2 py-1 text-[11px] text-[var(--ink-muted)]"
-          data-testid="library-locate-miss"
-        >
-          {locateMiss}
-        </p>
-      ) : null}
-
-      {/* The same menu the dock opens. A reader who came to the library to start
-          something should not have to put the drawer away and go find the pill, and
-          a workspace with no rows yet has nothing here to act on at all. It sits
-          above the list rather than inside it: the list scrolls and clips, and a
-          menu is not something to scroll past. */}
-      <div ref={addNewMenu} className="relative px-1.5 pt-1">
-        <button
-          type="button"
-          aria-haspopup="menu"
-          aria-expanded={addNew}
-          data-testid="library-add-new"
-          className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
-          onClick={() => {
-            setAddNew((openNow) => !openNow);
-            setAddNewPortal(false);
-          }}
-        >
-          <span aria-hidden="true">+</span> Add new
-        </button>
-        {addNew ? (
-          <div className="absolute left-1.5 top-full z-20">
-            <NewThingMenu
-              model={addNewModel}
-              direction="down"
-              prefix="library"
-              onCreateCard={(typeId) => {
-                madeSomething();
-                onCreateCard?.(typeId);
-              }}
-              portalOpen={addNewPortal}
-              onTogglePortal={() => setAddNewPortal((openNow) => !openNow)}
-              onDone={madeSomething}
+      ) : (
+        <>
+          {selecting || selection.ids.length > 0 ? (
+            <LibrarySelectionBar
+              selected={selected}
+              canManageTrash={canManageTrash}
+              onPlace={onPlaceCards}
+              onTrash={onTrash}
+              onSelectAll={selectAllRows}
+              onClear={clearSelection}
             />
-          </div>
-        ) : null}
-      </div>
+          ) : null}
 
-      <LibraryList
-        tab={tab}
-        boardScope={boardScope}
-        searching={searching}
-        query={query}
-        filtering={filtering}
-        entryCount={entries.length}
-        truncated={truncated}
-        rows={<LibraryRowList entries={entries} grouped={grouped} context={rowContext} />}
-      />
+          <LibrarySearchRow
+            inputRef={searchInput}
+            query={query}
+            onQuery={updateQuery}
+            onNavigate={(step) =>
+              setActiveResult((current) => (current + step + ordered.length) % ordered.length)
+            }
+            onPick={() => {
+              const target = ordered[Math.min(activeResult, ordered.length - 1)];
+              if (target !== undefined) onOpenCard(target.id);
+            }}
+            enabled={searching && ordered.length > 0}
+            sort={sort}
+            onSort={setSort}
+          />
+
+          <LibraryFacets
+            types={types}
+            tags={tags}
+            countsByFacet={countsByFacet}
+            boardScope={boardScope}
+            sectionOrder={sectionOrder}
+            typeFilter={typeFilter}
+            tagFilter={tagFilter}
+            sectionFilter={sectionFilter}
+            groupBySection={groupBySection}
+            filtering={filtering}
+            onToggleType={onToggleType}
+            onToggleTag={onToggleTag}
+            onToggleSection={onToggleSection}
+            onToggleGroup={onToggleGroup}
+            onClearFilters={onClearFilters}
+            onManageTypes={onManageTypes}
+          />
+
+          {locateMiss ? (
+            <p
+              className="border-b border-[var(--hairline)] px-2 py-1 text-[11px] text-[var(--ink-muted)]"
+              data-testid="library-locate-miss"
+            >
+              {locateMiss}
+            </p>
+          ) : null}
+
+          {/* The same menu the dock opens. A reader who came to the library to start
+              something should not have to put the drawer away and go find the pill, and
+              a workspace with no rows yet has nothing here to act on at all. It sits
+              above the list rather than inside it: the list scrolls and clips, and a
+              menu is not something to scroll past. */}
+          <div ref={addNewMenu} className="relative px-1.5 pt-1">
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={addNew}
+              data-testid="library-add-new"
+              className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+              onClick={() => {
+                setAddNew((openNow) => !openNow);
+                setAddNewPortal(false);
+              }}
+            >
+              <span aria-hidden="true">+</span> Add new
+            </button>
+            {addNew ? (
+              <div className="absolute left-1.5 top-full z-20">
+                <NewThingMenu
+                  model={addNewModel}
+                  direction="down"
+                  prefix="library"
+                  onCreateCard={(typeId) => {
+                    madeSomething();
+                    onCreateCard?.(typeId);
+                  }}
+                  portalOpen={addNewPortal}
+                  onTogglePortal={() => setAddNewPortal((openNow) => !openNow)}
+                  onDone={madeSomething}
+                />
+              </div>
+            ) : null}
+          </div>
+
+          <LibraryList
+            tab={tab}
+            boardScope={boardScope}
+            searching={searching}
+            query={query}
+            filtering={filtering}
+            entryCount={entries.length}
+            truncated={truncated}
+            rows={<LibraryRowList entries={entries} grouped={grouped} context={rowContext} />}
+          />
+
+          {tab === "trash" && trashedMedia.length > 0 ? (
+            <div
+              className="border-t border-[var(--hairline)] p-2"
+              data-testid="library-trashed-media"
+            >
+              <h4 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
+                Trashed Media ({trashedMedia.length})
+              </h4>
+              <div className="flex flex-col gap-1">
+                {trashedMedia.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between rounded border border-[var(--hairline)] p-1.5 text-[11px]"
+                  >
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="rounded bg-[var(--surface-muted)] px-1 font-mono text-[9px] uppercase text-[var(--ink-muted)]">
+                        {item.kind}
+                      </span>
+                      <span className="truncate font-medium text-[var(--ink)]">
+                        {item.name || item.id}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {onRestoreMedia ? (
+                        <button
+                          type="button"
+                          onClick={() => onRestoreMedia(item.id)}
+                          data-testid={`restore-media-${item.id}`}
+                          className="text-[10px] text-[var(--brand)] hover:underline"
+                        >
+                          Restore
+                        </button>
+                      ) : null}
+                      {onDeleteMediaForever ? (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteMediaForever(item.id)}
+                          data-testid={`delete-forever-media-${item.id}`}
+                          className="text-[10px] text-red-600 hover:underline"
+                        >
+                          Delete forever
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
 
       <LibraryOverlays
         pendingPurge={pendingPurge}

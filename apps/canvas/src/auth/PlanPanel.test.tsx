@@ -12,6 +12,7 @@ vi.mock("./billing", () => ({
   listPlans: () => listPlans(),
   readSubscription: (id: string) => readSubscription(id),
   readEntitlement: (id: string) => readEntitlement(id),
+  readStorageUsage: vi.fn(async () => ({ attachmentBytes: 0, documentBytes: 0 })),
   startCheckout: vi.fn(),
   openBillingPortal: vi.fn(),
 }));

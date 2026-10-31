@@ -9,6 +9,7 @@
  * given.
  */
 
+import type { StorageUsage } from "./billing";
 import { type CredentialClaims, currentCredentialClaims } from "./credential";
 
 /** One line of the quota display. */
@@ -63,6 +64,7 @@ function prettify(id: string): string {
  */
 export function quotaLines(
   limits: Readonly<Record<string, number>> | null | undefined,
+  currentUsage?: StorageUsage | null,
 ): QuotaLine[] {
   if (!limits) return [];
   return Object.entries(limits)
@@ -70,18 +72,32 @@ export function quotaLines(
     .map(([id, limit]) => {
       const known = LIMIT_LABELS[id];
       const unit = known?.unit ?? "count";
+      const total =
+        id === "workspaces" && limit >= 2_147_483_647
+          ? "Unlimited"
+          : limit === 0
+            ? "none yet"
+            : unit === "bytes"
+              ? humanBytes(limit)
+              : String(limit);
+
+      let value = total;
+      if (unit === "bytes" && limit > 0) {
+        if (id === "attachmentBytes" && typeof currentUsage?.attachmentBytes === "number") {
+          value = `${humanBytes(currentUsage.attachmentBytes)} / ${total}`;
+        } else if (id === "documentBytes" && typeof currentUsage?.documentBytes === "number") {
+          value = `${humanBytes(currentUsage.documentBytes)} / ${total}`;
+        } else if (id === "storageBytes" && typeof currentUsage?.attachmentBytes === "number") {
+          const totalUsed = (currentUsage.attachmentBytes ?? 0) + (currentUsage.documentBytes ?? 0);
+          value = `${humanBytes(totalUsed)} / ${total}`;
+        }
+      }
+
       return {
         id,
         label: known?.label ?? prettify(id),
         limit,
-        value:
-          id === "workspaces" && limit >= 2_147_483_647
-            ? "Unlimited"
-            : limit === 0
-              ? "none yet"
-              : unit === "bytes"
-                ? humanBytes(limit)
-                : String(limit),
+        value,
         zero: limit === 0,
       };
     })

@@ -61,7 +61,7 @@ trimmed or the budget is raised.
 | Cards in one selection share | `SUITE_MAX_SELECTION_CARDS` / `MAX_SELECTION_CARDS` | 200 | none | `createShareQuotaGuard`, `shares.ts` |
 | Cards in one share projection | `SUITE_MAX_PROJECTION_CARDS` | 2,000 | `card-limit` | `projectionCardCount`, `projection/snapshot.ts` |
 | Cards per workspace | none | bounded by the document budget | none | A workspace over its budget pauses new share links; no card count is refused |
-| Single attachment upload | none | 16 MiB (16,777,216 bytes) | none | `readBytes`, `http/attachmentHttp.ts` |
+| Single attachment upload | none | 100 MiB (104,857,600 bytes) | none | `readBytes`, `http/attachmentHttp.ts` |
 
 Cards per workspace has no number of its own on purpose. What a board may hold
 is bounded by the document budget, because that is the number that costs disk,

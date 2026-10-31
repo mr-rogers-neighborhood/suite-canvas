@@ -1,4 +1,4 @@
-import type { BillingPlan, PlanPrice } from "./billing";
+import type { BillingPlan, PlanPrice, StorageUsage } from "./billing";
 import { selfHostUrl } from "./docsUrl";
 import { humanBytes } from "./entitlement";
 
@@ -58,7 +58,7 @@ interface Allowance {
 }
 
 /** The allowances a card lists, in the order a reader asks about them. */
-export function allowancesOf(plan: BillingPlan): Allowance[] {
+export function allowancesOf(plan: BillingPlan, currentUsage?: StorageUsage | null): Allowance[] {
   const rows: Allowance[] = [];
   const workspaces = plan.limits.workspaces;
   if (typeof workspaces === "number") {
@@ -75,18 +75,28 @@ export function allowancesOf(plan: BillingPlan): Allowance[] {
   }
   const documentBytes = plan.limits.documentBytes;
   if (typeof documentBytes === "number") {
+    const total = documentBytes === 0 ? "none yet" : humanBytes(documentBytes);
+    const value =
+      typeof currentUsage?.documentBytes === "number" && documentBytes > 0
+        ? `${humanBytes(currentUsage.documentBytes)} / ${total}`
+        : total;
     rows.push({
       id: "documentBytes",
       label: "Document storage",
-      value: documentBytes === 0 ? "none yet" : humanBytes(documentBytes),
+      value,
     });
   }
   const attachmentBytes = plan.limits.attachmentBytes;
   if (typeof attachmentBytes === "number") {
+    const total = attachmentBytes === 0 ? "none yet" : humanBytes(attachmentBytes);
+    const value =
+      typeof currentUsage?.attachmentBytes === "number" && attachmentBytes > 0
+        ? `${humanBytes(currentUsage.attachmentBytes)} / ${total}`
+        : total;
     rows.push({
       id: "attachmentBytes",
       label: "Attachment storage",
-      value: attachmentBytes === 0 ? "none yet" : humanBytes(attachmentBytes),
+      value,
     });
   }
   const seats = plan.limits.seats;
@@ -113,11 +123,12 @@ export interface PlanCardProps {
   plan: BillingPlan;
   busy: boolean;
   onChoose: (plan: string) => void;
+  currentUsage?: StorageUsage | null;
 }
 
-export function PlanCard({ plan, busy, onChoose }: PlanCardProps) {
+export function PlanCard({ plan, busy, onChoose, currentUsage }: PlanCardProps) {
   const price = priceLine(plan.price);
-  const allowances = allowancesOf(plan);
+  const allowances = allowancesOf(plan, currentUsage);
   return (
     <div
       data-testid={`plan-card-${plan.name}`}
@@ -168,7 +179,11 @@ export function PlanCard({ plan, busy, onChoose }: PlanCardProps) {
  * rather than pretending the plans are the only way. It is a link, not a button: nothing about it
  * charges anybody, and a self-hosted relay needs no licence and enforces no limit.
  */
-export function SelfHostCard() {
+export interface SelfHostCardProps {
+  currentUsage?: StorageUsage | null;
+}
+
+export function SelfHostCard({ currentUsage }: SelfHostCardProps = {}) {
   return (
     <div
       data-testid="plan-card-self-host"
@@ -176,6 +191,11 @@ export function SelfHostCard() {
     >
       <h4 className="text-[12px] font-semibold text-[var(--ink)]">Self-host</h4>
       <span className="mt-1 text-[12px] text-[var(--ink)]">Free, forever</span>
+      {typeof currentUsage?.attachmentBytes === "number" ? (
+        <div className="mt-1 text-[11px] tabular-nums text-[var(--ink-muted)]">
+          Current media usage: {humanBytes(currentUsage.attachmentBytes)} / Unlimited
+        </div>
+      ) : null}
       <p className="mt-1 leading-5 text-[var(--ink-muted)]">
         Run it on your own machine or server. No account, no plan and no licence, and the install is
         one file.

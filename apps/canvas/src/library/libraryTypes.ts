@@ -1,4 +1,10 @@
-import type { CardType, PropertyValue, Tag, WorkspaceDocument } from "@suite/graph";
+import type {
+  CardType,
+  PropertyValue,
+  Tag,
+  WorkspaceDocument,
+  WorkspaceMediaItem,
+} from "@suite/graph";
 import type { CanvasMode } from "../canvas/links/linkGesture";
 import type { LibraryScope, LibraryTab } from "../store/useUiStore";
 import type { SectionOrderEntry } from "./libraryFilters";
@@ -90,6 +96,12 @@ export interface LibraryDrawerProps {
   inbox: LibraryItem[];
   cards: LibraryItem[];
   trash: LibraryItem[];
+  media?: WorkspaceMediaItem[];
+  trashedMedia?: WorkspaceMediaItem[];
+  onTrashMedia?: (id: string) => void;
+  onRestoreMedia?: (id: string) => void;
+  onDeleteMediaForever?: (id: string) => void;
+  onInsertMedia?: (media: WorkspaceMediaItem) => void;
   /**
    * Every board as a library row. Boards are already inside `cards`/`inbox`;
    * this is the same set, for the places that need a board by id.

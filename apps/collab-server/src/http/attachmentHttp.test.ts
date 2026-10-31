@@ -36,7 +36,7 @@ beforeEach(async () => {
   token = await sessions.sign();
 
   server = createServer((request, response) => {
-    void handleAttachmentRequest(request, response, access, { store }).then((handled) => {
+    void handleAttachmentRequest(request, response, access, { store, orgs }).then((handled) => {
       if (handled) return;
       response.writeHead(404, { "content-type": "text/plain" });
       response.end("not found");
@@ -202,5 +202,46 @@ describe("attachment routing", () => {
       method: "PUT",
     });
     expect(response.status).toBe(405);
+  });
+});
+
+describe("attachment usage", () => {
+  it("reports usage for organization or workspace", async () => {
+    const id = newAttachmentId();
+    await upload(PNG, "image/png", { id });
+
+    // Anonymous request fails
+    const anonymous = await fetch(`${baseUrl}${ATTACHMENT_API_PATH}/usage`);
+    expect(anonymous.status).toBe(401);
+
+    // Organization usage
+    const orgUsage = await fetch(`${baseUrl}${ATTACHMENT_API_PATH}/usage`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(orgUsage.status).toBe(200);
+    const orgData = (await orgUsage.json()) as { ok: boolean; attachmentBytes: number };
+    expect(orgData.ok).toBe(true);
+    expect(orgData.attachmentBytes).toBe(PNG.byteLength);
+
+    // Workspace usage
+    const wsUsage = await fetch(`${baseUrl}${ATTACHMENT_API_PATH}/usage?workspaceId=ws-1`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(wsUsage.status).toBe(200);
+    const wsData = (await wsUsage.json()) as { ok: boolean; attachmentBytes: number };
+    expect(wsData.ok).toBe(true);
+    expect(wsData.attachmentBytes).toBe(PNG.byteLength);
+  });
+
+  it("accepts video uploads", async () => {
+    const videoBytes = new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70]);
+    const id = newAttachmentId();
+    const response = await upload(videoBytes, "video/mp4", { id });
+    expect(response.status).toBe(201);
+
+    const downloadRes = await fetch(`${baseUrl}${ATTACHMENT_API_PATH}/${id}`);
+    expect(downloadRes.status).toBe(200);
+    expect(downloadRes.headers.get("content-type")).toBe("video/mp4");
+    expect(downloadRes.headers.get("content-disposition")).toContain(".mp4");
   });
 });

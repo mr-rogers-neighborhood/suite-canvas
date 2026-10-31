@@ -99,7 +99,7 @@ describe("library section tabs", () => {
 
     fireEvent.keyDown(screen.getByTestId("library-tab-trash"), { key: "ArrowLeft" });
 
-    // Three tabs now: Inbox, Cards, Trash. Left of Trash is Cards.
-    expect(onTab).toHaveBeenCalledWith("cards");
+    // Four tabs now: Inbox, Cards, Media, Trash. Left of Trash is Media.
+    expect(onTab).toHaveBeenCalledWith("media");
   });
 });

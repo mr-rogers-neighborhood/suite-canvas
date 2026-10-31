@@ -1,4 +1,4 @@
-import type { PaletteSwatch, WorkspaceDocument } from "@suite/graph";
+import type { PaletteSwatch, WorkspaceDocument, WorkspaceMediaItem } from "@suite/graph";
 import type { CSSProperties, Dispatch, RefObject, SetStateAction } from "react";
 import { lazy, Suspense, useMemo, useState } from "react";
 import { SignInEntry } from "../auth/SignInEntry";
@@ -23,6 +23,7 @@ import { ViewsBar } from "../chrome/ViewsBar";
 import { CommandPaletteHost } from "../command/CommandPalette";
 import type { PaletteItem } from "../command/paletteRank";
 import { PerfOverlay } from "../dev/PerfOverlay";
+import { purgeAttachment } from "../editor/attachmentNode";
 import { FeedbackHost } from "../feedback/FeedbackHost";
 import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
 import type { SyncClaim, SyncRefusal } from "../feedback/syncState";
@@ -44,7 +45,7 @@ import { SharePublishButton } from "../sharing/SharePublishButton";
 import { StoragePanel } from "../sharing/StoragePanel";
 import { LoadingPlaceholder } from "../shell/LoadingPlaceholder";
 import type { useCanvasStore } from "../store/useCanvasStore";
-import type { LibraryTab, useUiStore } from "../store/useUiStore";
+import { type LibraryTab, useUiStore } from "../store/useUiStore";
 import { AppearanceHost } from "./AppearanceHost";
 import { BlueprintInstallHost } from "./BlueprintInstallHost";
 import { HistoryPanelHost } from "./HistoryPanelHost";
@@ -162,6 +163,8 @@ export interface WorkspaceShellViewProps {
   cardFocusId: string | null;
   inboxItems: LibraryItem[];
   cardItems: LibraryItem[];
+  mediaItems?: WorkspaceMediaItem[];
+  trashedMediaItems?: WorkspaceMediaItem[];
   /** Boards as library rows: the same list as cards, typed `board`. */
   boardEntries: LibraryItem[];
   unplaceBoardCards: (boardId: string) => void;
@@ -264,6 +267,8 @@ export function WorkspaceShellView({
   cardFocusId,
   inboxItems,
   cardItems,
+  mediaItems = [],
+  trashedMediaItems = [],
   boardEntries,
   unplaceBoardCards,
   deleteBoard,
@@ -703,11 +708,20 @@ export function WorkspaceShellView({
               // them), so their number is already inside these two.
               inbox: unplaced.length,
               cards: allCards.length + snapshot.boards.length,
-              trash: trashed.length,
+              media: mediaItems.length,
+              trash: trashed.length + trashedMediaItems.length,
             }}
             inbox={inboxItems}
             cards={cardItems}
             trash={trashItems}
+            media={mediaItems}
+            trashedMedia={trashedMediaItems}
+            onTrashMedia={(id) => useUiStore.getState().trashMedia(id)}
+            onRestoreMedia={(id) => useUiStore.getState().restoreMedia(id)}
+            onDeleteMediaForever={(id) => {
+              useUiStore.getState().restoreMedia(id);
+              void purgeAttachment(id);
+            }}
             boards={boardEntries}
             onCreateBoard={canCreateBoards ? createBoard : undefined}
             {...(canCreateContent

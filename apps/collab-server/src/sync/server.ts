@@ -471,6 +471,7 @@ const health = createServer((request, response) => {
       if (handled || response.writableEnded) return;
       return handleAttachmentRequest(request, response, access, {
         cap: () => currentLimits().limits.attachmentBytesPerWorkspace,
+        orgs: countedOrgs,
       });
     })
     .then((handled) => {

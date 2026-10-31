@@ -268,6 +268,10 @@ describe("standalone guard rails", () => {
     // The stale-build check asks this origin for the page it was served from. The
     // path is spelled out, so there is no relay to reach in either profile.
     "app/useStaleBuild.ts": /fetch\("\/"/u,
+    // Real-time media storage usage checks the relay, guarded for standalone builds.
+    "auth/billing.ts": /isStandalone\(\)/u,
+    // Purging attachments deletes from relay store when not in standalone mode.
+    "editor/attachmentNode.ts": /isStandalone\(\)/u,
   };
 
   function sourceFiles(directory: string): string[] {

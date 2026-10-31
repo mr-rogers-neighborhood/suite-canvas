@@ -70,19 +70,22 @@ export function BookReader({
   const workspace = useCanvasStore((state) => state.workspace);
   const activeBoardId = useUiStore((state) => state.activeBoardId);
   const openCardFocus = useUiStore((state) => state.openCardFocus);
+  const [selection, setSelection] = useState<PendingSelection | null>(null);
+  /** The highlight on the raised surface, by id: a press raises, and the surface is where it is taken apart. */
+  const [raisedId, setRaisedId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+
+  // Derived *after* the state it reads. A derived value above the `useState` that feeds it is a temporal dead zone:
+  // a crash on the first render of a book that has highlights, and nothing at all in a book that has none.
   const raised = highlights.annotations.find((entry) => entry.id === raisedId) ?? null;
-  // The properties a promoted highlight can fill: the promoted type's own fields, so a reader can point a part at a
-  // property that already means something rather than typing a name and hoping.
+  // The properties a promoted highlight can fill: the type's own fields, so a reader can point a part at a property
+  // that already means something rather than typing a name and hoping.
   const fieldNames = (workspace?.listTypes() ?? [])
     .flatMap((type) => type.fields)
     .filter((field) => field.kind === "text" || field.kind === "select")
     .map((field) => field.name)
     .filter((name, index, all) => all.indexOf(name) === index)
     .slice(0, 12);
-  const [selection, setSelection] = useState<PendingSelection | null>(null);
-  /** The highlight on the raised surface, by id: a press raises, and the surface is where it is taken apart. */
-  const [raisedId, setRaisedId] = useState<string | null>(null);
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (bytes.status === "loading") return;

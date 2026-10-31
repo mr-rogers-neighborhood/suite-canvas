@@ -1,5 +1,5 @@
 import { WorkspaceDocument } from "@suite/graph";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { BookReader } from "./BookReader";
@@ -30,6 +30,8 @@ async function bookBytes(): Promise<Uint8Array<ArrayBuffer>> {
   return zipOf(bookEntries()) as Promise<Uint8Array<ArrayBuffer>>;
 }
 
+let bookCardId = "";
+
 beforeEach(async () => {
   // A reading position is remembered in `localStorage`, so one test turning a page must not move the next
   // test's book: that is the behaviour under test, and it has to be isolated like any other.
@@ -38,7 +40,7 @@ beforeEach(async () => {
   const doc = new WorkspaceDocument();
   doc.ensureDefaultTypes();
   const board = doc.ensureBoard();
-  doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
+  bookCardId = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } }).id;
   useCanvasStore.setState({ workspace: doc });
   bytes.value = await bookBytes();
 });
@@ -104,5 +106,74 @@ describe("the book reader", () => {
 
     await waitFor(() => expect(screen.getByTestId("book-refused")).toBeInTheDocument());
     expect(screen.getByText(/container\.xml/u)).toBeInTheDocument();
+  });
+});
+
+describe("a book with a highlight", () => {
+  it("should open with a mark already in it, which is the render that crashed", async () => {
+    // The first render of a book *with* highlights is a different code path from a book with none: the derived state
+    // is only evaluated when there is something to find. A suite that only ever opened an unmarked book missed it.
+    const workspace = useCanvasStore.getState().workspace;
+    workspace?.addAnnotation({
+      sourceCardId: bookCardId,
+      styleId: "style-yellow",
+      anchor: {
+        kind: "quote",
+        locator: "2",
+        quote: "The first sentence of the book.",
+        prefix: "",
+        suffix: "",
+      },
+      excerpt: "The first sentence of the book.",
+    });
+
+    render(
+      <BookReader
+        attachmentId={"a".repeat(32)}
+        mime="application/epub+zip"
+        name="book"
+        sourceCardId={bookCardId}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-body").textContent).toContain("The first sentence"),
+    );
+    // The passage is painted onto the words it covers, which is what a highlight is.
+    expect(document.querySelector("mark.reader-highlight")).not.toBeNull();
+  });
+
+  it("should list the mark in the book's own panel, and raise it on a press", async () => {
+    const workspace = useCanvasStore.getState().workspace;
+    workspace?.addAnnotation({
+      sourceCardId: bookCardId,
+      styleId: "style-yellow",
+      anchor: {
+        kind: "quote",
+        locator: "2",
+        quote: "The first sentence of the book.",
+        prefix: "",
+        suffix: "",
+      },
+      excerpt: "The first sentence of the book.",
+    });
+
+    render(
+      <BookReader
+        attachmentId={"a".repeat(32)}
+        mime="application/epub+zip"
+        name="book"
+        sourceCardId={bookCardId}
+      />,
+    );
+    await waitFor(() => expect(screen.getByTestId("reader-highlights-toggle")).toBeInTheDocument());
+
+    screen.getByTestId("reader-highlights-toggle").click();
+    await waitFor(() => expect(screen.getByTestId("book-highlights")).toBeInTheDocument());
+
+    const row = within(screen.getByTestId("book-highlights")).getAllByRole("button")[0];
+    if (row === undefined) throw new Error("no highlight row");
+    row.click();
+    await waitFor(() => expect(screen.getByTestId("highlight-raise")).toBeInTheDocument());
   });
 });

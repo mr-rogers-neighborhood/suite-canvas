@@ -1,3 +1,4 @@
+import { annotationsMethods } from "./annotations.js";
 import { boardsMethods } from "./boards.js";
 import { cardsMethods } from "./cards/index.js";
 import { cardTypesMethods } from "./cardTypes.js";
@@ -23,6 +24,7 @@ export interface DocApi {
   workspace: ReturnType<typeof workspaceMethods>;
   boards: ReturnType<typeof boardsMethods>;
   views: ReturnType<typeof viewsMethods>;
+  annotations: ReturnType<typeof annotationsMethods>;
   cardTypes: ReturnType<typeof cardTypesMethods>;
   tags: ReturnType<typeof tagsMethods>;
   sections: ReturnType<typeof sectionsMethods>;
@@ -40,6 +42,7 @@ export function createDocApi(ctx: DocContext): DocApi {
     workspace: workspaceMethods(ctx),
     boards: boardsMethods(ctx),
     views: viewsMethods(ctx),
+    annotations: annotationsMethods(ctx),
     cardTypes: cardTypesMethods(ctx),
     tags: tagsMethods(ctx),
     sections: sectionsMethods(ctx),

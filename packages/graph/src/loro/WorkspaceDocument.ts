@@ -1,4 +1,5 @@
 import { LoroDoc, type LoroMap, type Value } from "loro-crdt";
+import type { Annotation, AnnotationStyle } from "../annotations.js";
 import type { Drawing, DrawingElement } from "../drawings.js";
 import type { HistoryPoint, HistoryRestorePreview } from "../history.js";
 import type { ApplyLayoutPlanOptions, LayoutPlan, LayoutPlanSummary } from "../layoutPlan.js";
@@ -29,6 +30,8 @@ import { DocContext } from "./context.js";
 import { CardsFacade } from "./facade/cards.js";
 import { STRUCT_KEYS } from "./keys.js";
 import type {
+  CreateAnnotationInput,
+  CreateAnnotationStyleInput,
   CreateEdgeInput,
   CreateFieldInput,
   CreateSectionInput,
@@ -101,6 +104,8 @@ function openContext(doc: LoroDoc): DocContext {
     references: doc.getMap(WorkspaceDocument.REFERENCES_KEY),
     meta: doc.getMap(WorkspaceDocument.META_KEY),
     viewsMap: doc.getMap(WorkspaceDocument.VIEWS_KEY),
+    annotationsMap: doc.getMap(WorkspaceDocument.ANNOTATIONS_KEY),
+    annotationStylesMap: doc.getMap(WorkspaceDocument.ANNOTATION_STYLES_KEY),
     drawings: doc.getMap(WorkspaceDocument.DRAWINGS_KEY),
   });
 }
@@ -123,6 +128,8 @@ export class WorkspaceDocument extends CardsFacade {
   static readonly REFERENCES_KEY = STRUCT_KEYS.references;
   static readonly META_KEY = STRUCT_KEYS.meta;
   static readonly VIEWS_KEY = STRUCT_KEYS.views;
+  static readonly ANNOTATIONS_KEY = STRUCT_KEYS.annotations;
+  static readonly ANNOTATION_STYLES_KEY = STRUCT_KEYS.annotationStyles;
   static readonly DRAWINGS_KEY = "drawings";
 
   /** Every root map a document holds, in the order a projection replaces them. */
@@ -139,6 +146,8 @@ export class WorkspaceDocument extends CardsFacade {
     WorkspaceDocument.REFERENCES_KEY,
     WorkspaceDocument.META_KEY,
     WorkspaceDocument.VIEWS_KEY,
+    WorkspaceDocument.ANNOTATIONS_KEY,
+    WorkspaceDocument.ANNOTATION_STYLES_KEY,
     WorkspaceDocument.DRAWINGS_KEY,
   ] as const;
 
@@ -147,6 +156,7 @@ export class WorkspaceDocument extends CardsFacade {
   private readonly workspaceApi: DocApi["workspace"];
   private readonly boardsApi: DocApi["boards"];
   private readonly viewsApi: DocApi["views"];
+  private readonly annotationsApi: DocApi["annotations"];
   private readonly cardTypesApi: DocApi["cardTypes"];
   private readonly tagsApi: DocApi["tags"];
   private readonly sectionsApi: DocApi["sections"];
@@ -165,6 +175,7 @@ export class WorkspaceDocument extends CardsFacade {
     this.workspaceApi = api.workspace;
     this.boardsApi = api.boards;
     this.viewsApi = api.views;
+    this.annotationsApi = api.annotations;
     this.cardTypesApi = api.cardTypes;
     this.tagsApi = api.tags;
     this.sectionsApi = api.sections;
@@ -384,6 +395,75 @@ export class WorkspaceDocument extends CardsFacade {
 
   moveView(id: string, position: number): void {
     this.viewsApi.moveView(id, position);
+  }
+
+  // --- Annotations -------------------------------------------------------------------------------
+  //
+  // A highlight and its palette. Nothing here knows which medium an anchor names: a book's quote, a page's
+  // rectangle and a span of a video are the same record, which is what lets one card, one field kind and one
+  // library facet serve all three.
+
+  listAnnotations(): Annotation[] {
+    return this.annotationsApi.listAnnotations();
+  }
+
+  getAnnotation(id: string): Annotation | undefined {
+    return this.annotationsApi.getAnnotation(id);
+  }
+
+  listAnnotationsOf(sourceCardId: string): Annotation[] {
+    return this.annotationsApi.listAnnotationsOf(sourceCardId);
+  }
+
+  addAnnotation(input: CreateAnnotationInput): Annotation {
+    return this.annotationsApi.addAnnotation(input);
+  }
+
+  setAnnotationStyle(id: string, styleId: string): Annotation | undefined {
+    return this.annotationsApi.setAnnotationStyle(id, styleId);
+  }
+
+  setAnnotationCard(id: string, cardId: string): Annotation | undefined {
+    return this.annotationsApi.setAnnotationCard(id, cardId);
+  }
+
+  deleteAnnotation(id: string): void {
+    this.annotationsApi.deleteAnnotation(id);
+  }
+
+  deleteAnnotationsOf(sourceCardId: string): number {
+    return this.annotationsApi.deleteAnnotationsOf(sourceCardId);
+  }
+
+  listAnnotationStyles(): AnnotationStyle[] {
+    return this.annotationsApi.listAnnotationStyles();
+  }
+
+  getAnnotationStyle(id: string): AnnotationStyle | undefined {
+    return this.annotationsApi.getAnnotationStyle(id);
+  }
+
+  ensureAnnotationStyles(): AnnotationStyle[] {
+    return this.annotationsApi.ensureAnnotationStyles();
+  }
+
+  addAnnotationStyle(input: CreateAnnotationStyleInput): AnnotationStyle {
+    return this.annotationsApi.addAnnotationStyle(input);
+  }
+
+  patchAnnotationStyle(
+    id: string,
+    patch: { name?: string; color?: string; order?: number; templateTypeId?: string | null },
+  ): AnnotationStyle | undefined {
+    return this.annotationsApi.patchAnnotationStyle(id, patch);
+  }
+
+  deleteAnnotationStyle(id: string): void {
+    this.annotationsApi.deleteAnnotationStyle(id);
+  }
+
+  observeAnnotations(listener: () => void): () => void {
+    return this.annotationsApi.observeAnnotations(listener);
   }
 
   observeViews(listener: () => void): () => void {

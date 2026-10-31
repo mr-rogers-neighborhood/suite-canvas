@@ -1,3 +1,20 @@
+export type {
+  AnchorKind,
+  AnchorRect,
+  Annotation,
+  AnnotationAnchor,
+  AnnotationStyle,
+} from "./annotations.js";
+export {
+  anchorRectSchema,
+  annotationAnchorSchema,
+  annotationSchema,
+  annotationStyleSchema,
+  annotationsOf,
+  annotationsWithin,
+  DEFAULT_ANNOTATION_STYLES,
+  sortedStyles,
+} from "./annotations.js";
 export type { BehaviourTypeId } from "./behaviours.js";
 export {
   behaviourTypeIdSchema,

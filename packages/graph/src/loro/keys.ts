@@ -15,4 +15,6 @@ export const STRUCT_KEYS = {
   references: "references",
   meta: "meta",
   views: "views",
+  annotations: "annotations",
+  annotationStyles: "annotationStyles",
 } as const;

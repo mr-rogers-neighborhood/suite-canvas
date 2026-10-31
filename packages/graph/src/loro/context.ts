@@ -20,6 +20,8 @@ export interface DocRoots {
   references: LoroMap;
   meta: LoroMap;
   viewsMap: LoroMap;
+  annotationsMap: LoroMap;
+  annotationStylesMap: LoroMap;
   drawings: LoroMap;
 }
 
@@ -41,6 +43,8 @@ export class DocContext {
   readonly references: LoroMap;
   readonly meta: LoroMap;
   readonly viewsMap: LoroMap;
+  readonly annotationsMap: LoroMap;
+  readonly annotationStylesMap: LoroMap;
   readonly drawings: LoroMap;
   readonly cardCache = new Map<string, Card>();
   readonly placementCache = new Map<string, Placement>();
@@ -60,6 +64,14 @@ export class DocContext {
   readonly metaListeners = new Set<() => void>();
   readonly viewListeners = new Set<() => void>();
   viewRevision = 0;
+  /**
+   * One counter for both annotation maps.
+   *
+   * A reader highlighting and a reader restyling the palette both change what a book draws, and a subscriber
+   * that had to watch two revisions would wake twice for one change.
+   */
+  readonly annotationListeners = new Set<() => void>();
+  annotationRevision = 0;
   readonly containerCache = new Map<string, CardContainers>();
   readonly containerListeners = new Map<string, Set<() => void>>();
   readonly titleListeners = new Map<string, Set<() => void>>();
@@ -81,6 +93,8 @@ export class DocContext {
     this.references = roots.references;
     this.meta = roots.meta;
     this.viewsMap = roots.viewsMap;
+    this.annotationsMap = roots.annotationsMap;
+    this.annotationStylesMap = roots.annotationStylesMap;
     this.drawings = roots.drawings;
     this.known = {
       boards: new Set(this.boards.keys()),

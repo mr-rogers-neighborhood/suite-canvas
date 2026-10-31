@@ -1,8 +1,8 @@
 import { LoroDoc } from "loro-crdt";
+import { annotationsWithin } from "../annotations.js";
 import { placementKey, WorkspaceDocument } from "../loro/WorkspaceDocument.js";
 import type { Placement, Section } from "../schema.js";
 import { cardAnchor, sectionsAt } from "../sections.js";
-
 import { copyEntry, copyMeta } from "./containers.js";
 import { collectReferences, copyCards, writeReferenceTitleStubs } from "./references.js";
 
@@ -33,6 +33,13 @@ export interface ProjectionReference {
 export interface ProjectionResult {
   workspace: WorkspaceDocument;
   references: ProjectionReference[];
+  /**
+   * Highlights that belonged to a source outside the share, and so were left out.
+   *
+   * Reported rather than dropped quietly, for the same reason a private card reference is: a reader of a share
+   * should never learn that a passage exists because a mark hinted at it.
+   */
+  withheldAnnotations: number;
 }
 
 /** Stand-in title for a card a board share may not name. */
@@ -143,6 +150,18 @@ export function projectWorkspace(
     }
   }
 
+  // A share carries the highlights of the sources it includes, and only those. The palette travels whole: a
+  // colour is not content, and a book whose highlights all render grey would be a worse share.
+  const { kept, withheld } = annotationsWithin(source.listAnnotations(), copied);
+  const annotationRoot = doc.getMap(WorkspaceDocument.ANNOTATIONS_KEY);
+  const sourceAnnotations = source.doc.getMap(WorkspaceDocument.ANNOTATIONS_KEY);
+  for (const annotation of kept) copyEntry(sourceAnnotations, annotationRoot, annotation.id);
+  const styleRoot = doc.getMap(WorkspaceDocument.ANNOTATION_STYLES_KEY);
+  const sourceStyles = source.doc.getMap(WorkspaceDocument.ANNOTATION_STYLES_KEY);
+  for (const style of source.listAnnotationStyles()) {
+    if (sourceStyles.get(style.id) !== undefined) copyEntry(sourceStyles, styleRoot, style.id);
+  }
+
   workspace.ensureReferences();
 
   const references = collectReferences(source, copied, options.scope === "board");
@@ -150,5 +169,5 @@ export function projectWorkspace(
 
   doc.commit({ origin: PROJECTION_ORIGIN });
 
-  return { workspace, references };
+  return { workspace, references, withheldAnnotations: withheld };
 }

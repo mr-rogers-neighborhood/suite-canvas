@@ -44,6 +44,17 @@ export function isScalar(value: unknown): value is string | number | boolean | n
 }
 
 /**
+ * A value Loro keeps as JSON rather than as a container: a style payload, an annotation's anchor.
+ *
+ * These are neither scalars nor Loro containers, and the copier used to drop them silently — which meant a
+ * projection lost every plain-object value it was given. Writing one back with `set` restores it exactly,
+ * because Loro stores and returns JSON objects as they are.
+ */
+export function isJsonValue(value: unknown): boolean {
+  return typeof value === "object" && value !== null && !isContainer(value);
+}
+
+/**
  * Copy one map's entries into another map, including the container structure
  * rich text depends on. Containers become mergeable children so copying the
  * same key twice lands on the same child instead of forking it.
@@ -67,6 +78,7 @@ function copyMap(source: LoroMap, target: LoroMap): void {
       continue;
     }
     if (isScalar(value)) target.set(key, value);
+    else if (isJsonValue(value)) target.set(key, value as never);
   }
 }
 
@@ -90,6 +102,7 @@ function copyList(source: LoroList, target: LoroList): void {
       return;
     }
     if (isScalar(value)) target.insert(index, value);
+    else if (isJsonValue(value)) target.insert(index, value as never);
   });
 }
 
@@ -113,6 +126,7 @@ function copyMovableList(source: LoroMovableList, target: LoroMovableList): void
       return;
     }
     if (isScalar(value)) target.insert(index, value);
+    else if (isJsonValue(value)) target.insert(index, value as never);
   });
 }
 

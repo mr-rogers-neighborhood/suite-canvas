@@ -1,4 +1,5 @@
 import type { ContainerID } from "loro-crdt";
+import type { AnnotationAnchor } from "../annotations.js";
 import {
   type Board,
   type Card,
@@ -194,6 +195,25 @@ export interface CreateViewInput {
   lens?: ViewLens;
   collection?: ViewCollection;
   render?: ViewRender;
+}
+
+/** What a reader makes when they highlight: no card, no promotions, no decisions yet. */
+export interface CreateAnnotationInput {
+  id?: string;
+  /** The card whose body holds the source. */
+  sourceCardId: string;
+  styleId: string;
+  anchor: AnnotationAnchor;
+  excerpt?: string;
+  createdAt?: number;
+}
+
+export interface CreateAnnotationStyleInput {
+  id?: string;
+  name: string;
+  color: string;
+  order?: number;
+  templateTypeId?: string;
 }
 
 /** What `updateView` may replace. Every field is whole: a view is one saved record. */

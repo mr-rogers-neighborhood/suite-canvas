@@ -119,7 +119,10 @@ what type a card is skips the check rather than refusing a value the document al
 
 `resolveEmbed` in `packages/graph/src/embedPlan.ts` decides what to draw before anything does: whether the card is visible to this reader, whether it still exists, and whether it is already on screen above. It is a pure function rather than a rule inside the node view, so a loop stops in one testable place. One level renders, and a deeper embed resolves to a labelled stub, because two cards embedding each other is one click away.
 
-The figure is the card's own read-only face, which is what keeps an embed showing what the card shows. The size is document data: the corner grip writes `width` and `height` on the node as it moves, so the size syncs and undoes like any other edit. An embed that grows does not push its neighbours around, which is deliberate for now.
+Each kind draws as itself, decided by `resolveEmbed` rather than by the node view: a sketch draws its
+drawing through `WhiteboardPreview`, a portal draws `BoardMiniature` of the board it opens, and everything
+else draws the card's own read-only face, which is what keeps an embed showing what the card shows. A
+portal with no board to open falls back to its face, because the card exists and has text. The size is document data: the corner grip writes `width` and `height` on the node as it moves, so the size syncs and undoes like any other edit. An embed that grows does not push its neighbours around, which is deliberate for now.
 
 ## Placing from the library
 

@@ -1,7 +1,11 @@
-import { embedStubLabel, resolveEmbed } from "@suite/graph";
+import { embedStubLabel, PORTAL_BOARD_FIELD_ID, resolveEmbed } from "@suite/graph";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { useCallback, useRef } from "react";
+import { BoardMiniature } from "../canvas/BoardMiniature";
+import { boardMiniature } from "../canvas/portalMiniature";
 import { StaticCardBody, StaticCardTitle } from "../cards/StaticCardFace";
+import { WhiteboardPreview } from "../cards/WhiteboardPreview";
+import { useDrawing } from "../hooks/useDrawing";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { EMBED_DEFAULT_SIZE, EMBED_MAX_SIZE, EMBED_MIN_SIZE, EMBED_NODE_NAME } from "./embedNode";
@@ -39,13 +43,24 @@ export function EmbedView({ node, selected, updateAttributes }: NodeViewProps) {
     EMBED_MAX_SIZE.height,
   );
 
+  const cardOf = (id: string) => snapshot.cards.find((entry) => entry.id === id);
+
   const resolution = resolveEmbed(
     cardId,
     { depth: 1, ancestors: [] },
     {
-      cardExists: (id) => snapshot.cards.some((card) => card.id === id),
+      cardExists: (id) => cardOf(id) !== undefined,
+      cardTypeOf: (id) => cardOf(id)?.primaryTypeId,
+      portalBoardOf: (id) => {
+        const target = cardOf(id)?.properties[PORTAL_BOARD_FIELD_ID];
+        return typeof target === "string" && target.length > 0 ? target : undefined;
+      },
     },
   );
+
+  // Hooks run before any branch, so the drawing subscription is unconditional even
+  // though only one figure uses it.
+  const drawing = useDrawing(resolution.kind === "card" ? resolution.cardId : null);
 
   const onResizeStart = useCallback(
     (event: React.PointerEvent) => {
@@ -150,9 +165,30 @@ export function EmbedView({ node, selected, updateAttributes }: NodeViewProps) {
         <div className="mb-1 shrink-0 text-[13px] font-semibold">
           <StaticCardTitle cardDoc={workspace.doc} titleId={titleId} />
         </div>
-        <div className="min-h-0 flex-1 overflow-auto text-sm">
-          <StaticCardBody cardDoc={workspace.doc} contentId={contentId} canEdit={false} />
-        </div>
+        {/* Each kind draws as itself. A sketch has no text to show, and a portal is a
+            door: showing its prose would be a picture of the label, not the room. */}
+        {resolution.figure === "sketch" ? (
+          <div className="min-h-0 flex-1">
+            <WhiteboardPreview
+              elements={drawing?.elements ?? []}
+              label={`${workspace.displayTitle(resolution.cardId)} sketch`}
+            />
+          </div>
+        ) : resolution.figure === "board" && resolution.boardId !== null ? (
+          <div className="min-h-0 flex-1">
+            <BoardMiniature
+              model={boardMiniature(
+                snapshot.sections.filter((entry) => entry.boardId === resolution.boardId),
+                snapshot.placements.filter((entry) => entry.boardId === resolution.boardId),
+              )}
+              label={workspace.getBoard(resolution.boardId)?.name ?? "Board"}
+            />
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1 overflow-auto text-sm">
+            <StaticCardBody cardDoc={workspace.doc} contentId={contentId} canEdit={false} />
+          </div>
+        )}
       </div>
       {/* The grip is the WYSIWYG half: the size is written to the node as it moves, so
           what the reader sees is what every other reader gets. */}

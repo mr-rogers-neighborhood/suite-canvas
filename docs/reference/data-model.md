@@ -49,7 +49,7 @@ malformed value throws at the boundary that read it rather than reaching the can
 | Edge | `boardId`, `source`, `target`, `sourceKind`, `targetKind`, `sourceConnector`, `targetConnector`, `kind`, `path`, `bidirectional`, `label`, `labelOffset`, `bends`, `layer`, `style`, `createdAt`, `updatedAt` | none |
 | Card type | `name`, `pluralName`, `glyph`, `color`, `templateCardIds`, `createdAt`, `updatedAt` | `fields`, a map keyed by field id; `templates`, a map of card id to rank |
 | Tag | `name`, `color`, `createdAt` | none |
-| Saved view | `name`, `position` | `query`, a map holding the query facets |
+| Saved view | `name`, `position`, optional `kind` | `query`, a map holding the query facets |
 
 A placement is keyed by `placementKey(boardId, cardId)` from `packages/graph/src/loro/constants.ts`, which
 is `${boardId}/${cardId}`. One card can therefore sit on many boards without a second record kind.
@@ -134,6 +134,12 @@ Saved views store a query, never a result. `viewQuerySchema` in `packages/graph/
 facets, type and tag facets, scope, grouping and predicates, and `viewPredicates.ts` evaluates them against
 the document at read time. `viewsRevision` moves when a view record changes, so a renderer can subscribe to
 the view list without subscribing to every card.
+
+A view also names how to present its result, in an additive `kind`: `lens` (a saved camera fit over one
+board, carrying `boardId` and `viewport`), `collection` (a `database`, `grid` or `list`) or `render` (a
+`graph-2d` layout). `kind` is optional and absent reads as `lens`, because a view written before kinds
+existed was already a camera fit; `viewKindOf` is the one place that fallback lives. A kind never takes
+part in the query, so two views that share a query select the same cards whatever they are.
 
 ## Publish: plan, then apply
 

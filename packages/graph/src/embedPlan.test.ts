@@ -10,6 +10,9 @@ describe("resolveEmbed", () => {
       kind: "card",
       cardId: "a",
       depth: 1,
+      // A lookup with no type information still answers with a figure: the face.
+      figure: "face",
+      boardId: null,
     });
   });
 
@@ -50,5 +53,47 @@ describe("resolveEmbed", () => {
     for (const reason of ["unset", "missing", "not-shared", "cycle"] as const) {
       expect(embedStubLabel(reason).length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("embed figures", () => {
+  const types: Record<string, string> = { sketchy: "whiteboard", door: "portal", note: "note" };
+  const portraits: Record<string, string> = { door: "board-1" };
+  const withTypes = {
+    ...lookup,
+    cardExists: exists(["sketchy", "door", "note", "orphan-portal"]),
+    cardTypeOf: (id: string) => types[id],
+    portalBoardOf: (id: string) => portraits[id],
+  };
+
+  it("should draw a sketch as its drawing, not as a title over nothing", () => {
+    expect(resolveEmbed("sketchy", { depth: 1, ancestors: [] }, withTypes)).toMatchObject({
+      kind: "card",
+      figure: "sketch",
+      boardId: null,
+    });
+  });
+
+  it("should draw a portal as the board it opens", () => {
+    expect(resolveEmbed("door", { depth: 1, ancestors: [] }, withTypes)).toMatchObject({
+      kind: "card",
+      figure: "board",
+      boardId: "board-1",
+    });
+  });
+
+  it("should fall back to the face when a portal has no board to open", () => {
+    // The card exists and has text, so an empty frame would be a lie about it.
+    expect(resolveEmbed("orphan-portal", { depth: 1, ancestors: [] }, withTypes)).toMatchObject({
+      kind: "card",
+      figure: "face",
+      boardId: null,
+    });
+  });
+
+  it("should draw any other card as its face", () => {
+    expect(resolveEmbed("note", { depth: 1, ancestors: [] }, withTypes)).toMatchObject({
+      figure: "face",
+    });
   });
 });

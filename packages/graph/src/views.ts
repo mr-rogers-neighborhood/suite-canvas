@@ -25,6 +25,32 @@ export const viewGroupBySchema = z.enum(viewGroupBys);
 export const viewSortKeySchema = z.enum(viewSortKeys);
 
 /**
+ * How a saved view presents its result. Absent reads as `"lens"`, so a view written
+ * before kinds existed is still the camera fit it always was: a kind says where
+ * to stand and how to draw, never what the query selects.
+ */
+export const viewKinds = ["lens", "collection", "render"] as const;
+export const viewCollectionModes = ["database", "grid", "list"] as const;
+export const viewRenderLayouts = ["graph-2d"] as const;
+
+export const viewKindSchema = z.enum(viewKinds);
+export const viewCollectionModeSchema = z.enum(viewCollectionModes);
+export const viewRenderLayoutSchema = z.enum(viewRenderLayouts);
+
+/** A saved camera fit over one board; the viewport is in board coordinates. */
+export const viewLensSchema = z.object({
+  boardId: entityIdSchema,
+  viewport: z.object({
+    x: z.number().finite(),
+    y: z.number().finite(),
+    zoom: z.number().positive(),
+  }),
+});
+
+export const viewCollectionSchema = z.object({ mode: viewCollectionModeSchema });
+export const viewRenderSchema = z.object({ layout: viewRenderLayoutSchema });
+
+/**
  * A saved query. It names *what to select*, never what was selected: no card
  * ids are stored, so the result follows edits, trash, renames and newly created
  * cards without the view itself changing.
@@ -64,6 +90,16 @@ export const savedViewSchema = z.object({
   name: z.string().min(1),
   position: z.number().int().nonnegative(),
   query: viewQuerySchema,
+  /**
+   * How the result is presented. Absent reads as `lens`, because a view saved
+   * before kinds existed is still a camera fit. A kind never takes part in the
+   * query: two views that share a query select the same cards whatever their
+   * kind, so presentation can change without a result changing with it.
+   */
+  kind: viewKindSchema.optional(),
+  lens: viewLensSchema.optional(),
+  collection: viewCollectionSchema.optional(),
+  render: viewRenderSchema.optional(),
 });
 
 export type ViewScope = z.infer<typeof viewScopeSchema>;
@@ -73,6 +109,11 @@ export type ViewSortKey = z.infer<typeof viewSortKeySchema>;
 export type ViewSort = { by: ViewSortKey; dir: "asc" | "desc" };
 export type ViewQuery = z.infer<typeof viewQuerySchema>;
 export type SavedView = z.infer<typeof savedViewSchema>;
+export type ViewKind = z.infer<typeof viewKindSchema>;
+export type ViewLens = z.infer<typeof viewLensSchema>;
+export type ViewCollection = z.infer<typeof viewCollectionSchema>;
+export type ViewCollectionMode = z.infer<typeof viewCollectionModeSchema>;
+export type ViewRender = z.infer<typeof viewRenderSchema>;
 
 /**
  * Mirrors `UNSORTED_SECTION` in `apps/canvas/src/components/libraryFilters.ts`:
@@ -103,6 +144,15 @@ export function normalizeViewQuery(query: ViewQuery): ViewQuery {
     ...query,
     ...(groupBy ? { groupBy, groupBySection: groupBy === "section" } : {}),
   };
+}
+
+/**
+ * The kind a stored view reads as. `kind` stays optional so a client that never
+ * learned kinds still writes views every reader understands, and resolving the
+ * fallback here keeps that rule from living in every caller.
+ */
+export function viewKindOf(view: SavedView): ViewKind {
+  return view.kind ?? "lens";
 }
 
 export interface ViewContext {

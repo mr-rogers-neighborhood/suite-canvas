@@ -7,8 +7,11 @@ import {
   runView,
   runViewQuery,
   type SavedView,
+  savedViewSchema,
   VIEW_UNSORTED_SECTION,
   type ViewQuery,
+  viewKindOf,
+  viewKinds,
 } from "./views.js";
 
 function addNode(parent: LoroMap, name: string): LoroMap {
@@ -378,5 +381,74 @@ describe("WorkspaceDocument views", () => {
     stop();
     workspace.createView({ name: "Two", query: emptyViewQuery() });
     expect(calls).toBe(1);
+  });
+});
+
+/**
+ * A kind is presentation, so these tests check two things: that the payload
+ * survives a round trip, and that it never reaches the selection.
+ */
+describe("savedViewSchema kind", () => {
+  it("should read a view with no kind as a lens", () => {
+    const saved = savedViewSchema.parse(view({ text: "grading" }));
+
+    expect(saved.kind).toBeUndefined();
+    expect(viewKindOf(saved)).toBe("lens");
+  });
+
+  it("should round-trip every kind", () => {
+    for (const kind of viewKinds) {
+      const saved = savedViewSchema.parse({ ...view({}), kind });
+
+      expect(saved.kind).toBe(kind);
+      expect(savedViewSchema.parse(saved)).toEqual(saved);
+    }
+  });
+
+  it("should keep a lens board and viewport", () => {
+    const lens = { boardId: "board", viewport: { x: 12.5, y: -40, zoom: 1.25 } };
+    const saved = savedViewSchema.parse({ ...view({}), kind: "lens", lens });
+
+    expect(savedViewSchema.parse(saved)).toEqual(saved);
+    expect(saved.lens?.boardId).toBe("board");
+    expect(saved.lens?.viewport).toEqual({ x: 12.5, y: -40, zoom: 1.25 });
+  });
+
+  it("should keep a collection mode", () => {
+    const saved = savedViewSchema.parse({
+      ...view({}),
+      kind: "collection",
+      collection: { mode: "grid" },
+    });
+
+    expect(saved.collection?.mode).toBe("grid");
+    expect(savedViewSchema.parse(saved)).toEqual(saved);
+  });
+
+  it("should reject a mode, a layout or a kind outside the enum", () => {
+    expect(savedViewSchema.safeParse({ ...view({}), collection: { mode: "kanban" } }).success).toBe(
+      false,
+    );
+    expect(savedViewSchema.safeParse({ ...view({}), render: { layout: "graph-3d" } }).success).toBe(
+      false,
+    );
+    expect(savedViewSchema.safeParse({ ...view({}), kind: "table" }).success).toBe(false);
+  });
+
+  it("should not let a kind change what a query selects", () => {
+    const { workspace } = fixture();
+    const bare = savedViewSchema.parse(view({ text: "grading" }));
+    const lensed = savedViewSchema.parse({
+      ...view({ text: "grading" }),
+      kind: "lens",
+      lens: { boardId: "board", viewport: { x: 240, y: 120, zoom: 0.8 } },
+    });
+
+    const without = runViewQuery(workspace, bare.query);
+    const withLens = runViewQuery(workspace, lensed.query);
+
+    expect(withLens.cardIds).toEqual(without.cardIds);
+    expect(withLens.hits.size).toBe(without.hits.size);
+    expect(withLens.cardIds).toEqual(["c2"]);
   });
 });

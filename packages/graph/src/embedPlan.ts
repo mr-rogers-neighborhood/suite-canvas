@@ -9,8 +9,24 @@
 /** Why an embed is not a card this reader can see. */
 export type EmbedStubReason = "missing" | "not-shared" | "cycle" | "unset";
 
+/**
+ * What an embed draws for the card it resolved to.
+ *
+ * `face` is the card read-only: title and body. `sketch` is the drawing, because a
+ * sketch's content is not text and its face would be a title over nothing. `board` is
+ * the board a portal opens, because that is what the portal shows anywhere else.
+ */
+export type EmbedFigure = "face" | "sketch" | "board";
+
 export type EmbedResolution =
-  | { readonly kind: "card"; readonly cardId: string; readonly depth: number }
+  | {
+      readonly kind: "card";
+      readonly cardId: string;
+      readonly depth: number;
+      readonly figure: EmbedFigure;
+      /** The board a `board` figure draws; null for every other figure. */
+      readonly boardId: string | null;
+    }
   | { readonly kind: "stub"; readonly reason: EmbedStubReason; readonly cardId: string | null };
 
 export interface EmbedLookup {
@@ -21,7 +37,18 @@ export interface EmbedLookup {
    * missing one is the projection talking, not a broken document.
    */
   readonly visible?: ((cardId: string) => boolean) | undefined;
+  /** The card's primary type, so a sketch or a portal can draw as itself. */
+  readonly cardTypeOf?: ((cardId: string) => string | undefined) | undefined;
+  /** The board a portal card opens, from its own property. */
+  readonly portalBoardOf?: ((cardId: string) => string | undefined) | undefined;
 }
+
+/**
+ * The built-in type ids this plan knows. They are stable document values: `whiteboard`
+ * predates the Sketch rename on purpose, and both appear in `behaviourTypeIds`.
+ */
+const SKETCH_TYPE_ID = "whiteboard";
+const PORTAL_TYPE_ID = "portal";
 
 export interface EmbedOptions {
   /** How deep this embed sits. The host card is 0, its embed is 1. */
@@ -61,7 +88,32 @@ export function resolveEmbed(
   const maxDepth = options.maxDepth ?? DEFAULT_EMBED_DEPTH;
   if (options.depth > maxDepth) return { kind: "stub", reason: "cycle", cardId: id };
 
-  return { kind: "card", cardId: id, depth: options.depth };
+  return {
+    kind: "card",
+    cardId: id,
+    depth: options.depth,
+    ...figureOf(id, lookup),
+  };
+}
+
+/**
+ * Which figure the card draws as.
+ *
+ * A portal with no board property, or a board that is gone, still renders as a face
+ * rather than an empty frame: the card exists and has text, and saying so is better
+ * than a blank rectangle.
+ */
+function figureOf(
+  cardId: string,
+  lookup: EmbedLookup,
+): { readonly figure: EmbedFigure; readonly boardId: string | null } {
+  const typeId = lookup.cardTypeOf?.(cardId);
+  if (typeId === SKETCH_TYPE_ID) return { figure: "sketch", boardId: null };
+  if (typeId === PORTAL_TYPE_ID) {
+    const boardId = lookup.portalBoardOf?.(cardId);
+    if (boardId !== undefined && boardId.length > 0) return { figure: "board", boardId };
+  }
+  return { figure: "face", boardId: null };
 }
 
 /** The words a stub shows. Kept here so every surface says the same thing. */

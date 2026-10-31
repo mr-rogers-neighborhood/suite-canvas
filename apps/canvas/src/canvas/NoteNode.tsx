@@ -43,12 +43,13 @@ const DUPLICATE_OFFSET = { x: DEFAULT_CARD_WIDTH / 10, y: DEFAULT_CARD_HEIGHT / 
 export function NoteNode({ id, data, selected }: NodeProps) {
   countRender("note");
 
-  const { card, placement, type, meta, dim, collapsed } = data as {
+  const { card, placement, type, meta, dim, onLens, collapsed } = data as {
     card: Card;
     placement: Placement;
     type: CardType;
     meta: CardMeta;
     dim?: boolean;
+    onLens?: boolean;
     collapsed?: boolean;
   };
   const workspace = useCanvasStore((state) => state.workspace);
@@ -270,6 +271,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         type={type}
         meta={meta}
         dim={dim === true}
+        onLens={onLens === true}
         metaExpanded={metaExpanded}
         onToggleMeta={() => toggleCardMeta(id)}
         cardDoc={workspace.doc}

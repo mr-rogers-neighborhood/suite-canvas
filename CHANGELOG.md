@@ -13,6 +13,31 @@ the artifact to roll back to. See [docs/how-to/release.md](docs/how-to/release.m
 
 ### Added
 
+- A views editor: a right-hand sheet with the saved views on the left and **Context**, **Kind** and
+  **Presentation** stacked on the right. A context is a query *and* the cards you pinned by hand, so a
+  view can be built from filters, from a selection, or from both, and the read-out says which is which.
+- Live preview. A draft is a real view with a temporary id, so a lens fades and outlines the board as
+  you type and a collection or render takes the board area behind the sheet. Nothing is written until
+  Save, and closing the sheet leaves the draft applied as `Preview · name` with Edit beside it.
+- A lens is a selection now, not a saved camera: the cards in the context are outlined, everything else
+  fades, and a strip along the bottom counts what is on this board and offers the boards the rest of the
+  context sits on. Cards in the inbox are counted rather than invented.
+- Collections and renders are presented over the board with their count and an Edit button, and renders
+  gained bar and line charts over a count, a sum or an average.
+- **New view** and **New media** in the canvas context menu, and **New view** in the library's Views tab.
+- The views menu is an icon in the board's own control row rather than a labelled dropdown.
+
+### Changed
+
+- A saved view stores a kind, its pins and its presentation, and keeps exactly one payload per kind, so
+  switching from a lens to a render cannot leave a stale camera behind.
+- The saved-views bar and the views editor share one development flag (`views/availability.ts`), worded
+  like the handbook's door.
+
+## [Unreleased]
+
+### Added
+
 - A handbook inside the app: a float in the corner of the board that lists the articles matching what is
   on screen, counts the things they document, and points a line at the element an article is about.
   It ships behind a development flag while the surface is rough; a production build keeps the

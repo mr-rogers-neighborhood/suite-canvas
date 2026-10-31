@@ -49,7 +49,7 @@ malformed value throws at the boundary that read it rather than reaching the can
 | Edge | `boardId`, `source`, `target`, `sourceKind`, `targetKind`, `sourceConnector`, `targetConnector`, `kind`, `path`, `bidirectional`, `label`, `labelOffset`, `bends`, `layer`, `style`, `createdAt`, `updatedAt` | none |
 | Card type | `name`, `pluralName`, `glyph`, `color`, `templateCardIds`, `createdAt`, `updatedAt` | `fields`, a map keyed by field id; `templates`, a map of card id to rank |
 | Tag | `name`, `color`, `createdAt` | none |
-| Saved view | `name`, `position`, optional `kind` | `query`, a map holding the query facets |
+| Saved view | `name`, `position`, optional `kind`, optional `context` pins | `query`, a map holding the query facets; `lens`, `collection` and `render` payloads |
 
 A placement is keyed by `placementKey(boardId, cardId)` from `packages/graph/src/loro/constants.ts`, which
 is `${boardId}/${cardId}`. One card can therefore sit on many boards without a second record kind.
@@ -135,11 +135,20 @@ facets, type and tag facets, scope, grouping and predicates, and `viewPredicates
 the document at read time. `viewsRevision` moves when a view record changes, so a renderer can subscribe to
 the view list without subscribing to every card.
 
-A view also names how to present its result, in an additive `kind`: `lens` (a saved camera fit over one
-board, carrying `boardId` and `viewport`), `collection` (a `database`, `grid` or `list`) or `render` (a
-`graph-2d` layout). `kind` is optional and absent reads as `lens`, because a view written before kinds
-existed was already a camera fit; `viewKindOf` is the one place that fallback lives. A kind never takes
-part in the query, so two views that share a query select the same cards whatever they are.
+A view also names how to present its result, in an additive `kind`: `lens` (a selection applied to the
+board), `collection` (a `database`, `grid` or `list`) or `render` (a `graph-2d` graph, or a `bar` or `line`
+chart with a measure and a grouping). `kind` is optional and absent reads as `lens`; `viewKindOf` is the
+one place that fallback lives. A kind never takes part in the query, so two views that share a query
+select the same cards whatever they are.
+
+**A context is a query plus pins.** `context.cardIds` holds cards added by hand, and `resolveContext`
+returns their union with the query's result, plus the boards the context sits on, the cards that are
+only in the inbox, and the pins that no longer resolve. Pins therefore live on the view rather than
+inside the query, which keeps the query a rule: it names what to select, never what was selected.
+
+`lens.boardId` is a preferred board, optional because the usual answer is "wherever the reader is".
+`lens.viewport` is legacy: old views still parse, nothing reads it, and nothing writes it. The
+`fade` and `outline` toggles on the lens are additive and default to on.
 
 ## Publish: plan, then apply
 

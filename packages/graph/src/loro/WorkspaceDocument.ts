@@ -16,7 +16,7 @@ import type {
   Tag,
 } from "../schema.js";
 import type { PaletteSwatch, SurfaceStyle } from "../style.js";
-import type { SavedView, ViewQuery } from "../views.js";
+import type { SavedView } from "../views.js";
 import type { DocApi } from "./api.js";
 import { createDocApi } from "./api.js";
 import { DocContext } from "./context.js";
@@ -31,6 +31,7 @@ import type {
   DuplicateBoardOptions,
   LayerAction,
   PlacementMoveInput,
+  UpdateViewInput,
   WorkspaceChange,
 } from "./model.js";
 
@@ -74,6 +75,7 @@ export type {
   DuplicateCardOptions,
   LayerAction,
   PlacementMoveInput,
+  UpdateViewInput,
   WorkspaceAction,
   WorkspaceChange,
   WorkspaceSection,
@@ -329,7 +331,7 @@ export class WorkspaceDocument extends CardsFacade {
     return this.viewsApi.createView(input);
   }
 
-  updateView(id: string, patch: { name?: string; query?: ViewQuery }): SavedView | undefined {
+  updateView(id: string, patch: UpdateViewInput): SavedView | undefined {
     return this.viewsApi.updateView(id, patch);
   }
 

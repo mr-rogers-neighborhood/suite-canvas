@@ -20,6 +20,11 @@ export interface CardNodeData extends Record<string, unknown> {
    * clickable and draggable; dimming is a reading aid, never a lock.
    */
   dim?: boolean;
+  /**
+   * On the active lens: the card *is* the result. Outlined so the context reads as a set,
+   * and separate from `dim` because either toggle can be off.
+   */
+  onLens?: boolean;
   /** Reduced to the header line: reader state, never written to the document. */
   collapsed?: boolean;
 }

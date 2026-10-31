@@ -56,6 +56,8 @@ export const HANDBOOK_REGIONS: readonly HandbookRegion[] = [
   { id: "tour-overlay", label: "Tours", group: "panel" },
   { id: "toast-layer", label: "Toasts", group: "panel" },
   { id: "handbook-bubble", label: "The handbook", group: "panel" },
+  { id: "views-editor", label: "The views editor", group: "panel" },
+  { id: "views-presentation", label: "A view, presented", group: "panel" },
 ];
 
 /** The attribute a shell element carries so the picker and the presence check can find it. */

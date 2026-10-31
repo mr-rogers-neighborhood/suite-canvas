@@ -1,26 +1,23 @@
 ---
 title: Saved views
-description: "A stored query, the menu that opens it, and how one gets created."
+description: "The views menu in the board controls, and how a saved view is applied."
 order: 20
 targets:
   - kind: ui
     id: views-bar
 ---
 
-A view is a stored query, not a stored result. Opening one copies its filters into the library's own
-controls, and the list is computed fresh from the document, so a card added a minute ago is already
-in a view that matches it.
+The views icon sits with the board's own controls, beside the outline. It opens the list of saved
+views, each with the shape it draws; choosing one applies it, and **New view…** opens
+[the editor](target:ui:views-editor).
 
-The menu beside the board controls lists the views this workspace has. Choosing one filters the
-library and remembers which view is active; **Place** on a row puts its results on the board in the
-view's own order, which is how a filtered list becomes a layout.
+**Edit** on a row opens that view in the editor with its context and presentation already in place.
+Renaming and deleting are there too; deleting the view you are looking at returns you to the
+unfiltered board rather than leaving a filter whose definition is gone.
 
-**New view…** saves whatever the library is showing right now, including nothing: an unfiltered save
-is "all cards", which is a legitimate starting point for a view you are about to narrow. The name
-starts from the search text when there is one.
+Applying a view is a reading, not a change. A lens fades the cards outside it and outlines the ones
+inside; the library can be filtered to the same context, and **Place** puts those cards on the board
+in the view's own order. No card is copied, moved or hidden from the document by a view.
 
-Renaming and deleting sit on each row. Deleting the view you are looking at returns you to the
-unfiltered list rather than leaving the library filtered by a query that no longer exists.
-
-Views are a development-only door for now: the bar ships behind a flag while the surface around it
-is finished.
+The menu is a development-only door while the surfaces around views settle: the editor, the
+presentation and the charts all arrived in one pass.

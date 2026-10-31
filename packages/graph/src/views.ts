@@ -31,24 +31,64 @@ export const viewSortKeySchema = z.enum(viewSortKeys);
  */
 export const viewKinds = ["lens", "collection", "render"] as const;
 export const viewCollectionModes = ["database", "grid", "list"] as const;
-export const viewRenderLayouts = ["graph-2d"] as const;
+/**
+ * How a render draws its result. A graph draws the cards and the links between them; a chart
+ * draws an aggregate, which is why it needs a measure and a grouping the graph ignores.
+ */
+export const viewRenderLayouts = ["graph-2d", "bar", "line"] as const;
+/** What a chart counts. `count` needs nothing else; the others name a number field. */
+export const viewChartMeasures = ["count", "sum", "average"] as const;
+/** What a chart groups by, in the buckets a view already understands. */
+export const viewChartGroupBys = ["type", "tag", "section"] as const;
 
 export const viewKindSchema = z.enum(viewKinds);
 export const viewCollectionModeSchema = z.enum(viewCollectionModes);
 export const viewRenderLayoutSchema = z.enum(viewRenderLayouts);
+export const viewChartMeasureSchema = z.union([
+  z.object({ of: z.literal("count") }),
+  z.object({ of: z.literal("sum"), fieldId: entityIdSchema }),
+  z.object({ of: z.literal("average"), fieldId: entityIdSchema }),
+]);
+/**
+ * A bucket is a facet the query already knows (`type`, `tag`, `section`) or one field's value.
+ * A field is the interesting case: it is how a chart groups by "Status" without teaching the
+ * query language a second vocabulary.
+ */
+export const viewChartGroupBySchema = z.union([
+  z.enum(viewChartGroupBys),
+  z.object({ field: entityIdSchema }),
+]);
 
-/** A saved camera fit over one board; the viewport is in board coordinates. */
+/**
+ * A lens is a *selection applied to the board*, not a camera.
+ *
+ * `boardId` is the board the lens prefers when its context spans several, and it is optional
+ * because the common case is "wherever the reader is". `viewport` is legacy: it is still parsed so
+ * views written before this decision keep loading, nothing reads it, and nothing writes it.
+ */
 export const viewLensSchema = z.object({
-  boardId: entityIdSchema,
-  viewport: z.object({
-    x: z.number().finite(),
-    y: z.number().finite(),
-    zoom: z.number().positive(),
-  }),
+  boardId: entityIdSchema.optional(),
+  /** Fade everything outside the context. Absent reads as on. */
+  fade: z.boolean().optional(),
+  /** Outline the cards in the context. Absent reads as on. */
+  outline: z.boolean().optional(),
+  viewport: z
+    .object({
+      x: z.number().finite(),
+      y: z.number().finite(),
+      zoom: z.number().positive(),
+    })
+    .optional(),
 });
 
 export const viewCollectionSchema = z.object({ mode: viewCollectionModeSchema });
-export const viewRenderSchema = z.object({ layout: viewRenderLayoutSchema });
+export const viewRenderSchema = z.object({
+  layout: viewRenderLayoutSchema,
+  /** A chart's aggregate. Absent reads as a count, which every context can answer. */
+  measure: viewChartMeasureSchema.optional(),
+  /** A chart's bucket. Absent groups everything into one bar or one point. */
+  groupBy: viewChartGroupBySchema.optional(),
+});
 
 /**
  * A saved query. It names *what to select*, never what was selected: no card
@@ -84,12 +124,26 @@ export const viewQuerySchema = z.object({
   groups: z.array(viewPredicateGroupSchema).optional(),
 });
 
+/**
+ * The cards a reader added by hand, kept beside the query rather than inside it.
+ *
+ * A query is a rule and a pin is data, so a view holds both and the context is their union
+ * (`resolveContext`). Keeping them apart is what lets the editor show "9 from filters, 3 pinned",
+ * and what keeps `viewQuerySchema`'s promise — a query names what to select, never what was
+ * selected. A pin that no longer resolves is reported rather than dropped silently.
+ */
+export const viewContextSchema = z.object({
+  cardIds: z.array(entityIdSchema),
+});
+
 /** One saved view. `position` is its index in the Views menu. */
 export const savedViewSchema = z.object({
   id: entityIdSchema,
   name: z.string().min(1),
   position: z.number().int().nonnegative(),
   query: viewQuerySchema,
+  /** Cards pulled in by hand; absent or empty is every view written before pins existed. */
+  context: viewContextSchema.optional(),
   /**
    * How the result is presented. Absent reads as `lens`, because a view saved
    * before kinds existed is still a camera fit. A kind never takes part in the
@@ -114,6 +168,10 @@ export type ViewLens = z.infer<typeof viewLensSchema>;
 export type ViewCollection = z.infer<typeof viewCollectionSchema>;
 export type ViewCollectionMode = z.infer<typeof viewCollectionModeSchema>;
 export type ViewRender = z.infer<typeof viewRenderSchema>;
+export type ViewContextPins = z.infer<typeof viewContextSchema>;
+export type ViewChartMeasure = z.infer<typeof viewChartMeasureSchema>;
+export type ViewChartGroupBy = z.infer<typeof viewChartGroupBySchema>;
+export type ViewRenderLayout = z.infer<typeof viewRenderLayoutSchema>;
 
 /**
  * Mirrors `UNSORTED_SECTION` in `apps/canvas/src/components/libraryFilters.ts`:
@@ -549,10 +607,78 @@ export function runViewQuery(
   }
   return { cardIds, hits: resultHits };
 }
+/**
+ * What a view selects right now: its query's result, its pinned cards, and where those cards live.
+ *
+ * The union is why a view can be built two ways at once — filtered and hand-picked — and the
+ * `byBoard` / `inInbox` split is what a lens needs: a card on another board is reachable, a card in
+ * the inbox has no position to highlight, and both are counted rather than hidden.
+ *
+ * Pins are ordered last so the query keeps its order, and a pin that is gone is reported in
+ * `missingPins` rather than dropped silently: a view that quietly loses a card is a view nobody can
+ * trust.
+ */
+export interface ViewContextResult extends ViewResult {
+  /** Pins that still resolve, in the order they were added. */
+  pinned: string[];
+  /** Pins that name a card that is gone or in the trash. */
+  missingPins: string[];
+  /** Board id → how many of the context sit on it. A card on two boards counts on both. */
+  byBoard: Map<string, number>;
+  /** Context cards with no placement: they belong to the inbox, not to a board. */
+  inInbox: string[];
+}
+
+export function resolveContext(
+  workspace: WorkspaceDocument,
+  view: SavedView,
+  context: ViewContext = {},
+): ViewContextResult {
+  const result = runViewQuery(workspace, view.query, context);
+
+  const pinned: string[] = [];
+  const missingPins: string[] = [];
+  for (const id of view.context?.cardIds ?? []) {
+    if (pinned.includes(id)) continue;
+    const card = workspace.getCard(id);
+    if (card === undefined || card.deletedAt != null) missingPins.push(id);
+    else pinned.push(id);
+  }
+
+  const cardIds = [...result.cardIds];
+  for (const id of pinned) if (!cardIds.includes(id)) cardIds.push(id);
+
+  const boardsByCard = new Map<string, string[]>();
+  for (const placement of workspace.listPlacements()) {
+    const boards = boardsByCard.get(placement.cardId);
+    if (boards) {
+      if (!boards.includes(placement.boardId)) boards.push(placement.boardId);
+    } else {
+      boardsByCard.set(placement.cardId, [placement.boardId]);
+    }
+  }
+
+  const byBoard = new Map<string, number>();
+  const inInbox: string[] = [];
+  for (const id of cardIds) {
+    const boards = boardsByCard.get(id) ?? [];
+    if (boards.length === 0) inInbox.push(id);
+    for (const boardId of boards) byBoard.set(boardId, (byBoard.get(boardId) ?? 0) + 1);
+  }
+
+  return { ...result, cardIds, pinned, missingPins, byBoard, inInbox };
+}
+
+/**
+ * The view as every consumer reads it: its context, not only its query.
+ *
+ * Returning the richer shape is what makes pins work everywhere at once — the lens, the figures,
+ * the library and the editor all call this and none of them needed to learn about pins.
+ */
 export function runView(
   workspace: WorkspaceDocument,
   view: SavedView,
   context: ViewContext = {},
-): ViewResult {
-  return runViewQuery(workspace, view.query, context);
+): ViewContextResult {
+  return resolveContext(workspace, view, context);
 }

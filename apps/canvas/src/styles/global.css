@@ -3421,3 +3421,13 @@ html[data-inspector-linking] .card-inspector {
 .node-card[data-pinned="true"]:focus-within {
   opacity: 0.85;
 }
+
+/*
+ * The lens outline: the cards a view selects read as one set, in ink rather than a colour, so it
+ * survives both themes and never argues with a selection ring (the card drops the class when it is
+ * selected, because a selection is the stronger statement).
+ */
+.node-card.is-on-lens {
+  outline: 2px dashed var(--accent);
+  outline-offset: 3px;
+}

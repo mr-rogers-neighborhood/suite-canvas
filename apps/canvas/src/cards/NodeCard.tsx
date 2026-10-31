@@ -74,6 +74,8 @@ export interface NodeCardProps {
   selected?: boolean;
   /** Off the active lens; painted back so the view's result reads first. */
   dim?: boolean;
+  /** On the active lens: outlined as part of the view's result. */
+  onLens?: boolean;
   /** Which editor this card is focused in, if any. */
   editing?: EditingField | null;
   /**
@@ -250,6 +252,7 @@ export function NodeCard({
   height = null,
   selected = false,
   dim = false,
+  onLens = false,
   editing = null,
   engaged = false,
   presence = [],
@@ -409,6 +412,8 @@ export function NodeCard({
     // A dimmed card keeps its hover and selection affordances but recedes, so
     // the lens result reads first without losing the spatial context around it.
     dim && !selected ? "is-off-lens" : "",
+    // Selection paints its own ring; the lens outline steps aside rather than fighting it.
+    onLens && !selected ? "is-on-lens" : "",
   ]
     .filter(Boolean)
     .join(" ");

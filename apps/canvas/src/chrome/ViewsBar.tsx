@@ -13,6 +13,7 @@ import { UNSORTED_SECTION } from "../library/libraryFilters";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { useViewsStore } from "../store/viewsStore";
 
 /**
  * Saved views live in their own root map, outside the snapshot sections a board
@@ -175,19 +176,27 @@ export function ViewsBar({
       data-testid="views-bar"
       data-handbook-region="views-bar"
     >
+      {/*
+        One icon among the board's own controls, not a labelled dropdown. The label was a fifth
+        piece of text in a row of glyphs, and it took the width the board tabs needed; the name is
+        still there for a screen reader and in the tooltip, and the menu is where it is read whole.
+      */}
       <button
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         data-testid="views-menu-button"
-        data-active={activeView ? "true" : undefined}
+        aria-pressed={activeView !== undefined}
+        aria-label={activeView ? `Views: ${activeView.name}` : "Views"}
         title={activeView ? `View: ${activeView.name}` : "Saved views"}
-        className="views-bar__button inline-flex h-6 max-w-[160px] items-center truncate px-0 text-[12px] leading-none text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)]"
+        className="board-nav-button gap-0.5"
         onClick={() => (open ? close() : setOpen(true))}
       >
-        {activeView ? activeView.name : "Views"}
-        <span aria-hidden="true" className="ml-1.5 text-[12px] leading-none opacity-80">
-          {"\u25b8"}
+        <span aria-hidden="true" className="text-[13px] leading-none">
+          {"\u25c7"}
+        </span>
+        <span aria-hidden="true" className="text-[8px] leading-none opacity-70">
+          {"\u25be"}
         </span>
       </button>
 
@@ -200,6 +209,20 @@ export function ViewsBar({
           onKeyDown={menuKeyDown}
           className="absolute left-0 top-full z-50 mt-1 min-w-[200px] max-w-[260px] rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
         >
+          {canManageViews ? (
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="views-new"
+              className="mb-1 w-full rounded border-b border-[var(--hairline)] px-3 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+              onClick={() => {
+                close();
+                useViewsStore.getState().openNew(views.length);
+              }}
+            >
+              New view…
+            </button>
+          ) : null}
           {views.length === 0 ? (
             <p
               className="px-3 py-1.5 text-[12px] text-[var(--ink-muted)]"
@@ -275,6 +298,19 @@ export function ViewsBar({
                           {"\u2713"}
                         </span>
                       ) : null}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-testid={`views-edit-${view.id}`}
+                      title="Edit this view"
+                      className="rounded px-1.5 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                      onClick={() => {
+                        close();
+                        useViewsStore.getState().openView(view);
+                      }}
+                    >
+                      Edit
                     </button>
                     {onPlaceResults ? (
                       <button

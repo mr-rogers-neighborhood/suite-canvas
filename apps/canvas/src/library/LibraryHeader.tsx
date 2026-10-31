@@ -44,6 +44,7 @@ export function LibraryHeader({
   selecting,
   onToggleSelecting,
   onManageTypes,
+  onNewView,
   onCreateInInbox,
   trashCount,
   onEmptyTrash,
@@ -67,6 +68,8 @@ export function LibraryHeader({
   onToggleSelecting: () => void;
   /** Opens the type editor. Absent on a surface where schema cannot be managed. */
   onManageTypes?: (() => void) | undefined;
+  /** Opens the views editor on a new view; absent where views are not offered. */
+  onNewView?: (() => void) | undefined;
   onCreateInInbox: () => void;
   trashCount: number;
   onEmptyTrash: () => void;
@@ -199,6 +202,17 @@ export function LibraryHeader({
             onClick={onToggleSelecting}
           >
             Select
+          </button>
+        ) : null}
+        {onNewView && tab === "views" ? (
+          <button
+            type="button"
+            data-testid="library-new-view"
+            className="library-action"
+            title="Write a query, choose how it is shown, and save it."
+            onClick={onNewView}
+          >
+            New view
           </button>
         ) : null}
         {onManageTypes ? (

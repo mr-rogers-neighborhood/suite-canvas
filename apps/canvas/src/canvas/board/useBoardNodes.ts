@@ -234,8 +234,11 @@ export function useBoardNodes(
           const previous = existing?.data as CardNodeData | undefined;
           // The lens is part of the card's visible state: a view applied or
           // cleared must repaint, and an unchanged card must keep its object.
-          const dim = lens.view !== null && !lens.cardIds.has(card.id);
+          const lit = lens.view !== null && lens.cardIds.has(card.id);
+          const dim = lens.view !== null && lens.fade && !lit;
+          const onLens = lens.view !== null && lens.outline && lit;
           const previousDim = previous?.dim === true;
+          const previousOnLens = previous?.onLens === true;
           const previousCollapsed = previous?.collapsed === true;
           // Reuse the data object (and the node when nothing visible changed), so
           // a card that did not change does not re-render on a peer's edit.
@@ -246,6 +249,7 @@ export function useBoardNodes(
             previous.type === type &&
             previous.meta === meta &&
             previousDim === dim &&
+            previousOnLens === onLens &&
             previousCollapsed === collapsed
               ? previous
               : {
@@ -253,6 +257,7 @@ export function useBoardNodes(
                   placement,
                   type,
                   meta,
+                  ...(onLens ? { onLens: true } : {}),
                   ...(dim ? { dim: true } : {}),
                   ...(collapsed ? { collapsed: true } : {}),
                 };

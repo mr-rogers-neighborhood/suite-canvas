@@ -15,6 +15,7 @@ function makeContext(overrides: Record<string, unknown> = {}): BoardMenuContext 
     menu: { kind: "node", nodeId: "card-a", x: 10, y: 20, flowPosition: { x: 0, y: 0 } },
     selectedNodeIds: [],
     canCreateContent: true,
+    canManageSchema: false,
     canEditLayout: true,
     canCreateBoards: true,
     canManageTrash: true,
@@ -30,6 +31,8 @@ function makeContext(overrides: Record<string, unknown> = {}): BoardMenuContext 
     openAppearance: vi.fn(),
     duplicateCards: vi.fn(),
     createSectionAt: vi.fn(),
+    createViewAt: vi.fn(),
+    openMediaLibrary: vi.fn(),
     arrangeSelection: vi.fn(),
     changeLayer: vi.fn(),
     changeLayerBulk: vi.fn(),
@@ -131,7 +134,15 @@ describe("the entity menu", () => {
   it("offers a canvas press only the things a canvas can make", () => {
     const items = buildEntityMenu(makeContext({ menu: { kind: "canvas", x: 0, y: 0 } }));
 
-    expect(labels(items)).toEqual(["New card", "New sketch", "New section", "New portal"]);
+    // Media is one door on every workspace; a view needs the schema capability as well, so it is
+    // absent here and present in the test below.
+    expect(labels(items)).toEqual([
+      "New media…",
+      "New card",
+      "New sketch",
+      "New section",
+      "New portal",
+    ]);
   });
 
   it("intersects when it is asked for several kinds at once", () => {
@@ -176,5 +187,35 @@ describe("the entity menu", () => {
     expect(shrinkItem?.checked).toBe(true);
     shrinkItem?.onSelect?.();
     expect(toggleSectionShrinkToFit).toHaveBeenCalledWith("sec-1");
+  });
+});
+
+describe("the create group", () => {
+  const canvasMenu = (overrides: Record<string, unknown> = {}) =>
+    buildEntityMenu(
+      makeContext({
+        menu: { kind: "canvas", x: 0, y: 0, flowPosition: { x: 80, y: 40 } },
+        ...overrides,
+      }),
+    );
+
+  it("should place a view card at the press and open the editor on it", () => {
+    const createViewAt = vi.fn();
+    const items = canvasMenu({ canManageSchema: true, createViewAt });
+
+    byLabel(items, "New view")?.onSelect?.();
+    expect(createViewAt).toHaveBeenCalledWith({ x: 80, y: 40 });
+  });
+
+  it("should open one media list rather than inventing a second uploader", () => {
+    const openMediaLibrary = vi.fn();
+    const items = canvasMenu({ openMediaLibrary });
+
+    byLabel(items, "New media…")?.onSelect?.();
+    expect(openMediaLibrary).toHaveBeenCalledTimes(1);
+  });
+
+  it("should offer nothing that makes content to a session that cannot", () => {
+    expect(labels(canvasMenu({ canCreateContent: false }))).toEqual([]);
   });
 });

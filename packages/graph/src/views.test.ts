@@ -4,6 +4,7 @@ import { WorkspaceDocument } from "./loro/WorkspaceDocument.js";
 import { buildSearchText } from "./search.js";
 import {
   emptyViewQuery,
+  resolveContext,
   runView,
   runViewQuery,
   type SavedView,
@@ -450,5 +451,175 @@ describe("savedViewSchema kind", () => {
     expect(withLens.cardIds).toEqual(without.cardIds);
     expect(withLens.hits.size).toBe(without.hits.size);
     expect(withLens.cardIds).toEqual(["c2"]);
+  });
+});
+
+describe("a view's context", () => {
+  it("should be the query's result plus the cards pinned by hand, query order first", () => {
+    const { workspace, boardId } = fixture();
+    const pinned = savedViewSchema.parse({
+      ...view({ typeIds: ["character"] }),
+      context: { cardIds: ["c4"] },
+    });
+
+    const result = resolveContext(workspace, pinned, { boardId });
+    expect(result.cardIds).toEqual(["c1", "c4"]);
+    expect(result.pinned).toEqual(["c4"]);
+  });
+
+  it("should not double-count a pinned card the query already selected", () => {
+    const { workspace, boardId } = fixture();
+    const saved = savedViewSchema.parse({
+      ...view({ typeIds: ["character"] }),
+      context: { cardIds: ["c1"] },
+    });
+
+    expect(resolveContext(workspace, saved, { boardId }).cardIds).toEqual(["c1"]);
+  });
+
+  it("should report a pin that is gone instead of dropping it quietly", () => {
+    const { workspace, boardId } = fixture();
+    workspace.trashCard("c4");
+    workspace.doc.commit({ origin: "test" });
+    const saved = savedViewSchema.parse({
+      ...view({}),
+      context: { cardIds: ["c4", "never-existed"] },
+    });
+
+    const result = resolveContext(workspace, saved, { boardId });
+    expect(result.missingPins).toEqual(["c4", "never-existed"]);
+    expect(result.cardIds).not.toContain("c4");
+  });
+
+  it("should say which boards the context sits on, and what is only in the inbox", () => {
+    const { workspace, boardId, archiveId } = fixture();
+    const saved = savedViewSchema.parse({
+      ...view({}),
+      context: { cardIds: ["c4"] },
+    });
+
+    const result = resolveContext(workspace, saved, { boardId });
+    expect(result.byBoard.get(boardId)).toBe(2);
+    expect(result.byBoard.get(archiveId)).toBe(1);
+    expect(result.inInbox).toEqual(["c4"]);
+  });
+
+  it("should count a card placed on two boards on both", () => {
+    const { workspace, boardId, archiveId } = fixture();
+    workspace.placeCard(archiveId, "c1", { x: 10, y: 10 });
+    workspace.doc.commit({ origin: "test" });
+
+    const result = resolveContext(workspace, savedViewSchema.parse(view({})), { boardId });
+    expect(result.byBoard.get(boardId)).toBe(2);
+    expect(result.byBoard.get(archiveId)).toBe(2);
+  });
+
+  it("should read a view with no context as a query only", () => {
+    const { workspace, boardId } = fixture();
+    const result = resolveContext(workspace, savedViewSchema.parse(view({})), { boardId });
+    expect(result.pinned).toEqual([]);
+    expect(result.missingPins).toEqual([]);
+  });
+});
+
+describe("savedViewSchema presentation", () => {
+  it("should accept a lens with no camera, because a lens is a selection", () => {
+    const saved = savedViewSchema.parse({ ...view({}), kind: "lens", lens: {} });
+    expect(saved.lens?.boardId).toBeUndefined();
+    expect(saved.lens?.viewport).toBeUndefined();
+  });
+
+  it("should still read a legacy lens camera so old views keep loading", () => {
+    const legacy = { boardId: "board", viewport: { x: 0, y: 0, zoom: 1 } };
+    expect(savedViewSchema.parse({ ...view({}), lens: legacy }).lens).toEqual(legacy);
+  });
+
+  it("should accept a chart with a measure and a grouping", () => {
+    const saved = savedViewSchema.parse({
+      ...view({}),
+      kind: "render",
+      render: { layout: "bar", measure: { of: "sum", fieldId: "score" }, groupBy: "type" },
+    });
+    expect(saved.render?.layout).toBe("bar");
+    expect(saved.render?.measure).toEqual({ of: "sum", fieldId: "score" });
+    expect(saved.render?.groupBy).toBe("type");
+  });
+
+  it("should accept a chart grouped by one field", () => {
+    const saved = savedViewSchema.parse({
+      ...view({}),
+      render: { layout: "line", groupBy: { field: "status" } },
+    });
+    expect(saved.render?.groupBy).toEqual({ field: "status" });
+  });
+
+  it("should reject a measure that names no field", () => {
+    expect(
+      savedViewSchema.safeParse({ ...view({}), render: { layout: "bar", measure: { of: "sum" } } })
+        .success,
+    ).toBe(false);
+  });
+});
+
+describe("a view in the document", () => {
+  it("should keep its kind, its pins and its presentation", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({
+      name: "Pinned",
+      query: query({ typeIds: ["character"] }),
+      kind: "collection",
+      context: { cardIds: ["c4"] },
+      collection: { mode: "grid" },
+    });
+
+    const reread = workspace.listViews().find((entry) => entry.id === created.id);
+    expect(reread?.kind).toBe("collection");
+    expect(reread?.context).toEqual({ cardIds: ["c4"] });
+    expect(reread?.collection).toEqual({ mode: "grid" });
+  });
+
+  it("should keep a chart's measure and grouping", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({
+      name: "By status",
+      query: query({}),
+      kind: "render",
+      render: { layout: "bar", measure: { of: "count" }, groupBy: "type" },
+    });
+
+    expect(workspace.getView(created.id)?.render).toEqual({
+      layout: "bar",
+      measure: { of: "count" },
+      groupBy: "type",
+    });
+  });
+
+  it("should drop the previous kind's payload when the kind changes", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({
+      name: "Was a lens",
+      query: query({}),
+      kind: "lens",
+      lens: { boardId: "board" },
+    });
+
+    const updated = workspace.updateView(created.id, {
+      kind: "render",
+      render: { layout: "graph-2d" },
+    });
+    expect(updated?.lens).toBeUndefined();
+    expect(workspace.getView(created.id)?.lens).toBeUndefined();
+  });
+
+  it("should forget pins when a view is saved without them", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({
+      name: "Pinned",
+      query: query({}),
+      context: { cardIds: ["c4"] },
+    });
+
+    workspace.updateView(created.id, { context: { cardIds: [] } });
+    expect(workspace.getView(created.id)?.context).toBeUndefined();
   });
 });

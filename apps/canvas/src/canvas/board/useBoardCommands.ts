@@ -6,8 +6,10 @@ import {
 } from "@suite/graph";
 import type { Node } from "@xyflow/react";
 import { useCallback } from "react";
+import { ensureViewType, VIEW_TYPE_ID } from "../../cards/viewCard";
 import { ensureWhiteboardType } from "../../cards/whiteboard";
 import { useUiStore } from "../../store/useUiStore";
+import { useViewsStore } from "../../store/viewsStore";
 import { installBlueprintCard } from "../blueprints/blueprint";
 import {
   type AlignEdge,
@@ -201,6 +203,42 @@ export function useBoardCommands(
     },
     [workspace, activeBoardId, setSelectedNodeIds, startEditing, canCreateContent],
   );
+
+  /**
+   * A view card at the click, with the editor open on the view it will present.
+   *
+   * The card is made first because the reader asked for it where they right-clicked; the view is
+   * written on Save, and a cancelled editor takes the card back with it — a cancelled view leaves
+   * nothing on the board. `viewsStore.pendingCardId` is that link, and the editor is the only place
+   * that reads it.
+   */
+  const createViewAt = useCallback(
+    (position: { x: number; y: number }) => {
+      if (!canCreateContent || !canManageSchema || !activeBoardId) return;
+      ensureViewType(workspace);
+      const card = workspace.createCard({
+        typeId: VIEW_TYPE_ID,
+        boardId: activeBoardId,
+        position,
+      });
+      setSelectedNodeIds([card.id]);
+      useViewsStore.getState().openNew(workspace.listViews().length, card.id);
+    },
+    [workspace, activeBoardId, setSelectedNodeIds, canCreateContent, canManageSchema],
+  );
+
+  /**
+   * Media is added where it can be seen: the library's media list.
+   *
+   * A media card is a card whose body holds a media node, so there is nothing to create until a
+   * file, a link or an embed has been chosen. Opening that list is the door; the card it makes is
+   * placed by dragging it out, which is the flow that already exists.
+   */
+  const openMediaLibrary = useCallback(() => {
+    const state = useUiStore.getState();
+    state.setLibraryTab("media");
+    state.setLibraryOpen(true);
+  }, []);
 
   const createWhiteboardAt = useCallback(
     (position: { x: number; y: number }) => {
@@ -398,6 +436,8 @@ export function useBoardCommands(
     createWhiteboardAt,
     createPortalAt,
     createPortalToNewBoard,
+    createViewAt,
+    openMediaLibrary,
     duplicateCards,
     moveCardToBoard,
     alsoPlaceCardOnBoard,

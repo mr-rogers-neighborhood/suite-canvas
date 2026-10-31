@@ -36,6 +36,7 @@ import { LibraryDrawer, type LibraryItem } from "../library/LibraryDrawer";
 import { BOARD_TYPE_FACET } from "../library/libraryTypes";
 import { BOARD_STARTERS } from "../library/TemplateGallery";
 import { TypeSettingsHost } from "../panels/TypeSettingsHost";
+import { ViewsEditor } from "../panels/ViewsEditor";
 import { pinnedOrder, useBoardPins } from "../session/boardPins";
 import type { ShareSession } from "../session/session";
 import {
@@ -50,6 +51,7 @@ import { StoragePanel } from "../sharing/StoragePanel";
 import { LoadingPlaceholder } from "../shell/LoadingPlaceholder";
 import type { useCanvasStore } from "../store/useCanvasStore";
 import { type LibraryTab, useUiStore } from "../store/useUiStore";
+import { viewsEnabled } from "../views/availability";
 import { AppearanceHost } from "./AppearanceHost";
 import { BlueprintInstallHost } from "./BlueprintInstallHost";
 import { HistoryPanelHost } from "./HistoryPanelHost";
@@ -593,26 +595,13 @@ export function WorkspaceShellView({
                       {"\u2630"}
                     </span>
                   </button>
+                  {/*
+                    Saved views: one icon in the row, after the outline and before search. It is a
+                    development-only door while the surfaces around it settle, which is one flag
+                    (`views/availability.ts`) read here and by the editor.
+                  */}
+                  {viewsEnabled ? <ViewsBar canManage={canManageSchema} /> : null}
                 </span>
-              ) : null}
-              {/*
-                Saved views sit after the board's own controls and before search: a view
-                is a way to look at the board, so it belongs with the outline rather than
-                between the board's name and its pinned tabs.
-
-                They are unfinished, so the bar is a development-only door. The component
-                is complete enough to drive and its specs run against the dev server, but
-                the surface around it is not: an alpha is the wrong place to explain a
-                half-built control.
-
-                `import.meta.env.DEV` is a literal Vite inlines, so a production bundle
-                drops this branch and the component with it. Removing the guard is the
-                whole change when the feature is ready, and `docs/reference/ui.md` says so
-                — an unmounted component with green unit tests is how the bar went missing
-                for a day (5f0a6da6).
-              */}
-              {workspaceSurface && import.meta.env.DEV ? (
-                <ViewsBar canManage={canManageSchema} />
               ) : null}
             </>
           ) : null}
@@ -821,6 +810,9 @@ export function WorkspaceShellView({
         {/* One dialog answers "which media", whether the `/` menu or the toolbar asked.
             It mounts in every profile: a standalone build still adds media locally. */}
         <MediaPickerHost />
+
+        {/* The views editor: a right-hand sheet, so the board can be previewed behind it. */}
+        {workspaceSurface && viewsEnabled ? <ViewsEditor /> : null}
 
         {/* The type a card's title and body declare, previewed before it is written. */}
         {workspaceSurface && canManageSchema ? (

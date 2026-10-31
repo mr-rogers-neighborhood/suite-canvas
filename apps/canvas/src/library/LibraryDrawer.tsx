@@ -14,6 +14,8 @@ import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { useViewsStore } from "../store/viewsStore";
+import { viewsEnabled } from "../views/availability";
 import { LibraryFacets } from "./LibraryFacets";
 import { LibraryHeader } from "./LibraryHeader";
 import { LibraryList } from "./LibraryList";
@@ -117,6 +119,8 @@ export function LibraryDrawer({
   const exitView = useUiStore((state) => state.exitView);
   const setLibraryQuery = useUiStore((state) => state.setLibraryQuery);
   const views = useSavedViews(workspace);
+  const openNewView = useViewsStore((state) => state.openNew);
+  const newView = useCallback(() => openNewView(views.length), [openNewView, views.length]);
   const activeView = views.find((view) => view.id === activeViewId);
   const [activeResult, setActiveResult] = useState(0);
   /**
@@ -571,6 +575,7 @@ export function LibraryDrawer({
         selecting={selecting}
         onToggleSelecting={toggleSelecting}
         onManageTypes={onManageTypes}
+        onNewView={viewsEnabled ? newView : undefined}
         onCreateInInbox={onCreateInInbox}
         trashCount={trash.length}
         onEmptyTrash={onEmptyTrash}

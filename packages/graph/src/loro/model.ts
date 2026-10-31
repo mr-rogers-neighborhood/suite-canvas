@@ -13,7 +13,7 @@ import {
   type SubField,
   type Tag,
 } from "../schema.js";
-import type { ViewQuery } from "../views.js";
+import type { ViewCollection, ViewKind, ViewLens, ViewQuery, ViewRender } from "../views.js";
 
 /**
  * Owns the public model of the workspace document: the change record observers receive and
@@ -187,4 +187,22 @@ export interface CreateViewInput {
   /** Defaults to the end of the list. */
   position?: number;
   query: ViewQuery;
+  /** How the result is presented; absent reads as a lens, as it always has. */
+  kind?: ViewKind;
+  /** Cards pulled in by hand, beside the query's rule. */
+  context?: { cardIds: string[] };
+  lens?: ViewLens;
+  collection?: ViewCollection;
+  render?: ViewRender;
+}
+
+/** What `updateView` may replace. Every field is whole: a view is one saved record. */
+export interface UpdateViewInput {
+  name?: string;
+  query?: ViewQuery;
+  kind?: ViewKind;
+  context?: { cardIds: string[] };
+  lens?: ViewLens;
+  collection?: ViewCollection;
+  render?: ViewRender;
 }

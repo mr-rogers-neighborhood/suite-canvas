@@ -18,10 +18,18 @@ import type { BoardMenuContext } from "./types";
  * A row renders its own items because the label and the target of a verb depend on what
  * it is acting on; the table still owns the order and the grouping.
  */
-export type MenuGroup = "appearance" | "structure" | "layout" | "transfer" | "share" | "danger";
+export type MenuGroup =
+  | "appearance"
+  | "create"
+  | "structure"
+  | "layout"
+  | "transfer"
+  | "share"
+  | "danger";
 
 const GROUP_ORDER: readonly MenuGroup[] = [
   "appearance",
+  "create",
   "structure",
   "layout",
   "transfer",
@@ -124,6 +132,29 @@ const appearanceRow: EntityMenuRow = {
 };
 
 const canvasRows: EntityMenuRow[] = [
+  {
+    id: "new-view",
+    group: "create",
+    kinds: ["canvas"],
+    render: (ctx) => {
+      // A view is workspace configuration as well as a card, so both capabilities are required:
+      // a row that made a card nobody could point at a view would be a trap.
+      if (!ctx.canCreateContent || !ctx.canManageSchema) return [];
+      const position = ctx.menu.flowPosition ?? { x: 0, y: 0 };
+      return [{ label: "New view", onSelect: () => ctx.createViewAt(position) }];
+    },
+  },
+  {
+    id: "new-media",
+    group: "create",
+    kinds: ["canvas"],
+    render: (ctx) => {
+      if (!ctx.canCreateContent) return [];
+      // Media is added in one place: the library's media list, where a file, a link or an embed is
+      // chosen and the card that carries it is made. The board has no card body to put one in.
+      return [{ label: "New media…", onSelect: () => ctx.openMediaLibrary() }];
+    },
+  },
   {
     id: "new-card",
     group: "structure",

@@ -8,6 +8,7 @@ import {
 import { useMemo } from "react";
 import { BoardMiniature } from "../canvas/BoardMiniature";
 import { boardMiniature } from "../canvas/portalMiniature";
+import { ViewChart } from "./ViewChart";
 
 export interface ViewFigureProps {
   view: SavedView | undefined;
@@ -59,7 +60,14 @@ export function ViewFigure({ view, workspace, caption, className }: ViewFigurePr
             mode={view.collection?.mode}
           />
         ) : null}
-        {kind === "render" ? <RenderFigure workspace={workspace} cardIds={result.cardIds} /> : null}
+        {kind === "render" && (view.render?.layout ?? "graph-2d") === "graph-2d" ? (
+          <RenderFigure workspace={workspace} cardIds={result.cardIds} />
+        ) : null}
+        {kind === "render" && (view.render?.layout ?? "graph-2d") !== "graph-2d" ? (
+          // A chart is the same renderer the presentation surface uses, so a card, an embed and the
+          // full view never disagree about what a chart is.
+          <ViewChart view={view} workspace={workspace} />
+        ) : null}
       </div>
       <p className="shrink-0 truncate text-[10px] text-[var(--ink-muted)]">
         {caption ?? view.name} · {String(result.cardIds.length)}

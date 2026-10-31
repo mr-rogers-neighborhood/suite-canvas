@@ -9,10 +9,12 @@ import { EdgeDescriptionInput } from "../EdgeDescription";
 import { LibraryDropPreview } from "../PeerLibraryDragLayer";
 import { PlaceStackCursor } from "../PlaceStackCursor";
 import { PortalTransitionLayer } from "../PortalTransitionLayer";
+import { LensStrip } from "./LensStrip";
 import { ThreadLinkPreview } from "./ThreadLinkPreview";
 import type { useBoardLinks } from "./useBoardLinks";
 import type { useBoardProjection } from "./useBoardProjection";
 import type { useBoardUi } from "./useBoardUi";
+import { ViewPresentation } from "./ViewPresentation";
 
 type BoardOverlaysProps = {
   ui: ReturnType<typeof useBoardUi>;
@@ -60,6 +62,8 @@ export function BoardOverlays({ ui, projection, links, menuItems }: BoardOverlay
         <NudgeHint count={selectedNodeIds.length} lifted={selectedNodeIds.length > 1} />
       ) : null}
       <DropOffer />
+      <LensStrip />
+      <ViewPresentation />
       {/* Explain's gathered context lives in the handbook when this build has one, and stands
           on its own over the board when it does not. */}
       {handbookEnabled ? null : <ExplainPanel />}

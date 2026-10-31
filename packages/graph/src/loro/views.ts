@@ -1,8 +1,8 @@
 import { isMap, readIdSet, readNumber, readString, writeIdSet } from "../records/values.js";
-import { type SavedView, savedViewSchema, type ViewQuery } from "../views.js";
+import { type SavedView, savedViewSchema } from "../views.js";
 import { STRUCT_ORIGIN } from "./constants.js";
 import type { DocContext } from "./context.js";
-import type { CreateViewInput } from "./model.js";
+import type { CreateViewInput, UpdateViewInput } from "./model.js";
 
 /**
  * Owns saved views: the named queries kept beside the boards they read, and the
@@ -45,6 +45,13 @@ export function viewsMethods(ctx: DocContext) {
             ? { sorts: query.get("sorts") }
             : {}),
         },
+        // Everything the view carries beyond its query. Absent fields stay absent, so a view
+        // written before kinds and pins existed still reads as the lens it always was.
+        ...(fields.get("kind") !== undefined ? { kind: fields.get("kind") } : {}),
+        ...(fields.get("context") !== undefined ? { context: fields.get("context") } : {}),
+        ...(fields.get("lens") !== undefined ? { lens: fields.get("lens") } : {}),
+        ...(fields.get("collection") !== undefined ? { collection: fields.get("collection") } : {}),
+        ...(fields.get("render") !== undefined ? { render: fields.get("render") } : {}),
       });
       // A hand-edited or corrupt view is skipped, not thrown on: the rest of the
       // document still opens.
@@ -78,6 +85,11 @@ export function viewsMethods(ctx: DocContext) {
         name,
         position: input.position ?? (last ? last.position + 1 : 0),
         query: input.query,
+        ...(input.kind === undefined ? {} : { kind: input.kind }),
+        ...(input.context === undefined ? {} : { context: input.context }),
+        ...(input.lens === undefined ? {} : { lens: input.lens }),
+        ...(input.collection === undefined ? {} : { collection: input.collection }),
+        ...(input.render === undefined ? {} : { render: input.render }),
       });
       ctx.api.views.writeView(view);
       ctx.commit(`${STRUCT_ORIGIN}create-view`);
@@ -88,16 +100,24 @@ export function viewsMethods(ctx: DocContext) {
      * Renames a view and/or replaces its query. The query is a whole record: a
      * view is one saved query, so a facet edit is a new query, not a merge.
      */
-    updateView(id: string, patch: { name?: string; query?: ViewQuery }): SavedView | undefined {
+    updateView(id: string, patch: UpdateViewInput): SavedView | undefined {
       const current = ctx.api.views.getView(id);
       if (!current) return undefined;
       const name = patch.name === undefined ? current.name : patch.name.trim();
       if (!name) throw new Error("A view needs a name");
-      const view = savedViewSchema.parse({
+      // A whole-record replace, and one payload per kind: switching a view from a lens to a render
+      // must not leave the old camera behind to be read by the next client that guesses wrong.
+      const next = {
         ...current,
+        ...patch,
         name,
         query: patch.query ?? current.query,
-      });
+      };
+      const kind = next.kind ?? "lens";
+      if (kind !== "lens") delete next.lens;
+      if (kind !== "collection") delete next.collection;
+      if (kind !== "render") delete next.render;
+      const view = savedViewSchema.parse(next);
       ctx.api.views.writeView(view);
       ctx.commit(`${STRUCT_ORIGIN}update-view`);
       return view;
@@ -152,6 +172,21 @@ export function viewsMethods(ctx: DocContext) {
         const value = view.query[key];
         if (value === undefined || value.length === 0) query.delete(key);
         else query.set(key, value);
+      }
+
+      // Everything past the query. A kind and its payload travel as JSON slots for the same reason
+      // the predicates do: a saved view is one record, and a whole-record replace is its semantics.
+      if (view.kind === undefined) fields.delete("kind");
+      else fields.set("kind", view.kind);
+
+      const pins = view.context?.cardIds ?? [];
+      if (pins.length === 0) fields.delete("context");
+      else fields.set("context", { cardIds: pins });
+
+      for (const key of ["lens", "collection", "render"] as const) {
+        const value = view[key];
+        if (value === undefined) fields.delete(key);
+        else fields.set(key, value);
       }
     },
 

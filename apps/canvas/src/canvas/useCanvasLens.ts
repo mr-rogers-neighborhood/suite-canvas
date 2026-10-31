@@ -3,7 +3,9 @@ import { useEffect, useMemo } from "react";
 import { useSavedViews } from "../chrome/ViewsBar";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { previewView, useViewsStore } from "../store/viewsStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
+import { draftToView } from "../views/draft";
 
 /**
  * The canvas lens: when a saved view is applied, the board keeps every card but
@@ -19,6 +21,10 @@ export interface CanvasLens {
   view: SavedView | null;
   /** Card ids the view selected; empty when there is no lens. */
   cardIds: ReadonlySet<string>;
+  /** Whether everything outside the context fades. Stored as a lens toggle, on by default. */
+  fade: boolean;
+  /** Whether the context is outlined. Stored as a lens toggle, on by default. */
+  outline: boolean;
 }
 
 const NO_IDS: ReadonlySet<string> = new Set();
@@ -29,8 +35,14 @@ export function useCanvasLens(): CanvasLens {
   const activeBoardId = useUiStore((state) => state.activeBoardId);
   const views = useSavedViews(workspace);
   const snapshot = useWorkspaceSnapshot();
+  // The editor's draft is a view with a temporary id, so a preview is the same lens as a saved view —
+  // and it wins while it is on, because the reader is looking at what they are editing.
+  const draft = useViewsStore((state) => previewView(state));
+  const previewed = useMemo(() => (draft === null ? null : draftToView(draft)), [draft]);
 
-  const view = activeViewId === null ? null : (views.find((v) => v.id === activeViewId) ?? null);
+  const view =
+    previewed ??
+    (activeViewId === null ? null : (views.find((v) => v.id === activeViewId) ?? null));
 
   // The query reads the document directly, so what it must depend on are the
   // collections it reads. Depending on the whole snapshot would rebuild the set
@@ -53,10 +65,13 @@ export function useCanvasLens(): CanvasLens {
     snapshot.tags,
   ]);
 
+  const fade = view?.lens?.fade !== false;
+  const outline = view?.lens?.outline !== false;
+
   // Consumers put this in effect dependencies, so its identity must only change
   // when the lens actually changes. A fresh object per render would re-run the
   // node and edge projections forever.
-  return useMemo(() => ({ view, cardIds }), [view, cardIds]);
+  return useMemo(() => ({ view, cardIds, fade, outline }), [view, cardIds, fade, outline]);
 }
 
 /** Whether the lens selected a card. A card with no lens is always "on". */

@@ -19,7 +19,9 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, sync and storage status, **Share** (`ShareAction.tsx`, its own control beside the status pill), the workspace menu, the account slot, the theme toggle |
 | Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history and outline buttons in `app/WorkspaceShellView.tsx` | Home, the open boards with their peer counts, undo, redo, version history and the outline, in one row |
 | Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface, plus the plan wall and the retry for whoever just paid |
-| Views bar | `apps/canvas/src/chrome/ViewsBar.tsx` | Saved views: creating one (including from an unfiltered library), applying one, renaming and deleting one. It sits after the outline toggle and before search. **Development only** (see below) |
+| Views | `apps/canvas/src/chrome/ViewsBar.tsx` | An icon in the nav row, after the outline, opening the saved views: apply, Edit, New view…, rename and delete. **Development only** (see below) |
+| Views editor | `apps/canvas/src/panels/ViewsEditor.tsx` | A right-hand sheet: the saved views, and the Context / Kind / Presentation steps, with the draft applied live |
+| View presentation | `apps/canvas/src/canvas/board/ViewPresentation.tsx` | A collection or a render over the board area, with its count, Edit and a close |
 | Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new sketch, new section, new portal, type settings. The menu itself is `apps/canvas/src/chrome/NewThingMenu.tsx`, shared with the library |
 | Outline rail | `apps/canvas/src/canvas/BoardOutline.tsx` | The active board's section tree, in reading order, with counts and presence. Hidden while the board has no sections |
 | Inspector | `apps/canvas/src/cards/CardInspectorHost.tsx` | The one panel for the selected card or container |
@@ -121,27 +123,47 @@ surface takes `readOnly` from the session, and a viewer's or a selection share's
 A picture inserted on a share, or anywhere without an account session, is kept in this browser only and
 is not visible to a peer until it uploads.
 
-### Saved views are a development-only door
+### Views are a development-only door
 
-`ViewsBar` is rendered behind `import.meta.env.DEV` in `WorkspaceShellView.tsx`, so a production bundle
-drops it and the component with it. The bar itself works: creating, renaming, deleting, applying, and
-placing a view's results. Its specs run too, because the e2e run serves a dev build. What is unfinished
-is the surface around it: the overlay cannot yet author a lens, a collection or a render, and an alpha
-is the wrong place to explain a half-built control.
+The views icon in the nav row and the editor behind it are rendered behind one flag,
+`apps/canvas/src/views/availability.ts`, the same arrangement as the handbook's. `import.meta.env.DEV`
+is a literal Vite inlines, so a production bundle drops both branches and the components with them.
+Removing the flag is the whole change when the surfaces settle, and the release that does it should say
+so in its notes.
 
-**Creating one is always offered.** The menu's `New view…` row saves whatever the library shows,
-including an unfiltered list, because "all cards" is a legitimate query to start from and a create
-control that appears only after you have filtered is a control nobody finds. The name starts from the
-search text when there is one. The active view is a chip in the library header whose `×` returns the
-reader to the unfiltered list, so there is a way back from everything this bar can apply.
+**What a view is now.** A saved view is a *context* plus a presentation. The context is a query and a
+list of hand-picked cards (`context.cardIds`), unioned by `resolveContext`, which also reports the boards
+the context touches, the cards that are only in the inbox and the pins that no longer resolve. The
+presentation is one of three kinds, a lens, a collection or a render, and never changes which cards are
+in the view.
 
-The guard is the whole switch. Removing it publishes the bar, and the release that does it should say so
-in its notes.
+**The editor is a sheet**, not a modal: `views/ViewsEditor.tsx` mounts on the right so the board stays
+visible and usable, because the draft is applied while it is edited. It has a rail of saved views and
+three stacked steps (Context, Kind, Presentation) and a footer with the name, a dirty chip, Cancel and
+Save (plus Save as copy when editing). `ViewsEditor` is the only surface that writes a view.
 
-**Why this note exists.** The bar was unmounted once already, by accident. `5f0a6da6` replaced the tab
-strip with the board switcher and deleted the app's only `<ViewsBar>`. Every unit test kept
-passing, because they render the component directly. The e2e specs noticed a day later. A component
-nobody mounts is a component nobody has; when one is deliberately un-mounted, say so here.
+**The draft is live.** A draft is a `SavedView` with a temporary id (`views/draft.ts`), so the lens, the
+figures and the presentation consume it unchanged, because `useCanvasLens` reads the preview before the applied
+view, which makes a lens fade and outline the board on every keystroke. `Live preview` toggles that off;
+closing the sheet leaves the draft applied and labelled `Preview · name`, and nothing is written until
+Save. Cancel discards the draft and re-applies whatever was applied before.
+
+**A lens is a selection, not a camera.** `useBoardNodes` dims what is outside the context and outlines
+what is inside, both as lens toggles that default to on. `canvas/board/LensStrip.tsx` names the view,
+counts the cards on this board, and offers a chip per board the context touches: a context that spans
+boards navigates rather than guesses. Cards in the inbox are counted and never drawn, because they have
+no position to outline.
+
+**Collections and renders are presented, not edited.** `canvas/board/ViewPresentation.tsx` takes the
+board area with the view's name, count, Edit and a close, and draws a table, a grid, a list, a graph or
+a chart. Every cell is plain text: ADR-0043 allows editing cells in a database, and that is deliberately
+not here yet rather than a control that would not save. Charts are `cards/ViewChart.tsx` over pure
+series geometry (`cards/viewChart.ts`), and the same renderer draws a view card, an embed, the editor's
+preview and the presentation.
+
+**View cards.** `New view` in the canvas context menu places a view card at the press and opens the
+editor on it; cancelling takes the card back. The library's Views tab has its own `New view`, and a
+card's row menu edits the view it presents.
 
 Rows share one action menu, opened from the `⋯` button or a right-click, and one piece of state (`rowMenu`), so both entry points cannot show different actions for the same row. A card row can be dragged onto the canvas: the hold and drop run through `useLibraryHold`, and the drop places the card at the pointer instead of at the drawer.
 

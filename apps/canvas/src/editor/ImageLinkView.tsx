@@ -1,5 +1,6 @@
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { useState } from "react";
+import { IconGlyph } from "../icons/IconGlyph";
 import { imageLinkProblem, imageLinkSrc } from "./imageLinkNode";
 
 export interface ImageLinkFrameProps {
@@ -50,8 +51,9 @@ export function ImageLinkFrame({
         className="image-link-placeholder"
         data-image-link-placeholder={src === null ? "invalid" : "broken"}
       >
-        <span className="image-link-placeholder-title" aria-hidden="true">
-          {"\u{1f5bc}"} Image link
+        <span className="image-link-placeholder-title">
+          <IconGlyph icon="lucide:image" size={13} />
+          Image link
         </span>
         <span className="image-link-url">{src ?? rawSrc ?? "no usable address"}</span>
         <span className="image-link-placeholder-note">

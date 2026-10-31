@@ -1,13 +1,19 @@
 ## [Unreleased]
 
+### Changed
+
+- The pin on a card, the media picker's rows and the media placeholders draw the theme's icons instead of emoji. They
+  are the card's own ink, take the accent only through `aria-pressed`, and the picker's rows are a list of kinds rather
+  than a row of stickers. A new media card's type carries `lucide:image` as its icon, so its type chip matches.
+
 ### Added
 
 - Reading a book is quieter about its own machinery: a mention of a card shows the card's name, and a passage's
   mention shows its words, both without focusing the card first.
 - The reader has its own appearance: **text size**, **width** and a **page** (the app's, sepia, or dim). They are
   device preferences beside the canvas knobs in the appearance panel, and they sink into a book and nowhere else.
-- A book remembers how far down the chapter you were, not just which chapter; the contents list marks the one you are
-  in, and a rule under the header is your place in the whole book.
+- A book remembers how far down the chapter you were as well as which chapter; the contents list marks the one you
+  are in, and a rule under the header is your place in the whole book.
 - The reader turns pages with the keyboard: left/right, space/shift-space, home/end. The space bar stays with a live
   selection.
 - A highlight's menu can **copy with its source**: the passage, then the author and the book.

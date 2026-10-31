@@ -2343,6 +2343,9 @@ html[data-inspector-linking] .card-inspector {
 }
 
 .image-link-placeholder-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--ink);
   font-weight: 500;
 }

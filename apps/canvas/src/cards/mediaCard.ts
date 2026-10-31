@@ -32,7 +32,9 @@ export function ensureMediaType(workspace: WorkspaceDocument): CardType {
     id: MEDIA_TYPE_ID,
     name: MEDIA_TYPE_NAME,
     pluralName: MEDIA_TYPE_PLURAL,
-    glyph: "\u{1f5bc}",
+    // The icon is what a card's type chip draws; the glyph is only the fallback for a set that failed to load.
+    icon: "lucide:image",
+    glyph: "\u25a3",
   });
 }
 

@@ -37,7 +37,7 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Chapter surface | `apps/canvas/src/reader/ReaderChapter.tsx` | The one `dangerouslySetInnerHTML` site after sanitising, and the painter that wraps a passage in focusable marks, one per text node |
 | Book card | `apps/canvas/src/cards/BookCardFace.tsx` | The card on the canvas: the cover filling it, the title, author and chapter count, and **Read** |
 | Book block | `apps/canvas/src/editor/BookView.tsx` | The block itself, for a card that holds a book among other content: the same cover, details and **Read** |
-| Media picker | `apps/canvas/src/editor/MediaPickerHost.tsx` | The one table of media kinds, applied to an editor target or a board target |
+| Media picker | `apps/canvas/src/editor/MediaPickerHost.tsx` | The one table of media kinds, applied to an editor target or a board target. Each row's icon is a reference from the bundled set, in the picker's own ink |
 | Handbook | `apps/canvas/src/handbook/HandbookBubble.tsx` | The contextual article list, the article, its spotlight and the feedback form, in one shell float. **Shut** (see below) |
 | Account | `apps/canvas/src/auth/SignInEntry.tsx` and `AccountPanel.tsx` | Sign in or the account menu, and one dialog for the account, members, devices and the plan |
 | Launcher | `apps/canvas/src/launcher/WorkspaceLauncher.tsx` | Recents with rename, export and delete, import, and the same account entry the title bar has |

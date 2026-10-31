@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { ensureMediaType, MEDIA_TYPE_ID } from "../cards/mediaCard";
 import { useFocusTrap } from "../dialogs/useFocusTrap";
+import { IconGlyph } from "../icons/IconGlyph";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { openImageUrlPrompt } from "./imageUrlPrompt";
@@ -14,7 +15,8 @@ interface MediaChoice {
   id: string;
   title: string;
   hint: string;
-  glyph: string;
+  /** An icon reference, drawn in the picker's own ink: the rows are a list of kinds, not a row of stickers. */
+  icon: string;
   /** The answer, applied wherever the target says it lands. */
   run: (target: MediaTarget) => void;
 }
@@ -86,7 +88,7 @@ export const MEDIA_CHOICES: readonly MediaChoice[] = [
     id: "image",
     title: "Image",
     hint: "Upload a picture from your device",
-    glyph: "\u{1f5bc}",
+    icon: "lucide:image",
     run: (target) =>
       pickFiles(
         target,
@@ -99,7 +101,7 @@ export const MEDIA_CHOICES: readonly MediaChoice[] = [
     id: "video",
     title: "Video",
     hint: "Upload a video from your device",
-    glyph: "\u{1f3ac}",
+    icon: "lucide:film",
     run: (target) =>
       pickFiles(target, "video/mp4,video/webm,video/ogg,video/quicktime", true, "Attached video"),
   },
@@ -107,7 +109,7 @@ export const MEDIA_CHOICES: readonly MediaChoice[] = [
     id: "book",
     title: "Book",
     hint: "Upload an .epub and read it on the board",
-    glyph: "\u{1f4d6}",
+    icon: "lucide:book-open",
     run: (target) => pickFiles(target, "application/epub+zip,.epub", false, "Untitled book"),
   },
   {
@@ -116,7 +118,7 @@ export const MEDIA_CHOICES: readonly MediaChoice[] = [
     // "External" is the word that separates this from `embed`, which shows a card
     // from this workspace. The two live one menu apart, so they have to read apart.
     hint: "Embed an external video by link",
-    glyph: "\u25b6",
+    icon: "lucide:youtube",
     run: (target) => {
       const url = window.prompt(
         "Enter a YouTube video URL (e.g. https://www.youtube.com/watch?v=...)",
@@ -139,7 +141,7 @@ export const MEDIA_CHOICES: readonly MediaChoice[] = [
     id: "link",
     title: "Image link",
     hint: "Embed an external picture by URL, with no upload",
-    glyph: "\u{1f517}",
+    icon: "lucide:link",
     run: (target) => {
       // A URL needs a caret to answer at. On the board there is none, so the prompt is the browser's, which is the
       // honest difference between the two targets rather than a second dialog that pretends otherwise.
@@ -205,8 +207,8 @@ export function MediaPickerHost() {
                 onClick={() => choose(choice)}
                 className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-black/5 dark:hover:bg-white/10"
               >
-                <span aria-hidden="true" className="w-4 shrink-0 text-center text-sm">
-                  {choice.glyph}
+                <span aria-hidden="true" className="mt-0.5 w-4 shrink-0 text-[var(--ink-muted)]">
+                  <IconGlyph icon={choice.icon} size={14} />
                 </span>
                 <span className="min-w-0">
                   <span className="block text-xs font-medium text-[var(--ink)]">

@@ -685,7 +685,7 @@ export function NodeCard({
             title={pinned ? "Unpin from the shell" : "Pin beside the board while you work"}
             data-testid="card-pin"
             data-pinned={pinned ? "true" : "false"}
-            className={`nodrag shrink-0 rounded px-1 text-[12px] leading-none hover:bg-black/5 dark:hover:bg-white/10 ${
+            className={`nodrag shrink-0 rounded px-1 py-0.5 leading-none hover:bg-black/5 dark:hover:bg-white/10 ${
               pinned ? "text-[var(--accent)]" : "text-[var(--ink-muted)]"
             }`}
             onClick={(event) => {
@@ -693,7 +693,9 @@ export function NodeCard({
               onTogglePin();
             }}
           >
-            {"\u{1f4cc}"}
+            {/* The theme's own icon, in the card's ink: an emoji pin was the only coloured thing in a header made of
+                hairline controls, and it took the accent colour to say what `aria-pressed` already says. */}
+            <IconGlyph icon="lucide:pin" size={12} className="inline-block" />
           </button>
         ) : null}
 

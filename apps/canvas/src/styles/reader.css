@@ -439,8 +439,8 @@
   object-position: top center;
 }
 
+/* The book's open-book mark, drawn as the theme's icon rather than as an emoji in the card's own colour. */
 .book-card-placeholder {
-  font-size: 34px;
   opacity: 0.5;
 }
 

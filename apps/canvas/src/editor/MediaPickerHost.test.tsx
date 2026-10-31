@@ -60,6 +60,23 @@ describe("the media picker", () => {
     }
   });
 
+  it("should draw each kind as the theme's icon rather than as an emoji", async () => {
+    // The rows are a list of kinds in the app's own ink: an emoji per row was the only place a picker agreed with a
+    // system font instead of with the theme. The bundled set resolves a tick after the first paint, so this waits for
+    // the glyph rather than asserting it synchronously.
+    openEditor();
+    render(<MediaPickerHost />);
+
+    const rows = [...document.querySelectorAll('[data-testid^="media-choice-"]')];
+    expect(rows).toHaveLength(5);
+    await vi.waitFor(() => {
+      for (const row of rows) {
+        expect(row.querySelector("svg")).not.toBeNull();
+        expect(row.textContent ?? "").not.toMatch(/[\u{1f300}-\u{1faff}\u{2600}-\u{27bf}]/u);
+      }
+    });
+  });
+
   it("should close once the choice is made", () => {
     openEditor();
     render(<MediaPickerHost />);

@@ -9,6 +9,7 @@ import {
 } from "loro-crdt";
 import { type CSSProperties, Fragment, type ReactNode, useEffect, useState } from "react";
 import { ATTACHMENT_ID_PATTERN, attachmentUrl } from "../editor/attachmentNode";
+import { IconGlyph } from "../icons/IconGlyph";
 import { BODY_PLACEHOLDER } from "./CardBodyEditor";
 import type { MentionLabel } from "./mentionLabel";
 
@@ -217,7 +218,7 @@ function renderMedia(block: LoroMap, key: string, nodeName: string): ReactNode {
         data-media-book="epub"
         className="attachment-chip my-1 inline-flex items-center gap-1.5 rounded border border-[var(--hairline,#e2e8f0)] bg-black/5 dark:bg-white/5 px-2 py-0.5 text-xs text-[var(--ink-muted)]"
       >
-        <span aria-hidden="true">{"\u{1f4d6}"}</span>
+        <IconGlyph icon="lucide:book-open" size={12} />
         <span className="truncate max-w-[200px]">{name || "Book"}</span>
       </div>
     );
@@ -232,7 +233,7 @@ function renderMedia(block: LoroMap, key: string, nodeName: string): ReactNode {
         data-media-missing={kind}
         className="attachment-chip my-1 inline-flex items-center gap-1 rounded border border-[var(--hairline,#e2e8f0)] bg-black/5 dark:bg-white/5 px-2 py-0.5 text-xs text-[var(--ink-muted)]"
       >
-        <span aria-hidden="true">{kind === "video" ? "\u{1f3ac}" : "\u{1f5bc}"}</span>
+        <IconGlyph icon={kind === "video" ? "lucide:film" : "lucide:image"} size={12} />
         <span className="truncate max-w-[200px]">
           {name || (kind === "video" ? "Video" : "Media")}
         </span>

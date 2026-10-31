@@ -295,4 +295,19 @@ describe("NodeCard organization actions", () => {
     expect(screen.queryByRole("menuitem", { name: "Duplicate" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Move to board" })).not.toBeInTheDocument();
   });
+
+  it("draws the pin as the theme's icon, in the card's own ink", async () => {
+    // The header is hairline controls; an emoji pin was the one thing in it drawn by the system font, and it took the
+    // accent colour to say what `aria-pressed` already says.
+    const onTogglePin = vi.fn();
+    renderCard({ onTogglePin, pinned: false });
+
+    const pin = screen.getByTestId("card-pin");
+    expect(pin.textContent ?? "").not.toMatch(/[\u{1f300}-\u{1faff}]/u);
+    await vi.waitFor(() => expect(pin.querySelector("svg")).not.toBeNull());
+    expect(pin).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(pin);
+    expect(onTogglePin).toHaveBeenCalled();
+  });
 });

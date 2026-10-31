@@ -648,7 +648,8 @@ function annotationItems(
         {
           id: annotation.id,
           title: words.length <= 70 ? words : `${words.slice(0, 67)}…`,
-          glyph: "\u{1f4d6}",
+          // A quotation mark, not a book: an annotation is a passage, and the list draws glyphs as text.
+          glyph: "\u201c",
           kind: "annotation" as const,
           annotationId: annotation.id,
         },

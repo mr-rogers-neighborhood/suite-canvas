@@ -1,6 +1,7 @@
 import type { Card } from "@suite/graph";
 import { useEffect } from "react";
 import { MEDIA_NODE_NAME } from "../editor/mediaNode";
+import { IconGlyph } from "../icons/IconGlyph";
 import { bookEntryOf, loadBook, retryBook, useBookMeta } from "../reader/bookMeta";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
@@ -39,8 +40,10 @@ export function BookCardFace({ card }: { card: Card }) {
     <div className="book-card" data-testid="book-card-face">
       <div className="book-card-art">
         {ready?.coverUrl === null || ready === null ? (
+          // A box that is there before the icon is: the bundled set resolves a tick after the first paint, and a
+          // tile that appears late is a card that changed shape.
           <span aria-hidden="true" className="book-card-placeholder">
-            {"\u{1f4d6}"}
+            <IconGlyph icon="lucide:book-open" size={30} />
           </span>
         ) : (
           // The cover is bytes from the book's own archive, held as an object URL: nothing is fetched from anywhere,

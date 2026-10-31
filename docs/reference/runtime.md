@@ -145,6 +145,9 @@ A revoked or unknown token renders `ShareUnavailable` instead of the shell.
 
 Images are nodes that name bytes stored beside the document. An `attachment` inline atom holds `{ id, mime, width, height, name, bytes }`. The same allowlist lives in `publishValidation.ts`, and `editorSchemaContract.test.ts` keeps schema and allowlist aligned. A projection copies the document, so bytes in a node would put a private copy of every image in every share link.
 
+The allowlist is images, video and `application/epub+zip`. A book is bytes like an image: the relay stores it and
+never renders it, so the same `nosniff` and `inline` rules apply and `.epub` is the name the download carries.
+
 `apps/collab-server/src/store/attachments.ts` owns the bytes: `put`, `get`, `delete` and `usage` over one table (`id`, `workspace_id`, `mime`, `bytes`, `size`, `created_at`) in `SUITE_ATTACHMENTS_DB`. The interface is the seam for object storage.
 
 `apps/collab-server/src/http/attachmentHttp.ts` serves `/api/attachments`.

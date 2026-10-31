@@ -30,6 +30,9 @@ export const ATTACHMENT_MIME_TYPES = [
   "video/webm",
   "video/ogg",
   "video/quicktime",
+  // An EPUB, which is a zip of XHTML. Served with `nosniff` and `inline` like every other type: a browser
+  // does not render one, so this is a file the app reads rather than a page the relay hosts.
+  "application/epub+zip",
 ] as const;
 
 export type AttachmentMime = (typeof ATTACHMENT_MIME_TYPES)[number];

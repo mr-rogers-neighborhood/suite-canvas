@@ -55,6 +55,9 @@ export type LibraryTab =
   | "sketches"
   | "portals"
   | "media"
+  // Cards promoted from a highlight. A tab rather than only a facet for the same reason sketches have one:
+  // "what have I marked" is a question, and a facet answers it in a filter bar the reader has to read first.
+  | "annotations"
   | "trash";
 
 /**

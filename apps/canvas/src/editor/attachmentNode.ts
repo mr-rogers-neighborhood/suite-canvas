@@ -15,6 +15,9 @@ export const ATTACHMENT_MIME_TYPES = [
   "video/webm",
   "video/ogg",
   "video/quicktime",
+  // A book. The relay never renders one; it stores the bytes and the reader reads them, which is the same
+  // contract an image has.
+  "application/epub+zip",
 ] as const;
 
 export type AttachmentMime = (typeof ATTACHMENT_MIME_TYPES)[number];

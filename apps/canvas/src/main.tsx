@@ -31,6 +31,7 @@ import "./styles/purpose.css";
 import "./styles/cursor.css";
 // Registering the composing field kinds (rating, group, list) is a side effect
 // of importing them; the panel finds them through the registry (ADR-0057).
+import "./field/annotationKind";
 import "./field/compositeKinds";
 
 // Apply the stored theme before first paint to avoid a flash of the wrong mode.

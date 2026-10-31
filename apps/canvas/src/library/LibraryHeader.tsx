@@ -18,6 +18,7 @@ const TABS: Array<{ id: LibraryTab; label: string }> = [
   { id: "sketches", label: "Sketches" },
   { id: "portals", label: "Portals" },
   { id: "media", label: "Media" },
+  { id: "annotations", label: "Annotations" },
   { id: "trash", label: "Trash" },
 ];
 

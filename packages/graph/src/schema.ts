@@ -29,6 +29,12 @@ export const fieldKinds = [
   "rating",
   "group",
   "list",
+  /**
+   * A link to a highlight in a source. Its value is the closed shape `{ annotationId }` and it is written by
+   * the app rather than by a reader: a card that could rewrite its own quote would disagree with the mark it
+   * came from, so the anchor stays the truth and the card points at it.
+   */
+  "annotation",
 ] as const;
 export const sectionColors = ["slate", "blue", "green", "amber", "rose", "violet"] as const;
 /** What a link endpoint points at. Boards and sections are identities, not types. */

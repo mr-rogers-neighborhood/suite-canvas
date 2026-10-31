@@ -88,6 +88,11 @@ export function propertyValueError(
       }
       return null;
     }
+    case "annotation": {
+      // A closed shape rather than a free value: the card points at a highlight and never carries a copy of it.
+      const id = annotationIdOf(value);
+      return id === null ? `Field "${field.name}" expects an annotation id` : null;
+    }
     // Composing kinds validate through the shared rules, so a group, a list and
     // a rating refuse the same values here and in the writer (ADR-0057).
     case "rating":
@@ -189,6 +194,8 @@ const UNAVAILABLE_CARD = "Unavailable card";
 const UNAVAILABLE_BOARD = "Unavailable board";
 /** Neutral label for a live board whose name the caller did not resolve. */
 const BOARD = "Board";
+/** What an annotation field says when the surface has no highlight to show. */
+const ANNOTATION = "Highlight";
 const NOT_SHARED = "Not shared";
 /** `displayTitle`'s fallback, never a title a share should call its own. */
 const UNTITLED = "Untitled";
@@ -275,6 +282,14 @@ export function readPropertyValue(
       }
       return shown(options.boardName?.trim() || BOARD);
     }
+    case "annotation": {
+      // What a highlight *says* lives on the annotation, not on the card, so a surface that has the record
+      // supplies the words and this is the fallback: a card in a share that cannot resolve the mark says so
+      // rather than showing an empty field.
+      const id = annotationIdOf(value);
+      if (id === null) return shown(empty);
+      return shown(options.unavailable?.trim() || ANNOTATION);
+    }
     case "rating":
     case "group":
     case "list": {
@@ -337,6 +352,10 @@ export function isPropertyValueEmpty(
         options.boardPresence === "missing" ||
         (options.boardName?.trim().length ?? 0) === 0
       );
+    case "annotation":
+      // A highlight this surface cannot resolve counts as unanswered, which is the same rule a dangling card
+      // follows: the value may still be stored, and the field reads empty.
+      return annotationIdOf(value) === null;
     case "rating":
       return !(typeof value === "number" && Number.isFinite(value));
     case "group":
@@ -347,4 +366,16 @@ export function isPropertyValueEmpty(
     case "date":
       return typeof value !== "string" || value.trim().length === 0;
   }
+}
+
+/** The one field of an annotation value, or null when the value is not one. */
+export function annotationIdOf(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const id = (value as Record<string, unknown>).annotationId;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+/** The stored shape of an `annotation` field's value. Closed on purpose: one key, one id. */
+export function annotationValue(annotationId: string): { annotationId: string } {
+  return { annotationId };
 }

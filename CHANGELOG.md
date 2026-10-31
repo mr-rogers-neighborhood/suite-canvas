@@ -1,5 +1,31 @@
 ## [Unreleased]
 
+### Added
+
+- Reading a book on the canvas: an `.epub` dropped onto a board becomes a card, and the reader draws it a
+  chapter at a time in the app's own type, with the book's contents in the header. No EPUB dependency: the ZIP
+  reader the vault importer already had now lives in `archive/zip.ts` and both use it, and the container,
+  package, spine and contents are read on top of it.
+- Highlights: select a sentence, press a colour, and the passage is marked. The mark is stored as the words
+  themselves, so it survives a resize, a theme change and the same book at another width. Four styles to start,
+  shared across every medium, and a style may name a template.
+- Pressing a highlight makes an ordinary card that knows where it came from: a read-only `Highlight` property
+  points at the passage, the title comes from the first sentence, and the library's new **Annotations** tab is
+  every card that came from a mark. A comment on a highlight is the next block in that card's body, because the
+  card is a normal card.
+- `application/epub+zip` joins the attachment allowlist on both sides, with the extension its download name uses.
+- A media block this build has no renderer for now says so instead of drawing a broken image.
+
+### Changed
+
+- The annotation model is written medium-neutral from the first day: the anchor is a `quote`, `page` or `time`
+  union and a medium registers itself, so a PDF page and a span of video are a module each rather than a schema
+  change. Fake PDF and video media in a test guard that.
+- The projection's container copier carries plain JSON values. It dropped them silently, so a share lost every
+  payload stored as an object.
+
+## [Unreleased]
+
 ### Changed
 
 - Views and the handbook are shut in every build, not only in production. `views/availability.ts` and
@@ -7,6 +33,32 @@
   view and the library's Views tab gained the guard they were missing. Nothing is deleted: saved views and
   view cards in an existing document still open, the handbook's articles still ship to the docs site, and
   `explain` answers in the floating panel again.
+
+## [Unreleased]
+
+### Added
+
+- Reading a book on the canvas: an `.epub` dropped onto a board becomes a card, and the reader draws it a
+  chapter at a time in the app's own type, with the book's contents in the header. No EPUB dependency: the ZIP
+  reader the vault importer already had now lives in `archive/zip.ts` and both use it, and the container,
+  package, spine and contents are read on top of it.
+- Highlights: select a sentence, press a colour, and the passage is marked. The mark is stored as the words
+  themselves, so it survives a resize, a theme change and the same book at another width. Four styles to start,
+  shared across every medium, and a style may name a template.
+- Pressing a highlight makes an ordinary card that knows where it came from: a read-only `Highlight` property
+  points at the passage, the title comes from the first sentence, and the library's new **Annotations** tab is
+  every card that came from a mark. A comment on a highlight is the next block in that card's body, because the
+  card is a normal card.
+- `application/epub+zip` joins the attachment allowlist on both sides, with the extension its download name uses.
+- A media block this build has no renderer for now says so instead of drawing a broken image.
+
+### Changed
+
+- The annotation model is written medium-neutral from the first day: the anchor is a `quote`, `page` or `time`
+  union and a medium registers itself, so a PDF page and a span of video are a module each rather than a schema
+  change. Fake PDF and video media in a test guard that.
+- The projection's container copier carries plain JSON values. It dropped them silently, so a share lost every
+  payload stored as an object.
 
 ## [Unreleased]
 

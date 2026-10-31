@@ -62,7 +62,7 @@ export function cardBodySchemaExtensions({
     // One media block: the only thing new content writes. The four above stay
     // registered so documents that predate it keep rendering, and
     // `migrateLegacyMedia` converts one to this the first time its body is edited.
-    Media,
+    Media.configure({ cardId }),
     // A card shown inside a card: a figure with its own size, resolved as data before
     // anything draws, so a cycle stops at one level instead of rendering forever.
     Embed,

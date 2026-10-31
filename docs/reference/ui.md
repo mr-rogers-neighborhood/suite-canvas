@@ -31,6 +31,7 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Library drawer | `apps/canvas/src/library/LibraryDrawer.tsx` | Every card, board and trashed record, with search, facets and **Add new**, which opens the dock's own menu from the top of the list |
 | Command palette | `apps/canvas/src/command/CommandPalette.tsx` | Navigation and actions from one query |
 | Presence | `apps/canvas/src/presence/` and `apps/canvas/src/cursor/` | Peer cursors, name tags, avatars and the status cursor |
+| Book reader | `apps/canvas/src/reader/BookReader.tsx` | An EPUB on a card: contents, one chapter at a time, the highlight palette, and a press that promotes a highlight to a card |
 | Handbook | `apps/canvas/src/handbook/HandbookBubble.tsx` | The contextual article list, the article, its spotlight and the feedback form, in one shell float. **Shut** (see below) |
 | Account | `apps/canvas/src/auth/SignInEntry.tsx` and `AccountPanel.tsx` | Sign in or the account menu, and one dialog for the account, members, devices and the plan |
 | Launcher | `apps/canvas/src/launcher/WorkspaceLauncher.tsx` | Recents with rename, export and delete, import, and the same account entry the title bar has |
@@ -297,6 +298,22 @@ documentation does not need the surface switched on. Turning the bubble back on 
 Feedback is the second pane. `feedback/FeedbackComposer.tsx` is the form the launcher already used,
 now shared: the handbook files a message against `handbook:<articleId>` with the article's title
 prepended, so a report about a paragraph arrives saying which paragraph.
+
+## Reading a book
+
+A book is a `media` block with `kind: "epub"`, so it takes the path every attachment takes: this browser's copy
+first, the relay second. `archive/zip.ts` reads the archive (the vault importer shares it), `archive/epub/` reads
+the container, package, spine and contents, and `archive/epub/sanitise.ts` turns each chapter into markup we are
+willing to render: no script, no handlers, no frames, no remote images or fonts, and no book stylesheet.
+
+**Highlights are records, not cards.** `archive/anchor/` holds the anchor union (`quote`, `page`, `time`) and the
+resolver: three passes, most specific first, with ambiguity reported rather than guessed. `annotations` and
+`annotationStyles` are document roots; a medium registers through `AnnotationMedium` so the PDF and video work are
+a module each. Promotion (`reader/promote.ts`) makes an ordinary card holding a read-only `annotation` property
+whose value is `{ annotationId }`.
+
+**Reading position is reader state.** Per workspace and per attachment, in `localStorage`; a book opens where this
+reader stopped and never writes that fact into the document.
 
 ## Error codes
 

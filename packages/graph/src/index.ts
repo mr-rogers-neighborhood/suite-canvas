@@ -237,6 +237,8 @@ export type {
   PropertyValueReading,
 } from "./property.js";
 export {
+  annotationIdOf,
+  annotationValue,
   formatPropertyValue,
   isCalendarDate,
   isPropertyValueEmpty,

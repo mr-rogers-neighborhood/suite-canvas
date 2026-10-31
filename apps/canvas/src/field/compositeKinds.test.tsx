@@ -53,7 +53,9 @@ function editor(kind: string) {
 
 describe("composing field kinds", () => {
   it("should register all three kinds when the module is imported", () => {
-    expect(registeredFieldKinds()).toEqual(["group", "list", "rating"]);
+    // Asked of the module rather than of the registry: another module in the app registers `annotation`, and a
+    // list that had to know about it would make every kind's test depend on every other kind's.
+    expect(registeredFieldKinds()).toEqual(expect.arrayContaining(["group", "list", "rating"]));
   });
 
   it("should write a rating as a number and read it back with its scale", () => {

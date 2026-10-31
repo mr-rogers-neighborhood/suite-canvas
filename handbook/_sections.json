@@ -24,6 +24,12 @@
     "description": "Writing, types, properties, media, mentions and links."
   },
   {
+    "id": "reading",
+    "title": "Reading sources",
+    "order": 45,
+    "description": "A book on a card, and the highlights you can pull out of it onto the board."
+  },
+  {
     "id": "library",
     "title": "The library",
     "order": 50,

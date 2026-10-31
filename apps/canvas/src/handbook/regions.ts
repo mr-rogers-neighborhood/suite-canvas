@@ -40,6 +40,7 @@ export const HANDBOOK_REGIONS: readonly HandbookRegion[] = [
   { id: "history-toggle", label: "Version history", group: "chrome" },
   { id: "outline-control", label: "Board outline", group: "chrome" },
   { id: "views-bar", label: "Saved views", group: "chrome" },
+  { id: "book-reader", label: "A book on a card", group: "panel" },
   { id: "dock", label: "The dock", group: "dock" },
   { id: "new-thing-menu", label: "The new-thing menu", group: "dock" },
   { id: "library-drawer", label: "The library", group: "dock" },

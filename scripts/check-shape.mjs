@@ -62,6 +62,10 @@ const DYNAMIC_HTML_ALLOWED = new Map([
     "apps/canvas/src/handbook/HandbookBubble.tsx",
     "article HTML rendered from handbook/*.md by scripts/sync-handbook.mjs",
   ],
+  [
+    "apps/canvas/src/reader/ReaderChapter.tsx",
+    "an EPUB chapter after sanitiseChapter, which allowlists elements and refuses remote resources",
+  ],
 ]);
 
 const GRAPH_ROOTS = [

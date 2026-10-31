@@ -262,6 +262,9 @@ describe("standalone guard rails", () => {
     // A sketch's pictures are read from this browser first and the relay second, and
     // a standalone build has no relay to ask.
     "cards/sketchFiles.ts": /isStandalone\(\)/u,
+    // A book's bytes are read from this browser first and the relay second, and a standalone
+    // build has no relay: it says the book is not here rather than asking nobody.
+    "reader/useBookBytes.ts": /isStandalone\(\)/u,
     // A cover link is fetched by the panel, and the bytes only reach the relay through
     // `relayUploader`, which returns null where there is no relay to reach.
     "styles/coverFromUrl.ts": /relayUploader\(\)/u,

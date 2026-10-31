@@ -166,6 +166,27 @@ There is no whole-record replace, which is what lets two people change different
 one of them silently reverting the other. `duplicateView` and `moveView` are the two record-level verbs: a
 copy and a position, neither of which can be expressed as a facet.
 
+## Annotations
+
+A highlight is a record in the `annotations` root, not a card: it exists before anybody decides what it becomes,
+and a book carries hundreds. `{ id, sourceCardId, styleId, anchor, excerpt?, cardId?, createdAt }`.
+
+`anchor` is a union, and its kind is the medium: `{ kind: "quote", locator, quote, prefix, suffix }` for a book,
+`{ kind: "page", locator, page, rects }` for a PDF, `{ kind: "time", locator, startMs, endMs }` for audio and
+video. `locator` names the part of the source and each kind fixes its meaning, so one record describes three media
+without a fourth schema change. All three parse from the first build; a document carrying an anchor this build
+cannot render says so rather than drawing nothing.
+
+There is no `medium` field: `anchor.kind` carries it, and `excerpt` is optional because a quote, a page and a
+timestamp are different facts and a canvas region has none.
+
+`annotationStyles` is the palette: `{ id, name, color, templateTypeId?, order }`. Shared across media, and data
+rather than code — nothing branches on a style's id. A style naming a `templateTypeId` is how "green highlights
+become Claim cards" is expressed with the templates the graph already has.
+
+**A projection carries the highlights of the sources it includes** and reports the rest as `withheldAnnotations`,
+the same rule a private card reference follows.
+
 ## Publish: plan, then apply
 
 A share editor never writes the owner's document. It edits a draft, and publishing copies the captured

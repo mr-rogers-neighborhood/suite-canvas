@@ -66,6 +66,7 @@ const EXTENSIONS: Readonly<Record<string, string>> = {
   "video/webm": ".webm",
   "video/ogg": ".ogv",
   "video/quicktime": ".mov",
+  "application/epub+zip": ".epub",
 };
 
 export interface AttachmentRequestOptions {

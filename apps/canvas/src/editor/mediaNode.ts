@@ -11,7 +11,7 @@ export const MEDIA_NODE_NAME = "media";
  * whether the bytes sit on a relay (`id`) or at a third-party address (`src`),
  * so the schema says "image" and the node's own data says which.
  */
-export const mediaKinds = ["image", "video", "youtube"] as const;
+export const mediaKinds = ["image", "video", "youtube", "epub"] as const;
 
 export type MediaKind = (typeof mediaKinds)[number];
 
@@ -20,6 +20,17 @@ export function mediaKindOf(value: unknown): MediaKind {
   return typeof value === "string" && (mediaKinds as readonly string[]).includes(value)
     ? (value as MediaKind)
     : "image";
+}
+
+/**
+ * True when this build knows how to draw the block.
+ *
+ * The difference matters for a block written by a newer build: `mediaKindOf` coerces an unknown kind to
+ * `"image"`, which would draw a broken picture and blame the file. Reading the raw attribute first lets a
+ * surface say "this build cannot show this" instead, which is honest and leaves the block intact.
+ */
+export function isKnownMediaKind(value: unknown): value is MediaKind {
+  return typeof value === "string" && (mediaKinds as readonly string[]).includes(value);
 }
 
 /** True when this node names bytes stored beside the document. */
@@ -67,12 +78,27 @@ function mediaAttribute(name: string, dataName: string, numeric: boolean) {
  * inline atom lets a click land inside the picture, which the schema cannot
  * represent, and a video inside a paragraph has nowhere to put its controls.
  */
-export const Media = Node.create({
+/**
+ * What the block needs from the card it lives in.
+ *
+ * `cardId` is the card that owns the editor, and it is here for the one kind that needs to write something:
+ * a book records its highlights against its source, and the source *is* this card. The other kinds ignore it,
+ * which is why it is an option rather than an attribute — it is a fact about the surround, not about the block.
+ */
+export interface MediaOptions {
+  cardId: string;
+}
+
+export const Media = Node.create<MediaOptions>({
   name: MEDIA_NODE_NAME,
   group: "block",
   atom: true,
   selectable: true,
   draggable: true,
+
+  addOptions() {
+    return { cardId: "" };
+  },
 
   addAttributes() {
     return {

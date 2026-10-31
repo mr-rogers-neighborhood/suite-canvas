@@ -98,16 +98,32 @@ export function useLibraryList({
         : tab === "views"
           ? "view"
           : null;
+  // An annotation tab is a facet over cards rather than a type: a promoted highlight is an ordinary card whose
+  // value points at a record, so the filter reads the values rather than a type id.
+  const annotated =
+    tab === "annotations"
+      ? cards.filter((item) =>
+          Object.values(item.properties).some(
+            (value) =>
+              typeof value === "object" &&
+              value !== null &&
+              !Array.isArray(value) &&
+              typeof (value as Record<string, unknown>).annotationId === "string",
+          ),
+        )
+      : null;
   const items =
-    tab === "inbox"
-      ? inbox
-      : tab === "cards" || typeScoped !== null
-        ? typeScoped === null
-          ? cards
-          : cards.filter((item) => item.typeIds.includes(typeScoped))
-        : tab === "trash"
-          ? trash
-          : [];
+    annotated !== null
+      ? annotated
+      : tab === "inbox"
+        ? inbox
+        : tab === "cards" || typeScoped !== null
+          ? typeScoped === null
+            ? cards
+            : cards.filter((item) => item.typeIds.includes(typeScoped))
+          : tab === "trash"
+            ? trash
+            : [];
   const scopedItems = boardScope
     ? items.filter((item) => item.boards.some((board) => board.id === activeBoardId))
     : items;

@@ -374,6 +374,113 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
     expect(snapshot).toEqual(read());
     expect(snapshot.placements[0]).toMatchObject({ x: 12, y: 34 });
   });
+
+  it("should follow applyLayoutPlan updates that arrive from a synced peer", () => {
+    const docA = new LoroDoc();
+    const docB = new LoroDoc();
+    const local = new WorkspaceDocument(docA);
+    const remote = new WorkspaceDocument(docB);
+    const board = local.createBoard({ id: "b1", name: "One" });
+    const card = local.createCard({ id: "c1", boardId: board.id });
+    const section = local.createSection({
+      id: "s1",
+      boardId: board.id,
+      x: 0,
+      y: 0,
+      width: 500,
+      height: 500,
+      title: "S",
+    });
+    docB.import(docA.export({ mode: "update" }));
+
+    const read = (): WorkspaceSnapshot => ({
+      boards: remote.listBoards(),
+      cards: remote.listCards(),
+      placements: remote.listPlacements(),
+      edges: remote.listEdges(),
+      types: remote.listTypes(),
+      tags: remote.listTags(),
+      sections: remote.listSections(),
+      references: remote.listReferences(),
+    });
+
+    let snapshot = read();
+    const stop = remote.observe((change) => {
+      snapshot = applyWorkspaceChange(snapshot, change);
+    });
+
+    local.applyLayoutPlan({
+      boards: [board.id],
+      placements: [{ boardId: board.id, cardId: card.id, x: 200, y: 300, width: 280, height: 240 }],
+      sections: [{ sectionId: section.id, x: 10, y: 20, width: 600, height: 600 }],
+    });
+
+    docB.import(docA.export({ mode: "update" }));
+    stop();
+
+    expect(snapshot).toEqual(read());
+    expect(snapshot.placements.find((p) => p.cardId === card.id)).toMatchObject({ x: 200, y: 300 });
+  });
+
+  it("should maintain all placements and section membership when reflow plan is applied remotely", () => {
+    const ws1 = new WorkspaceDocument();
+    const b = ws1.createBoard({ name: "Notebook" });
+    const c1 = ws1.createCard({ typeId: "note" });
+    ws1.placeCard(b.id, c1.id, { x: 36, y: 56 });
+    const c2 = ws1.createCard({ typeId: "concept" });
+    ws1.placeCard(b.id, c2.id, { x: 372, y: 56 });
+    const c3 = ws1.createCard({ typeId: "source" });
+    ws1.placeCard(b.id, c3.id, { x: 708, y: 56 });
+    const s = ws1.createSection({
+      boardId: b.id,
+      title: "Start here",
+      x: 0,
+      y: 0,
+      width: 1032,
+      height: 352,
+    });
+
+    const ws2 = new WorkspaceDocument();
+    ws2.importSnapshot(ws1.exportSnapshot());
+
+    let snap2: WorkspaceSnapshot = {
+      boards: ws2.listBoards(),
+      cards: ws2.listCards(),
+      placements: ws2.listPlacements(),
+      edges: ws2.listEdges(),
+      types: ws2.listTypes(),
+      tags: ws2.listTags(),
+      sections: ws2.listSections(),
+      references: ws2.listReferences(),
+    };
+
+    const stop = ws2.observe((change) => {
+      snap2 = applyWorkspaceChange(snap2, change);
+    });
+
+    const plan = {
+      boards: [b.id],
+      placements: [
+        { boardId: b.id, cardId: c3.id, x: 372, y: 260, width: 278, height: 184 },
+        { boardId: b.id, cardId: c2.id, x: 372, y: 52, width: 278, height: 184 },
+      ],
+      sections: [{ sectionId: s.id, x: 12, y: 12, width: 662, height: 456 }],
+    };
+
+    ws1.applyLayoutPlan(plan);
+    ws2.importUpdate(ws1.exportUpdate());
+    stop();
+
+    expect(snap2.placements).toHaveLength(3);
+    const p1 = snap2.placements.find((p) => p.cardId === c1.id);
+    const p2 = snap2.placements.find((p) => p.cardId === c2.id);
+    const p3 = snap2.placements.find((p) => p.cardId === c3.id);
+    expect(p1).toBeDefined();
+    expect(p2).toBeDefined();
+    expect(p3).toBeDefined();
+    expect(p2?.y).toBe(52);
+    expect(p3?.y).toBe(260);
+  });
 });
 
 describe("applyWorkspaceChange references", () => {

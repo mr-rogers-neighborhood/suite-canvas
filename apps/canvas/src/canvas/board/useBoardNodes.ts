@@ -281,8 +281,10 @@ export function useBoardNodes(
           ) {
             return [existing];
           }
+          const { className: _prevClass, ...existingRest } = existing ?? {};
           return [
             {
+              ...existingRest,
               id: card.id,
               type: isWhiteboardCard(card) ? "whiteboard" : isPortalCard(card) ? "portal" : "note",
               position: { x: position.x, y: position.y },
@@ -326,6 +328,10 @@ export function useBoardNodes(
     for (const [cardId, placement] of boardPlacements) {
       const prev = lastPlacements.current.get(cardId);
       if (prev && (prev.x !== placement.x || prev.y !== placement.y)) {
+        if (peerTargets.current.has(cardId)) {
+          peerTargets.current.delete(cardId);
+          cleared = true;
+        }
         if (smoothPositions.current.has(cardId)) {
           smoothPositions.current.delete(cardId);
           cleared = true;
@@ -335,6 +341,10 @@ export function useBoardNodes(
           cleared = true;
         }
       }
+    }
+    if (peerTargets.current.size === 0 && smoothingFrame.current !== null) {
+      cancelAnimationFrame(smoothingFrame.current);
+      smoothingFrame.current = null;
     }
     lastPlacements.current = boardPlacements;
     if (cleared) applyBoardNodes();
@@ -392,7 +402,12 @@ export function useBoardNodes(
       ended = true;
     }
 
-    if (next.size > 0) runSmoothing();
+    if (next.size > 0) {
+      runSmoothing();
+    } else if (smoothingFrame.current !== null) {
+      cancelAnimationFrame(smoothingFrame.current);
+      smoothingFrame.current = null;
+    }
     if (ended) applyBoardNodes();
   }, [peers, boardSections, boardPlacementList, boardPlacements, runSmoothing, applyBoardNodes]);
 

@@ -1,7 +1,89 @@
-import { type GraphEdge, resolveSurfaceStyle } from "@suite/graph";
-import { type Edge, MarkerType } from "@xyflow/react";
+import { type GraphEdge, type Rect, resolveSurfaceStyle } from "@suite/graph";
+import { type Edge, MarkerType, type NodePositionChange } from "@xyflow/react";
+import { useEffect, useRef } from "react";
 import type { EdgeDescriptionData } from "../EdgeDescription";
+import { nodeTypes } from "../NoteNode";
+import { PortalNode } from "../PortalNode";
 import { linkStroke } from "../surfacePaint";
+import { WhiteboardNode } from "../WhiteboardNode";
+
+/** React Flow node types; a portal card paints its target instead of a note. */
+export const canvasNodeTypes = { ...nodeTypes, portal: PortalNode, whiteboard: WhiteboardNode };
+
+/** The most a fit may magnify. */
+export const FIT_MAX_ZOOM = 1;
+
+/** A position change React Flow has already committed, with its new position. */
+export type CommittedMove = NodePositionChange & { position: { x: number; y: number } };
+
+export function samePointMap(
+  a: Map<string, { x: number; y: number }>,
+  b: Map<string, { x: number; y: number }>,
+): boolean {
+  if (a.size !== b.size) return false;
+  for (const [id, pos] of a) {
+    const other = b.get(id);
+    if (!other || Math.abs(other.x - pos.x) > 0.5 || Math.abs(other.y - pos.y) > 0.5) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function sameRectMap(a: Map<string, Rect>, b: Map<string, Rect>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [id, rect] of a) {
+    const other = b.get(id);
+    if (
+      !other ||
+      Math.abs(other.x - rect.x) > 0.5 ||
+      Math.abs(other.y - rect.y) > 0.5 ||
+      Math.abs(other.width - rect.width) > 0.5 ||
+      Math.abs(other.height - rect.height) > 0.5
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function useArrowMovement(): React.RefObject<boolean> {
+  const arrowMoving = useRef(false);
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key === "ArrowUp" ||
+        event.key === "ArrowDown" ||
+        event.key === "ArrowLeft" ||
+        event.key === "ArrowRight"
+      ) {
+        arrowMoving.current = true;
+      }
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (
+        event.key === "ArrowUp" ||
+        event.key === "ArrowDown" ||
+        event.key === "ArrowLeft" ||
+        event.key === "ArrowRight"
+      ) {
+        arrowMoving.current = false;
+      }
+    };
+    const handleBlur = () => {
+      arrowMoving.current = false;
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, []);
+  return arrowMoving;
+}
 
 /** Pointer samples published to peers land at most once per this window. */
 export const DRAG_THROTTLE_MS = 40;

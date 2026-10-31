@@ -19,19 +19,25 @@ import { useLinkThreadStore } from "../links/linkThread";
 import { ModeControl } from "../links/ModeControl";
 import { SectionLinkLayer } from "../links/SectionLinkLayer";
 import { LocalDragEase, prefersReducedMotion } from "../localEasing";
-import { nodeTypes } from "../NoteNode";
 import { COLLAPSED_CARD_HEIGHT } from "../nodeData";
 import { PeerLibraryDragLayer } from "../PeerLibraryDragLayer";
-import { PortalNode } from "../PortalNode";
 import { PurposeControl } from "../PurposeControl";
 import { PeerReconnectLayer } from "../presence/PeerReconnectLayer";
 import { PresenceLayer } from "../presence/PresenceLayer";
 import { SnapGuideLayer } from "../SnapGuideLayer";
 import { SectionLayer } from "../sections/SectionLayer";
 import { type SnapGuide, type SnapRect, snapRect } from "../snapping";
-import { WhiteboardNode } from "../WhiteboardNode";
 import { ZOOM_MAX, ZOOM_MIN } from "../zoomRange";
-import { DRAG_THROTTLE_MS, isEditorTarget } from "./boardSupport";
+import {
+  type CommittedMove,
+  canvasNodeTypes,
+  DRAG_THROTTLE_MS,
+  FIT_MAX_ZOOM,
+  isEditorTarget,
+  samePointMap,
+  sameRectMap,
+  useArrowMovement,
+} from "./boardSupport";
 import type { useBoardCamera } from "./useBoardCamera";
 import type { useBoardCommands } from "./useBoardCommands";
 import type { useBoardLinks } from "./useBoardLinks";
@@ -42,49 +48,6 @@ import type { useBoardSections } from "./useBoardSections";
 import type { useBoardSelection } from "./useBoardSelection";
 import type { useBoardUi } from "./useBoardUi";
 import { usePaneDoubleClick } from "./usePaneDoubleClick";
-
-/** React Flow node types; a portal card paints its target instead of a note. */
-const canvasNodeTypes = { ...nodeTypes, portal: PortalNode, whiteboard: WhiteboardNode };
-
-/** A position change React Flow has already committed, with its new position. */
-type CommittedMove = NodePositionChange & { position: { x: number; y: number } };
-
-function samePointMap(
-  a: Map<string, { x: number; y: number }>,
-  b: Map<string, { x: number; y: number }>,
-): boolean {
-  if (a.size !== b.size) return false;
-  for (const [id, pos] of a) {
-    const other = b.get(id);
-    if (!other || Math.abs(other.x - pos.x) > 0.5 || Math.abs(other.y - pos.y) > 0.5) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function sameRectMap(a: Map<string, Rect>, b: Map<string, Rect>): boolean {
-  if (a.size !== b.size) return false;
-  for (const [id, rect] of a) {
-    const other = b.get(id);
-    if (
-      !other ||
-      Math.abs(other.x - rect.x) > 0.5 ||
-      Math.abs(other.y - rect.y) > 0.5 ||
-      Math.abs(other.width - rect.width) > 0.5 ||
-      Math.abs(other.height - rect.height) > 0.5
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/**
- * The most a fit may magnify. Fitting frames what is on the board; it does not
- * zoom in to fill the screen with two cards.
- */
-const FIT_MAX_ZOOM = 1;
 
 type BoardSurfaceProps = {
   ui: ReturnType<typeof useBoardUi>;
@@ -215,6 +178,8 @@ export function BoardSurface({
   /** Section bounds expanded dynamically during a live drag gesture. */
   const [previewSectionResizes, setPreviewSectionResizes] = useState<Map<string, Rect>>(new Map());
   const lastPreviewTick = useRef(0);
+  const lastDragEndedAt = useRef(0);
+  const arrowMoving = useArrowMovement();
 
   const publishGuides = useCallback((guides: SnapGuide[]) => {
     const key = guides
@@ -385,6 +350,7 @@ export function BoardSurface({
    * open-session guard, which also covers the final `dragging: false` sample
    * React Flow sends just before it calls that handler.
    */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: gesture refs are stable
   const changeNodes = useCallback(
     (changes: NodeChange<Node>[]) => {
       // Check for node resizing events and update live reflow preview
@@ -438,7 +404,14 @@ export function BoardSurface({
           })
         : changes;
       onNodesChange(applied);
-      if (draggedNodeIds.current.length > 0 || locallyDraggingIds.current.size > 0) return;
+      if (
+        draggedNodeIds.current.length > 0 ||
+        locallyDraggingIds.current.size > 0 ||
+        performance.now() - lastDragEndedAt.current < 400 ||
+        !arrowMoving.current
+      ) {
+        return;
+      }
       const moved = changes.filter(
         (change): change is CommittedMove =>
           change.type === "position" && change.position !== undefined && change.dragging !== true,
@@ -674,6 +647,7 @@ export function BoardSurface({
                 ...entry,
                 position: { x: entry.position.x + delta.x, y: entry.position.y + delta.y },
               }));
+        lastDragEndedAt.current = performance.now();
         draggedNodeIds.current = [];
         locallyDraggingIds.current = new Set();
         snapOthers.current = [];

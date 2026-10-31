@@ -3,9 +3,19 @@ import { Dialog } from "../dialogs/Dialog";
 import { tabKeyDown } from "../dialogs/tabKeys";
 import type { LibraryTab } from "../store/useUiStore";
 
+/**
+ * The strip, in reading order: what is loose, what exists, then the kinds worth their
+ * own door, then the two lists that are not cards at all.
+ *
+ * Seven labels do not fit the drawer's width, so the strip wraps to a second row
+ * instead of scrolling or truncating: a tab a reader cannot read is not a tab.
+ */
 const TABS: Array<{ id: LibraryTab; label: string }> = [
   { id: "inbox", label: "Inbox" },
   { id: "cards", label: "Cards" },
+  { id: "views", label: "Views" },
+  { id: "sketches", label: "Sketches" },
+  { id: "portals", label: "Portals" },
   { id: "media", label: "Media" },
   { id: "trash", label: "Trash" },
 ];
@@ -71,7 +81,7 @@ export function LibraryHeader({
       <div
         role="tablist"
         aria-label="Library sections"
-        className="flex items-center gap-1"
+        className="flex flex-wrap items-center gap-1"
         // One tab stop for the strip, arrows inside it: the role promises it,
         // and three tabs in the tab order made the drawer a maze.
         onKeyDown={(event) =>

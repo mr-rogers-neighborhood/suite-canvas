@@ -17,6 +17,8 @@ import type { InteractionMode } from "../store/interactionMode";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import type { CardMeta } from "./cardMeta";
 import { StaticCardFace, StaticCardTitle } from "./StaticCardFace";
+import { ViewCardFace } from "./ViewCardFace";
+import { isViewCard } from "./viewCard";
 
 /** Everyone dragging one connector, plus where the first of them is holding it. */
 export interface ConnectorPeerState {
@@ -41,6 +43,10 @@ export interface NodeCardProps {
   collapsed?: boolean;
   /** Folds or unfolds the card. Absent leaves the fold off the face entirely. */
   onToggleCollapsed?: (() => void) | undefined;
+  /** Whether this card is pinned to the shell, which the pin control reflects. */
+  pinned?: boolean;
+  /** Absent where a reader may not pin, which hides the control entirely. */
+  onTogglePin?: (() => void) | undefined;
   /** Toggles the frontmatter area. */
   onToggleMeta?: () => void;
   /**
@@ -167,6 +173,62 @@ function paintStyle(paint: Record<string, string>): CSSProperties {
   return paint as CSSProperties;
 }
 
+interface CardBodyAreaProps {
+  card: Card;
+  cardDoc: LoroDoc;
+  contentId: ContainerID | null | undefined;
+  cursorStore: CursorEphemeralStore | null;
+  localUser: PresenceUser | null;
+  editing: EditingField | null;
+  pinned: boolean;
+  editContent: boolean;
+  onFocus: () => void;
+  onBlur: () => void;
+  onOpenCardPanel: () => void;
+}
+
+/**
+ * Which face a card shows.
+ *
+ * Three answers, and each is a different thing rather than a mode: a view card presents
+ * a saved view, a card being written shows the editor, and everything else shows the
+ * static face every reader sees. Kept out of the card itself so the card stays a layout
+ * and the choice stays readable.
+ */
+function CardBodyArea({
+  card,
+  cardDoc,
+  contentId,
+  cursorStore,
+  localUser,
+  editing,
+  pinned,
+  editContent,
+  onFocus,
+  onBlur,
+  onOpenCardPanel,
+}: CardBodyAreaProps) {
+  if (isViewCard(card)) return <ViewCardFace card={card} />;
+  // A pinned card keeps the one editor, in the shell, so the board holds a static face.
+  if (editing === "body" && contentId !== null && contentId !== undefined && !pinned) {
+    return (
+      <CardBodyEditor
+        cardId={card.id}
+        cardDoc={cardDoc}
+        contentId={contentId}
+        cursorStore={cursorStore}
+        localUser={localUser}
+        editable={editContent}
+        readOnly={!editContent}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        onOpenCardPanel={onOpenCardPanel}
+      />
+    );
+  }
+  return <StaticCardFace cardDoc={cardDoc} contentId={contentId} canEdit={editContent} />;
+}
+
 export function NodeCard({
   card,
   type,
@@ -175,6 +237,8 @@ export function NodeCard({
   metaExpanded = false,
   collapsed = false,
   onToggleCollapsed,
+  pinned = false,
+  onTogglePin,
   onToggleMeta,
   cardDoc,
   contentId,
@@ -405,6 +469,9 @@ export function NodeCard({
       data-resizing-by-peer={resizingPeer ? "true" : undefined}
       data-board-id={boardId}
       data-shape={shape ?? undefined}
+      // A pinned card is in the shell too; the one on the board is the place it left
+      // behind, so it reads as a marker rather than as the card itself.
+      data-pinned={pinned ? "true" : undefined}
       // A rule the floor had to correct says so on the card instead of
       // pretending the pair was legible (ADR-0046 §6).
       data-contrast-corrected={corrections.length > 0 ? "true" : undefined}
@@ -583,6 +650,26 @@ export function NodeCard({
           <PeerNameTag user={activePeer} />
         ) : null}
 
+        {onTogglePin ? (
+          <button
+            type="button"
+            aria-label={pinned ? "Unpin card" : "Pin card to the shell"}
+            aria-pressed={pinned}
+            title={pinned ? "Unpin from the shell" : "Pin beside the board while you work"}
+            data-testid="card-pin"
+            data-pinned={pinned ? "true" : "false"}
+            className={`nodrag shrink-0 rounded px-1 text-[12px] leading-none hover:bg-black/5 dark:hover:bg-white/10 ${
+              pinned ? "text-[var(--accent)]" : "text-[var(--ink-muted)]"
+            }`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onTogglePin();
+            }}
+          >
+            {"\u{1f4cc}"}
+          </button>
+        ) : null}
+
         {hasMenu ? (
           <button
             type="button"
@@ -640,6 +727,9 @@ export function NodeCard({
             data-testid="card-body"
             onClick={(event) => {
               if (!editContent || editing === "body") return;
+              // A pinned card keeps the one editor, in the shell; opening another here
+              // would be two writers on one body.
+              if (pinned) return;
               // A tour's click is not an edit: the card means "show me this", and playing
               // it stays on the double-click so a stray click cannot start a presentation.
               if (presentable) return;
@@ -654,22 +744,19 @@ export function NodeCard({
               editAndInspect("body");
             }}
           >
-            {editing === "body" && contentId ? (
-              <CardBodyEditor
-                cardId={card.id}
-                cardDoc={cardDoc}
-                contentId={contentId}
-                cursorStore={cursorStore}
-                localUser={localUser}
-                editable={editContent}
-                readOnly={!editContent}
-                onFocus={keepFocusAlive}
-                onBlur={releaseFocusSoon}
-                onOpenCardPanel={() => onOpenInfo?.()}
-              />
-            ) : (
-              <StaticCardFace cardDoc={cardDoc} contentId={contentId} canEdit={editContent} />
-            )}
+            <CardBodyArea
+              card={card}
+              cardDoc={cardDoc}
+              contentId={contentId}
+              cursorStore={cursorStore}
+              localUser={localUser}
+              editing={editing}
+              pinned={pinned}
+              editContent={editContent}
+              onFocus={keepFocusAlive}
+              onBlur={releaseFocusSoon}
+              onOpenCardPanel={() => onOpenInfo?.()}
+            />
           </div>
         </>
       )}

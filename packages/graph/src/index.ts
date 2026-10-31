@@ -30,6 +30,13 @@ export {
   embedStubLabel,
   resolveEmbed,
 } from "./embedPlan.js";
+export {
+  type ForceEdge,
+  type ForceLayoutOptions,
+  type ForceNode,
+  type ForcePoint,
+  forceLayout,
+} from "./forceLayout.js";
 export type {
   HistoryChangeInput,
   HistoryCounts,

@@ -3402,3 +3402,22 @@ html[data-inspector-linking] .card-inspector {
   padding: 0;
   color: inherit;
 }
+
+/*
+ * A pinned card leaves a marker behind on the board.
+ *
+ * The pin itself lives in the shell, so what stays here is the place it left: dimmed
+ * enough to read as a marker, still fully drawn so the board keeps its shape and the
+ * reader can see where the card belongs. `opacity` rather than `display` because the
+ * board's layout must not change when a card is pinned; the placement is the same
+ * record either way.
+ */
+.node-card[data-pinned="true"] {
+  opacity: 0.55;
+  filter: saturate(0.7);
+}
+
+.node-card[data-pinned="true"]:hover,
+.node-card[data-pinned="true"]:focus-within {
+  opacity: 0.85;
+}

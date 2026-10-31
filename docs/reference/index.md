@@ -6,8 +6,8 @@ Facts to look up: the data model, the commands, the quotas, the security boundar
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Editing](editing.md) | How card text, fields, templates and reference chips are stored and edited; the document model underneath is in architecture.md. | 2026-10-31 |
 | [Data model](data-model.md) | This page does not cover how the canvas draws these records or how a share link is authenticated; architecture.md and security-model.md own those. It… | 2026-10-31 |
+| [Editing](editing.md) | How card text, fields, templates and reference chips are stored and edited; the document model underneath is in architecture.md. | 2026-10-31 |
 | [Limits](limits.md) | What one Suite instance accepts, and what happens at the boundary. The numbers below are read from the code that enforces them, so they cannot drift f… | 2026-10-30 |
 | [Billing and licences](billing.md) | Billing is @better-auth/stripe registered on the auth instance (ADR-0078). The plugin owns the Stripe customer, Checkout, the billing portal, the webh… | 2026-10-30 |
 | [Interface](ui.md) | How the shell, the library, the panels, the styling surfaces and the command palette are assembled, and the focus, keyboard and theme rules they share… | 2026-10-29 |

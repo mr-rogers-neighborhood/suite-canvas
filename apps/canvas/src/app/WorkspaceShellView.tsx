@@ -5,6 +5,7 @@ import { SignInEntry } from "../auth/SignInEntry";
 import type { AccountPhase } from "../auth/useAccountStore";
 import { BoardOutlineHost } from "../canvas/BoardOutline";
 import { CanvasBoard } from "../canvas/CanvasBoard";
+import { PinnedCards } from "../canvas/PinnedCards";
 import type { SurfacePalette } from "../canvas/rules";
 import { SurfacePaintProvider } from "../canvas/surfaceContext";
 import { CardFocusHost } from "../cards/CardFocusHost";
@@ -710,6 +711,11 @@ export function WorkspaceShellView({
               // them), so their number is already inside these two.
               inbox: unplaced.length,
               cards: allCards.length + snapshot.boards.length,
+              // The kind tabs count their own slice of Cards, so the strip never
+              // shows a number the tab itself would not list.
+              views: cardItems.filter((item) => item.typeIds.includes("view")).length,
+              sketches: cardItems.filter((item) => item.typeIds.includes("whiteboard")).length,
+              portals: cardItems.filter((item) => item.typeIds.includes("portal")).length,
               media: mediaItems.length,
               trash: trashed.length + trashedMediaItems.length,
             }}
@@ -800,6 +806,10 @@ export function WorkspaceShellView({
             <SignInSurface />
           </Suspense>
         )}
+
+        {/* Pins sit above the canvas, so they survive a board switch and ignore the
+            camera. Their geometry is the shell's; the board keeps its own. */}
+        <PinnedCards />
 
         {/* One dialog answers "which media", whether the `/` menu or the toolbar asked.
             It mounts in every profile: a standalone build still adds media locally. */}

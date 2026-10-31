@@ -2,6 +2,12 @@
 
 How the shell, the library, the panels, the styling surfaces and the command palette are assembled, and the focus, keyboard and theme rules they share; the document they read is described in [architecture.md](architecture.md).
 
+## Pinned cards
+
+A pin lifts a card out of the board and into a shell layer, so it survives a board switch and ignores the camera. The card's place on the board stays, drawn as a dimmed marker, because that placement is the document's record and pinning is not a move.
+
+The pin's geometry belongs to the shell: dragging its header or resizing its corner changes only the shell copy, never the size the card has on the board. `floatPlan` settles pins against each other and against the chrome, and `pinStore` keeps them, deliberately as reader state: syncing a pin would make arranging your own screen a collaborative edit. The body stays editable, and the board card shows a static face while it is pinned, so there is still only one editor on a body.
+
 ## Shell composition
 
 `apps/canvas/src/App.tsx` renders the shell in one column. The title bar sits at the top, the board fills the middle, and the dock and the library drawer sit over its bottom-left corner. The inspector, the card focus and the tour overlay are children of the board area, so they open in the same stacking context as the canvas; the dock, the drawer, the palette and the dialogs are siblings that portal or float above it.

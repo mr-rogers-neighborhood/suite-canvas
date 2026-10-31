@@ -88,7 +88,26 @@ export function useLibraryList({
   initialQuery,
 }: LibraryListArgs) {
   const boardScope = tab === "cards" && scope === "board" && activeBoardId !== null;
-  const items = tab === "inbox" ? inbox : tab === "cards" ? cards : tab === "trash" ? trash : [];
+  // The kind tabs are the Cards list narrowed to one built-in type, so sorting,
+  // facets and selection keep working rather than growing a second code path.
+  const typeScoped =
+    tab === "sketches"
+      ? "whiteboard"
+      : tab === "portals"
+        ? "portal"
+        : tab === "views"
+          ? "view"
+          : null;
+  const items =
+    tab === "inbox"
+      ? inbox
+      : tab === "cards" || typeScoped !== null
+        ? typeScoped === null
+          ? cards
+          : cards.filter((item) => item.typeIds.includes(typeScoped))
+        : tab === "trash"
+          ? trash
+          : [];
   const scopedItems = boardScope
     ? items.filter((item) => item.boards.some((board) => board.id === activeBoardId))
     : items;

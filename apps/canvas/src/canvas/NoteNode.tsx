@@ -23,6 +23,7 @@ import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCardContainers } from "../hooks/useCardContainers";
 import { useReferenceCount } from "../hooks/useReferenceCounts";
 import { useSmoothedSize } from "../hooks/useSmoothedSize";
+import { isPinned, usePinStore } from "../store/pinStore";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useBoards } from "../store/workspaceStore";
@@ -97,6 +98,9 @@ export function NoteNode({ id, data, selected }: NodeProps) {
    * resize handles and connector dots went away the moment someone typed into it.
    */
   const engaged = editingNodeId === id;
+  const pinned = usePinStore((state) => state.pinned.includes(id));
+  const pinCard = usePinStore((state) => state.pin);
+  const unpinCard = usePinStore((state) => state.unpin);
 
   // Allocate text containers on-demand when entering edit mode if they do not yet exist
   useEffect(() => {
@@ -283,6 +287,24 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         selected={selected}
         editing={editing}
         engaged={engaged}
+        pinned={pinned}
+        onTogglePin={() => {
+          if (isPinned(id)) {
+            unpinCard(id);
+            return;
+          }
+          // The board keeps its own copy of where the card sits; the pin starts from the
+          // size it has now so it looks like the card the reader just picked up.
+          pinCard(id, {
+            x: 80,
+            y: 80,
+            width: (width ?? DEFAULT_CARD_WIDTH) + 24,
+            height: (height ?? DEFAULT_CARD_HEIGHT) + 24,
+          });
+          // Editing moves to the pinned copy: two live editors on one body is the
+          // situation this surface exists to avoid.
+          stopEditing();
+        }}
         presence={presence}
         draggingPeers={draggingPeers}
         showDragLabel={!draggingGroup}

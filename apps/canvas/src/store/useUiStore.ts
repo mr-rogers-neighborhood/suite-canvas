@@ -46,7 +46,17 @@ export interface DropOffer {
  * the Board facet. A second list would need a second set of actions for the same
  * gesture (open, place, drag).
  */
-export type LibraryTab = "inbox" | "cards" | "media" | "trash";
+export type LibraryTab =
+  | "inbox"
+  | "cards"
+  // The same cards, narrowed to one built-in type. A tab rather than only a facet
+  // because "where are my sketches" is a question, and a facet answers it in a
+  // filter bar the reader has to read first.
+  | "views"
+  | "sketches"
+  | "portals"
+  | "media"
+  | "trash";
 
 /**
  * Who asked for the library. `mode` means a mode opened it as its own starting

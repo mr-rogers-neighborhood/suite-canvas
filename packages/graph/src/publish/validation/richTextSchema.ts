@@ -60,7 +60,8 @@ export const RICH_TEXT_NODE_ATTRIBUTE_NAMES = {
   horizontalRule: [],
   hardBreak: [],
   text: [],
-  mention: ["cardId", "display", "fieldId"],
+  // `annotationId` names a highlight: a mention of a passage rather than of a card.
+  mention: ["cardId", "display", "fieldId", "annotationId"],
   propertyBlock: ["fieldId", "display"],
   // Metadata only: the pixels are bytes beside the document, never in it.
   attachment: ["id", "mime", "width", "height", "name", "bytes"],

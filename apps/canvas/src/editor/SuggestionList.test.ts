@@ -28,6 +28,8 @@ const workspace = {
   getCard: (id: string) => (id === host.id ? host : id === other.id ? other : undefined),
   viewCardFields: () => [owner, stage],
   displayTitle: (id: string) => (id === other.id ? "Beta" : "Alpha"),
+  // The picker lists a workspace's highlights beside its cards, so the fake needs them.
+  listAnnotations: () => [],
 };
 
 vi.mock("../store/useCanvasStore", () => ({

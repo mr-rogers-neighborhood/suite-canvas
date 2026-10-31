@@ -12,6 +12,7 @@ import { NewThingMenu } from "../chrome/NewThingMenu";
 import { newThingMenuModel } from "../chrome/newThingMenu";
 import { useSavedViews } from "../chrome/ViewsBar";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
+import { AnnotationTypesDialog } from "../reader/AnnotationTypesDialog";
 import { useHighlightDrag } from "../reader/highlightDrag";
 import { useAnnotations } from "../reader/useHighlights";
 import { useEscapeLayer } from "../shell/escapeLayers";
@@ -146,6 +147,8 @@ export function LibraryDrawer({
   const openNewView = useViewsStore((state) => state.openNew);
   const newView = useCallback(() => openNewView(views.length), [openNewView, views.length]);
   const [activeResult, setActiveResult] = useState(0);
+  /** The annotation types editor, which is the tab's own dialog rather than the shell's. */
+  const [typesOpen, setTypesOpen] = useState(false);
   /**
    * The list's order. A saved view carries its own when it is applied, so this
    * starts wherever the last view left it and the reader can change it after.
@@ -586,6 +589,10 @@ export function LibraryDrawer({
 
       {/* The selection bar replaces the search row while a selection exists: what a
           reader picks rows for is acting on them together. */}
+      {typesOpen && workspace !== null ? (
+        <AnnotationTypesDialog workspace={workspace} onClose={() => setTypesOpen(false)} />
+      ) : null}
+
       {tab === "annotations" ? (
         <LibraryAnnotationList
           annotations={annotations}
@@ -603,6 +610,7 @@ export function LibraryDrawer({
             useHighlightDrag.getState().move(point);
           }}
           onRemove={(annotation) => workspace?.deleteAnnotation(annotation.id)}
+          onEditTypes={() => setTypesOpen(true)}
         />
       ) : tab === "media" ? (
         <LibraryMediaList

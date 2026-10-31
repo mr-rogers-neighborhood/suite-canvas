@@ -1,4 +1,9 @@
-import type { Annotation, AnnotationPart, AnnotationStyle } from "../../annotations.js";
+import type {
+  Annotation,
+  AnnotationPart,
+  AnnotationPartTarget,
+  AnnotationStyle,
+} from "../../annotations.js";
 import type { DocApi } from "../api.js";
 import type { CreateAnnotationInput, CreateAnnotationStyleInput } from "../model.js";
 
@@ -70,7 +75,13 @@ export class AnnotationsFacade {
 
   patchAnnotationStyle(
     id: string,
-    patch: { name?: string; color?: string; order?: number; templateTypeId?: string | null },
+    patch: {
+      name?: string;
+      color?: string;
+      order?: number;
+      templateTypeId?: string | null;
+      recipe?: AnnotationPartTarget[] | null;
+    },
   ): AnnotationStyle | undefined {
     return this.annotationsApi.patchAnnotationStyle(id, patch);
   }

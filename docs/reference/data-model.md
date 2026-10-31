@@ -186,6 +186,14 @@ paragraph in a way a second sub-quote would not be. A target is `title`, `body`,
 `own-card`. Parts are written whole, because they describe each other: two writers editing different parts would
 produce ranges that overlap or leave gaps.
 
+**A style is the mapping.** `templateTypeId` is the card type it produces and `recipe` is the ordered destinations it
+fills; `patchAnnotationStyle` writes both. The raise surface draws those destinations as slots, and a part outside the
+recipe is kept and shown rather than refused.
+
+**A mention can name a highlight.** The mention node carries `annotationId`, which the publish validator's allowlist
+names: without it, any document containing one is rejected. A chip of one shows the passage and opens where it came
+from.
+
 **A style may carry a recipe**: the targets it expects a highlight to be broken into. It seeds; the highlight decides.
 `promoteAnnotation` opens the card a highlight already has rather than making a second one, and `again` is the
 explicit way to make another.

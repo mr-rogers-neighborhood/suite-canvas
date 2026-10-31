@@ -55,6 +55,21 @@ export const Mention = Node.create<MentionOptions, MentionStorage>({
 
   addAttributes() {
     return {
+      /**
+       * A highlight this mention names, when it names one instead of a card.
+       *
+       * A mention of a highlight is a mention of a *passage*: the chip shows the words and opens the book where they
+       * are. The id is the whole of what it stores, so the passage is read live and a deleted highlight says so
+       * rather than rendering nothing.
+       */
+      annotationId: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-annotation"),
+        renderHTML: (attributes: Record<string, unknown>) =>
+          typeof attributes.annotationId === "string" && attributes.annotationId.length > 0
+            ? { "data-annotation": attributes.annotationId }
+            : {},
+      },
       cardId: {
         default: null,
         parseHTML: (element) => element.getAttribute("data-card-id"),

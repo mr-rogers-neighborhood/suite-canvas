@@ -9,7 +9,7 @@ import { useBookPosition, useBookStore } from "./bookStore";
 import { HighlightFocus } from "./HighlightFocus";
 import { HighlightMenu } from "./HighlightMenu";
 import { HighlightPalette } from "./HighlightPalette";
-import { beginHighlightDrag } from "./highlightDrag";
+import { beginHighlightDrag, useHighlightDrag } from "./highlightDrag";
 import { promoteAnnotation } from "./promote";
 import { type PendingSelection, ReaderChapter } from "./ReaderChapter";
 import { useBookBytes } from "./useBookBytes";
@@ -256,6 +256,10 @@ export function BookReader({
             setRaisedId(id);
             setPanel("none");
           }}
+          onCarry={(id, point) => {
+            useHighlightDrag.getState().carry(id);
+            useHighlightDrag.getState().move(point);
+          }}
         />
       ) : null}
 
@@ -300,6 +304,7 @@ export function BookReader({
           key={raised.id}
           annotation={raised}
           styles={highlights.styles}
+          slots={highlights.styles.find((entry) => entry.id === raised.styleId)?.recipe ?? []}
           fieldNames={fieldNames}
           onPlace={(parts) => {
             if (workspace === null) return;

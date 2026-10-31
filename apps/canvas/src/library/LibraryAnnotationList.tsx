@@ -23,6 +23,8 @@ export interface LibraryAnnotationListProps {
   /** A press that travels carries the highlight to the board, which is how it becomes a card. */
   onCarry: (annotation: Annotation, point: { x: number; y: number }) => void;
   onRemove: (annotation: Annotation) => void;
+  /** Open the editor for the kinds of highlight there are, and what each one becomes. */
+  onEditTypes?: (() => void) | undefined;
 }
 
 export function LibraryAnnotationList({
@@ -33,7 +35,23 @@ export function LibraryAnnotationList({
   onOpen,
   onCarry,
   onRemove,
+  onEditTypes,
 }: LibraryAnnotationListProps) {
+  const typesButton =
+    onEditTypes === undefined ? null : (
+      <div className="library-annotations-head">
+        <button
+          type="button"
+          className="views-button views-button--quiet"
+          data-testid="library-annotation-types"
+          onClick={onEditTypes}
+        >
+          <IconGlyph icon="lucide:sliders-horizontal" size={12} />
+          Types
+        </button>
+      </div>
+    );
+
   if (annotations.length === 0) {
     return (
       <p className="views-empty" data-testid="library-annotations-empty">
@@ -49,6 +67,7 @@ export function LibraryAnnotationList({
 
   return (
     <div className="library-annotations" data-testid="library-annotations">
+      {typesButton}
       {books.map(([bookId, entries]) => (
         <section key={bookId} className="library-annotation-book">
           <h3 className="library-annotation-book-title">{bookTitles.get(bookId) ?? "A book"}</h3>

@@ -569,8 +569,75 @@
   white-space: pre-wrap;
 }
 
+/*
+ * A part is dotted, not filled.
+ *
+ * The passage already carries the type's colour; a second fill per part would turn one highlight into a patchwork and
+ * lose the fact that it is one mark. Dots say "these words are claimed" while the colour keeps saying what it is.
+ */
 .raise-covered {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
+
+.raise-part {
+  padding: 0;
+}
+
+/* One destination: the dot is a ring until words fill it, then the type's colour. */
+.raise-part-arm {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  text-align: left;
+  font-size: 11px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.raise-part-arm:hover {
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.raise-part-arm[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  outline: 1px solid var(--accent);
+}
+
+.raise-part-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border: 1.5px dotted;
+  border-radius: 9999px;
+}
+
+.raise-part[data-filled="true"] .raise-part-dot {
+  border-style: solid;
+}
+
+.raise-part-label {
+  flex: none;
+  min-width: 74px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.raise-part[data-filled="true"] .raise-part-label {
+  color: var(--ink);
+}
+
+.raise-part-text[data-empty="true"] {
+  font-style: italic;
+  color: var(--ink-muted);
 }
 
 .raise-hint {
@@ -799,6 +866,211 @@
 }
 
 .library-annotation-unplaced {
+  font-style: italic;
+  color: var(--ink-muted);
+}
+
+/* ---------- Annotation types ---------- */
+
+.ann-types-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ann-types-scrim-hit {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgb(0 0 0 / 0.28);
+}
+
+.ann-types {
+  position: relative;
+  display: flex;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(80vh, 620px);
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 24px 64px -28px rgb(0 0 0 / 0.45);
+}
+
+.ann-types-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ann-types-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ann-types-sub {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.ann-types-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ann-type {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+
+.ann-type-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The colour is the type's identity, so it is a control rather than a swatch beside a name. */
+.ann-type-color {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  background: none;
+  cursor: pointer;
+}
+
+.ann-type-name {
+  min-width: 0;
+  flex: 1;
+}
+
+.ann-type-target {
+  flex: none;
+  max-width: 160px;
+}
+
+.ann-type-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 2px;
+}
+
+.ann-type-slots-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.ann-type-empty {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--ink-muted);
+}
+
+.ann-type-slot-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ann-type-slot {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.ann-type-slot-target {
+  width: auto;
+  padding: 1px 4px;
+  font-size: 11px;
+}
+
+.ann-type-add-slot {
+  display: flex;
+  gap: 4px;
+}
+
+.ann-types-foot {
+  display: flex;
+  align-items: center;
+  padding-top: 6px;
+  border-top: 1px solid var(--hairline);
+}
+
+.library-annotations-head {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 2px;
+}
+
+/* ---------- A mention of a highlight ---------- */
+
+/*
+ * It reads as a passage, not as a card: the highlight's colour on the leading edge, a dotted rule under the words, and
+ * the same 48-character excerpt a raised highlight shows. A mention of a card and a mention of a sentence are
+ * different things, so they do not look the same.
+ */
+.annotation-mention {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 44ch;
+  padding: 0 5px;
+  border: 1px dashed var(--hairline);
+  border-left-width: 3px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  font-size: 0.95em;
+  color: var(--ink);
+  vertical-align: baseline;
+  cursor: pointer;
+}
+
+.annotation-mention:hover {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.annotation-mention-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 9999px;
+}
+
+.annotation-mention-text {
+  overflow: hidden;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-chip--missing {
   font-style: italic;
   color: var(--ink-muted);
 }

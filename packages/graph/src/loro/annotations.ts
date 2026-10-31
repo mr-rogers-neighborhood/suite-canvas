@@ -2,6 +2,7 @@ import {
   type Annotation,
   type AnnotationAnchor,
   type AnnotationPart,
+  type AnnotationPartTarget,
   type AnnotationStyle,
   annotationAnchorSchema,
   annotationPartSchema,
@@ -294,6 +295,8 @@ export function annotationsMethods(ctx: DocContext) {
         color?: string;
         order?: number;
         templateTypeId?: string | null;
+        /** The destinations this type fills. An empty list clears the mapping. */
+        recipe?: AnnotationPartTarget[] | null;
       },
     ): AnnotationStyle | undefined {
       const fields = ctx.annotationStylesMap.get(id);
@@ -309,6 +312,11 @@ export function annotationsMethods(ctx: DocContext) {
           : patch.templateTypeId === undefined
             ? {}
             : { templateTypeId: patch.templateTypeId }),
+        ...(patch.recipe === null || (patch.recipe !== undefined && patch.recipe.length === 0)
+          ? { recipe: undefined }
+          : patch.recipe === undefined
+            ? {}
+            : { recipe: patch.recipe }),
       });
       ctx.api.annotations.writeStyle(merged);
       ctx.commit(`${STRUCT_ORIGIN}patch-annotation-style`);

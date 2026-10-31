@@ -14,9 +14,11 @@ export interface BookHighlightsProps {
   annotations: readonly Annotation[];
   styles: readonly AnnotationStyle[];
   onOpen: (annotationId: string) => void;
+  /** A press that travels picks the highlight up, and the board's drop layer decides where it lands. */
+  onCarry: (annotationId: string, point: { x: number; y: number }) => void;
 }
 
-export function BookHighlights({ annotations, styles, onOpen }: BookHighlightsProps) {
+export function BookHighlights({ annotations, styles, onOpen, onCarry }: BookHighlightsProps) {
   if (annotations.length === 0) {
     return (
       <p className="reader-note" data-testid="book-highlights-empty">
@@ -43,6 +45,23 @@ export function BookHighlights({ annotations, styles, onOpen }: BookHighlightsPr
                 type="button"
                 className="reader-mark"
                 data-testid={`book-highlight-${annotation.id}`}
+                onPointerDown={(event) => {
+                  // Travel makes it a drag, exactly as a painted mark and a library row behave: one gesture means one
+                  // thing wherever a highlight is shown.
+                  const start = { x: event.clientX, y: event.clientY };
+                  const move = (moving: PointerEvent) => {
+                    if (Math.hypot(moving.clientX - start.x, moving.clientY - start.y) < 4) return;
+                    window.removeEventListener("pointermove", move);
+                    window.removeEventListener("pointerup", stop);
+                    onCarry(annotation.id, { x: moving.clientX, y: moving.clientY });
+                  };
+                  const stop = () => {
+                    window.removeEventListener("pointermove", move);
+                    window.removeEventListener("pointerup", stop);
+                  };
+                  window.addEventListener("pointermove", move);
+                  window.addEventListener("pointerup", stop);
+                }}
                 onClick={() => onOpen(annotation.id)}
               >
                 <span

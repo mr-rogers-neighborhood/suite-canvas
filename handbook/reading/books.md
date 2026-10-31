@@ -40,6 +40,26 @@ Select a range inside the raised passage and say where it goes:
 - **A property** — these words fill a property, made for you if the type does not have it yet.
 - **Own card** — these words become a card of their own, which is how one paragraph turns into several notes.
 
+## Types, and the slots they fill
+
+A highlight's colour is its **type**, and a type knows what it produces: a Claim gets a Claim card, with a Question and
+a Source. **Types** in the library's Annotations tab is where that is set: a colour, a name, the card type it makes,
+and the list of slots it fills. Choosing a card type offers its own properties as slots, so the mapping starts from
+what the type already knows.
+
+The raised passage then wears those slots as rows, empty until you fill them: select the words that answer a row and
+they land in it. The passage keeps the type's colour and the filled ranges are **dotted**, so one highlight can show
+its internal structure without turning into a patchwork. *Add a part* lets you map words the type did not expect.
+
+## Four ways to carry a highlight
+
+A highlight can be dragged onto the board from **the passage** you marked, from the book's **Highlights** panel, from
+the library's **Annotations** tab, and from an **`@` mention** of it inside a card. All four do the same thing, because
+they are one gesture with four starting points.
+
+Typing `@` in a card body offers your highlights beside your cards: picking one inserts a chip that names the passage,
+in its colour, and pressing that chip opens where the passage came from.
+
 **Done** keeps the parts and leaves the highlight where it is. **Place** makes the cards, and says how many it will
 make before you press it. A highlight that has already been placed opens its card rather than making a second one.
 

@@ -6,8 +6,8 @@ Facts to look up: the data model, the commands, the quotas, the security boundar
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Interface](ui.md) | How the shell, the library, the panels, the styling surfaces and the command palette are assembled, and the focus, keyboard and theme rules they share… | 2026-10-31 |
 | [Data model](data-model.md) | This page does not cover how the canvas draws these records or how a share link is authenticated; architecture.md and security-model.md own those. It… | 2026-10-31 |
+| [Interface](ui.md) | How the shell, the library, the panels, the styling surfaces and the command palette are assembled, and the focus, keyboard and theme rules they share… | 2026-10-31 |
 | [Runtime](runtime.md) | The browser process: boot order, persistence, the relay, sharing, and the diagnostics an operator can read. It does not cover the document model (data… | 2026-10-31 |
 | [Canvas](canvas.md) | apps/canvas/src/canvas turns the workspace document into a board you can point at: placements become nodes, edges become routes, and every gesture end… | 2026-10-31 |
 | [Architecture](architecture.md) | Suite is a local-first collaborative canvas. One Loro document per workspace is the source of truth, @suite/graph validates every write, and the React… | 2026-10-31 |

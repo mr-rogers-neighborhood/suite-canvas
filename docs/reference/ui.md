@@ -31,6 +31,7 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Library drawer | `apps/canvas/src/library/LibraryDrawer.tsx` | Every card, board and trashed record, with search, facets and **Add new**, which opens the dock's own menu from the top of the list |
 | Command palette | `apps/canvas/src/command/CommandPalette.tsx` | Navigation and actions from one query |
 | Presence | `apps/canvas/src/presence/` and `apps/canvas/src/cursor/` | Peer cursors, name tags, avatars and the status cursor |
+| Annotation types | `apps/canvas/src/reader/AnnotationTypesDialog.tsx` | What each kind of highlight produces: its colour, its card type and the slots it fills |
 | Raise | `apps/canvas/src/reader/HighlightFocus.tsx` | One highlight alone on a blurred backdrop, where its parts are chosen and given targets |
 | Book reader | `apps/canvas/src/reader/BookReader.tsx` | An EPUB read large, in focus mode: contents, one chapter at a time, the highlight palette, and a press or a drag that promotes a highlight to a card |
 | Book card | `apps/canvas/src/cards/BookCardFace.tsx` | The card on the canvas: the cover filling it, the title, author and chapter count, and **Read** |
@@ -349,6 +350,17 @@ selectable, a target per part and a preview of what Place makes. A paragraph can
 raise is where parts are chosen; and because it exists, a press no longer has to double as "select inside a
 highlight", which is why a press raises and a drag carries. A right-click opens `HighlightMenu`, the same verbs without
 raising, and the raised surface's own rows are that menu.
+
+**Four sources, one carry.** The painted mark in the chapter, the book's Highlights panel, the library's annotation
+row, and a `@` mention chip all put an annotation id into `useHighlightDrag`; `HighlightDropLayer` promotes on release
+over the canvas. The mention chip is the newest source: `MentionChipNodeView` dispatches to `AnnotationMentionChip`
+for a node carrying `annotationId`, which is in the publish allowlist for `mention`.
+
+**A type is the mapping.** `AnnotationStyle.templateTypeId` names the card a kind of highlight produces and `.recipe`
+lists the destinations it fills. The raise surface renders that list as slots, so a reader fills properties instead of
+choosing destinations each time; `Add a part` still allows one the type did not expect, and a part outside the recipe is
+shown rather than hidden. The mapping is written only in `AnnotationTypesDialog`, opened from the library's Annotations
+tab, and choosing a card type seeds the slots from that type's own text properties.
 
 **A highlight can be carried out.** A press that travels past `HIGHLIGHT_DRAG_THRESHOLD` puts the highlight in
 `useHighlightDrag`, the focus surface conceals itself the way the library drawer does, and a release over the canvas

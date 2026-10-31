@@ -17,9 +17,12 @@ export interface MentionSuggestionItem {
   glyph: string;
   /**
    * `field` is one of this card's own fields, which inserts an editable block;
-   * `reference` is a field of another card, which inserts a `@card.field` chip.
+   * `reference` is a field of another card, which inserts a `@card.field` chip;
+   * `annotation` is a highlight, which inserts a chip naming the passage.
    */
-  kind: "card" | "field" | "reference";
+  kind: "card" | "field" | "reference" | "annotation";
+  /** Set for `annotation`. */
+  annotationId?: string;
   /** Set for `field` and `reference`. */
   fieldId?: string;
   /** Set for `reference`: the card the field belongs to. */
@@ -331,6 +334,11 @@ export function rankItems(query: string, cardId = ""): MentionSuggestionItem[] {
     });
   }
 
+  // The reader's own marks, above the cards: a mention of a passage is a mention of something they made, and it is
+  // what they are usually reaching for when they type `@` inside a card they wrote from a book.
+  for (const annotation of annotationItems(workspace, needle))
+    matches.push({ item: annotation, rank: 1 });
+
   // One card left in the running: offer its fields, below the card itself.
   const [only] = matching;
   if (matching.length === 1 && only && needle.length >= 2) {
@@ -623,3 +631,28 @@ export const mentionSuggestion: Omit<
   },
   render: createPickerRenderer,
 };
+
+/** The workspace's highlights whose words match, newest first, so a mention can name one. */
+function annotationItems(
+  workspace: NonNullable<ReturnType<typeof useCanvasStore.getState>["workspace"]>,
+  needle: string,
+): MentionSuggestionItem[] {
+  return workspace
+    .listAnnotations()
+    .flatMap((annotation) => {
+      const words =
+        annotation.excerpt ?? (annotation.anchor.kind === "quote" ? annotation.anchor.quote : "");
+      if (words.length === 0) return [];
+      if (needle.length > 0 && !words.toLocaleLowerCase().includes(needle)) return [];
+      return [
+        {
+          id: annotation.id,
+          title: words.length <= 70 ? words : `${words.slice(0, 67)}…`,
+          glyph: "\u{1f4d6}",
+          kind: "annotation" as const,
+          annotationId: annotation.id,
+        },
+      ];
+    })
+    .slice(0, 6);
+}

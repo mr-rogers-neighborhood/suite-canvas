@@ -1,4 +1,4 @@
-import type { Annotation, AnnotationStyle } from "@suite/graph";
+import type { Annotation, AnnotationPartTarget, AnnotationStyle } from "@suite/graph";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { HighlightFocus } from "./HighlightFocus";
@@ -6,8 +6,8 @@ import { HighlightFocus } from "./HighlightFocus";
 /**
  * The surface a highlight is taken apart on.
  *
- * The parts are a draft: nothing is written until Done or Place, because a reader trying three ways of cutting a
- * sentence should not write three times.
+ * Its shape is the type's: one row per slot the type fills, unfilled until words are assigned. The parts are a draft
+ * until Done or Place, because a reader trying three ways of cutting a sentence should not write three times.
  */
 const QUOTE = "The thing that matters here is what we call the domain.";
 
@@ -28,11 +28,19 @@ const styles: AnnotationStyle[] = [
   { id: "style-green", name: "Agree", color: "#3fb950", order: 1 },
 ];
 
-function draw(patch: Partial<Annotation> = {}, onDone = vi.fn(), onPlace = vi.fn()) {
+const SLOTS: AnnotationPartTarget[] = [{ kind: "title" }, { kind: "field", name: "Question" }];
+
+function draw(
+  patch: Partial<Annotation> = {},
+  slots: AnnotationPartTarget[] = SLOTS,
+  onDone = vi.fn(),
+  onPlace = vi.fn(),
+) {
   render(
     <HighlightFocus
       annotation={annotation(patch)}
       styles={styles}
+      slots={slots}
       fieldNames={["Source"]}
       onPlace={onPlace}
       onDone={onDone}
@@ -45,76 +53,77 @@ function draw(patch: Partial<Annotation> = {}, onDone = vi.fn(), onPlace = vi.fn
 }
 
 describe("raising a highlight", () => {
-  it("should show the whole passage, because that is what the reader is deciding about", () => {
+  it("should wear the type's name and show the whole passage", () => {
     draw();
     expect(screen.getByTestId("raise-quote")).toHaveTextContent(QUOTE);
-    expect(screen.getByTestId("raise-count")).toHaveTextContent("Whole passage");
+    expect(screen.getByText("Important")).toBeInTheDocument();
   });
 
-  it("should say what a part can become, rather than leaving the reader to find out", () => {
+  it("should draw one row per slot the type fills, and nothing invented", () => {
     draw();
-    expect(screen.getByTestId("raise-hint")).toHaveTextContent("title");
+    expect(screen.getByTestId("raise-slot-title")).toBeInTheDocument();
+    expect(screen.getByTestId("raise-slot-field:Question")).toBeInTheDocument();
+    expect(screen.getByTestId("raise-slot-title")).toHaveTextContent("Select words");
   });
 
-  it("should list the parts a highlight already has, with the target each one points at", () => {
+  it("should say which slots the words already in the highlight fill", () => {
     const start = QUOTE.indexOf("the domain");
     draw({
-      parts: [
-        { id: "p1", start, end: start + "the domain".length, target: { kind: "title" } },
-        { id: "p2", start: 0, end: 3, target: { kind: "field", name: "Source" } },
-      ],
+      parts: [{ id: "p1", start, end: start + "the domain".length, target: { kind: "title" } }],
     });
 
-    expect(screen.getByTestId("raise-count")).toHaveTextContent("2 parts");
-    expect(screen.getByTestId("raise-target-p1")).toHaveValue("title");
-    expect(screen.getByTestId("raise-target-p2")).toHaveValue("field:Source");
+    expect(screen.getByTestId("raise-slot-title")).toHaveTextContent("the domain");
+    expect(screen.getByTestId("raise-slot-field:Question")).toHaveTextContent("Select words");
   });
 
-  it("should let a target be changed without writing anything until Done", () => {
+  it("should keep a part the type did not expect, rather than hiding it", () => {
+    draw({
+      parts: [{ id: "p1", start: 4, end: 9, target: { kind: "field", name: "Source" } }],
+    });
+    // A reader's addition is theirs: it appears after the type's slots and can be cleared.
+    expect(screen.getByTestId("raise-part-p1")).toHaveTextContent("Source");
+    expect(screen.getByTestId("raise-part-p1-clear")).toBeInTheDocument();
+  });
+
+  it("should offer nothing invented when the type fills nothing", () => {
+    draw({}, []);
+    expect(screen.getByTestId("raise-hint")).toHaveTextContent("fills nothing yet");
+  });
+
+  it("should write nothing until Done", () => {
+    const { onDone } = draw();
+    fireEvent.click(screen.getByTestId("raise-slot-title"));
+    expect(onDone).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("raise-done"));
+    expect(onDone).toHaveBeenCalledWith([]);
+  });
+
+  it("should clear a slot without touching the highlight", () => {
     const start = QUOTE.indexOf("the domain");
     const { onDone } = draw({
       parts: [{ id: "p1", start, end: start + "the domain".length, target: { kind: "title" } }],
     });
 
-    fireEvent.change(screen.getByTestId("raise-target-p1"), { target: { value: "own-card" } });
-    expect(onDone).not.toHaveBeenCalled();
-
+    fireEvent.click(screen.getByTestId("raise-slot-title-clear"));
     fireEvent.click(screen.getByTestId("raise-done"));
-    expect(onDone).toHaveBeenCalledWith([
-      expect.objectContaining({ id: "p1", target: { kind: "own-card" } }),
-    ]);
+    expect(onDone).toHaveBeenCalledWith([]);
   });
 
   it("should say how many cards Place would make", () => {
-    const start = QUOTE.indexOf("what we call");
     draw({
       parts: [
-        { id: "p1", start, end: 3, target: { kind: "title" } },
-        { id: "p2", start, end: start + 3, target: { kind: "own-card" } },
+        { id: "p1", start: 0, end: 3, target: { kind: "title" } },
+        { id: "p2", start: 4, end: 9, target: { kind: "own-card" } },
       ],
     });
     expect(screen.getByTestId("raise-place")).toHaveTextContent("Place 2 cards");
   });
 
-  it("should offer the properties the type already has, so a name means something", () => {
-    const start = QUOTE.indexOf("the domain");
-    draw({
-      parts: [{ id: "p1", start, end: start + "the domain".length, target: { kind: "title" } }],
-    });
-    const select = screen.getByTestId("raise-target-p1");
-    expect([...select.querySelectorAll("option")].map((option) => option.value)).toEqual(
-      expect.arrayContaining(["title", "body", "own-card", "field:Source", "field:__new"]),
-    );
-  });
-
-  it("should remove a part without touching the highlight", () => {
-    const start = QUOTE.indexOf("the domain");
-    const { onDone } = draw({
-      parts: [{ id: "p1", start, end: start + "the domain".length, target: { kind: "title" } }],
-    });
-
-    fireEvent.click(screen.getByTestId("raise-part-remove-p1"));
-    fireEvent.click(screen.getByTestId("raise-done"));
-    expect(onDone).toHaveBeenCalledWith([]);
+  it("should offer the type's slots first when a part is added", () => {
+    draw();
+    fireEvent.click(screen.getByTestId("raise-add-part"));
+    // Arming the extra row is the escape hatch: the reader selects words, then chooses a destination.
+    expect(screen.getByTestId("raise-add-part")).toHaveTextContent("Select words for a new part");
   });
 });

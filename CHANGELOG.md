@@ -2,6 +2,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -21,6 +37,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -43,6 +75,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -62,6 +110,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -90,6 +154,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -109,6 +189,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -131,6 +227,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -150,6 +262,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -181,6 +309,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -200,6 +344,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -222,6 +382,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -241,6 +417,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -269,6 +461,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -288,6 +496,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -310,6 +534,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -329,6 +569,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -344,6 +600,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -363,6 +635,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -385,6 +673,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -404,6 +708,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -432,6 +752,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -451,6 +787,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -473,6 +825,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -492,6 +860,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -523,6 +907,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -542,6 +942,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -564,6 +980,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -583,6 +1015,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -611,6 +1059,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -630,6 +1094,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 
@@ -652,6 +1132,22 @@
 
 ### Added
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+## [Unreleased]
+
+### Added
+
 - A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
   range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
   missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
@@ -671,6 +1167,22 @@
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
   yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
   It is three states now, and a pending book retries.
+
+## [Unreleased]
+
+### Added
+
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
 
 ## [Unreleased]
 

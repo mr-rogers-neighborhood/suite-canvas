@@ -11,6 +11,7 @@ import { ValueTemplate } from "../cards/ValueTemplate";
 import { ContextMenu } from "../dialogs/ContextMenu";
 import { DisplayStyleDialog } from "../dialogs/DisplayStyleDialog";
 import { useCardPresence, useCardTitle } from "../hooks/useCardContainers";
+import { useAnnotations } from "../reader/useHighlights";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useCard, useWorkspaceStore } from "../store/workspaceStore";
@@ -279,7 +280,21 @@ export function MentionChip({
  * makes a mention follow a peer's rename, and using the snapshot for existence
  * is what turns a trashed target into *Unavailable card*.
  */
-export function MentionChipNodeView({ node, editor, getPos }: NodeViewProps) {
+/**
+ * Which chip a mention draws.
+ *
+ * Two kinds of mention, and they are different things: one names a card, one names a passage. The choice is made here,
+ * with no hook of its own, so each chip keeps its own hooks unconditional — a dispatcher that returned early from a
+ * component with hooks would be a rules-of-hooks violation wearing a comment.
+ */
+export function MentionChipNodeView(props: NodeViewProps) {
+  const annotationId =
+    typeof props.node.attrs.annotationId === "string" ? props.node.attrs.annotationId : "";
+  if (annotationId.length > 0) return <AnnotationMentionChip annotationId={annotationId} />;
+  return <CardMentionChip {...props} />;
+}
+
+function CardMentionChip({ node, editor, getPos }: NodeViewProps) {
   const cardId = typeof node.attrs.cardId === "string" ? node.attrs.cardId : "";
   const fieldId = typeof node.attrs.fieldId === "string" ? node.attrs.fieldId : "";
   const ownDisplay = typeof node.attrs.display === "string" ? node.attrs.display : "";
@@ -349,6 +364,69 @@ export function MentionChipNodeView({ node, editor, getPos }: NodeViewProps) {
             }
           : {})}
       />
+    </NodeViewWrapper>
+  );
+}
+
+/**
+ * A mention of a highlight.
+ *
+ * It names the passage rather than the card it became, because that is what a reader means when they mention a
+ * highlight: "the sentence about the domain", not "the note I made from it". Pressing it opens the book where the
+ * sentence is. A highlight whose record is gone says so — every reference in this app owns its broken state rather
+ * than rendering like a card that never existed.
+ */
+function AnnotationMentionChip({ annotationId }: { annotationId: string }) {
+  const workspace = useCanvasStore((state) => state.workspace);
+  const annotations = useAnnotations(workspace);
+  const styles = workspace?.listAnnotationStyles() ?? [];
+  const annotation = annotations.find((entry) => entry.id === annotationId);
+  const openCardFocus = useUiStore((state) => state.openCardFocus);
+  const openInspector = useUiStore((state) => state.openInspector);
+
+  if (annotation === undefined) {
+    return (
+      <NodeViewWrapper as="span" className="mention-node" contentEditable={false}>
+        <span
+          className="mention-chip mention-chip--missing"
+          data-testid="annotation-mention-missing"
+        >
+          a highlight that is gone
+        </span>
+      </NodeViewWrapper>
+    );
+  }
+
+  const style = styles.find((entry) => entry.id === annotation.styleId);
+  const words =
+    annotation.excerpt ??
+    (annotation.anchor.kind === "quote" ? annotation.anchor.quote : "A passage");
+
+  return (
+    <NodeViewWrapper as="span" className="mention-node" contentEditable={false}>
+      <button
+        type="button"
+        className="mention-chip annotation-mention"
+        data-testid="annotation-mention"
+        title="Open the book at this passage"
+        style={{ borderColor: style?.color ?? "var(--accent)" }}
+        onClick={(event) => {
+          event.preventDefault();
+          // The card is the thing a surface can open; the passage is where the book should land, which the reader
+          // does by opening the book's card and pressing the mark there.
+          if (annotation.cardId !== undefined) openCardFocus(annotation.cardId);
+          else openInspector(annotation.sourceCardId);
+        }}
+      >
+        <span
+          aria-hidden="true"
+          className="annotation-mention-dot"
+          style={{ background: style?.color ?? "var(--accent)" }}
+        />
+        <span className="annotation-mention-text">
+          {words.length <= 48 ? words : `${words.slice(0, 45)}…`}
+        </span>
+      </button>
     </NodeViewWrapper>
   );
 }

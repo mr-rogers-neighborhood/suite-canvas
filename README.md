@@ -6,7 +6,7 @@ offline, syncs when you want it, and exports to a file you own.
 [**Open the app**](https://app.suite.run) · [Documentation](https://docs.suite.run) ·
 [Run it yourself](#run-it-yourself)
 
-![Suite, a board of connected cards](assets/preview-dark.png)
+![layout.gif](https://i.imgduck.com/u/qN4mfq.gif)
 
 > **Suite is alpha software.** The hosted deployment at <https://app.suite.run> is real and the
 > paying path is real, but expect rough edges and expect the shape of things to change.

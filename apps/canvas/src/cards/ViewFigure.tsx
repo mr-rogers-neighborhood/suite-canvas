@@ -98,7 +98,7 @@ function CollectionFigure({
 }: {
   workspace: WorkspaceDocument;
   cardIds: readonly string[];
-  mode?: "database" | "grid" | "list" | undefined;
+  mode?: "database" | "grid" | "list" | "board" | undefined;
 }) {
   if (cardIds.length === 0) {
     return <p className="p-2 text-[11px] text-[var(--ink-muted)]">Nothing in this collection</p>;
@@ -115,6 +115,21 @@ function CollectionFigure({
           ))}
         </tbody>
       </table>
+    );
+  }
+
+  if (mode === "list") {
+    return (
+      <ul className="flex flex-col p-1 text-[10px]">
+        {cardIds.slice(0, 12).map((cardId) => (
+          <li
+            key={cardId}
+            className="truncate border-b border-[var(--hairline)] py-0.5 last:border-0"
+          >
+            {workspace.displayTitle(cardId)}
+          </li>
+        ))}
+      </ul>
     );
   }
 

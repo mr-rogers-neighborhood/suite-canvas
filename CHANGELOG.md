@@ -1,68 +1,63 @@
-# Changelog
-
-Notable changes, newest first. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html). A pre-release suffix
-says a line is not ready to be depended on.
-
-A release is the commit a `v*` tag points at. The image built for that tag is
-`ghcr.io/<owner>/suite:v<version>`; the digest recorded in the release notes is
-the artifact to roll back to. See [docs/how-to/release.md](docs/how-to/release.md).
-
 ## [Unreleased]
 
 ### Added
 
-- The views layer: a full-window mode with a rail of saved views drawn as live thumbnails, the
-  presentation filling the rest, a context drawer, and its own footer. It is where a view is read and
-  edited, and the board's icon opens it.
-- Picking: the layer steps out of the window, the board becomes the surface, presses add cards to the
-  view immediately, and a floating bar owns Done and Cancel. Cancel restores exactly what was there
-  before, including across a board switch.
-- Projection: any view can be cast onto this reader's board, outlined and faded, with a bar naming it
-  and chips for every board the context touches. It is per browser and per workspace, never synced.
-- Editable collection tables: text, number, checkbox and select cells write through the document;
-  richer kinds show their value and open their editor.
-- Bar and line charts with a measure (count, sum or average over a number field) and a grouping, laid
-  out above the surface rather than behind a sheet.
-- **New view** and **New media** in the canvas context menu, and **New view** in the library's Views
-  tab.
-- A handbook inside the app: a float in the corner of the board that lists the articles matching what is
-  on screen, counts the things they document, and points a line at the element an article is about.
-  It ships behind a development flag while the surface is rough; a production build keeps the
-  floating explain panel, so `explain` always has somewhere to send its answer.
-  Resting on a row outlines its subject; opening the article keeps the outline, and a subject that is
-  not on this board is opened only on a press.
-- `explain` now has somewhere to send its answer. The gathered context renders inside the handbook,
-  a single selected thing jumps to its article, several leave the list filtered, and **Point at
-  something** turns the next click into a target, including a region of the shell.
+- Read and Edit are two states of the layer. It opens to the data: the presentation fills the window, the
+  context is one sentence, and a cell is a value. Edit brings the kinds, the presentation, the grouping, the
+  column sorts, the context drawer and the row actions back. A new view always opens in edit.
+- A view can be deleted, duplicated and reordered from its rail, with `D` and `Backspace` from the keyboard
+  and an Undo in the footer. `deleteView` had existed with no caller since the layer landed.
+- A collection can be drawn as a board: the cards where they sit, with the unplaced ones named underneath.
+- Grouping by any field, beside section, type and tag, with a count per group; pressing a group or a chart
+  bar narrows this reader's surface to it.
+- Sorting from a column header, and a peek on any card name in the surface, so reading a view does not need a
+  round trip to the board.
+- New view of this card, or of these cards, in the canvas menu, which opens a draft whose pins are the
+  selection, plus `View: open` and `View: project` in the palette.
+- A designed first run: three one-press starters that open a draft rather than a record.
+- A handbook inside the app: a float in the corner of the board that lists the articles matching what is on
+  screen, counts the things they document, and points a line at the element an article is about. It ships
+  behind a development flag while the surface is rough; a production build keeps the floating explain panel,
+  so `explain` always has somewhere to send its answer. Resting on a row outlines its subject; opening the
+  article keeps the outline, and a subject that is not on this board is opened only on a press.
+- `explain` now has somewhere to send its answer. The gathered context renders inside the handbook, a single
+  selected thing jumps to its article, several leave the list filtered, and **Point at something** turns the
+  next click into a target, including a region of the shell.
 - The articles are Markdown in `handbook/`, one per user-facing element and system, rendered by
-  `scripts/sync-handbook.mjs` into the app and into the docs site from the same source. The generator
-  refuses an article naming an unknown region of the interface, and a documented region with no
-  article.
-- The docs site has two entrances, developer documentation and the user handbook, and is built on
-  Fumadocs rather than Starlight.
-- Feedback is part of the handbook: the same form the launcher uses files a message against the article
-  it was opened from, with the article's title attached.
+  `scripts/sync-handbook.mjs` into the app and into the docs site from the same source. The generator refuses
+  an article naming an unknown region of the interface, and a documented region with no article.
+- The docs site has two entrances, developer documentation and the user handbook, and is built on Fumadocs
+  rather than Starlight.
+- Feedback is part of the handbook: the same form the launcher uses files a message against the article it
+  was opened from, with the article's title attached.
 
 ### Changed
 
-- A lens is no longer a kind. `kind` is `collection` or `render`, projecting is a verb any view can
-  take, and a view written before the change reads as a collection with its old payload supplying the
-  projection's defaults.
-- Editing a saved view is live: field-level setters replace the whole-record write, so concurrent edits
-  to different facets converge. `Done` leaves, `Discard my edits` restores the record you opened, and a
-  new view stays a local draft until `Create`.
-- A view's context is a query *and* the cards you pinned by hand, so it can be built from filters, from
-  a selection, or from both, and the read-out says which is which.
-- The views controls are an icon in the board's own control row rather than a labelled dropdown, and
-  the bar sits after the outline toggle and before search.
-- The library is no longer filtered by a projection; its filters are the reader's own.
-- The six heading commands are one accessible menu in the toolbar and one row in the `/` menu. Choosing
-  a level sets it rather than toggling it, and `/h3` still applies H3 without opening the menu.
-- Pins and the handbook share one drag and resize gesture, and one list of shell obstacles.
-- The saved-views bar and the views layer share one development flag (`views/availability.ts`), worded
-  like the handbook's door.
+- Picking is a projection. `Pick cards` casts the view over the board and leaves the layer; a press on a card
+  pins it and a second press unpins it; the float carries Done and Cancel. The separate picking bar is gone,
+  so building a context and reading one look like the same thing.
+- The projection is a float: draggable, remembered per workspace, and it settles around the dock instead of
+  sitting behind it. `views.projection-bar` is now `views.projection-float`.
+- The line chart is a line: a path, dots and an axis, rather than a list of numbers.
+- The layer has a stylesheet and one chip and one segmented control, over the same tokens the dock and the
+  handbook use, and `IconGlyph` icons instead of `◈ ▦ ▸ ×`.
+- The library no longer copies a view's query into its own filter state, and is no longer filtered by a
+  projection; opening a view opens the layer on it, and the library's filters are the reader's own.
+- A lens is no longer a kind. `kind` is `collection` or `render`, projecting is a verb any view can take, and
+  a view written before the change reads as a collection with its old payload supplying the projection's
+  defaults.
+- Editing a saved view is live: field-level setters replace the whole-record write, so concurrent edits to
+  different facets converge. `Done` leaves, `Discard my edits` restores the record you opened, and a new view
+  stays a local draft until `Create`.
+- A view's context is a query *and* the cards you pinned by hand, so it can be built from filters, from a
+  selection, or from both, and the read-out says which is which.
+- The views controls are an icon in the board's own control row rather than a labelled dropdown, and the bar
+  sits after the outline toggle and before search.
+- The six heading commands are one accessible menu in the toolbar and one row in the `/` menu. Choosing a
+  level sets it rather than toggling it, and `/h3` still applies H3 without opening the menu.
+- Pins, the handbook and the projection share one drag gesture and one list of shell obstacles.
+- The views surfaces share one development flag (`views/availability.ts`), worded like the handbook's door.
+
 ## [0.1.0-alpha.1] - 2026-10-29
 
 The first public release of Suite. The product is the one the hosted deployment runs; what this

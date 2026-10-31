@@ -115,13 +115,10 @@ export function LibraryDrawer({
 }: LibraryDrawerProps) {
   const storeWorkspace = useCanvasStore((state) => state.workspace);
   const workspace = workspaceProp ?? storeWorkspace;
-  const activeViewId = useUiStore((state) => state.activeViewId);
-  const exitView = useUiStore((state) => state.exitView);
   const setLibraryQuery = useUiStore((state) => state.setLibraryQuery);
   const views = useSavedViews(workspace);
   const openNewView = useViewsStore((state) => state.openNew);
   const newView = useCallback(() => openNewView(views.length), [openNewView, views.length]);
-  const activeView = views.find((view) => view.id === activeViewId);
   const [activeResult, setActiveResult] = useState(0);
   /**
    * The list's order. A saved view carries its own when it is applied, so this
@@ -252,25 +249,6 @@ export function LibraryDrawer({
     },
     [setQuery, setLibraryQuery],
   );
-
-  // Opening a view fills the box once, from the stored query. Typing afterwards
-  // belongs to the reader and is never written back to the view.
-  const appliedView = useRef<string | null>(null);
-  useEffect(() => {
-    if (activeViewId === null) {
-      if (appliedView.current === null) return;
-      appliedView.current = null;
-      updateQuery("");
-      return;
-    }
-    if (appliedView.current === activeViewId) return;
-    appliedView.current = activeViewId;
-    const query = workspace?.getView(activeViewId)?.query;
-    updateQuery(query?.text ?? "");
-    setSort(
-      query?.order === "updated" ? "updated" : query?.order === "relevance" ? "relevance" : "title",
-    );
-  }, [activeViewId, workspace, updateQuery]);
 
   useEscapeLayer(() => {
     setAddNew(false);
@@ -563,8 +541,6 @@ export function LibraryDrawer({
         counts={counts}
         canManageTrash={canManageTrash}
         onTab={onTab}
-        activeViewName={activeView?.name ?? null}
-        onExitView={() => exitView()}
         scope={scope}
         onScope={onScope}
         activeBoardId={activeBoardId}

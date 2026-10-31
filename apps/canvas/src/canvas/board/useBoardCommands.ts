@@ -228,6 +228,28 @@ export function useBoardCommands(
   );
 
   /**
+   * A view of what is selected right now.
+   *
+   * The selection *is* a context, so a view started from it opens as a draft whose pins are those cards:
+   * the reader asked "what if this were a view", and the answer is a view that already contains it. It is
+   * a draft rather than a record because looking is not yet deciding to keep.
+   */
+  const createViewFromSelection = useCallback(() => {
+    if (!canManageSchema) return;
+    const selected = useUiStore.getState().selectedNodeIds;
+    const ids = selected.filter((id) => workspace.getCard(id) !== undefined);
+    if (ids.length === 0) return;
+    useViewsStore.getState().openNew(workspace.listViews().length);
+    useViewsStore.getState().setDraft({
+      name:
+        ids.length === 1
+          ? workspace.displayTitle(ids[0] ?? "") || "One card"
+          : `${String(ids.length)} cards`,
+      cardIds: ids,
+    });
+  }, [workspace, canManageSchema]);
+
+  /**
    * Media is added where it can be seen: the library's media list.
    *
    * A media card is a card whose body holds a media node, so there is nothing to create until a
@@ -437,6 +459,7 @@ export function useBoardCommands(
     createPortalAt,
     createPortalToNewBoard,
     createViewAt,
+    createViewFromSelection,
     openMediaLibrary,
     duplicateCards,
     moveCardToBoard,

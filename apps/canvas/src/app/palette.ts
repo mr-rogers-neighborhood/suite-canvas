@@ -14,7 +14,8 @@ export interface ShellPaletteArgs {
   snapshot: WorkspaceSnapshot;
   savedViews: SavedView[];
   activeBoardId: string | null;
-  activeViewId: string | null;
+  /** Views are a development surface, so their rows only exist where the layer does. */
+  viewsEnabled: boolean;
   cardFocusId: string | null;
   inspectorNodeId: string | null;
   selectedNodeIds: string[];
@@ -36,8 +37,10 @@ export interface ShellPaletteArgs {
   selectSection: UiState["selectSection"];
   openCardFocus: UiState["openCardFocus"];
   openInspector: UiState["openInspector"];
-  applyView: UiState["applyView"];
-  exitView: UiState["exitView"];
+  /** Opens the views layer on a saved view. */
+  openView: (viewId: string) => void;
+  /** Casts a saved view over this reader's board. */
+  projectView: (viewId: string) => void;
   createCard: (typeId: string) => string | undefined;
   canvasPoint: () => { x: number; y: number };
   placeCard: (cardId: string) => void;
@@ -67,7 +70,7 @@ export function shellPaletteItems(args: ShellPaletteArgs): PaletteItem[] {
     snapshot,
     savedViews,
     activeBoardId,
-    activeViewId,
+    viewsEnabled,
     cardFocusId,
     inspectorNodeId,
     selectedNodeIds,
@@ -89,8 +92,8 @@ export function shellPaletteItems(args: ShellPaletteArgs): PaletteItem[] {
     selectSection,
     openCardFocus,
     openInspector,
-    applyView,
-    exitView,
+    openView,
+    projectView,
     createCard,
     canvasPoint,
     placeCard,
@@ -135,11 +138,10 @@ export function shellPaletteItems(args: ShellPaletteArgs): PaletteItem[] {
       libraryOpen,
       libraryTab,
       activeBoardId,
-      activeViewId,
       cardId: targetCardId,
       cardPlaced,
       boards: snapshot.boards.map((board) => ({ id: board.id, name: board.name })),
-      views: savedViews.map((view) => ({ id: view.id, name: view.name })),
+      views: viewsEnabled ? savedViews.map((view) => ({ id: view.id, name: view.name })) : [],
       sections: snapshot.sections.map((section) => ({
         id: section.id,
         boardId: section.boardId,
@@ -176,11 +178,8 @@ export function shellPaletteItems(args: ShellPaletteArgs): PaletteItem[] {
       },
       focusCard: (cardId) => openCardFocus(cardId),
       openCard: (cardId) => openInspector(cardId),
-      applyView: (viewId) => {
-        const view = workspace.getView(viewId);
-        if (view) applyView(view.id, view.query);
-      },
-      exitView: () => exitView(),
+      openView: (viewId) => openView(viewId),
+      projectView: (viewId) => projectView(viewId),
       createCard: (typeId) => createCard(typeId),
       createCardInInbox: () => {
         workspace.createCard();

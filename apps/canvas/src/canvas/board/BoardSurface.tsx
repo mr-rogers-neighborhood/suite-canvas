@@ -12,6 +12,7 @@ import "@xyflow/react/dist/style.css";
 import { useCallback, useRef, useState } from "react";
 import { portalTargetId } from "../../cards/portal";
 import { useUiStore } from "../../store/useUiStore";
+import { useViewsStore } from "../../store/viewsStore";
 import { edgeTypes } from "../EdgeDescription";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../interactions/multiSelect";
 import { AboveLinkLayer } from "../links/AboveLinkLayer";
@@ -22,6 +23,7 @@ import { LocalDragEase, prefersReducedMotion } from "../localEasing";
 import { COLLAPSED_CARD_HEIGHT } from "../nodeData";
 import { PeerLibraryDragLayer } from "../PeerLibraryDragLayer";
 import { PurposeControl } from "../PurposeControl";
+import { pickCard } from "../pickCard";
 import { PeerReconnectLayer } from "../presence/PeerReconnectLayer";
 import { PresenceLayer } from "../presence/PresenceLayer";
 import { SnapGuideLayer } from "../SnapGuideLayer";
@@ -672,7 +674,13 @@ export function BoardSurface({
         useUiStore.getState().setSelectedEdgeIds([]);
         useUiStore.getState().closeContainerInspector();
       }}
-      onNodeClick={() => {
+      onNodeClick={(_event, node) => {
+        // Picking is a projection being built: a press adds the card to the view being picked for, and
+        // does nothing else. The whole board is the surface, so one press is one answer.
+        if (useViewsStore.getState().picking) {
+          pickCard(node.id);
+          return;
+        }
         // React Flow also reports a connector press as a node click, so this
         // must not undo the arm that press just made.
         const thread = useLinkThreadStore.getState();

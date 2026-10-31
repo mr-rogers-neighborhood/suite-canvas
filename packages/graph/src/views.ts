@@ -17,11 +17,13 @@ import {
 export const viewScopes = ["all", "board"] as const;
 export const viewOrders = ["relevance", "title", "updated"] as const;
 export const viewGroupBys = ["section", "type", "tag"] as const;
+/** A grouping is one of the facets a query already knows, or one field's value. */
+export const viewGroupByFieldSchema = z.object({ field: entityIdSchema });
 export const viewSortKeys = ["title", "updated", "created", "section"] as const;
 
 export const viewScopeSchema = z.enum(viewScopes);
 export const viewOrderSchema = z.enum(viewOrders);
-export const viewGroupBySchema = z.enum(viewGroupBys);
+export const viewGroupBySchema = z.union([z.enum(viewGroupBys), viewGroupByFieldSchema]);
 export const viewSortKeySchema = z.enum(viewSortKeys);
 
 /**
@@ -37,7 +39,7 @@ export const viewKinds = ["collection", "render", "lens"] as const;
  * and `viewKindOf` reads it as the collection it always selected.
  */
 export const offeredViewKinds = ["collection", "render"] as const;
-export const viewCollectionModes = ["database", "grid", "list"] as const;
+export const viewCollectionModes = ["database", "grid", "list", "board"] as const;
 /**
  * How a render draws its result. A graph draws the cards and the links between them; a chart
  * draws an aggregate, which is why it needs a measure and a grouping the graph ignores.
@@ -383,6 +385,13 @@ export function groupViewResult(
     }
     if (by === "tag") {
       keys.set(id, card.tags[0] ?? null);
+      continue;
+    }
+    if (typeof by === "object") {
+      // A field bucket reads the stored value as its label, so grouping by "Status" needs no second
+      // vocabulary: whatever the field holds is the group name.
+      const raw = card.properties[by.field];
+      keys.set(id, raw === undefined || raw === null || raw === "" ? null : String(raw));
       continue;
     }
     const placement =

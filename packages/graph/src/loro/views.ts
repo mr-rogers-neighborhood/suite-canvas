@@ -259,6 +259,30 @@ export function viewsMethods(ctx: DocContext) {
       return ctx.api.views.getView(id);
     },
 
+    /**
+     * Copies a view, name and all, placing the copy right after the original.
+     *
+     * A duplicate is a new record rather than a second name for the same one: the point of copying a
+     * configuration is to change it without changing what everyone else sees.
+     */
+    duplicateView(id: string, name?: string): SavedView | undefined {
+      const source = ctx.api.views.getView(id);
+      if (source === undefined) return undefined;
+      const copy = ctx.api.views.createView({
+        name: name?.trim() || `${source.name} copy`,
+        query: source.query,
+        ...(source.kind === undefined ? {} : { kind: source.kind }),
+        ...(source.context === undefined
+          ? {}
+          : { context: { cardIds: [...source.context.cardIds] } }),
+        ...(source.lens === undefined ? {} : { lens: source.lens }),
+        ...(source.collection === undefined ? {} : { collection: source.collection }),
+        ...(source.render === undefined ? {} : { render: source.render }),
+      });
+      ctx.api.views.moveView(copy.id, source.position + 1);
+      return ctx.api.views.getView(copy.id);
+    },
+
     /** Removes the saved query; no card is touched. */
     deleteView(id: string): void {
       if (ctx.viewsMap.get(id) === undefined) return;
@@ -296,9 +320,9 @@ export function viewsMethods(ctx: DocContext) {
       writeIdSet(query.ensureMergeableMap("typeIds"), view.query.typeIds);
       writeIdSet(query.ensureMergeableMap("tagIds"), view.query.tagIds);
       writeIdSet(query.ensureMergeableMap("sectionIds"), view.query.sectionIds);
-      // v2 fields. A query is replaced whole (`updateView` takes a new record), so
-      // the predicate and sort lists travel as JSON values: one last-writer-wins
-      // slot is exactly the semantics a saved query has.
+      // v2 fields. The predicate and sort lists travel as JSON values: they are edited whole, so one
+      // last-writer-wins slot is exactly the semantics they have. Everything a reader touches one key at
+      // a time goes through the field setters below instead.
       for (const key of ["textScope", "groupBy"] as const) {
         const value = view.query[key];
         if (value === undefined) query.delete(key);

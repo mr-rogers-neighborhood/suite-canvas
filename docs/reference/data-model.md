@@ -135,9 +135,17 @@ facets, type and tag facets, scope, grouping and predicates, and `viewPredicates
 the document at read time. `viewsRevision` moves when a view record changes, so a renderer can subscribe to
 the view list without subscribing to every card.
 
-A view also names how its result is **read**, in an additive `kind`: `collection` (a `database`, `grid` or
-`list`) or `render` (a `graph-2d` graph, or a `bar` or `line` chart with a measure and a grouping). A kind
-never takes part in the query, so two views that share a query select the same cards whatever they are.
+A view also names how its result is **read**, in an additive `kind`: `collection` (a `database` table, a
+`grid`, a `list`, or a `board`) or `render` (a `graph-2d` graph, or a `bar` or `line` chart with a measure
+and a chart grouping). A kind never takes part in the query, so two views that share a query select the same
+cards whatever they are. `board` draws the cards where they sit on their board through `BoardMiniature`;
+a card placed nowhere is named beneath it rather than given an invented position.
+
+**Grouping is presentation over the same ids.** `query.groupBy` is `section`, `type`, `tag` or
+`{ field }`, and `groupViewResult` buckets the `cardIds` the query already returned, so no grouping can add
+or remove a card. The legacy `groupBySection` boolean still reads, and `{ field }` takes its label straight
+from the stored value: grouping by "Status" needs no second vocabulary. Ordering is `sorts`, a list of
+`{ by, dir }` applied after `order`, with a stable title tiebreak.
 
 **A lens was a kind and is now a verb.** `"lens"` still parses so documents written before that decision
 load, `viewKindOf` reads it as a collection, and the `lens` payload supplies the *defaults* a reader gets
@@ -145,6 +153,8 @@ when they project the view (a preferred board, and the two toggles). The payload
 
 **A projection is not in the document.** Which view a reader has cast over their board is a reading
 position: it lives in this browser, keyed by workspace, and nothing about it syncs. What syncs is the view.
+The float's corner is stored beside it, under its own key, because where a surface sits on a screen is the
+same kind of fact as which view is on it.
 
 **A context is a query plus pins.** `context.cardIds` is stored as an id set rather than a list, so two
 people pinning at the same time both win; `resolveContext` unions the pins with the query's result and
@@ -153,7 +163,8 @@ reports the boards the context sits on, the cards only in the inbox, and the pin
 **A saved view is edited field by field.** `renameView`, `patchViewQuery`, `setViewKind`,
 `addViewPin`/`removeViewPin`, `patchViewCollection` and `patchViewRender` each write only their own keys.
 There is no whole-record replace, which is what lets two people change different facets of one view without
-one of them silently reverting the other.
+one of them silently reverting the other. `duplicateView` and `moveView` are the two record-level verbs: a
+copy and a position, neither of which can be expressed as a facet.
 
 ## Publish: plan, then apply
 

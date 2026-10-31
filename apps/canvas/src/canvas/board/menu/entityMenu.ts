@@ -145,6 +145,23 @@ const canvasRows: EntityMenuRow[] = [
     },
   },
   {
+    id: "view-from-selection",
+    group: "create",
+    kinds: ["card", "canvas"],
+    render: (ctx) => {
+      if (!ctx.canManageSchema) return [];
+      // The selection is already a context, so this is the shortest path from "what is this?" to a view
+      // that answers it: no words to type, no chips to press.
+      return [
+        {
+          label:
+            ctx.selectedNodeIds.length > 1 ? "New view of these cards" : "New view of this card",
+          onSelect: () => ctx.createViewFromSelection(),
+        },
+      ];
+    },
+  },
+  {
     id: "new-media",
     group: "create",
     kinds: ["canvas"],

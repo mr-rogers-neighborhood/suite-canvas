@@ -57,7 +57,8 @@ export const HANDBOOK_REGIONS: readonly HandbookRegion[] = [
   { id: "toast-layer", label: "Toasts", group: "panel" },
   { id: "handbook-bubble", label: "The handbook", group: "panel" },
   { id: "views-layer", label: "The views layer", group: "panel" },
-  { id: "views-projection-bar", label: "A projected view", group: "panel" },
+  { id: "views-surface-controls", label: "A view's presentation and grouping", group: "panel" },
+  { id: "views-projection-float", label: "A projected view", group: "panel" },
 ];
 
 /** The attribute a shell element carries so the picker and the presence check can find it. */

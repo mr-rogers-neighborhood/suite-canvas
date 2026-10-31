@@ -504,6 +504,7 @@ export {
   viewCollectionModes,
   viewCollectionSchema,
   viewContextSchema,
+  viewGroupByFieldSchema,
   viewGroupBySchema,
   viewGroupBys,
   viewKindOf,

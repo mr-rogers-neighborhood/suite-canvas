@@ -8,10 +8,9 @@ import {
 import { describe, expect, it } from "vitest";
 
 /**
- * A lens can carry a tag filter (ADR-0053 §6). The tag selects the card that
- * carries it *and* the cards inside a section that carries it — the section tag
- * is a queryable grouping — while section membership keeps coming from geometry
- * alone. This is the query the canvas lens runs, so it is the same rule the
+ * A view can carry a tag filter (ADR-0053 §6). The tag selects the card that carries it *and* the cards
+ * inside a section that carries it — the section tag is a queryable grouping — while section membership
+ * keeps coming from geometry alone. This is the query a projected view runs, so it is the same rule the
  * library's facet applies.
  */
 

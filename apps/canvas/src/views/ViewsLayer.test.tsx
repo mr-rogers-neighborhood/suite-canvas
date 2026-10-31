@@ -42,6 +42,10 @@ beforeEach(() => {
     editingId: null,
     draft: null,
     contextOpen: false,
+    mode: "read",
+    drilldown: null,
+    hiddenFields: [],
+    deleted: null,
     picking: false,
     pickBase: null,
     pendingCardId: null,
@@ -70,9 +74,25 @@ describe("the views layer", () => {
     expect(doc.listViews()).toHaveLength(1);
   });
 
+  it("should open to the data, with the controls one press away", () => {
+    const { view } = seed();
+    useViewsStore.getState().openLayer(view.id);
+    render(<ViewsLayer />);
+
+    // Reading is the default: no kind switch, no context toggle, and the context said in one sentence.
+    expect(screen.queryByTestId("views-layer-kind-collection")).toBeNull();
+    expect(screen.queryByTestId("views-layer-context")).toBeNull();
+    expect(screen.getByTestId("views-context-sentence")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("views-layer-mode-edit"));
+    expect(screen.getByTestId("views-layer-kind-collection")).toBeInTheDocument();
+    expect(screen.getByTestId("views-layer-context")).toBeInTheDocument();
+  });
+
   it("should write the kind to the document as it is chosen", () => {
     const { view, doc } = seed();
     useViewsStore.getState().openLayer(view.id);
+    useViewsStore.getState().setMode("edit");
     render(<ViewsLayer />);
 
     fireEvent.click(screen.getByTestId("views-layer-kind-render"));
@@ -83,6 +103,7 @@ describe("the views layer", () => {
   it("should write a query change to the document, not to a draft", () => {
     const { view, doc } = seed();
     useViewsStore.getState().openLayer(view.id);
+    useViewsStore.getState().setMode("edit");
     render(<ViewsLayer />);
 
     fireEvent.click(screen.getByTestId("views-layer-context"));
@@ -100,37 +121,29 @@ describe("the views layer", () => {
     expect(useViewsStore.getState().open).toBe(false);
   });
 
-  it("should get out of the way to pick cards, and put back what Cancel drops", () => {
-    const { view, doc } = seed();
+  it("should leave the window and project when the reader starts picking", () => {
+    const { view } = seed();
     useViewsStore.getState().openLayer(view.id);
+    useViewsStore.getState().setMode("edit");
     render(<ViewsLayer />);
 
     fireEvent.click(screen.getByTestId("views-layer-pick"));
+    // The layer is gone, the board is the surface, and the view is cast so the picks show up live.
     expect(screen.queryByTestId("views-layer")).toBeNull();
-    expect(screen.getByTestId("views-picking-bar")).toBeInTheDocument();
-
-    // The board is live while picking: a press adds a pin straight to the view.
-    doc.addViewPin(view.id, "c1");
-    expect(doc.getView(view.id)?.context?.cardIds).toEqual(["c1"]);
-
-    fireEvent.click(screen.getByTestId("views-picking-cancel"));
-    // Cancel restores the pins the layer started with, which were none.
-    expect(doc.getView(view.id)?.context?.cardIds ?? []).toEqual([]);
-    expect(useViewsStore.getState().picking).toBe(false);
+    expect(useViewsStore.getState().picking).toBe(true);
+    expect(useViewsStore.getState().open).toBe(false);
+    expect(Object.values(useProjectionStore.getState().byWorkspace)[0]?.viewId).toBe(view.id);
   });
 
-  it("should return to the layer when picking is done", () => {
+  it("should remember the pins it started from, so a cancel can be exact", () => {
     const { view, doc } = seed();
+    doc.addViewPin(view.id, "c1");
     useViewsStore.getState().openLayer(view.id);
+    useViewsStore.getState().setMode("edit");
     render(<ViewsLayer />);
 
     fireEvent.click(screen.getByTestId("views-layer-pick"));
-    doc.addViewPin(view.id, "c1");
-    fireEvent.click(screen.getByTestId("views-picking-done"));
-
-    expect(useViewsStore.getState().picking).toBe(false);
-    expect(screen.getByTestId("views-layer")).toBeInTheDocument();
-    expect(doc.getView(view.id)?.context?.cardIds).toEqual(["c1"]);
+    expect(useViewsStore.getState().pickBase).toEqual(["c1"]);
   });
 
   it("should create a new view from a draft and stay on it", () => {
@@ -150,6 +163,7 @@ describe("the views layer", () => {
   it("should discard the layer's own edits when asked", () => {
     const { view, doc } = seed();
     useViewsStore.getState().openLayer(view.id);
+    useViewsStore.getState().setMode("edit");
     render(<ViewsLayer />);
 
     fireEvent.change(screen.getByTestId("views-layer-name"), { target: { value: "Renamed" } });

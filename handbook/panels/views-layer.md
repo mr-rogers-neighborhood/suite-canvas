@@ -1,6 +1,6 @@
 ---
 title: The views layer
-description: "A mode for reading your workspace as data: the rail, the presentation, and the context drawer."
+description: "A mode for reading your workspace as data: the rail, the presentation, and the two states."
 order: 90
 targets:
   - kind: ui
@@ -8,21 +8,23 @@ targets:
 ---
 
 The layer is where a view is read and edited. It opens from the views icon, from a view card, or from the
-projection bar, and it takes the whole window — a view is a surface, so it gets one.
+projection float, and it takes the whole window — a view is a surface, so it gets one.
 
-On the left, every saved view with a live thumbnail, its kind and its name, and a filter box for when
-there are many. **New view** starts one. The rest of the window is the presentation: a table, grid or
-list, or a graph or chart, drawn from the live context.
+It has two states, and the switch is in the header.
 
-**Context** opens a drawer over the rail: the words, the scope (all cards or this board), type, tag and
-section chips, the pinned cards, and an Advanced disclosure for sorts and rules. The read-out under it
-says what the context currently is, including how many cards sit on each board and how many are only in
-the inbox.
+**Read** is where it opens. The presentation fills the window, the context is a sentence rather than six
+inputs — the words, how many filters, whether it is board-scoped, how many cards you picked by hand, how
+many groups — and a cell is a value. `Done` or `Back` takes you to the board.
 
-**Pick cards** is the layer getting out of the way. The window returns to the board, a bar says what you
-are picking for, and each press adds that card straight to the view. **Done** comes back with them;
-**Cancel** puts back exactly what was there before you started, even if you wandered to another board.
+**Edit** is the same surface with its controls: how the result is drawn, what it is grouped by, the column
+sorts, and a `Context` drawer over the rail with the words, the scope, type, tag and section chips, the
+pinned cards and an Advanced disclosure. A cell becomes an input and writes on Enter or blur, so typing in a
+table is one write per value rather than one per keystroke.
+
+On the left, every saved view with a live thumbnail, its kind and its count. Hovering a row offers **duplicate**
+and **delete**; `D` and `Backspace` do the same from the keyboard, and the footer offers **Undo** after a
+delete. Past eight views the rail groups them under *Collections* and *Renders*.
 
 A saved view is editable by anyone who can change the workspace, and the change lands for everyone as it
-happens. **Done** leaves, **Discard my edits** restores the record you opened. A new view is different: it
-is a draft until **Create**, so starting one is cancellable and it only exists once you mean it.
+happens. `Done` leaves, `Discard my edits` restores the record you opened. A new view is different: it is a
+draft until `Create`, so starting one is cancellable and it only exists once you mean it.

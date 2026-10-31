@@ -68,7 +68,6 @@ export function newThingMenuModel(input: NewThingInput): NewThingMenuModel {
     libraryOpen,
     libraryTab: "cards",
     activeBoardId,
-    activeViewId: null,
     cardId: null,
     cardPlaced: false,
     boards: boards.map((board) => ({ id: board.id, name: board.name })),

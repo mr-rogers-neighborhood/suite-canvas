@@ -9,7 +9,7 @@ import { EdgeDescriptionInput } from "../EdgeDescription";
 import { LibraryDropPreview } from "../PeerLibraryDragLayer";
 import { PlaceStackCursor } from "../PlaceStackCursor";
 import { PortalTransitionLayer } from "../PortalTransitionLayer";
-import { ProjectionBar } from "./ProjectionBar";
+import { ProjectionFloat } from "../ProjectionFloat";
 import { ThreadLinkPreview } from "./ThreadLinkPreview";
 import type { useBoardLinks } from "./useBoardLinks";
 import type { useBoardProjection } from "./useBoardProjection";
@@ -61,7 +61,7 @@ export function BoardOverlays({ ui, projection, links, menuItems }: BoardOverlay
         <NudgeHint count={selectedNodeIds.length} lifted={selectedNodeIds.length > 1} />
       ) : null}
       <DropOffer />
-      <ProjectionBar />
+      <ProjectionFloat />
       {/* Explain's gathered context lives in the handbook when this build has one, and stands
           on its own over the board when it does not. */}
       {handbookEnabled ? null : <ExplainPanel />}

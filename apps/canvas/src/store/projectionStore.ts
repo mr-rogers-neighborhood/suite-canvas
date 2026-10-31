@@ -21,9 +21,22 @@ export interface Projection {
   readonly outline: boolean;
 }
 
+/** Where this reader last put the projection float, in viewport coordinates. */
+export interface FloatCorner {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** The float's resting place when nothing has been remembered: clear of the dock, down and left. */
+export const DEFAULT_CORNER: FloatCorner = { x: 16, y: 16 };
+
 interface ProjectionState {
   /** Workspace id → the projection this reader left on. */
   readonly byWorkspace: Readonly<Record<string, Projection>>;
+  /** Workspace id → the corner the reader dragged the float to. */
+  readonly corners: Readonly<Record<string, FloatCorner>>;
+  /** Remember where the float settled, so it comes back there. */
+  setCorner: (corner: FloatCorner) => void;
   /** Cast a view on the board, keeping the toggles the reader last chose. */
   project: (viewId: string) => void;
   /** Stop projecting. */
@@ -35,6 +48,7 @@ interface ProjectionState {
 }
 
 const STORAGE_KEY = "suite.projection.v1";
+const CORNERS_KEY = "suite.projection.corners.v1";
 
 /**
  * What this browser files a projection under.
@@ -69,6 +83,32 @@ function persist(byWorkspace: Readonly<Record<string, Projection>>): void {
   }
 }
 
+function readCorners(): Record<string, FloatCorner> {
+  if (!hasStorage()) return {};
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(CORNERS_KEY) ?? "null");
+    if (typeof parsed !== "object" || parsed === null) return {};
+    const out: Record<string, FloatCorner> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value !== "object" || value === null) continue;
+      const { x, y } = value as Record<string, unknown>;
+      if (typeof x === "number" && typeof y === "number") out[key] = { x, y };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function persistCorners(corners: Readonly<Record<string, FloatCorner>>): void {
+  if (!hasStorage()) return;
+  try {
+    window.localStorage.setItem(CORNERS_KEY, JSON.stringify(corners));
+  } catch {
+    // Same rule as the projection itself: storage trouble must not break the board.
+  }
+}
+
 export const useProjectionStore = create<ProjectionState>()((set, get) => {
   const write = (byWorkspace: Record<string, Projection>) => {
     persist(byWorkspace);
@@ -77,6 +117,13 @@ export const useProjectionStore = create<ProjectionState>()((set, get) => {
 
   return {
     byWorkspace: readStored(),
+    corners: readCorners(),
+
+    setCorner: (corner) => {
+      const next = { ...get().corners, [PROJECTION_KEY]: corner };
+      persistCorners(next);
+      set({ corners: next });
+    },
 
     project: (viewId) => {
       const existing = get().byWorkspace[PROJECTION_KEY];

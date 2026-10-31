@@ -1,4 +1,3 @@
-import type { ViewQuery } from "@suite/graph";
 import { create } from "zustand";
 import type { CanvasMode } from "../canvas/links/linkGesture";
 import type { CanvasPurpose } from "../canvas/purpose";
@@ -310,8 +309,6 @@ interface UiState extends SessionCapabilities {
    */
   setPurpose: (purpose: CanvasPurpose) => void;
   libraryGroupBySection: boolean;
-  /** Saved query view applied to the library, if any. */
-  activeViewId: string | null;
   /**
    * Live text of the library search box. The drawer owns the box and mirrors
    * it here so the app bar can offer "save current search" without reaching
@@ -319,13 +316,6 @@ interface UiState extends SessionCapabilities {
    */
   libraryQuery: string;
   setLibraryQuery: (query: string) => void;
-  /**
-   * Applies a saved view to the same controls manual facets use — there is no
-   * second filtering model, just a stored query copied into them.
-   */
-  applyView: (viewId: string, query: ViewQuery) => void;
-  /** Drops the saved view and everything it filled in. */
-  exitView: () => void;
   /** Whether the board outline rail is expanded. */
   outlineOpen: boolean;
   /** Whether the version-history panel is open beside the board. */
@@ -524,7 +514,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   libraryFull: false,
   purpose: "explore",
   libraryGroupBySection: false,
-  activeViewId: null,
   libraryQuery: "",
   outlineOpen: true,
   historyOpen: false,
@@ -856,29 +845,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   toggleLibraryGroupBySection: () =>
     set((state) => ({ libraryGroupBySection: !state.libraryGroupBySection })),
   setLibraryQuery: (libraryQuery) => set({ libraryQuery }),
-  applyView: (activeViewId, query) =>
-    set({
-      activeViewId,
-      libraryQuery: query.text ?? "",
-      libraryTypeFilter: [...query.typeIds],
-      libraryTagFilter: [...query.tagIds],
-      librarySectionFilter: [...query.sectionIds],
-      libraryScope: query.scope,
-      libraryGroupBySection: query.groupBySection,
-      libraryTab: "cards",
-      libraryOpen: true,
-      libraryReason: "reader",
-    }),
-  exitView: () =>
-    set({
-      activeViewId: null,
-      libraryQuery: "",
-      libraryTypeFilter: [],
-      libraryTagFilter: [],
-      librarySectionFilter: [],
-      libraryScope: "all",
-      libraryGroupBySection: false,
-    }),
   toggleOutline: () => set((state) => ({ outlineOpen: !state.outlineOpen })),
   toggleHistory: () => set((state) => ({ historyOpen: !state.historyOpen })),
   closeHistory: () => set({ historyOpen: false }),

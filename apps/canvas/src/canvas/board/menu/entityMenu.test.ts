@@ -32,6 +32,7 @@ function makeContext(overrides: Record<string, unknown> = {}): BoardMenuContext 
     duplicateCards: vi.fn(),
     createSectionAt: vi.fn(),
     createViewAt: vi.fn(),
+    createViewFromSelection: vi.fn(),
     openMediaLibrary: vi.fn(),
     arrangeSelection: vi.fn(),
     changeLayer: vi.fn(),
@@ -205,6 +206,23 @@ describe("the create group", () => {
 
     byLabel(items, "New view")?.onSelect?.();
     expect(createViewAt).toHaveBeenCalledWith({ x: 80, y: 40 });
+  });
+
+  it("should offer a view of what is selected, named for the selection", () => {
+    const createViewFromSelection = vi.fn();
+    const items = canvasMenu({
+      canManageSchema: true,
+      selectedNodeIds: ["c1", "c2"],
+      createViewFromSelection,
+    });
+
+    byLabel(items, "New view of these cards")?.onSelect?.();
+    expect(createViewFromSelection).toHaveBeenCalled();
+  });
+
+  it("should name the row for one card when one card is selected", () => {
+    const items = canvasMenu({ canManageSchema: true, selectedNodeIds: ["c1"] });
+    expect(byLabel(items, "New view of this card")).toBeDefined();
   });
 
   it("should open one media list rather than inventing a second uploader", () => {

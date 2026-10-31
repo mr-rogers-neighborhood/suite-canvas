@@ -407,8 +407,9 @@ other members out of formation.
 ## Projections
 
 A projection is a view cast over this reader's board: the cards its context selects are outlined,
-everything else is faded, and `board/ProjectionBar.tsx` names the view with a chip per board the
-context reaches. It is reader state, not document state. `store/projectionStore.ts` keeps one entry
+everything else is faded, and `canvas/ProjectionFloat.tsx` names the view with a chip per board the
+context reaches. The float is not a bar pinned to the bottom: it drags through `useFloatGesture`, settles
+around `shellObstacles` so it never lands under the dock, and remembers its corner beside the projection. It is reader state, not document state. `store/projectionStore.ts` keeps one entry
 per workspace in `localStorage` under `PROJECTION_KEY`, so two people on the same board disagree about
 projection exactly as they disagree about the camera, and `useCanvasLens` drops the entry when the view
 it names is deleted. What is shared is the view itself: its query and presentation are document data,
@@ -426,7 +427,7 @@ re-renders because `useBoardProjection` folds the projected ids into the node da
 | `board/BoardOverlays.tsx` | context menu, edge description, peer drag layer and other portals |
 | `board/useBoardUi.ts` | one bundle of stores, camera helpers and capability flags for the board |
 | `board/useBoardProjection.ts` | snapshot to board-scoped maps; no writes |
-| `board/ProjectionBar.tsx` | the projected view's name, board chips and the two reading switches |
+| `canvas/ProjectionFloat.tsx` | the projected view's name, board chips, reading switches and the pick bar |
 | `board/useBoardNodes.ts` | placements to flow nodes and edges, live offsets, peer easing |
 | `board/useBoardSelection.ts` | selection reconciliation, marquee to flow box, scope release |
 | `board/useBoardLinks.ts` | link thread, create, re-attach and label gestures |

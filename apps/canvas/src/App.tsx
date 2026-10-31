@@ -35,10 +35,13 @@ import { LIBRARY_SEARCH_FOCUS_EVENT } from "./hooks/useLibrarySearch";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
 import { isStandalone } from "./session/mode";
 import { getSession, type ShareSession } from "./session/session";
+import { useProjectionStore } from "./store/projectionStore";
 import { useCanvasStore } from "./store/useCanvasStore";
 import { useUiStore } from "./store/useUiStore";
+import { useViewsStore } from "./store/viewsStore";
 import { useWorkspaceSnapshot } from "./store/workspaceStore";
 import { initTheme, useThemeStore } from "./theme/useThemeStore";
+import { viewsEnabled } from "./views/availability";
 
 /** Half of the default card box (`w-72`), so a dropped card lands under the pointer. */
 const CARD_HALF_WIDTH = 144;
@@ -147,9 +150,6 @@ function WorkspaceShell({
   const inspectorNodeId = useUiStore((state) => state.inspectorNodeId);
   const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
   const paletteOpen = useUiStore((state) => state.paletteOpen);
-  const activeViewId = useUiStore((state) => state.activeViewId);
-  const applyView = useUiStore((state) => state.applyView);
-  const exitView = useUiStore((state) => state.exitView);
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const editingField = useUiStore((state) => state.editingField);
   const readOnly = useUiStore((state) => state.readOnly);
@@ -268,6 +268,13 @@ function WorkspaceShell({
     setFocus,
     openInspector,
   });
+
+  const openView = useCallback((viewId: string) => {
+    useViewsStore.getState().openLayer(viewId);
+  }, []);
+  const projectView = useCallback((viewId: string) => {
+    useProjectionStore.getState().project(viewId);
+  }, []);
 
   const canvasPoint = useCallback(
     (clientPoint?: { x: number; y: number }) => {
@@ -504,7 +511,7 @@ function WorkspaceShell({
         snapshot,
         savedViews,
         activeBoardId,
-        activeViewId,
+        viewsEnabled,
         cardFocusId,
         inspectorNodeId,
         selectedNodeIds,
@@ -526,8 +533,8 @@ function WorkspaceShell({
         selectSection,
         openCardFocus,
         openInspector,
-        applyView,
-        exitView,
+        openView,
+        projectView,
         createCard,
         canvasPoint,
         placeCard,
@@ -544,7 +551,6 @@ function WorkspaceShell({
       snapshot,
       savedViews,
       activeBoardId,
-      activeViewId,
       workspace,
       workspaceSurface,
       readOnly,
@@ -567,8 +573,8 @@ function WorkspaceShell({
       selectSection,
       openCardFocus,
       openInspector,
-      applyView,
-      exitView,
+      openView,
+      projectView,
       createCard,
       canvasPoint,
       placeCard,

@@ -390,7 +390,6 @@ describe("the command that runs it", () => {
       libraryOpen: false,
       libraryTab: "cards",
       activeBoardId: "board-1",
-      activeViewId: null,
       cardId,
       cardPlaced: true,
       boards: [{ id: "board-1", name: "Catalog" }],

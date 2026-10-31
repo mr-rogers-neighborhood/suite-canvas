@@ -43,7 +43,7 @@ describe("the view surface", () => {
 
   it("should draw a collection as a table with the card's type and values", () => {
     const { doc, board, view } = fixture();
-    render(<ViewSurface view={view("collection")} workspace={doc} boardId={board.id} />);
+    render(<ViewSurface view={view("collection")} workspace={doc} boardId={board.id} editing />);
 
     expect(screen.getByTestId("view-surface-table")).toBeInTheDocument();
     expect(screen.getByText("Ada")).toBeInTheDocument();
@@ -52,9 +52,19 @@ describe("the view surface", () => {
     expect(screen.getByLabelText("Rating")).toHaveValue(3);
   });
 
+  it("should draw a value and not an input when the reader is only reading", () => {
+    const { doc, board, view } = fixture();
+    render(<ViewSurface view={view("collection")} workspace={doc} boardId={board.id} />);
+
+    // Read mode is the default: no field becomes an input until the reader asks to edit.
+    expect(screen.queryByLabelText("Status")).toBeNull();
+    expect(screen.getByTestId("view-surface-table")).toBeInTheDocument();
+    expect(screen.getAllByText("draft").length).toBeGreaterThan(0);
+  });
+
   it("should write a text cell on Enter, not on every keystroke", () => {
     const { doc, board, status, view } = fixture();
-    render(<ViewSurface view={view("collection")} workspace={doc} boardId={board.id} />);
+    render(<ViewSurface view={view("collection")} workspace={doc} boardId={board.id} editing />);
     const cell = screen.getByLabelText("Status");
 
     fireEvent.change(cell, { target: { value: "final" } });
@@ -66,7 +76,7 @@ describe("the view surface", () => {
 
   it("should write a number cell as a number", () => {
     const { doc, board, rating, view } = fixture();
-    render(<ViewSurface view={view("collection")} workspace={doc} boardId={board.id} />);
+    render(<ViewSurface view={view("collection")} workspace={doc} boardId={board.id} editing />);
     const cell = screen.getByLabelText("Rating");
 
     fireEvent.change(cell, { target: { value: "5" } });
@@ -77,10 +87,11 @@ describe("the view surface", () => {
   it("should leave a field kind it cannot edit to the inspector", () => {
     const { doc, board, type, view } = fixture();
     doc.addField(type.id, { name: "Related", kind: "date" });
-    render(<ViewSurface view={view("collection")} workspace={doc} boardId={board.id} />);
+    render(<ViewSurface view={view("collection")} workspace={doc} boardId={board.id} editing />);
 
+    // A date is not a kind a cell edits, so it stays a value in both modes and the inspector owns it.
     expect(screen.queryByLabelText("Related")).toBeNull();
-    expect(screen.getByText("Related: —")).toBeInTheDocument();
+    expect(screen.getByTitle("Related")).toBeInTheDocument();
   });
 
   it("should draw a grid or a list when the collection asks for one", () => {

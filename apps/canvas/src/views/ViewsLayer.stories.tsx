@@ -24,7 +24,7 @@ function workspace(): WorkspaceDocument {
   return doc;
 }
 
-type Opened = "collection" | "render" | "picking" | "new" | "empty";
+type Opened = "collection" | "render" | "edit" | "board" | "picking" | "new" | "empty";
 
 function Layer({ opened }: { opened: Opened }) {
   useEffect(() => {
@@ -64,11 +64,20 @@ function Layer({ opened }: { opened: Opened }) {
         render: { layout: "bar", measure: { of: "count" }, groupBy: "type" },
       });
     }
+    if (opened === "board") {
+      doc.patchViewCollection(collection.id, { mode: "board" });
+      doc.patchViewQuery(collection.id, { groupBy: "type" });
+    }
     if (opened === "new") store.openNew(2);
     else if (opened === "empty") store.openLayer(null);
     else {
       store.openLayer(collection.id);
-      if (opened === "picking") store.startPicking([]);
+      // Read is the default; `edit` is the same surface with its controls.
+      if (opened === "edit") store.setMode("edit");
+      if (opened === "picking") {
+        store.startPicking([]);
+        store.close();
+      }
     }
   }, [opened]);
   return <ViewsLayer />;
@@ -84,13 +93,19 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-/** A saved collection: the rail of thumbnails, the editable table, and the context beside it. */
-export const Collection: Story = { args: { opened: "collection" } };
+/** A saved collection in read mode: the rail, the table, and the context as a sentence. */
+export const Reading: Story = { args: { opened: "collection" } };
+
+/** The same view in edit mode: presentation, grouping, sorts, the context drawer and row actions. */
+export const Editing: Story = { args: { opened: "edit" } };
+
+/** A collection drawn as a board: the cards where they sit, grouped by type. */
+export const AsABoard: Story = { args: { opened: "board" } };
 
 /** The same board read as a chart, with the layout, measure and grouping controls above it. */
 export const Render: Story = { args: { opened: "render" } };
 
-/** Picking: the layer is out of the way and the board is the surface. */
+/** Picking: the layer is out of the way, the view is projected, and the float carries the bar. */
 export const Picking: Story = { args: { opened: "picking" } };
 
 /** A new view before its first Create: a local draft, with its context drawer already open. */

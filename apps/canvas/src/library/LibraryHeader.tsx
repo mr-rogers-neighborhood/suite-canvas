@@ -32,8 +32,6 @@ export function LibraryHeader({
   counts,
   canManageTrash,
   onTab,
-  activeViewName,
-  onExitView,
   scope,
   onScope,
   activeBoardId,
@@ -54,8 +52,6 @@ export function LibraryHeader({
   counts: Partial<Record<LibraryTab, number>>;
   canManageTrash: boolean;
   onTab: (tab: LibraryTab) => void;
-  activeViewName: string | null;
-  onExitView: () => void;
   scope: "all" | "board";
   onScope: (scope: "all" | "board") => void;
   activeBoardId: string | null;
@@ -122,29 +118,6 @@ export function LibraryHeader({
           </button>
         ))}
       </div>
-
-      {activeViewName !== null ? (
-        <span
-          className="library-tab"
-          data-active="true"
-          data-testid="library-active-view"
-          title="This list is filtered by a saved view"
-        >
-          <span aria-hidden="true" className="opacity-70">
-            {"\u25c7"}
-          </span>
-          <span className="max-w-[10rem] truncate">{activeViewName}</span>
-          <button
-            type="button"
-            aria-label={`Exit view ${activeViewName}`}
-            data-testid="library-exit-view"
-            className="-mr-1 ml-0.5 rounded px-0.5 hover:bg-black/10 dark:hover:bg-white/15"
-            onClick={onExitView}
-          >
-            {"\u00d7"}
-          </button>
-        </span>
-      ) : null}
 
       {tab === "cards" ? (
         <div className="library-scope" data-testid="library-scope">

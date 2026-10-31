@@ -374,6 +374,10 @@ export class WorkspaceDocument extends CardsFacade {
     return this.viewsApi.clearViewPins(id);
   }
 
+  duplicateView(id: string, name?: string): SavedView | undefined {
+    return this.viewsApi.duplicateView(id, name);
+  }
+
   deleteView(id: string): void {
     this.viewsApi.deleteView(id);
   }

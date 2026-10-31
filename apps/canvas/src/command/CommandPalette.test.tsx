@@ -68,8 +68,8 @@ function actions(): CommandActions {
     goToSection: vi.fn(),
     focusCard: vi.fn(),
     openCard: vi.fn(),
-    applyView: vi.fn(),
-    exitView: vi.fn(),
+    openView: vi.fn(),
+    projectView: vi.fn(),
     createCard: vi.fn(),
     createCardInInbox: vi.fn(),
     createSketch: vi.fn(),
@@ -97,7 +97,6 @@ const baseState: CommandState = {
   libraryOpen: false,
   libraryTab: "cards",
   activeBoardId: "board-1",
-  activeViewId: null,
   cardId: "c1",
   cardPlaced: true,
   boards: [

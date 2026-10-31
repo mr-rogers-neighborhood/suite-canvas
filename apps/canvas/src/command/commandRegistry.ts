@@ -84,7 +84,6 @@ export interface CommandState {
   libraryOpen: boolean;
   libraryTab: LibraryTab;
   activeBoardId: string | null;
-  activeViewId: string | null;
   /** The card a card-scoped command acts on, when one is open or selected. */
   cardId: string | null;
   /** Whether that card sits on the active board, so it can be taken off it. */
@@ -110,8 +109,10 @@ export interface CommandActions {
   goToSection(sectionId: string): void;
   focusCard(cardId: string): void;
   openCard(cardId: string): void;
-  applyView(viewId: string): void;
-  exitView(): void;
+  /** Open the views layer on a saved view. */
+  openView(viewId: string): void;
+  /** Cast a saved view over this reader's board. */
+  projectView(viewId: string): void;
   createCard(typeId: string): void;
   /** An inbox card: it has no board placement until the reader places it. */
   createCardInInbox(): void;
@@ -453,42 +454,34 @@ export const commands: readonly CommandDefinition[] = [
     owner: "palette",
     capabilities: [],
     available: (context) => onWorkspace(context) && context.state.views.length > 0,
-    palette: { group: "Views", weight: 20, keywords: ["view", "query", "lens", "filter"] },
-    // A row opens the library it filters, exactly as it always has.
+    palette: { group: "Views", weight: 20, keywords: ["view", "query", "open", "layer"] },
     expand: (context) =>
       context.state.views.map((view) => ({
         key: view.id,
         label: view.name,
-        subtitle: "Saved view",
-        keywords: ["view", "query", "lens", "filter"],
+        subtitle: "Open in the views layer",
+        keywords: ["view", "query", "open", "layer"],
         weight: 20,
-        run: (live) => live.actions.openLibrary(),
+        run: (live) => live.actions.openView(view.id),
       })),
   }),
   define({
-    id: "view.apply",
-    label: "Apply view",
+    id: "view.project",
+    label: "Project view",
     group: "view",
-    owner: "canvas",
+    owner: "palette",
     capabilities: [],
     available: (context) => onWorkspace(context) && context.state.views.length > 0,
+    palette: { group: "Views", weight: 21, keywords: ["view", "project", "cast", "board"] },
     expand: (context) =>
       context.state.views.map((view) => ({
         key: view.id,
         label: view.name,
-        subtitle: "Saved view",
+        subtitle: "Cast over this board",
+        keywords: ["view", "project", "cast", "board"],
         weight: 20,
-        run: (live) => live.actions.applyView(view.id),
+        run: (live) => live.actions.projectView(view.id),
       })),
-  }),
-  define({
-    id: "view.exit",
-    label: "Clear the current view",
-    group: "view",
-    owner: "canvas",
-    capabilities: [],
-    available: (context) => context.state.activeViewId !== null,
-    run: (context) => context.actions.exitView(),
   }),
   define({
     id: "section.focus",

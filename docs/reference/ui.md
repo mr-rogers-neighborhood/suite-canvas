@@ -20,8 +20,10 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history and outline buttons in `app/WorkspaceShellView.tsx` | Home, the open boards with their peer counts, undo, redo, version history and the outline, in one row |
 | Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface, plus the plan wall and the retry for whoever just paid |
 | Views | `apps/canvas/src/chrome/ViewsBar.tsx` | One icon in the nav row, after the outline, opening the views layer on the projected view. **Development only** (see below) |
-| Views layer | `apps/canvas/src/views/ViewsLayer.tsx` | The full-window mode: the rail of saved views with thumbnails, the presentation, the context drawer and the picking state |
-| Projection bar | `apps/canvas/src/canvas/board/ProjectionBar.tsx` | A view cast onto this reader's board: its name, the boards it touches, the two toggles, Open and Stop |
+| Views layer | `apps/canvas/src/views/ViewsLayer.tsx` | The full-window mode: the rail of saved views with row actions, the presentation in read or edit mode, the context drawer and the pick |
+| Views surface | `apps/canvas/src/views/ViewSurface.tsx` | One view drawn: a table, grid, list or board, or a graph or chart, with grouping, drill-down and in-place cells |
+| Projection float | `apps/canvas/src/canvas/ProjectionFloat.tsx` | The view cast over this reader's board: draggable, remembered, and the bar the pick runs through |
+| Projection float | `apps/canvas/src/canvas/ProjectionFloat.tsx` | A view cast onto this reader's board: its name, the boards it touches, the two toggles, Open and Stop, and the pick |
 | Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new sketch, new section, new portal, type settings. The menu itself is `apps/canvas/src/chrome/NewThingMenu.tsx`, shared with the library |
 | Outline rail | `apps/canvas/src/canvas/BoardOutline.tsx` | The active board's section tree, in reading order, with counts and presence. Hidden while the board has no sections |
 | Inspector | `apps/canvas/src/cards/CardInspectorHost.tsx` | The one panel for the selected card or container |
@@ -144,24 +146,51 @@ surface: a rail of live thumbnails on the left, the presentation in the middle, 
 a footer that says Done or Create. Opening it is a mode change, which is why Escape has one owner and why
 the title bar knows it is underneath.
 
+**Read and edit are two states of that surface.** `mode` in `store/viewsStore.ts` defaults to `read`: the
+presentation fills the window, the context is a sentence of chips rather than six inputs, and a cell is a
+value rather than a field. `edit` brings the drawer toggle, the kinds, the presentation controls, the column
+sorts and the row actions back. A new draft always opens in edit, because a draft with no context is not
+worth reading. The mode is reader state and never written, so one person editing does not turn anyone else's
+view into a form.
+
+**The rail carries a view's whole lifecycle.** Rename through the title, `duplicateView` for a copy placed
+beside the original, `moveView` for reordering, and `deleteView`, which the layer offers as a two-press
+button and then an Undo in the footer, because a deleted view is one record and one undo step. ↑/↓, Enter,
+`D` and `Backspace` do the same from the keyboard.
+
 **Editing a saved view is live.** The layer writes through field-level setters (`renameView`,
 `patchViewQuery`, `setViewKind`, `addViewPin`, `patchViewCollection`, `patchViewRender`), each of which touches
 only its own keys, so two people editing different facets converge instead of clobbering. There is no Save:
 `Done` leaves, and `Discard my edits` restores the record the layer opened with, as a write everyone sees.
 A *new* view stays a local draft until `Create`, so creating one is cancellable.
 
-**Picking is the layer's third state.** `Pick cards` hides the layer, the board becomes the surface, each
-press adds a pin immediately, and the floating bar owns Done and Cancel. Cancel restores the pin list the
-pick started from, including across a board switch.
+**Picking is a projection being built.** `Pick cards` casts the view and leaves the layer, so the cards light
+up as they are added: a press on a card pins it and a second press unpins it, through `pickCard` in
+`canvas/board/BoardSurface.tsx`. The projection float owns the bar (*Picking · n pinned · Done · Cancel*)
+and Cancel restores the pin list the pick started from, including across a board switch. There is one surface
+language rather than two: building a context and reading it look like the same thing because they are.
 
 **The board reads the projection.** `useCanvasLens` resolves it, `useBoardNodes` outlines and fades from it,
-and `ProjectionBar` explains it. The library's own filters are the reader's; a projection no longer filters
-it, which removes the second source of "what is applied".
+and `ProjectionFloat` explains it. The float drags through the same `useFloatGesture` the pins and the
+handbook bubble use, settles around `shellObstacles` so it never lands under the dock, and remembers its
+corner per workspace beside the projection itself. The library's own filters are the reader's; a projection
+no longer filters it, which removes the second source of "what is applied".
 
-**Collections and renders are read in the layer.** A collection is a table whose text, number, checkbox and
-select cells edit in place through `setProperty`; a render is a graph or a bar/line chart with a measure and
-a grouping. Anything richer than those four kinds shows its value and leaves editing to the inspector,
-rather than inventing a text protocol for a relation.
+**Collections and renders are read in the layer.** A collection is a table, a grid, a list or a **board**,
+the cards where they sit, drawn through `BoardMiniature`, with the unplaced ones named underneath because an
+inbox card has no position to draw. A render is a graph or a bar/line chart with a measure and a chart
+grouping. Text, number, checkbox and select cells edit in place through `setProperty` in edit mode only;
+anything richer shows its value and leaves editing to the inspector, rather than inventing a text protocol
+for a relation.
+
+**Grouping is one control over the query.** `query.groupBy` is a facet (`section`, `type`, `tag`) or
+`{ field }`, and `groupViewResult` buckets the same `cardIds` the view already selected, so a grouping never
+changes what the view finds. The surface draws a header per group with its count. The legacy
+`groupBySection` boolean still reads, and the control keeps it in step so a document has one answer.
+
+**Drill-down is a reading, not a query write.** Pressing a group header or a chart bucket narrows *this
+reader's* surface to it, shown as a removable chip. Writing that to the view would silently change a shared
+configuration when someone looks at a bar.
 
 Rows share one action menu, opened from the `⋯` button or a right-click, and one piece of state (`rowMenu`), so both entry points cannot show different actions for the same row. A card row can be dragged onto the canvas: the hold and drop run through `useLibraryHold`, and the drop places the card at the pointer instead of at the drawer.
 

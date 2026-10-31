@@ -34,8 +34,10 @@ export interface BoardMenuContext {
   createSectionAt: (position: { x: number; y: number }, wrapSelection?: boolean) => void;
   createPortalAt: (position: { x: number; y: number }, targetBoardId: string) => void;
   createPortalToNewBoard: (position: { x: number; y: number }) => void;
-  /** A view card at the click, and the editor open on the view it will present. */
+  /** A view card at the click, and the layer open on the view it will present. */
   createViewAt: (position: { x: number; y: number }) => void;
+  /** A view whose context is what is selected right now, opened as a draft. */
+  createViewFromSelection: () => void;
   /** The library's own media list, which is where media is added and placed. */
   openMediaLibrary: () => void;
   duplicateCards: (ids: string[]) => void;

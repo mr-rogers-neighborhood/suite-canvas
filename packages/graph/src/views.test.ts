@@ -4,6 +4,7 @@ import { WorkspaceDocument } from "./loro/WorkspaceDocument.js";
 import { buildSearchText } from "./search.js";
 import {
   emptyViewQuery,
+  groupViewResult,
   resolveContext,
   runView,
   runViewQuery,
@@ -341,6 +342,19 @@ describe("WorkspaceDocument views", () => {
     );
   });
 
+  it("should bring a deleted view back on undo, which is why delete needs no confirmation", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({ name: "Undoable", query: query({}) });
+    workspace.addViewPin(created.id, "c1");
+
+    workspace.deleteView(created.id);
+    expect(workspace.getView(created.id)).toBeUndefined();
+
+    workspace.undo();
+    expect(workspace.getView(created.id)?.name).toBe("Undoable");
+    expect(workspace.getView(created.id)?.context?.cardIds).toEqual(["c1"]);
+  });
+
   it("should move a view to a position and renumber the rest", () => {
     const workspace = new WorkspaceDocument();
     const a = workspace.createView({ name: "A", query: emptyViewQuery() });
@@ -628,6 +642,54 @@ describe("a view in the document", () => {
   });
 });
 
+describe("a view's groupings and collection modes", () => {
+  it("should accept board as a collection mode, because a view can be drawn as a place", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({
+      name: "As a board",
+      query: query({}),
+      kind: "collection",
+      collection: { mode: "board" },
+    });
+    expect(workspace.getView(created.id)?.collection?.mode).toBe("board");
+  });
+
+  it("should bucket a field's values, with the empty ones last", () => {
+    const { workspace, boardId } = fixture();
+    const status = workspace.addField("character", { name: "Status", kind: "text" });
+    workspace.createCard({
+      id: "c5",
+      typeId: "character",
+      boardId,
+      position: { x: 400, y: 0 },
+    });
+    workspace.setProperty("c1", status.id, "draft");
+    workspace.setProperty("c5", status.id, "final");
+
+    const view = workspace.createView({
+      name: "By status",
+      query: query({ groupBy: { field: status.id } }),
+    });
+    const groups = groupViewResult(workspace, view.query, runView(workspace, view));
+
+    expect(groups.map((group) => group.key)).toEqual(["draft", "final", null]);
+    expect(groups[0]?.cardIds).toEqual(["c1"]);
+    expect(groups[1]?.cardIds).toEqual(["c5"]);
+    // Everything without a value lands in the trailing "no group" bucket rather than disappearing.
+    expect(groups[2]?.cardIds.sort()).toEqual(["c2", "c3", "c4"]);
+  });
+
+  it("should still read the legacy boolean as section grouping", () => {
+    const { workspace } = fixture();
+    const view = workspace.createView({
+      name: "Legacy",
+      query: query({ groupBySection: true }),
+    });
+    expect(view.query.groupBySection).toBe(true);
+    expect(view.query.groupBy).toBeUndefined();
+  });
+});
+
 describe("live edits to one view", () => {
   it("should write only the query keys a patch names", () => {
     const { workspace } = fixture();
@@ -721,6 +783,49 @@ describe("live edits to one view", () => {
       } as unknown as Parameters<typeof workspace.patchViewRender>[1]),
     ).toThrow();
     expect(workspace.getView(created.id)?.render?.layout).toBe("bar");
+  });
+
+  it("should duplicate a view beside it, with its own id and its pins", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({
+      name: "Copy me",
+      query: query({ typeIds: ["character"] }),
+      kind: "collection",
+      collection: { mode: "grid" },
+    });
+    workspace.addViewPin(created.id, "c1");
+    workspace.createView({ name: "After", query: query({}) });
+
+    const copy = workspace.duplicateView(created.id);
+    expect(copy?.id).not.toBe(created.id);
+    expect(copy?.name).toBe("Copy me copy");
+    expect(copy?.collection).toEqual({ mode: "grid" });
+    expect(copy?.context?.cardIds).toEqual(["c1"]);
+    // Right after the original, not at the end of the list.
+    expect(workspace.listViews().map((view) => view.name)).toEqual([
+      "Copy me",
+      "Copy me copy",
+      "After",
+    ]);
+  });
+
+  it("should name a duplicate when it is given a name, and refuse a view that is gone", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({ name: "Source", query: query({}) });
+
+    expect(workspace.duplicateView(created.id, "Derived")?.name).toBe("Derived");
+    expect(workspace.duplicateView("missing")).toBeUndefined();
+  });
+
+  it("should take a duplicate with its own edits, leaving the original alone", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({ name: "Source", query: query({}) });
+    const copy = workspace.duplicateView(created.id);
+    if (copy === undefined) throw new Error("duplicate returned nothing");
+
+    workspace.patchViewQuery(copy.id, { text: "only mine" });
+    expect(workspace.getView(created.id)?.query.text).toBeUndefined();
+    expect(workspace.getView(copy.id)?.query.text).toBe("only mine");
   });
 
   it("should swap one kind's payload for another's in one write", () => {

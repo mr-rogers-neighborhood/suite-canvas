@@ -668,6 +668,61 @@ describe("live edits to one view", () => {
     expect(workspace.getView(created.id)?.query.typeIds).toEqual(["character"]);
   });
 
+  it("should change a collection's mode without disturbing its query or its pins", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({
+      name: "Mode",
+      query: query({ typeIds: ["character"] }),
+      kind: "collection",
+      collection: { mode: "database" },
+    });
+    workspace.addViewPin(created.id, "c1");
+
+    workspace.patchViewCollection(created.id, { mode: "grid" });
+    const stored = workspace.getView(created.id);
+    expect(stored?.collection).toEqual({ mode: "grid" });
+    expect(stored?.query.typeIds).toEqual(["character"]);
+    expect(stored?.context?.cardIds).toEqual(["c1"]);
+  });
+
+  it("should change a chart's measure and grouping without touching its layout", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({
+      name: "Chart",
+      query: query({}),
+      kind: "render",
+      render: { layout: "bar", measure: { of: "count" }, groupBy: "type" },
+    });
+
+    workspace.patchViewRender(created.id, {
+      layout: "line",
+      measure: { of: "count" },
+      groupBy: "tag",
+    });
+    expect(workspace.getView(created.id)?.render).toEqual({
+      layout: "line",
+      measure: { of: "count" },
+      groupBy: "tag",
+    });
+  });
+
+  it("should refuse a render patch that names a layout outside the enum", () => {
+    const { workspace } = fixture();
+    const created = workspace.createView({
+      name: "Bad",
+      query: query({}),
+      kind: "render",
+      render: { layout: "bar" },
+    });
+
+    expect(() =>
+      workspace.patchViewRender(created.id, {
+        layout: "pie",
+      } as unknown as Parameters<typeof workspace.patchViewRender>[1]),
+    ).toThrow();
+    expect(workspace.getView(created.id)?.render?.layout).toBe("bar");
+  });
+
   it("should swap one kind's payload for another's in one write", () => {
     const { workspace } = fixture();
     const created = workspace.createView({

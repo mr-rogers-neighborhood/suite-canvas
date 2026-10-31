@@ -45,14 +45,16 @@ export const MEDIA_CHOICES: readonly MediaChoice[] = [
   {
     id: "youtube",
     title: "YouTube",
-    hint: "Embed a video by link",
+    // "External" is the word that separates this from `embed`, which shows a card
+    // from this workspace. The two live one menu apart, so they have to read apart.
+    hint: "Embed an external video by link",
     glyph: "\u25b6",
     run: (editor) => promptYouTubeEmbed(editor),
   },
   {
     id: "link",
     title: "Image link",
-    hint: "Embed a picture by URL, with no upload",
+    hint: "Embed an external picture by URL, with no upload",
     glyph: "\u{1f517}",
     run: (editor) => openImageUrlPrompt(editor),
   },

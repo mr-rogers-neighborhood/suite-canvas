@@ -46,12 +46,7 @@ export function VideoView({ node, selected }: NodeViewProps) {
     >
       {src ? (
         // biome-ignore lint/a11y/useMediaCaption: user uploaded video
-        <video
-          controls
-          src={src}
-          className="max-h-[480px] w-full rounded-lg bg-black"
-          preload="metadata"
-        >
+        <video controls src={src} className="card-media-video w-full bg-black" preload="metadata">
           <source src={src} type={mime} />
           Your browser does not support the video tag.
         </video>

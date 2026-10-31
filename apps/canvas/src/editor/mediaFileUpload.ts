@@ -1,5 +1,7 @@
 import type { Editor } from "@tiptap/react";
 import { canUploadMedia } from "../auth/mediaUploadGating";
+import { announceUploadRefusal } from "../auth/uploadRefusal";
+import { MEDIA_NODE_NAME } from "./mediaNode";
 import { insertMediaFiles } from "./pasteImages";
 import { parseYouTubeVideoId } from "./youtubeNode";
 
@@ -9,7 +11,7 @@ import { parseYouTubeVideoId } from "./youtubeNode";
 export function uploadImageFile(editor: Editor): void {
   const permission = canUploadMedia();
   if (!permission.allowed) {
-    alert(permission.reason ?? "Uploads require an upgraded plan.");
+    announceUploadRefusal(permission);
     return;
   }
   const input = document.createElement("input");
@@ -33,7 +35,7 @@ export function uploadImageFile(editor: Editor): void {
 export function uploadVideoFile(editor: Editor): void {
   const permission = canUploadMedia();
   if (!permission.allowed) {
-    alert(permission.reason ?? "Uploads require an upgraded plan.");
+    announceUploadRefusal(permission);
     return;
   }
   const input = document.createElement("input");
@@ -68,8 +70,9 @@ export function promptYouTubeEmbed(editor: Editor): void {
     .chain()
     .focus()
     .insertContent({
-      type: "youtube",
+      type: MEDIA_NODE_NAME,
       attrs: {
+        kind: "youtube",
         videoId,
         src: `https://www.youtube-nocookie.com/embed/${videoId}`,
         title: "YouTube video",

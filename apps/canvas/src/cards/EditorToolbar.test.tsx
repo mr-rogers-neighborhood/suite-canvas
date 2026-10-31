@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { useMediaPicker } from "../editor/mediaPicker";
 import { EditorToolbar } from "./EditorToolbar";
 import { buttonName, FORMAT_COMMANDS, type FormatCommand } from "./formatCommands";
 
@@ -57,7 +58,8 @@ describe("the formatting toolbar", () => {
   it("should draw every command in the shared table, in its order", () => {
     renderToolbar();
     const names = screen.getAllByRole("button").map((button) => button.getAttribute("aria-label"));
-    expect(names).toEqual(FORMAT_COMMANDS.map(buttonName));
+    // The format table, then the one insert control that earns a place here.
+    expect(names).toEqual([...FORMAT_COMMANDS.map(buttonName), "Add media"]);
   });
 
   it("should keep each visible glyph inside its accessible name", () => {
@@ -83,12 +85,21 @@ describe("the formatting toolbar", () => {
 
   it("should run every command it draws, so none is a decorative glyph", () => {
     const recorded = renderToolbar();
-    const buttons = screen.getAllByRole("button");
+    const buttons = screen
+      .getAllByRole("button")
+      .filter((button) => button.getAttribute("aria-label") !== "Add media");
     expect(buttons).toHaveLength(FORMAT_COMMANDS.length);
     for (const button of buttons) fireEvent.click(button);
     // `focus` and `run` are the chain's own ends, recorded like any other link in it.
     const commands = recorded.filter((name) => name !== "focus" && name !== "run");
     expect(commands).toHaveLength(FORMAT_COMMANDS.length);
+  });
+
+  it("should open the media picker instead of inserting blindly", () => {
+    renderToolbar();
+    fireEvent.click(screen.getByRole("button", { name: "Add media" }));
+    expect(useMediaPicker.getState().open).toBe(true);
+    useMediaPicker.getState().closePicker();
   });
 
   it("should wrap rather than overflow the column it is in", () => {

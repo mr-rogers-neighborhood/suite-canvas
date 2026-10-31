@@ -28,6 +28,10 @@ export const RICH_TEXT_NODE_NAMES = [
   "image",
   "video",
   "youtube",
+  // One media block, superseding the four above. They stay publishable because
+  // documents written before it still hold them and must keep rendering; the
+  // editor converts them on first edit rather than the reader losing them.
+  "media",
   "tourStep",
 ] as const;
 
@@ -64,6 +68,22 @@ export const RICH_TEXT_NODE_ATTRIBUTE_NAMES = {
   video: ["id", "mime", "width", "height", "name", "bytes", "duration"],
   // A YouTube embed: video ID and privacy-enhanced embed source.
   youtube: ["videoId", "src", "title", "width", "height"],
+  // One media block. `kind` picks the renderer; the rest is the union of the
+  // four nodes it supersedes, so a converted node keeps every fact it had.
+  media: [
+    "kind",
+    "id",
+    "mime",
+    "width",
+    "height",
+    "name",
+    "bytes",
+    "duration",
+    "src",
+    "alt",
+    "videoId",
+    "title",
+  ],
   // A tour step: its stable id, the targets it points at, the camera it asks
   // for, its caption and how a reader leaves it (ADR-0054).
   tourStep: ["stepId", "targets", "viewport", "caption", "advance"],

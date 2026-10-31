@@ -38,6 +38,12 @@ export interface ConnectorRevealInput {
    * aiming, and a ring on a hidden dot is not a preview.
    */
   proposed?: boolean | undefined;
+  /**
+   * The card is being written, on its canvas face or from the inspector. Typing is
+   * not a selection, so without this the dots vanished exactly when a reader was
+   * most likely to want them.
+   */
+  editing?: boolean | undefined;
 }
 
 /** The single reveal rule for every connector layer, cards and sections alike. */
@@ -49,8 +55,11 @@ export function revealConnectors({
   armed = false,
   peerActive = false,
   proposed = false,
+  editing = false,
 }: ConnectorRevealInput): boolean {
-  return selected || chaining || draftActive || hovered || armed || peerActive || proposed;
+  return (
+    selected || chaining || draftActive || hovered || armed || peerActive || proposed || editing
+  );
 }
 
 export interface NodeConnectorsProps {
@@ -72,6 +81,15 @@ export interface NodeConnectorsProps {
   draftActive?: boolean | undefined;
   /** A thread is armed: the next click picks a target, so show every candidate. */
   armed?: boolean | undefined;
+  /**
+   * This card is being written: on its own canvas face or from the inspector.
+   *
+   * Typing into a card is not a selection, so the dots used to disappear exactly when
+   * a reader was most likely to want them — wiring a thought usually follows writing
+   * it, and reaching for the title first to get the dots back was a second gesture for
+   * something already true.
+   */
+  editing?: boolean | undefined;
   /** The armed end of the chain, when it is one of this node's dots. */
   armedConnectorId?: string | null | undefined;
   /** A peer is dragging or has selected a dot here, so the layer must be up. */
@@ -115,6 +133,7 @@ export function NodeConnectors({
   armed = false,
   armedConnectorId = null,
   peerActive = false,
+  editing = false,
   hovered: hoveredProp,
   selectedConnectorId = null,
   movingConnectorPeers = {},
@@ -151,6 +170,7 @@ export function NodeConnectors({
     hovered,
     armed,
     peerActive,
+    editing,
   });
   const count = connectors.length;
 

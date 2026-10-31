@@ -70,6 +70,14 @@ export interface NodeCardProps {
   dim?: boolean;
   /** Which editor this card is focused in, if any. */
   editing?: EditingField | null;
+  /**
+   * This card is the one being written, from any surface.
+   *
+   * `editing` is only set for the canvas face; a card being edited from the
+   * inspector has `editing === null` here, and its wiring aids used to vanish at
+   * the moment it was in use.
+   */
+  engaged?: boolean;
   presence?: PresenceUser[];
   draggingPeers?: PresenceUser[];
   /**
@@ -179,6 +187,7 @@ export function NodeCard({
   selected = false,
   dim = false,
   editing = null,
+  engaged = false,
   presence = [],
   draggingPeers = [],
   showDragLabel = true,
@@ -669,6 +678,7 @@ export function NodeCard({
         nodeId={card.id}
         connectors={card.connectors}
         selected={selected}
+        editing={engaged || editing !== null}
         chaining={chaining}
         draftActive={draftActive}
         armed={armed}

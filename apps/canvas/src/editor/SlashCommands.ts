@@ -2,8 +2,7 @@ import { PluginKey } from "@tiptap/pm/state";
 import { type Editor, Extension } from "@tiptap/react";
 import Suggestion from "@tiptap/suggestion";
 import { FORMAT_COMMANDS, type FormatCommand } from "../cards/formatCommands";
-import { openImageUrlPrompt } from "./imageUrlPrompt";
-import { promptYouTubeEmbed, uploadImageFile, uploadVideoFile } from "./mediaFileUpload";
+import { openMediaPicker } from "./mediaPicker";
 import { createSlashRenderer } from "./SlashMenu";
 
 export interface SlashRange {
@@ -53,49 +52,33 @@ function toSlashItem(command: FormatCommand): SlashItem {
  */
 const INSERT_ITEMS: SlashItem[] = [
   {
-    id: "image-upload",
-    title: "Upload image",
-    hint: "Upload a picture from your device",
-    glyph: "IMG",
-    keywords: ["image", "picture", "photo", "upload", "file"],
+    id: "media",
+    title: "Media",
+    hint: "Picture, video or embed",
+    glyph: "M",
+    // One row, one idea. Which kind of media is the dialog's question, so the
+    // menu does not ask it four times in a row.
+    keywords: [
+      "media",
+      "image",
+      "img",
+      "picture",
+      "photo",
+      "video",
+      "movie",
+      "clip",
+      "mp4",
+      "youtube",
+      "yt",
+      "embed",
+      "upload",
+      "file",
+      "url",
+      "link",
+    ],
     run: (editor, range) => {
       consumeQuery(editor, range).run();
-      uploadImageFile(editor);
-    },
-  },
-  {
-    id: "video-upload",
-    title: "Upload video",
-    hint: "Upload a video from your device",
-    glyph: "VID",
-    keywords: ["video", "movie", "clip", "mp4", "upload", "file"],
-    run: (editor, range) => {
-      consumeQuery(editor, range).run();
-      uploadVideoFile(editor);
-    },
-  },
-  {
-    id: "youtube",
-    title: "YouTube video",
-    hint: "Embed a YouTube video",
-    glyph: "YT",
-    keywords: ["youtube", "video", "embed", "yt"],
-    run: (editor, range) => {
-      consumeQuery(editor, range).run();
-      promptYouTubeEmbed(editor);
-    },
-  },
-  {
-    id: "image-url",
-    title: "Image from URL",
-    hint: "Embed a picture by link",
-    glyph: "URL",
-    keywords: ["image", "picture", "photo", "img", "url", "embed", "link"],
-    // The block is the only thing the menu inserts; the address is one line
-    // asked for inline, so no dialog and no second menu.
-    run: (editor, range) => {
-      consumeQuery(editor, range).run();
-      openImageUrlPrompt(editor);
+      openMediaPicker(editor);
     },
   },
   {

@@ -2,7 +2,8 @@ import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { type Editor, Extension } from "@tiptap/react";
-import { IMAGE_NODE_NAME, imageAltFromSrc, imageLinkProblem, imageLinkSrc } from "./imageLinkNode";
+import { imageAltFromSrc, imageLinkProblem, imageLinkSrc } from "./imageLinkNode";
+import { MEDIA_NODE_NAME } from "./mediaNode";
 
 /**
  * The URL being asked for, anchored at the start of the block the caret is in.
@@ -68,12 +69,12 @@ function commitPrompt(view: EditorView): boolean {
     return true;
   }
 
-  const type = view.state.schema.nodes[IMAGE_NODE_NAME];
+  const type = view.state.schema.nodes[MEDIA_NODE_NAME];
   const paragraph = view.state.schema.nodes.paragraph;
   if (!type) return false;
   const $pos = view.state.doc.resolve(Math.min(value.pos, view.state.doc.content.size));
   if ($pos.depth === 0) return false;
-  const node = type.create({ src, alt: imageAltFromSrc(src) });
+  const node = type.create({ kind: "image", src, alt: imageAltFromSrc(src) });
   let transaction = view.state.tr
     .setMeta(imageUrlPromptKey, { open: false } satisfies PromptMeta)
     .replaceWith($pos.before(), $pos.after(), node);

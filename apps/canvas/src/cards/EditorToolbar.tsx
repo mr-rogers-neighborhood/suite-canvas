@@ -1,4 +1,5 @@
 import type { Editor } from "@tiptap/react";
+import { openMediaPicker } from "../editor/mediaPicker";
 import { buttonName, FORMAT_COMMANDS, type FormatCommand } from "./formatCommands";
 
 /**
@@ -88,6 +89,20 @@ export function EditorToolbar({ editor, active, wrap = true, className }: Editor
           </button>
         );
       })}
+      {/* The one insert-only control that earns a place here: it asks a question
+          rather than adding something blindly, and the `/` menu alone would hide
+          media from anyone who does not know the gesture. */}
+      <span className="mx-0.5 h-4 w-px shrink-0 bg-[var(--hairline)]" />
+      <button
+        type="button"
+        aria-label="Add media"
+        onClick={() => {
+          if (editor) openMediaPicker(editor);
+        }}
+        className={buttonClass(false)}
+      >
+        M
+      </button>
     </div>
   );
 }

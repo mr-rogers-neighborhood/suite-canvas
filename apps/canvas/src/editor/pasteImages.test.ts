@@ -5,13 +5,9 @@ import StarterKit from "@tiptap/starter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { configureSession } from "../session/session";
 import { installFakeIndexedDb } from "../test/fakeIndexedDb";
-import {
-  ATTACHMENT_NODE_NAME,
-  Attachment,
-  attachmentUploadState,
-  storeLocalAttachment,
-} from "./attachmentNode";
-import { IMAGE_NODE_NAME, ImageLink } from "./imageLinkNode";
+import { Attachment, attachmentUploadState, storeLocalAttachment } from "./attachmentNode";
+import { ImageLink } from "./imageLinkNode";
+import { MEDIA_NODE_NAME, Media } from "./mediaNode";
 import {
   PasteImages,
   type PasteImagesOptions,
@@ -44,6 +40,7 @@ function createEditor(options: Partial<PasteImagesOptions> = {}): {
       StarterKit.configure({ undoRedo: false }),
       Attachment,
       ImageLink,
+      Media,
       PasteImages.configure({
         upload: null,
         newId: () => ID,
@@ -86,19 +83,23 @@ function paste(instance: Editor, files: File[], text = ""): boolean {
   );
 }
 
+/** The media block whose bytes are stored beside the document. */
 function attachmentNode(instance: Editor): { attrs: Record<string, unknown> } | null {
   let found: { attrs: Record<string, unknown> } | null = null;
   instance.state.doc.descendants((node) => {
-    if (node.type.name === ATTACHMENT_NODE_NAME) found = { attrs: node.attrs };
+    if (node.type.name !== MEDIA_NODE_NAME) return true;
+    if (typeof node.attrs.id === "string") found = { attrs: node.attrs };
     return true;
   });
   return found;
 }
 
+/** The media block that names a third-party address instead of storing bytes. */
 function imageLinkNode(instance: Editor): { attrs: Record<string, unknown> } | null {
   let found: { attrs: Record<string, unknown> } | null = null;
   instance.state.doc.descendants((node) => {
-    if (node.type.name === IMAGE_NODE_NAME) found = { attrs: node.attrs };
+    if (node.type.name !== MEDIA_NODE_NAME) return true;
+    if (typeof node.attrs.src === "string" && node.attrs.id == null) found = { attrs: node.attrs };
     return true;
   });
   return found;
@@ -110,7 +111,8 @@ describe("routing a paste by what the clipboard carries", () => {
 
     expect(paste(instance, [], "https://cdn.example.com/shots/relay.png")).toBe(true);
 
-    expect(imageLinkNode(instance)?.attrs).toEqual({
+    expect(imageLinkNode(instance)?.attrs).toMatchObject({
+      kind: "image",
       src: "https://cdn.example.com/shots/relay.png",
       alt: "relay.png",
       width: null,
@@ -142,7 +144,7 @@ describe("routing a paste by what the clipboard carries", () => {
 });
 
 describe("pasting an image", () => {
-  it("creates an attachment node with the id, type, size and name", async () => {
+  it("creates a media block with the id, type, size and name", async () => {
     const { editor: instance, recorder } = createEditor();
     const file = new File([PNG], "diagram.png", { type: "image/png" });
 
@@ -153,7 +155,8 @@ describe("pasting an image", () => {
       expect(found).not.toBeNull();
       return found as { attrs: Record<string, unknown> };
     });
-    expect(node.attrs).toEqual({
+    expect(node.attrs).toMatchObject({
+      kind: "image",
       id: ID,
       mime: "image/png",
       width: 800,

@@ -1,5 +1,3 @@
-import { TextSelection } from "@tiptap/pm/state";
-import type { EditorView } from "@tiptap/pm/view";
 import { mergeAttributes, Node, ReactNodeViewRenderer } from "@tiptap/react";
 import { ImageLinkView } from "./ImageLinkView";
 
@@ -174,40 +172,3 @@ export const ImageLink = Node.create({
     return ReactNodeViewRenderer(ImageLinkView);
   },
 });
-
-/**
- * Inserts a link node after the block `pos` falls in, leaving an empty
- * paragraph after it so typing can continue.
- *
- * A block cannot sit inside a paragraph, so the caret's block is the anchor:
- * the picture lands after it. Everything runs against one transaction, which
- * also keeps the insert position stable while a prompt holds a caret.
- */
-export function insertImageNodeAt(view: EditorView, pos: number, src: string): boolean {
-  if (view.isDestroyed) return false;
-  const type = view.state.schema.nodes[IMAGE_NODE_NAME];
-  const paragraph = view.state.schema.nodes.paragraph;
-  if (!type) return false;
-  try {
-    const at = view.state.doc.resolve(Math.max(0, Math.min(pos, view.state.doc.content.size)));
-    const insertAt = at.depth === 0 ? at.pos : at.after(1);
-    const node = type.create({ src, alt: imageAltFromSrc(src) });
-    let transaction = view.state.tr.insert(insertAt, node);
-    if (paragraph) {
-      const next = paragraph.createAndFill();
-      if (next) {
-        transaction = transaction.setSelection(
-          TextSelection.create(
-            transaction.insert(insertAt + node.nodeSize, next).doc,
-            insertAt + node.nodeSize + 1,
-          ),
-        );
-      }
-    }
-    view.dispatch(transaction.scrollIntoView());
-    return true;
-  } catch (error) {
-    console.warn("[images] could not insert the image link here", error);
-    return false;
-  }
-}

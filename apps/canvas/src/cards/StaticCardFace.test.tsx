@@ -342,3 +342,155 @@ describe("StaticCardBody & StaticCardFace", () => {
     expect(paragraphs[2]?.querySelector("br")).toBeInTheDocument();
   });
 });
+
+describe("StaticCardFace media", () => {
+  const ID = "fedcba9876543210fedcba9876543210";
+
+  /** A body holding exactly one media-ish block, built the way the document stores it. */
+  function faceWith(
+    nodeName: string,
+    attrs: Record<string, string | number>,
+  ): { container: HTMLElement } {
+    const doc = new LoroDoc();
+    const contentMap = doc.getMap("content").ensureMergeableMap("m1");
+    contentMap.set("nodeName", "doc");
+    const children = contentMap.getOrCreateContainer("children", new LoroList());
+    const block = children.insertContainer(0, new LoroMap());
+    block.set("nodeName", nodeName);
+    const attributes = block.getOrCreateContainer("attributes", new LoroMap());
+    for (const [key, value] of Object.entries(attrs)) attributes.set(key, value);
+    block.getOrCreateContainer("children", new LoroList());
+    doc.commit();
+
+    return render(<StaticCardFace cardDoc={doc} contentId={contentMap.id} />);
+  }
+
+  it("draws an uploaded image from the relay instead of a paperclip", () => {
+    const { container } = faceWith("media", {
+      kind: "image",
+      id: ID,
+      mime: "image/png",
+      name: "shot.png",
+    });
+
+    const image = container.querySelector("img");
+    expect(image).toBeInTheDocument();
+    expect(image?.getAttribute("src")).toContain(`/api/attachments/${ID}`);
+    expect(image?.getAttribute("alt")).toBe("shot.png");
+    // Lazy and async, because this face is drawn for every card in the viewport.
+    expect(image).toHaveAttribute("loading", "lazy");
+    expect(image).toHaveAttribute("decoding", "async");
+  });
+
+  it("reserves the recorded size so a lazy image cannot reflow the card", () => {
+    const { container } = faceWith("image", {
+      src: "https://cdn.example.com/a.png",
+      alt: "a.png",
+      width: 800,
+      height: 600,
+    });
+
+    const image = container.querySelector("img");
+    expect(image).toHaveAttribute("width", "800");
+    expect(image).toHaveAttribute("height", "600");
+  });
+
+  it("draws an attached video with its controls", () => {
+    const { container } = faceWith("media", {
+      kind: "video",
+      id: ID,
+      mime: "video/mp4",
+      name: "clip.mp4",
+    });
+
+    const video = container.querySelector("video");
+    expect(video).toBeInTheDocument();
+    expect(video).toHaveAttribute("controls");
+    expect(video?.getAttribute("src")).toContain(`/api/attachments/${ID}`);
+  });
+
+  it("reads a legacy attachment's mime to pick the renderer", () => {
+    const { container } = faceWith("attachment", {
+      id: ID,
+      mime: "video/mp4",
+      name: "clip.mp4",
+    });
+
+    expect(container.querySelector("video")).toBeInTheDocument();
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("draws a YouTube embed as a poster still, not an iframe per card", () => {
+    const { container } = faceWith("youtube", { videoId: "dQw4w9WgXcQ" });
+
+    const poster = container.querySelector('img[data-media-embed="youtube"]');
+    expect(poster?.getAttribute("src")).toContain("i.ytimg.com/vi/dQw4w9WgXcQ");
+    expect(container.querySelector("iframe")).toBeNull();
+  });
+
+  it("keeps a labelled chip when there is nothing to point at", () => {
+    const { container } = faceWith("media", { kind: "image", name: "lost.png" });
+
+    const chip = container.querySelector('[data-media-missing="image"]');
+    expect(chip).toBeInTheDocument();
+    expect(chip?.textContent).toContain("lost.png");
+  });
+});
+
+describe("StaticCardFace caret slot", () => {
+  /** A body of one paragraph followed by `last`, or just the paragraph when null. */
+  function faceEnding(last: string | null, canEdit = true): HTMLElement {
+    const doc = new LoroDoc();
+    const content = doc.getMap("content").ensureMergeableMap("t1");
+    content.set("nodeName", "doc");
+    const children = content.getOrCreateContainer("children", new LoroList());
+    const p = children.insertContainer(0, new LoroMap());
+    p.set("nodeName", "paragraph");
+    p.getOrCreateContainer("children", new LoroList())
+      .insertContainer(0, new LoroText())
+      .insert(0, "Hello");
+
+    if (last !== null) {
+      const block = children.insertContainer(1, new LoroMap());
+      block.set("nodeName", last);
+      if (last === "media") {
+        block.getOrCreateContainer("attributes", new LoroMap()).set("kind", "image");
+      }
+      if (last === "heading") {
+        block.getOrCreateContainer("attributes", new LoroMap()).set("level", 2);
+      }
+      const inner = block.getOrCreateContainer("children", new LoroList());
+      const innerP = inner.insertContainer(0, new LoroMap());
+      innerP.set("nodeName", "paragraph");
+      innerP
+        .getOrCreateContainer("children", new LoroList())
+        .insertContainer(0, new LoroText())
+        .insert(0, "last");
+    }
+    doc.commit();
+
+    return render(<StaticCardFace cardDoc={doc} contentId={content.id} canEdit={canEdit} />)
+      .container;
+  }
+
+  /** The top-level blocks the face drew. */
+  function drawnBlocks(container: HTMLElement): number {
+    return container.querySelector(".node-card-editor")?.childElementCount ?? 0;
+  }
+
+  it("draws the empty paragraph the editor will add, so focusing moves nothing", () => {
+    // The editor ends a body with a paragraph; leaving it out meant the card grew a
+    // line the first time it was written in, and shrank back on blur.
+    // paragraph + media, then the caret paragraph the editor will add.
+    expect(drawnBlocks(faceEnding("media"))).toBe(3);
+    expect(drawnBlocks(faceEnding("heading"))).toBe(3);
+  });
+
+  it("adds nothing when the body already ends on a paragraph", () => {
+    expect(drawnBlocks(faceEnding(null))).toBe(1);
+  });
+
+  it("adds nothing for a reader who cannot write there", () => {
+    expect(drawnBlocks(faceEnding("media", false))).toBe(2);
+  });
+});

@@ -301,7 +301,7 @@ export function CardInspector({
 
       {sketch ? <SketchDisplayControl card={card} disabled={!editContent} /> : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="card-inspector-scroll min-h-0 flex-1 overflow-y-auto">
         <CardPanel
           card={card}
           title={title}

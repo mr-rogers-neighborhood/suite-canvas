@@ -7,7 +7,8 @@ import {
   LoroMap,
   LoroText,
 } from "loro-crdt";
-import { Fragment, type ReactNode, useEffect, useState } from "react";
+import { type CSSProperties, Fragment, type ReactNode, useEffect, useState } from "react";
+import { ATTACHMENT_ID_PATTERN, attachmentUrl } from "../editor/attachmentNode";
 import { BODY_PLACEHOLDER } from "./CardBodyEditor";
 
 function isMap(value: unknown): value is LoroMap {
@@ -119,6 +120,118 @@ function renderInlineChild(child: unknown, key: string): ReactNode {
   return null;
 }
 
+/** Which renderer a media-ish block wants, without the editor's node factory. */
+function staticMediaKind(block: LoroMap, nodeName: string): "image" | "video" | "youtube" {
+  if (nodeName === "media") {
+    const kind = getAttr(block, "kind");
+    return kind === "video" || kind === "youtube" ? kind : "image";
+  }
+  if (nodeName === "image") return "image";
+  if (nodeName === "video") return "video";
+  if (nodeName === "youtube") return "youtube";
+  // A legacy `attachment` carried images and videos alike; the mime is the only
+  // thing that says which, and it is the same rule the lazy migration uses.
+  return String(getAttr(block, "mime") ?? "").startsWith("video/") ? "video" : "image";
+}
+
+function sized(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** Where the bytes are: the relay by id, or the address the node names itself. */
+function mediaSource(block: LoroMap): string | null {
+  const id = getAttr(block, "id");
+  if (typeof id === "string" && ATTACHMENT_ID_PATTERN.test(id)) return attachmentUrl(id);
+  const src = getAttr(block, "src");
+  return typeof src === "string" && src.length > 0 ? src : null;
+}
+
+/** A box the picture can fill, so a lazy load never reflows the card. */
+function reservedBox(width: number | null, height: number | null): CSSProperties | undefined {
+  if (width === null || height === null) return undefined;
+  return { aspectRatio: `${String(width)} / ${String(height)}`, width: "100%", height: "auto" };
+}
+
+/**
+ * A media block, drawn without an editor.
+ *
+ * This is the face a reader sees before they click in, and it used to draw an
+ * uploaded picture as a paperclip and a video as nothing — the bytes were only
+ * reachable once the Tiptap node view mounted. So the same bytes are drawn here,
+ * lazy and with the size the node already recorded, because the alternative is a
+ * card that changes shape when it gains focus.
+ *
+ * An embed draws its poster still rather than an iframe: one iframe per card is
+ * the cost that made this path worth special-casing, and a reader who means to
+ * play it is a click away from the panel.
+ */
+function renderMedia(block: LoroMap, key: string, nodeName: string): ReactNode {
+  const kind = staticMediaKind(block, nodeName);
+  const width = sized(getAttr(block, "width"));
+  const height = sized(getAttr(block, "height"));
+  const name = String(getAttr(block, "name") ?? getAttr(block, "alt") ?? "");
+
+  if (kind === "youtube") {
+    const videoId = String(getAttr(block, "videoId") ?? "");
+    if (!/^[a-zA-Z0-9_-]{11}$/u.test(videoId)) return null;
+    return (
+      <img
+        key={key}
+        src={`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`}
+        alt={String(getAttr(block, "title") ?? "YouTube video")}
+        loading="lazy"
+        decoding="async"
+        data-media-embed="youtube"
+        className="my-1 aspect-video w-full rounded object-cover"
+      />
+    );
+  }
+
+  const src = mediaSource(block);
+  if (src === null) {
+    // Nothing to point at — say what it was rather than leave a blank line.
+    return (
+      <div
+        key={key}
+        data-media-missing={kind}
+        className="attachment-chip my-1 inline-flex items-center gap-1 rounded border border-[var(--hairline,#e2e8f0)] bg-black/5 dark:bg-white/5 px-2 py-0.5 text-xs text-[var(--ink-muted)]"
+      >
+        <span aria-hidden="true">{kind === "video" ? "\u{1f3ac}" : "\u{1f5bc}"}</span>
+        <span className="truncate max-w-[200px]">
+          {name || (kind === "video" ? "Video" : "Media")}
+        </span>
+      </div>
+    );
+  }
+
+  if (kind === "video") {
+    return (
+      // biome-ignore lint/a11y/useMediaCaption: the bytes are the reader's own upload
+      <video
+        key={key}
+        src={src}
+        controls
+        preload="metadata"
+        style={reservedBox(width, height)}
+        className="card-media-video w-full"
+      />
+    );
+  }
+
+  return (
+    <img
+      key={key}
+      src={src}
+      alt={name}
+      loading="lazy"
+      decoding="async"
+      className="card-media-image"
+      {...(width === null ? {} : { width })}
+      {...(height === null ? {} : { height })}
+    />
+  );
+}
+
 function renderBlock(block: unknown, key: string): ReactNode {
   if (isText(block)) {
     return <p key={key}>{renderDelta(block, key)}</p>;
@@ -212,32 +325,14 @@ function renderBlock(block: unknown, key: string): ReactNode {
     );
   }
 
-  if (nodeName === "image") {
-    const src = String(getAttr(block, "src") ?? "");
-    const alt = String(getAttr(block, "alt") ?? "");
-    if (!src) return null;
-    return (
-      <img
-        key={key}
-        src={src}
-        alt={alt}
-        className="my-1 max-h-60 rounded object-contain"
-        loading="lazy"
-      />
-    );
-  }
-
-  if (nodeName === "attachment") {
-    const name = String(getAttr(block, "name") ?? "Attachment");
-    return (
-      <div
-        key={key}
-        className="attachment-chip my-1 inline-flex items-center gap-1 rounded border border-[var(--hairline,#e2e8f0)] bg-black/5 dark:bg-white/5 px-2 py-0.5 text-xs text-[var(--ink-muted)]"
-      >
-        <span>📎</span>
-        <span className="truncate max-w-[200px]">{name}</span>
-      </div>
-    );
+  if (
+    nodeName === "media" ||
+    nodeName === "attachment" ||
+    nodeName === "image" ||
+    nodeName === "video" ||
+    nodeName === "youtube"
+  ) {
+    return renderMedia(block, key, nodeName);
   }
 
   if (nodeName === "tourStep") {
@@ -257,6 +352,19 @@ function renderBlock(block: unknown, key: string): ReactNode {
   }
 
   return null;
+}
+
+/**
+ * Whether opening this body for editing will add a trailing paragraph.
+ *
+ * Measured against the editor, not guessed: a body ending on anything other than a
+ * paragraph gains exactly one empty paragraph on mount — checked for a heading, a list,
+ * a blockquote, a media block and a divider, all of which went from two children to
+ * three. Only a paragraph ending gains nothing.
+ */
+function needsCaretSlot(last: unknown): boolean {
+  if (!isMap(last)) return false;
+  return last.get("nodeName") !== "paragraph";
 }
 
 function isBodyEmpty(container: LoroMap | null): boolean {
@@ -418,7 +526,19 @@ export function StaticCardBody({
           </p>
         ) : null
       ) : (
-        getChildren(container as LoroMap).map((child, idx) => renderBlock(child, `body-${idx}`))
+        <>
+          {getChildren(container as LoroMap).map((child, idx) => renderBlock(child, `body-${idx}`))}
+          {/* A caret needs somewhere to sit. When a body ends on a block it cannot be
+              placed in, the editor appends an empty paragraph the first time it opens,
+              and the card grew a line on focus. Drawing the same line here means the
+              card is already the size it will be, so focusing it moves nothing. A
+              reader who cannot write there never sees it. */}
+          {canEdit && needsCaretSlot(getChildren(container as LoroMap).at(-1)) ? (
+            <p>
+              <br />
+            </p>
+          ) : null}
+        </>
       )}
     </div>
   );

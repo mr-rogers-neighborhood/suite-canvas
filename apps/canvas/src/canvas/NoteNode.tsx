@@ -91,6 +91,12 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   );
 
   const editing = editingNodeId === id && editingSurface === "canvas" ? editingField : null;
+  /**
+   * The card is in use, wherever the writing happens. `editing` only covers the
+   * canvas face, so a card being written from the inspector looked idle here: its
+   * resize handles and connector dots went away the moment someone typed into it.
+   */
+  const engaged = editingNodeId === id;
 
   // Allocate text containers on-demand when entering edit mode if they do not yet exist
   useEffect(() => {
@@ -247,11 +253,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   return (
     <div>
       <NodeResizer
-        isVisible={
-          canEditLayout &&
-          Boolean(selected) &&
-          !(editingNodeId === id && editingSurface === "canvas")
-        }
+        isVisible={canEditLayout && (Boolean(selected) || engaged)}
         minWidth={160}
         minHeight={80}
         onResize={handleResize}
@@ -280,6 +282,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         onToggleCollapsed={() => toggleCardCollapsed(id)}
         selected={selected}
         editing={editing}
+        engaged={engaged}
         presence={presence}
         draggingPeers={draggingPeers}
         showDragLabel={!draggingGroup}

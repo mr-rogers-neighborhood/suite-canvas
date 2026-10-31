@@ -15,6 +15,7 @@ import type { PresenceUser } from "../collab/presence";
 import { cardBodySchemaExtensions } from "../editor/cardEditorExtensions";
 import { LoroCollaboration } from "../editor/LoroCollaboration";
 import { Mention } from "../editor/Mention";
+import { migrateLegacyMedia } from "../editor/mediaMigration";
 import { EditorToolbar } from "./EditorToolbar";
 import { activeCommands } from "./formatCommands";
 
@@ -181,6 +182,14 @@ export function CardBodyEditor({
       },
       onFocus: () => onFocus?.(),
       onBlur: () => onBlur?.(),
+      // Lazy migration: a body written before the `media` block converts the
+      // first time a reader can edit it, so an untouched document is left
+      // exactly as it was and a stale node never has to be understood twice.
+      onCreate: ({ editor: created }) => {
+        if (!created.isEditable) return;
+        const transaction = migrateLegacyMedia(created.state);
+        if (transaction) created.view.dispatch(transaction);
+      },
     },
     [cardId, cardDoc, contentId, cursorStore, localUser, placeholderText, readOnly, ariaLabel],
   );

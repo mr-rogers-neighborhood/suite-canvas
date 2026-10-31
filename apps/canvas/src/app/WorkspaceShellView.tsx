@@ -24,6 +24,7 @@ import { CommandPaletteHost } from "../command/CommandPalette";
 import type { PaletteItem } from "../command/paletteRank";
 import { PerfOverlay } from "../dev/PerfOverlay";
 import { purgeAttachment } from "../editor/attachmentNode";
+import { MediaPickerHost } from "../editor/MediaPickerHost";
 import { FeedbackHost } from "../feedback/FeedbackHost";
 import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
 import type { SyncClaim, SyncRefusal } from "../feedback/syncState";
@@ -791,6 +792,10 @@ export function WorkspaceShellView({
             <SignInSurface />
           </Suspense>
         )}
+
+        {/* One dialog answers "which media", whether the `/` menu or the toolbar asked.
+            It mounts in every profile: a standalone build still adds media locally. */}
+        <MediaPickerHost />
 
         {/* The type a card's title and body declare, previewed before it is written. */}
         {workspaceSurface && canManageSchema ? (

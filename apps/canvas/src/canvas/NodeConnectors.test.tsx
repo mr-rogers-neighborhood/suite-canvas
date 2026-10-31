@@ -176,6 +176,14 @@ describe("connector reveal rule", () => {
     expect(revealConnectors({})).toBe(false);
   });
 
+  it("should reveal while the card is being written, without a selection", () => {
+    // Typing is not a selection. Wiring a thought usually follows writing it, and
+    // reaching for the title first just to get the dots back was a second gesture
+    // for something already true.
+    expect(revealConnectors({ editing: true })).toBe(true);
+    expect(revealConnectors({ selected: false, editing: false })).toBe(false);
+  });
+
   it("should paint no dots on unselected nodes", async () => {
     const { container } = mount();
     await waitFor(() => expect(container.querySelector(".react-flow__node")).not.toBeNull());

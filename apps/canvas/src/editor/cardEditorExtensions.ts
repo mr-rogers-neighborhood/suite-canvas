@@ -5,6 +5,7 @@ import { Attachment } from "./attachmentNode";
 import { ImageLink } from "./imageLinkNode";
 import { ImageUrlPrompt } from "./imageUrlPrompt";
 import { Mention } from "./Mention";
+import { Media } from "./mediaNode";
 import { PropertyBlock } from "./PropertyBlock";
 import { PasteImages } from "./pasteImages";
 import { SlashCommands } from "./SlashCommands";
@@ -57,6 +58,10 @@ export function cardBodySchemaExtensions({
     // A link image names a URL and holds no bytes, so it works in every
     // edition, including a standalone build with no relay at all.
     ImageLink,
+    // One media block: the only thing new content writes. The four above stay
+    // registered so documents that predate it keep rendering, and
+    // `migrateLegacyMedia` converts one to this the first time its body is edited.
+    Media,
     PasteImages,
     PropertyBlock.configure({
       cardId,

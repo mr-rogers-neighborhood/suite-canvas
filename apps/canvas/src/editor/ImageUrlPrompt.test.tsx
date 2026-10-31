@@ -2,9 +2,10 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { afterEach, describe, expect, it } from "vitest";
-import { IMAGE_NODE_NAME, ImageLink } from "./imageLinkNode";
-import { ImageUrlPrompt } from "./imageUrlPrompt";
-import { filterSlashItems, SLASH_ITEMS } from "./SlashCommands";
+import { ImageLink } from "./imageLinkNode";
+import { ImageUrlPrompt, openImageUrlPrompt } from "./imageUrlPrompt";
+import { MEDIA_NODE_NAME, Media } from "./mediaNode";
+import { filterSlashItems } from "./SlashCommands";
 
 const URL = "https://cdn.example.com/shots/relay.png";
 
@@ -23,47 +24,44 @@ function createEditor(content = ""): Editor {
   document.body.appendChild(host);
   editor = new Editor({
     element: host,
-    extensions: [StarterKit.configure({ undoRedo: false }), ImageLink, ImageUrlPrompt],
+    extensions: [StarterKit.configure({ undoRedo: false }), ImageLink, Media, ImageUrlPrompt],
     content,
   });
   return editor;
 }
 
-function item(id: string) {
-  const found = SLASH_ITEMS.find((entry) => entry.id === id);
-  if (!found) throw new Error(`missing slash item: ${id}`);
-  return found;
-}
-
+/** The media blocks that name a third-party address rather than stored bytes. */
 function imageLinks(instance: Editor): Array<Record<string, unknown>> {
   const found: Array<Record<string, unknown>> = [];
   instance.state.doc.descendants((node) => {
-    if (node.type.name === IMAGE_NODE_NAME) found.push(node.attrs);
+    if (node.type.name === MEDIA_NODE_NAME && typeof node.attrs.src === "string") {
+      found.push(node.attrs);
+    }
     return true;
   });
   return found;
 }
 
+/**
+ * The `/` menu no longer has an image row: it has one media row, whose picker
+ * offers the URL prompt. The prompt itself is what this file is about, so it is
+ * opened directly — the picker's routing is `SlashCommands.test.ts`'s subject.
+ */
 function openFromSlashMenu(instance: Editor): void {
-  // The suggestion plugin reports the range of the typed `/image`.
-  item("image-url").run(instance, { from: 1, to: 7 });
+  openImageUrlPrompt(instance);
 }
 
 describe("the slash menu's image item", () => {
-  it("should be listed for `image` and `url`, next to the other blocks", () => {
-    expect(filterSlashItems("image").map((entry) => entry.id)).toEqual([
-      "image-upload",
-      "image-url",
-    ]);
-    expect(filterSlashItems("url").map((entry) => entry.id)).toEqual(["image-url"]);
-    expect(filterSlashItems("picture").map((entry) => entry.id)).toEqual([
-      "image-upload",
-      "image-url",
-    ]);
+  it("should be one row that covers every way of adding media", () => {
+    // One row, one idea: the kind is the picker's question, not the menu's.
+    expect(filterSlashItems("image").map((entry) => entry.id)).toEqual(["media"]);
+    expect(filterSlashItems("picture").map((entry) => entry.id)).toEqual(["media"]);
+    expect(filterSlashItems("url").map((entry) => entry.id)).toEqual(["media"]);
+    expect(filterSlashItems("youtube").map((entry) => entry.id)).toEqual(["media"]);
   });
 
   it("should ask for a URL in the editor and insert the node on Enter", async () => {
-    const instance = createEditor("/image");
+    const instance = createEditor("");
     openFromSlashMenu(instance);
 
     // Inline: a hint in the paragraph, not a dialog over the document.
@@ -75,7 +73,8 @@ describe("the slash menu's image item", () => {
     fireEvent.keyDown(instance.view.dom, { key: "Enter" });
 
     await waitFor(() => expect(imageLinks(instance)).toHaveLength(1));
-    expect(imageLinks(instance)[0]).toEqual({
+    expect(imageLinks(instance)[0]).toMatchObject({
+      kind: "image",
       src: URL,
       alt: "relay.png",
       width: null,
@@ -85,9 +84,9 @@ describe("the slash menu's image item", () => {
   });
 
   it("should give the URL its own line when the block already has text", () => {
-    const instance = createEditor("Hello /image");
-    instance.commands.setTextSelection(7);
-    item("image-url").run(instance, { from: 7, to: 13 });
+    const instance = createEditor("Hello");
+    instance.commands.setTextSelection(6);
+    openFromSlashMenu(instance);
 
     instance.commands.insertContent(URL);
     fireEvent.keyDown(instance.view.dom, { key: "Enter" });
@@ -99,7 +98,7 @@ describe("the slash menu's image item", () => {
   });
 
   it("should keep the prompt and say why when the URL is not allowed", async () => {
-    const instance = createEditor("/image");
+    const instance = createEditor("");
     openFromSlashMenu(instance);
 
     instance.commands.insertContent("javascript:alert(1)");
@@ -112,7 +111,7 @@ describe("the slash menu's image item", () => {
   });
 
   it("should close on Escape without touching the document", async () => {
-    const instance = createEditor("/image");
+    const instance = createEditor("");
     openFromSlashMenu(instance);
 
     fireEvent.keyDown(instance.view.dom, { key: "Escape" });

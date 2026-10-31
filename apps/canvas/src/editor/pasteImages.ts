@@ -2,11 +2,11 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { Extension } from "@tiptap/react";
 import { canUploadMedia } from "../auth/mediaUploadGating";
+import { announceUploadRefusal } from "../auth/uploadRefusal";
 import { collabHttpBase } from "../session/endpoints";
 import { isStandalone } from "../session/mode";
 import { getSession } from "../session/session";
 import {
-  ATTACHMENT_NODE_NAME,
   attachmentBlob,
   attachmentId,
   isAttachmentMime,
@@ -14,9 +14,9 @@ import {
   pageLocation,
   storeLocalAttachment,
 } from "./attachmentNode";
-import { imageLinkFromText, insertImageNodeAt } from "./imageLinkNode";
+import { imageAltFromSrc, imageLinkFromText } from "./imageLinkNode";
 import { closeImageUrlPrompt } from "./imageUrlPrompt";
-import { VIDEO_NODE_NAME } from "./videoNode";
+import { insertMediaAfter, insertMediaNode } from "./mediaNode";
 
 /** One pasted image on its way to the relay. */
 export interface PasteUpload {
@@ -84,20 +84,31 @@ export function relayUploader(
   if (typeof navigator !== "undefined" && navigator.onLine === false) return null;
 
   const session = getSession();
-  if (session.workspaceId === null || session.credential !== "account") return null;
+  if (session.workspaceId === null) return null;
+  // A share session holds a link token and never the account's session, so it
+  // must not try — in any profile. That rule is above the relaxation, not beside it.
+  if (session.credential === "share") return null;
+  // A development tab often has no account session, and running the relay locally
+  // is how this round trip gets tested at all. `import.meta.env.DEV` is folded to
+  // false in every production bundle, so the relaxation cannot ship: a deployed
+  // build still uploads only as an account.
+  const signedIn = session.credential === "account";
+  if (!signedIn && !import.meta.env.DEV) return null;
   const workspaceId = session.workspaceId;
 
   return async ({ id, bytes, mime }) => {
     // Minted per upload: the token the tab booted with has a five-minute life,
     // and a paste can land long after boot. Imported on demand so a build that
     // never uploads never carries the token client.
-    const { credentialAuthorization } = await import("../auth/credential");
+    const authorization: Record<string, string> = signedIn
+      ? await (await import("../auth/credential")).credentialAuthorization()
+      : {};
     const response = await request(
       `${collabHttpBase(pageLocation())}/api/attachments/${encodeURIComponent(workspaceId)}`,
       {
         method: "POST",
         headers: {
-          ...(await credentialAuthorization()),
+          ...authorization,
           "content-type": mime,
           // The node already carries this id; the relay stores under it, so an
           // offline copy and its later upload are the same attachment.
@@ -116,9 +127,18 @@ export function relayUploader(
           response.status,
         );
       }
-      throw new Error(`The relay refused the image (${response.status}).`);
+      throw Object.assign(new Error(`The relay refused the media (${response.status}).`), {
+        status: response.status,
+      });
     }
   };
+}
+
+/** The HTTP status an upload failed with, when it failed for a stated reason. */
+function uploadStatus(error: unknown): number | null {
+  if (typeof error !== "object" || error === null || !("status" in error)) return null;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" ? status : null;
 }
 
 /** Dimensions from the decoded image, or null when this browser cannot decode it. */
@@ -177,8 +197,8 @@ function clipboardText(event: ClipboardEvent): string {
   return event.clipboardData?.getData("text/plain") ?? "";
 }
 
-/** Inserts one attachment node at the current selection. */
-function insertAttachment(
+/** Inserts one image block for the bytes that just landed. */
+function insertImageAttachment(
   view: EditorView,
   attrs: {
     id: string;
@@ -189,16 +209,7 @@ function insertAttachment(
     bytes: number;
   },
 ): void {
-  if (view.isDestroyed) return;
-  const type = view.state.schema.nodes[ATTACHMENT_NODE_NAME];
-  if (!type) return;
-  try {
-    view.dispatch(view.state.tr.replaceSelectionWith(type.create(attrs)).scrollIntoView());
-  } catch (error) {
-    // A paste inside a node that cannot hold an inline atom (a code block, say)
-    // is refused by the schema; the editor keeps the document it had.
-    console.warn("[attachments] could not insert the image here", error);
-  }
+  insertMediaNode(view, { kind: "image", ...attrs });
 }
 
 function insertVideoAttachment(
@@ -213,14 +224,7 @@ function insertVideoAttachment(
     duration: number | null;
   },
 ): void {
-  if (view.isDestroyed) return;
-  const type = view.state.schema.nodes[VIDEO_NODE_NAME];
-  if (!type) return;
-  try {
-    view.dispatch(view.state.tr.replaceSelectionWith(type.create(attrs)).scrollIntoView());
-  } catch (error) {
-    console.warn("[attachments] could not insert the video here", error);
-  }
+  insertMediaNode(view, { kind: "video", ...attrs });
 }
 
 export async function insertMediaFiles(
@@ -247,7 +251,20 @@ export async function insertMediaFiles(
       } catch (error) {
         // A relay that is unreachable right now is not a lost paste: keep the
         // bytes locally and let the node render here, exactly as offline does.
+        // But a stated refusal is not unreachability — a 401 or a 403 means the
+        // bytes will never reach a collaborator, so say so instead of leaving the
+        // reader with a card that looks uploaded and is not.
         console.warn("[attachments] upload failed; keeping the media locally", error);
+        const status = uploadStatus(error);
+        if (status === 401 || status === 403) {
+          announceUploadRefusal({
+            allowed: false,
+            reason:
+              status === 401
+                ? "Sign in to upload files: an upload needs an account."
+                : "This workspace's plan does not include file uploads.",
+          });
+        }
       }
     }
     if (uploaded) {
@@ -278,7 +295,7 @@ export async function insertMediaFiles(
       });
     } else {
       const size = await measure(bytes, mime);
-      insertAttachment(view, {
+      insertImageAttachment(view, {
         id,
         mime,
         width: size?.width ?? null,
@@ -324,7 +341,7 @@ export const PasteImages = Extension.create<PasteImagesOptions>({
             if (files.length > 0) {
               const permission = canUploadMedia();
               if (!permission.allowed) {
-                alert(permission.reason ?? "Uploads are not permitted on this plan.");
+                announceUploadRefusal(permission);
                 return true;
               }
               closeImageUrlPrompt(view);
@@ -340,7 +357,7 @@ export const PasteImages = Extension.create<PasteImagesOptions>({
             if (files.length > 0) {
               const permission = canUploadMedia();
               if (!permission.allowed) {
-                alert(permission.reason ?? "Uploads are not permitted on this plan.");
+                announceUploadRefusal(permission);
                 return true;
               }
               // Bytes win over a URL when a clipboard carries both: the user
@@ -364,7 +381,11 @@ export const PasteImages = Extension.create<PasteImagesOptions>({
             // A URL pasted into an open prompt answers it, so the hint goes
             // away with the paragraph that held it.
             closeImageUrlPrompt(view);
-            return insertImageNodeAt(view, view.state.selection.from, url);
+            return insertMediaAfter(view, view.state.selection.from, {
+              kind: "image",
+              src: url,
+              alt: imageAltFromSrc(url),
+            });
           },
         },
       }),

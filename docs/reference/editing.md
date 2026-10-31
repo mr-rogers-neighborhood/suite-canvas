@@ -21,8 +21,10 @@ The schema lives in `apps/canvas/src/editor/cardEditorExtensions.ts`, apart from
 | `paragraph`, `heading`, headings' lists, `blockquote`, `codeBlock`, `horizontalRule`, `hardBreak` | Tiptap `StarterKit` | Text and its block structure |
 | `mention` | `apps/canvas/src/editor/Mention.ts` | A target card id, an optional field id, an optional display template |
 | `propertyBlock` | `apps/canvas/src/editor/PropertyBlock.ts` | A field id and an optional display template |
+| `media` | `apps/canvas/src/editor/mediaNode.ts` | A `kind` of `image`, `video` or `youtube`, plus the attributes that kind needs |
 | `attachment` | `apps/canvas/src/editor/attachmentNode.ts` | Metadata for bytes held beside the document |
 | `image` | `apps/canvas/src/editor/imageLinkNode.tsx` | A URL, alt text and a size |
+| `video`, `youtube` | `apps/canvas/src/editor/videoNode.tsx`, `youtubeNode.tsx` | Video bytes beside the document; a video id and embed source |
 | `tourStep` | `apps/canvas/src/editor/TourStep.ts` | Step id, targets, camera, caption and advance rule |
 
 Marks are the Tiptap defaults: `bold`, `italic`, `strike`, `code`, `link`, `underline`.
@@ -79,7 +81,7 @@ Three row kinds exist. A card inserts a `mention`; a field of the card being edi
 
 ## The `/` menu
 
-`/` opens the block menu from `apps/canvas/src/editor/SlashCommands.ts`. Every row of `FORMAT_COMMANDS` appears in it, in table order, followed by the three insert-only rows: Image from URL, Mention and Property.
+`/` opens the block menu from `apps/canvas/src/editor/SlashCommands.ts`. Every row of `FORMAT_COMMANDS` appears in it, in table order, followed by the three insert-only rows: Media, Mention and Property.
 
 There is no Tour step row while tours are paused. The `tourStep` node, its schema entry and `presentTour` all stay; only the menu row that advertised a paused feature is gone, and the block can still be inserted directly.
 
@@ -87,17 +89,23 @@ A heading row converts rather than toggles: `/h1` inside an H1 keeps it an H1, w
 
 Each row runs a command against the current block after deleting the typed `/query`, so the query never becomes text. The menu keeps the editor's selection while a row is clicked: `onMouseDown` on the list calls `preventDefault`, because a focus change would collapse the range the command needs.
 
-A row that needs an answer inserts a widget instead of opening a dialog. Image from URL is the example: `ImageUrlPrompt` sits in the editor, so the caret and the editing session survive the answer.
+Most rows answer in place. Media is the exception: it opens `MediaPickerHost`, one dialog listing the four ways to add media: image upload, video upload, YouTube and image link. The kind of media is the question, and asking it four times in a row in the menu was the drift the shared table exists to prevent. The toolbar's Media button opens the same dialog, so `/` is never the only way in. Once a kind is chosen, the picture or the address is still asked for in place: `ImageUrlPrompt` sits in the editor, so the caret and the editing session survive the answer.
 
-## Images and attachments
+## Media
 
-Two nodes hold a picture, and the difference is where the bytes are.
+New content is written as one `media` block. `kind` decides which of the four renderers draws it, and the attributes are the union of what the four it replaced carried, so nothing a document already knew is lost. Where the bytes are is data, not schema: an image with an `id` is served by the relay, and an image with a `src` is fetched from a third party.
 
-An `attachment` stores an id, a MIME type, dimensions and a name, while the bytes live in IndexedDB and, when a relay is configured, on the relay. A share projection copies the metadata and not the pixels, which is what keeps a shared document small; a viewer without the bytes sees the upload state instead of a broken image.
+`attachment`, `image`, `video` and `youtube` stay in the schema and stay publishable. A document written before `media` existed must keep rendering, so removing them would lose media a reader can still see. `migrateLegacyMedia` converts them the first time a body is opened for editing. It is one transaction, proposed only when there is something to convert, so an untouched body writes nothing and an extra undo entry never appears. An inline `attachment` converts only when it is the whole paragraph, because `media` is a block: the alternative is either a schema error or splitting prose the reader wrote.
 
-An `image` stores a URL, alt text and a size. It works with no relay at all, which is why a standalone build can still hold a picture.
+A stored `media` block names an id, a MIME type, dimensions and a name, while the bytes live in IndexedDB and, when a relay is configured, on the relay. A share projection copies the metadata and not the pixels, which is what keeps a shared document small; a viewer without the bytes sees the upload state instead of a broken image.
 
-Pasting an image runs `PasteImages`, which measures the image, stores the bytes locally, uploads when a relay exists, and marks the node uploaded when the upload lands. A failed upload leaves the local copy in place, so the picture survives a reload.
+A link `media` block stores a URL, alt text and a size. It works with no relay at all, which is why a standalone build can still hold a picture.
+
+Pasting an image runs `PasteImages`, which measures the image, stores the bytes locally, uploads when a relay exists, and marks the node uploaded when the upload lands. A failed upload leaves the local copy in place, so the picture survives a reload. When the relay answers with a stated refusal (a 401, or a 403 for a workspace whose plan excludes uploads), the refusal is raised as a prompt rather than swallowed, because a card that looks uploaded and is not is the worst of the three outcomes.
+
+## The face a card shows before it is focused
+
+`StaticCardFace` draws the same body without an editor, and it draws media itself: an image at the relay or at its own address with `loading="lazy"`, `decoding="async"` and the size the node recorded, so a picture arriving late cannot reflow the card; a video with `preload="metadata"`; an embed as its poster still rather than an iframe, because one iframe per card is the cost that made this path worth special-casing. Anything with nothing to point at keeps a labelled chip instead of a blank line.
 
 ## Read-only surfaces
 

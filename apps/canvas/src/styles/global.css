@@ -1006,49 +1006,83 @@ body {
 
 .node-card-editor h1 {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 650;
-  line-height: 1.25;
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .node-card-editor h2 {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 1.1875rem;
   font-weight: 650;
-  line-height: 1.3;
+  line-height: 1.25;
 }
 
 .node-card-editor h3 {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 1.0625rem;
   font-weight: 650;
-  line-height: 1.35;
+  line-height: 1.3;
 }
 
-/* Four more levels down, each a step smaller rather than a different face: a note
-   quoting a long document needs the structure, and the reader still reads one voice. */
+/*
+ * One picture, whichever face draws it.
+ *
+ * The card's static face and the editor drew the same image at different sizes: the
+ * static face capped it with a Tailwind utility, the editor capped nothing, so a card
+ * changed height the moment it was focused. Media now takes its size from here, once,
+ * for both. No margin: `.node-card-editor > * + *` already spaces blocks, and repeating
+ * it here is how the two drifted apart in the first place.
+ */
+.attachment-image,
+.image-link-image,
+.card-media-image {
+  display: block;
+  max-width: 100%;
+  max-height: 15rem;
+  height: auto;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+.card-media-video {
+  display: block;
+  max-width: 100%;
+  max-height: 15rem;
+  border-radius: 6px;
+}
+
+/* Three more levels down. Size alone cannot separate six levels against 14px body
+   copy — the old scale went 0.95, 0.90, 0.86, 0.82rem, so H4 read as body text and
+   H5/H6 read as smaller than it, which inverts the hierarchy exactly where a long
+   quoted document needs it. So the levels below H3 stop shrinking: each one now
+   differs on at least two of size, weight, tracking and colour. */
 .node-card-editor h4 {
   margin: 0;
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: 0.9375rem;
+  font-weight: 650;
   line-height: 1.4;
 }
 
 .node-card-editor h5 {
   margin: 0;
-  font-size: 0.86rem;
-  font-weight: 600;
+  font-size: 0.875rem;
+  font-weight: 650;
   line-height: 1.45;
+  letter-spacing: 0.015em;
+  color: color-mix(in srgb, var(--ink) 78%, transparent);
 }
 
+/* The deepest level reads as a label rather than a smaller heading: same size as
+   body, but caps and tracking make it a section marker instead of prose. */
 .node-card-editor h6 {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.5;
-  letter-spacing: 0.01em;
-  text-transform: none;
-  opacity: 0.85;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 70%, transparent);
 }
 
 .node-card-editor ul,
@@ -1599,6 +1633,51 @@ html[data-inspector-linking] .card-inspector {
 .card-panel-body .node-card-editor {
   min-height: 44px;
   padding: 0;
+}
+
+/*
+ * The Content tab reaches the bottom of the inspector.
+ *
+ * Every other tab is a list of rows and is right to hug its content; this one is
+ * where a reader writes, and a bordered box that stops a third of the way down
+ * reads as a cramped form field with dead space under it. So the scroll column
+ * becomes a flex column while the Content tab is the one on screen, the panel
+ * takes the leftover height, the body box grows with it, and the editor grows
+ * inside the box with `44px` kept as the floor an empty card needs. The column
+ * stays the single scroll owner, so the tab strip and the header never scroll
+ * away behind a nested scrollbar.
+ *
+ * `:has` is what makes this a Content-tab rule without moving tab state into CSS:
+ * the details panel is not rendered while this one is, so its presence is the
+ * whole condition.
+ */
+.card-inspector-scroll:where(:has([data-testid="card-panel-content"])) {
+  display: flex;
+  flex-direction: column;
+}
+
+.card-inspector-scroll:where(:has([data-testid="card-panel-content"])) > .card-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.card-panel-inspector [data-testid="card-panel-content"] {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.card-panel-inspector [data-testid="card-panel-content"] > .card-panel-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.card-panel-inspector [data-testid="card-panel-content"] .node-card-editor {
+  flex: 1 1 auto;
+  min-height: 44px;
 }
 
 /* Empty-body copy. The Placeholder extension decorates the empty paragraph, so

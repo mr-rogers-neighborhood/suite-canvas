@@ -10,6 +10,7 @@ import type {
   CreatePortalCardInput,
   DuplicateCardOptions,
 } from "../model.js";
+import { AnnotationsFacade } from "./annotations.js";
 
 /**
  * The card half of the `WorkspaceDocument` facade: reads and writes of card records,
@@ -19,8 +20,14 @@ import type {
  * built over the shared `DocContext`, so the facade keeps one prototype chain and its
  * public methods stay where callers already find them.
  */
-export class CardsFacade {
-  constructor(protected readonly cardsApi: DocApi["cards"]) {}
+export class CardsFacade extends AnnotationsFacade {
+  constructor(
+    protected readonly cardsApi: DocApi["cards"],
+    /** Passed through to `AnnotationsFacade`, so the document has one prototype chain. */
+    annotationsApi: DocApi["annotations"],
+  ) {
+    super(annotationsApi);
+  }
 
   listCards(): Card[] {
     return this.cardsApi.listCards();

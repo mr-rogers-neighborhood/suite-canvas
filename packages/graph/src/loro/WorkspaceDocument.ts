@@ -1,5 +1,4 @@
 import { LoroDoc, type LoroMap, type Value } from "loro-crdt";
-import type { Annotation, AnnotationStyle } from "../annotations.js";
 import type { Drawing, DrawingElement } from "../drawings.js";
 import type { HistoryPoint, HistoryRestorePreview } from "../history.js";
 import type { ApplyLayoutPlanOptions, LayoutPlan, LayoutPlanSummary } from "../layoutPlan.js";
@@ -30,8 +29,6 @@ import { DocContext } from "./context.js";
 import { CardsFacade } from "./facade/cards.js";
 import { STRUCT_KEYS } from "./keys.js";
 import type {
-  CreateAnnotationInput,
-  CreateAnnotationStyleInput,
   CreateEdgeInput,
   CreateFieldInput,
   CreateSectionInput,
@@ -156,7 +153,6 @@ export class WorkspaceDocument extends CardsFacade {
   private readonly workspaceApi: DocApi["workspace"];
   private readonly boardsApi: DocApi["boards"];
   private readonly viewsApi: DocApi["views"];
-  private readonly annotationsApi: DocApi["annotations"];
   private readonly cardTypesApi: DocApi["cardTypes"];
   private readonly tagsApi: DocApi["tags"];
   private readonly sectionsApi: DocApi["sections"];
@@ -169,13 +165,12 @@ export class WorkspaceDocument extends CardsFacade {
   constructor(doc: LoroDoc = new LoroDoc()) {
     const ctx = openContext(doc);
     const api = createDocApi(ctx);
-    super(api.cards);
+    super(api.cards, api.annotations);
     this.ctx = ctx;
     this.undoApi = api.undo;
     this.workspaceApi = api.workspace;
     this.boardsApi = api.boards;
     this.viewsApi = api.views;
-    this.annotationsApi = api.annotations;
     this.cardTypesApi = api.cardTypes;
     this.tagsApi = api.tags;
     this.sectionsApi = api.sections;
@@ -395,75 +390,6 @@ export class WorkspaceDocument extends CardsFacade {
 
   moveView(id: string, position: number): void {
     this.viewsApi.moveView(id, position);
-  }
-
-  // --- Annotations -------------------------------------------------------------------------------
-  //
-  // A highlight and its palette. Nothing here knows which medium an anchor names: a book's quote, a page's
-  // rectangle and a span of a video are the same record, which is what lets one card, one field kind and one
-  // library facet serve all three.
-
-  listAnnotations(): Annotation[] {
-    return this.annotationsApi.listAnnotations();
-  }
-
-  getAnnotation(id: string): Annotation | undefined {
-    return this.annotationsApi.getAnnotation(id);
-  }
-
-  listAnnotationsOf(sourceCardId: string): Annotation[] {
-    return this.annotationsApi.listAnnotationsOf(sourceCardId);
-  }
-
-  addAnnotation(input: CreateAnnotationInput): Annotation {
-    return this.annotationsApi.addAnnotation(input);
-  }
-
-  setAnnotationStyle(id: string, styleId: string): Annotation | undefined {
-    return this.annotationsApi.setAnnotationStyle(id, styleId);
-  }
-
-  setAnnotationCard(id: string, cardId: string): Annotation | undefined {
-    return this.annotationsApi.setAnnotationCard(id, cardId);
-  }
-
-  deleteAnnotation(id: string): void {
-    this.annotationsApi.deleteAnnotation(id);
-  }
-
-  deleteAnnotationsOf(sourceCardId: string): number {
-    return this.annotationsApi.deleteAnnotationsOf(sourceCardId);
-  }
-
-  listAnnotationStyles(): AnnotationStyle[] {
-    return this.annotationsApi.listAnnotationStyles();
-  }
-
-  getAnnotationStyle(id: string): AnnotationStyle | undefined {
-    return this.annotationsApi.getAnnotationStyle(id);
-  }
-
-  ensureAnnotationStyles(): AnnotationStyle[] {
-    return this.annotationsApi.ensureAnnotationStyles();
-  }
-
-  addAnnotationStyle(input: CreateAnnotationStyleInput): AnnotationStyle {
-    return this.annotationsApi.addAnnotationStyle(input);
-  }
-
-  patchAnnotationStyle(
-    id: string,
-    patch: { name?: string; color?: string; order?: number; templateTypeId?: string | null },
-  ): AnnotationStyle | undefined {
-    return this.annotationsApi.patchAnnotationStyle(id, patch);
-  }
-
-  deleteAnnotationStyle(id: string): void {
-    this.annotationsApi.deleteAnnotationStyle(id);
-  }
-
-  observeAnnotations(listener: () => void): () => void {
-    return this.annotationsApi.observeAnnotations(listener);
   }
 
   observeViews(listener: () => void): () => void {

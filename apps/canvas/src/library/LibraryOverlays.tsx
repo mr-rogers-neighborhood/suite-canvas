@@ -1,7 +1,7 @@
 import type { ContextMenuItem } from "../dialogs/ContextMenu";
 import { ContextMenu } from "../dialogs/ContextMenu";
 import { Dialog } from "../dialogs/Dialog";
-import type { LibraryBoard, LibraryItem } from "./libraryTypes";
+import type { LibraryBoard } from "./libraryTypes";
 
 /** The drawer's portalled extras: delete confirmation, row menu and drag ghost. */
 export function LibraryOverlays({
@@ -27,7 +27,7 @@ export function LibraryOverlays({
   /** The actions for the open row, rebuilt from the row id. */
   menuItems: ContextMenuItem[];
   onCloseMenu: () => void;
-  hold: { item: LibraryItem; x: number; y: number } | null;
+  hold: { title: string; x: number; y: number } | null;
 }) {
   return (
     <>
@@ -83,7 +83,7 @@ export function LibraryOverlays({
           className="library-ghost"
           style={{ left: hold.x, top: hold.y }}
         >
-          {hold.item.title}
+          {hold.title}
         </div>
       ) : null}
     </>

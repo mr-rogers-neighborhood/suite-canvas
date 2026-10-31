@@ -82,6 +82,17 @@ const INSERT_ITEMS: SlashItem[] = [
     },
   },
   {
+    id: "embed",
+    title: "Embed",
+    hint: "Show another card inside this one",
+    glyph: "\u25a3",
+    keywords: ["embed", "card", "include", "transclude", "reference", "internal"],
+    // A block, not a chip: the reader picks the card in place, then resizes the figure.
+    run: (editor, range) => {
+      consumeQuery(editor, range).insertContent({ type: "embed" }).run();
+    },
+  },
+  {
     id: "mention",
     title: "Mention",
     hint: "Link a card",

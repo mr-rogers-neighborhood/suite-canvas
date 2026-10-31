@@ -2,6 +2,7 @@ import { Placeholder } from "@tiptap/extensions";
 import type { Extensions } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Attachment } from "./attachmentNode";
+import { Embed } from "./embedNode";
 import { ImageLink } from "./imageLinkNode";
 import { ImageUrlPrompt } from "./imageUrlPrompt";
 import { Mention } from "./Mention";
@@ -62,6 +63,9 @@ export function cardBodySchemaExtensions({
     // registered so documents that predate it keep rendering, and
     // `migrateLegacyMedia` converts one to this the first time its body is edited.
     Media,
+    // A card shown inside a card: a figure with its own size, resolved as data before
+    // anything draws, so a cycle stops at one level instead of rendering forever.
+    Embed,
     PasteImages,
     PropertyBlock.configure({
       cardId,

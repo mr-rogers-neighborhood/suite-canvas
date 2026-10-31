@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useUiStore } from "../store/useUiStore";
-import type { LibraryItem } from "./libraryTypes";
 
 /** How far a press has to travel before it is a drag rather than a click. */
 const HOLD_THRESHOLD = 4;
 
 export interface LibraryHold {
-  /** The row the press started on, which is what the ghost names. */
-  cardId: string;
+  /** The row the press started on. A card row, or a media row before it is a card. */
+  rowId: string;
+  /** What the ghost shows. */
+  title: string;
   /** Everything the drop places: the picked rows, or just this one. */
   cardIds: readonly string[];
   startX: number;
@@ -25,6 +26,7 @@ export function useLibraryHold({
   onOpen,
   onTap,
   canPlace,
+  resolveDraggedIds,
 }: {
   onDropAt: (cardIds: readonly string[], point: { x: number; y: number }) => void;
   /** A press that never moved: open whatever the row names. */
@@ -36,9 +38,17 @@ export function useLibraryHold({
   onTap?: ((id: string, event: PointerEvent) => void) | undefined;
   /** A viewer's ghost still travels; the drop does nothing. */
   canPlace: boolean;
+  /**
+   * Turns a row into the cards a drag carries, on the first move past the threshold.
+   *
+   * A media row is not a card yet, so this is where its card is made: the drag then
+   * carries a real card id and every other part of the gesture, the peer ghost and the
+   * drop included, needs to know nothing about media. Returning null cancels the drag.
+   */
+  resolveDraggedIds?: ((rowId: string) => readonly string[] | null) | undefined;
 }) {
   const setLibraryDrag = useUiStore((state) => state.setLibraryDrag);
-  const [hold, setHold] = useState<{ item: LibraryItem; x: number; y: number } | null>(null);
+  const [hold, setHold] = useState<{ title: string; x: number; y: number } | null>(null);
   const holdRef = useRef<LibraryHold | null>(null);
 
   useEffect(() => {
@@ -49,11 +59,24 @@ export function useLibraryHold({
         Math.abs(event.clientX - current.startX) > HOLD_THRESHOLD ||
         Math.abs(event.clientY - current.startY) > HOLD_THRESHOLD;
       if (!far && !current.dragging) return;
+      // The row becomes cards once, on the move that makes it a drag: a press that
+      // never travels must not create anything.
+      // Only a row that does not already name its cards needs resolving, which is
+      // how a multi-row pick keeps carrying the whole pick.
+      if (!current.dragging && resolveDraggedIds && current.cardIds.length === 0) {
+        const ids = resolveDraggedIds(current.rowId);
+        if (ids === null || ids.length === 0) {
+          holdRef.current = null;
+          setHold(null);
+          return;
+        }
+        current.cardIds = ids;
+      }
       current.dragging = true;
       // The canvas owns the camera, so this is a screen point here and a flow
       // point by the time it reaches presence.
       setLibraryDrag({
-        cardId: current.cardId,
+        cardId: current.cardIds[0] ?? current.rowId,
         screen: { x: event.clientX, y: event.clientY },
         count: current.cardIds.length,
       });
@@ -70,8 +93,8 @@ export function useLibraryHold({
       if (!current) return;
       // A press that never became a drag is a plain click on the row.
       if (!current.dragging) {
-        if (onTap) onTap(current.cardId, event);
-        else onOpen(current.cardId);
+        if (onTap) onTap(current.rowId, event);
+        else onOpen(current.rowId);
         return;
       }
       // A viewer's ghost still travelled; the drop does nothing, which is the
@@ -94,7 +117,7 @@ export function useLibraryHold({
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
     };
-  }, [onDropAt, onOpen, onTap, canPlace, setLibraryDrag]);
+  }, [onDropAt, onOpen, onTap, canPlace, resolveDraggedIds, setLibraryDrag]);
 
   const reset = useCallback(() => setHold(null), []);
 

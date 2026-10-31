@@ -21,6 +21,15 @@ export {
   normalizeDrawingOrder,
   sameDrawingValue,
 } from "./drawings.js";
+export {
+  DEFAULT_EMBED_DEPTH,
+  type EmbedLookup,
+  type EmbedOptions,
+  type EmbedResolution,
+  type EmbedStubReason,
+  embedStubLabel,
+  resolveEmbed,
+} from "./embedPlan.js";
 export type {
   HistoryChangeInput,
   HistoryCounts,

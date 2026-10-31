@@ -214,7 +214,6 @@ function WorkspaceShell({
     libraryWasOpen.current = libraryOpen;
   }, [libraryOpen]);
 
-  const stagger = useRef(0);
   // A standalone build renders from IndexedDB alone: no socket, no presence and
   // no sharing, all decided once at build time.
   const standalone = isStandalone();
@@ -293,12 +292,13 @@ function WorkspaceShell({
         });
         return;
       }
-      const centre = canvasPoint();
-      const step = stagger.current++ % 5;
-      workspace.placeCard(activeBoardId, cardId, {
-        x: centre.x + step * 14 - 28,
-        y: centre.y + step * 14 - 28,
-      });
+      // A click does not place: it hands the card over. The reader puts it exactly
+      // where they meant instead of hunting for it near the centre of the board,
+      // and a run of clicks stacks up so several land one press each. This is the
+      // path multi-select already took, so there is now one placement model.
+      const stack = usePlaceStackStore.getState();
+      if (stack.queue.length === 0) stack.start([cardId]);
+      else stack.add([cardId]);
     },
     [activeBoardId, canvasPoint, workspace],
   );

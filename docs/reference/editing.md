@@ -113,6 +113,18 @@ field already holds, and `allowedTypeIds` on the definition is the rule, so the 
 knowledge of which types exist. A field that names no types narrows nothing, and a caller that cannot say
 what type a card is skips the check rather than refusing a value the document already holds.
 
+## Embedding a card
+
+`embed` shows one card inside another. It stores the other card's id and the size the reader dragged it to, and nothing else, so the figure follows edits and can never hold a stale copy.
+
+`resolveEmbed` in `packages/graph/src/embedPlan.ts` decides what to draw before anything does: whether the card is visible to this reader, whether it still exists, and whether it is already on screen above. It is a pure function rather than a rule inside the node view, so a loop stops in one testable place. One level renders, and a deeper embed resolves to a labelled stub, because two cards embedding each other is one click away.
+
+The figure is the card's own read-only face, which is what keeps an embed showing what the card shows. The size is document data: the corner grip writes `width` and `height` on the node as it moves, so the size syncs and undoes like any other edit. An embed that grows does not push its neighbours around, which is deliberate for now.
+
+## Placing from the library
+
+A row click hands the card over instead of placing it: the stack follows the pointer, one press puts one card down, and a run of clicks stacks up. Dragging a row still drops it at the pointer. A media row is not a card until the drag starts, so the first move past the threshold makes the media card and the gesture carries a real card id from then on.
+
 ## The face a card shows before it is focused
 
 `StaticCardFace` draws the same body without an editor, and it draws media itself: an image at the relay or at its own address with `loading="lazy"`, `decoding="async"` and the size the node recorded, so a picture arriving late cannot reflow the card; a video with `preload="metadata"`; an embed as its poster still rather than an iframe, because one iframe per card is the cost that made this path worth special-casing. Anything with nothing to point at keeps a labelled chip instead of a blank line.

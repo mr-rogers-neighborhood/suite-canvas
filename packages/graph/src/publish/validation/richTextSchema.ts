@@ -32,6 +32,8 @@ export const RICH_TEXT_NODE_NAMES = [
   // documents written before it still hold them and must keep rendering; the
   // editor converts them on first edit rather than the reader losing them.
   "media",
+  // One card shown inside another. New content only, so nothing to migrate.
+  "embed",
   "tourStep",
 ] as const;
 
@@ -84,6 +86,8 @@ export const RICH_TEXT_NODE_ATTRIBUTE_NAMES = {
     "videoId",
     "title",
   ],
+  // An embed: which card it shows, and the size the reader dragged it to.
+  embed: ["cardId", "width", "height"],
   // A tour step: its stable id, the targets it points at, the camera it asks
   // for, its caption and how a reader leaves it (ADR-0054).
   tourStep: ["stepId", "targets", "viewport", "caption", "advance"],

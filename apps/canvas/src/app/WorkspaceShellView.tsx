@@ -718,7 +718,7 @@ export function WorkspaceShellView({
             trash={trashItems}
             media={mediaItems}
             trashedMedia={trashedMediaItems}
-            onPlaceMediaAsCard={(item) => createMediaCard(workspace, item)}
+            onPlaceMediaAsCard={(item) => createMediaCard(workspace, item).id}
             onTrashMedia={(id) => useUiStore.getState().trashMedia(id)}
             onRestoreMedia={(id) => useUiStore.getState().restoreMedia(id)}
             onDeleteMediaForever={(id) => {
@@ -752,7 +752,13 @@ export function WorkspaceShellView({
             onManageTypes={openTypeSettings}
             onTab={setLibraryTab}
             onClose={() => setLibraryOpen(false)}
-            onPlace={placeCard}
+            // A row handed over is a row in hand: the drawer steps out of the way so
+            // the reader can see the board they are about to place on, exactly as the
+            // multi-select "Place cards" button does.
+            onPlace={(cardId) => {
+              placeCard(cardId);
+              setLibraryOpen(false);
+            }}
             onCreateInInbox={() => workspace.createCard()}
             onTrash={(cardId) => workspace.trashCard(cardId)}
             onRestore={(cardId) => workspace.restoreCard(cardId)}

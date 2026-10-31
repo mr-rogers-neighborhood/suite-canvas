@@ -1,14 +1,22 @@
 import type { WorkspaceMediaItem } from "@suite/graph";
-import { useMemo, useState } from "react";
+import { type PointerEvent as ReactPointerEvent, useMemo, useState } from "react";
 import { humanBytes } from "../auth/entitlement";
 import { attachmentUrl } from "../editor/attachmentNode";
+import { useLibraryHold } from "./useLibraryHold";
 
 export interface LibraryMediaListProps {
   items?: WorkspaceMediaItem[];
   onTrash?: ((id: string) => void) | undefined;
   canManage?: boolean;
-  /** Places this media as a card of its own, so it can live on a board. */
-  onPlaceAsCard?: ((item: WorkspaceMediaItem) => void) | undefined;
+  /**
+   * Places this media as a card of its own and answers with the card it made, so a
+   * drag can carry it. Undefined on a surface where content cannot be created.
+   */
+  onPlaceAsCard?: ((item: WorkspaceMediaItem) => string | undefined) | undefined;
+  /** The press that lifts a row into the drag ghost; the drawer owns the ghost. */
+  onPressRow?: ((item: WorkspaceMediaItem, event: ReactPointerEvent) => void) | undefined;
+  /** A press that never moved opens the card the media lives in. */
+  onOpenCard?: ((cardId: string) => void) | undefined;
 }
 
 export function LibraryMediaList({
@@ -16,9 +24,23 @@ export function LibraryMediaList({
   onTrash,
   canManage = true,
   onPlaceAsCard,
+  onPressRow,
+  onOpenCard,
 }: LibraryMediaListProps) {
   const [filter, setFilter] = useState<"all" | "image" | "video" | "youtube">("all");
   const [query, setQuery] = useState("");
+
+  useLibraryHold({
+    onDropAt: () => {
+      // The drawer already owns the drop for this gesture; the hook is here for the
+      // press it reports and the release it observes, not for a second placement path.
+    },
+    onOpen: (rowId) => {
+      const cardId = items.find((entry) => entry.id === rowId)?.cards[0]?.id;
+      if (cardId !== undefined) onOpenCard?.(cardId);
+    },
+    canPlace: false,
+  });
 
   const filtered = useMemo(() => {
     return items.filter((item) => {
@@ -88,7 +110,8 @@ export function LibraryMediaList({
                 <div
                   key={item.id}
                   data-testid={`media-card-${item.id}`}
-                  className="group relative flex flex-col overflow-hidden rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1.5 transition-shadow hover:shadow-sm"
+                  onPointerDown={(event) => onPressRow?.(item, event)}
+                  className="group relative flex cursor-grab flex-col overflow-hidden rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1.5 transition-shadow hover:shadow-sm"
                 >
                   {/* Thumbnail */}
                   <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded bg-[var(--surface-muted)]">

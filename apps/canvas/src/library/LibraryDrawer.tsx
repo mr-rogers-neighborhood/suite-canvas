@@ -1,3 +1,4 @@
+import type { WorkspaceMediaItem } from "@suite/graph";
 import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -222,6 +223,15 @@ export function LibraryDrawer({
       selectRow(id, event);
     },
     canPlace,
+    // A media row names media, not a card, until the drag starts. Resolving it here
+    // means the gesture carries a real card id and nothing downstream learns about
+    // media: the ghost, the peer layer, the drop and undo all see a card.
+    resolveDraggedIds: (rowId) => {
+      const item = media.find((entry) => entry.id === rowId);
+      if (item === undefined || onPlaceMediaAsCard === undefined) return null;
+      const cardId = onPlaceMediaAsCard(item);
+      return cardId === undefined ? null : [cardId];
+    },
   });
 
   /**
@@ -425,13 +435,38 @@ export function LibraryDrawer({
     }
     const carried = picked ? selectableOrder.filter((id) => selection.ids.includes(id)) : [item.id];
     holdRef.current = {
-      cardId: item.id,
+      rowId: item.id,
+      title: item.title,
       cardIds: carried,
       startX: event.clientX,
       startY: event.clientY,
       dragging: false,
     };
-    setHold({ item, x: event.clientX, y: event.clientY });
+    setHold({ title: item.title, x: event.clientX, y: event.clientY });
+  };
+
+  /**
+   * The press that lifts a media row.
+   *
+   * Media has no card until the drag resolves one, so the hold starts with no ids: the
+   * first move past the threshold asks `resolveDraggedIds`, which makes the card. A
+   * press that never moves stays a plain click and creates nothing.
+   */
+  const pressMediaRow = (item: WorkspaceMediaItem, event: ReactPointerEvent) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('button, input, textarea, select, [contenteditable="true"]')) return;
+    event.preventDefault();
+    const title = item.name ?? item.mime ?? "Media";
+    holdRef.current = {
+      rowId: item.id,
+      title,
+      cardIds: [],
+      startX: event.clientX,
+      startY: event.clientY,
+      dragging: false,
+    };
+    setHold({ title, x: event.clientX, y: event.clientY });
   };
 
   const rowContext: LibraryRowContext = {
@@ -549,6 +584,8 @@ export function LibraryDrawer({
           onTrash={onTrashMedia}
           canManage={canManageTrash}
           onPlaceAsCard={onPlaceMediaAsCard}
+          onPressRow={pressMediaRow}
+          onOpenCard={onOpenCard}
         />
       ) : (
         <>

@@ -50,6 +50,8 @@ interface PlaceStackState {
    */
   placed: readonly string[];
   start: (cardIds: readonly string[], anchorId?: string | null) => void;
+  /** Adds to the hand without clearing what is already in it. */
+  add: (cardIds: readonly string[]) => void;
   setAnchor: (cardId: string | null) => void;
   setLastPlaced: (cardId: string | null) => void;
   notePlaced: (cardId: string) => void;
@@ -75,6 +77,10 @@ export const usePlaceStackStore = create<PlaceStackState>()((set, get) => ({
     // A seeded anchor is the card the reader meant, so it is also the "last placed"
     // a mode switch would continue from.
     set({ queue: unique, anchorId, lastPlacedId: anchorId, flash: [], placed: [] });
+  },
+  add: (cardIds) => {
+    const unique = [...new Set([...get().queue, ...cardIds])];
+    set({ queue: unique });
   },
   setAnchor: (anchorId) => set({ anchorId }),
   setLastPlaced: (lastPlacedId) => set({ lastPlacedId }),

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Dialog } from "../dialogs/Dialog";
 import { tabKeyDown } from "../dialogs/tabKeys";
 import type { LibraryTab } from "../store/useUiStore";
+import { viewsEnabled } from "../views/availability";
 
 /**
  * The strip, in reading order: what is loose, what exists, then the kinds worth their
@@ -73,7 +74,10 @@ export function LibraryHeader({
 }) {
   const [confirmingEmptyTrash, setConfirmingEmptyTrash] = useState(false);
   const trashNoun = trashCount === 1 ? "card" : "cards";
-  const tabs = TABS.filter((entry) => canManageTrash || entry.id !== "trash");
+  // A tab nobody can use is a dead end: the views list would hold cards of a type whose surface is shut.
+  const tabs = TABS.filter(
+    (entry) => (canManageTrash || entry.id !== "trash") && (viewsEnabled || entry.id !== "views"),
+  );
 
   return (
     <div

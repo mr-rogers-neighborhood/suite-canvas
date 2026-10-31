@@ -2,6 +2,7 @@ import { sectionColors } from "@suite/graph";
 import { portalTargetId } from "../../../cards/portal";
 import type { ContextMenuItem } from "../../../dialogs/ContextMenu";
 import type { EntityKind } from "../../../entities/kind";
+import { viewsEnabled } from "../../../views/availability";
 import { selectionSummary } from "../../interactions/multiSelect";
 import type { BoardMenuContext } from "./types";
 
@@ -138,8 +139,9 @@ const canvasRows: EntityMenuRow[] = [
     kinds: ["canvas"],
     render: (ctx) => {
       // A view is workspace configuration as well as a card, so both capabilities are required:
-      // a row that made a card nobody could point at a view would be a trap.
-      if (!ctx.canCreateContent || !ctx.canManageSchema) return [];
+      // a row that made a card nobody could point at a view would be a trap. And while the views
+      // surfaces are shut there is nowhere for the card to point, so the row goes too.
+      if (!viewsEnabled || !ctx.canCreateContent || !ctx.canManageSchema) return [];
       const position = ctx.menu.flowPosition ?? { x: 0, y: 0 };
       return [{ label: "New view", onSelect: () => ctx.createViewAt(position) }];
     },
@@ -149,7 +151,7 @@ const canvasRows: EntityMenuRow[] = [
     group: "create",
     kinds: ["card", "canvas"],
     render: (ctx) => {
-      if (!ctx.canManageSchema) return [];
+      if (!viewsEnabled || !ctx.canManageSchema) return [];
       // The selection is already a context, so this is the shortest path from "what is this?" to a view
       // that answers it: no words to type, no chips to press.
       return [

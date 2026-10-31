@@ -200,29 +200,22 @@ describe("the create group", () => {
       }),
     );
 
-  it("should place a view card at the press and open the editor on it", () => {
-    const createViewAt = vi.fn();
-    const items = canvasMenu({ canManageSchema: true, createViewAt });
-
-    byLabel(items, "New view")?.onSelect?.();
-    expect(createViewAt).toHaveBeenCalledWith({ x: 80, y: 40 });
-  });
-
-  it("should offer a view of what is selected, named for the selection", () => {
-    const createViewFromSelection = vi.fn();
+  /**
+   * The views rows are behind `views/availability.ts`, which is `false` in every build for now. When it
+   * is turned back on these become the two tests that press the rows and assert the command ran.
+   */
+  it("should offer no view row while the views surfaces are shut", () => {
     const items = canvasMenu({
       canManageSchema: true,
       selectedNodeIds: ["c1", "c2"],
-      createViewFromSelection,
+      createViewAt: vi.fn(),
+      createViewFromSelection: vi.fn(),
     });
 
-    byLabel(items, "New view of these cards")?.onSelect?.();
-    expect(createViewFromSelection).toHaveBeenCalled();
-  });
-
-  it("should name the row for one card when one card is selected", () => {
-    const items = canvasMenu({ canManageSchema: true, selectedNodeIds: ["c1"] });
-    expect(byLabel(items, "New view of this card")).toBeDefined();
+    // A row that makes a view card nobody can open would be a trap, so the whole group is absent.
+    expect(byLabel(items, "New view")).toBeUndefined();
+    expect(byLabel(items, "New view of this card")).toBeUndefined();
+    expect(byLabel(items, "New view of these cards")).toBeUndefined();
   });
 
   it("should open one media list rather than inventing a second uploader", () => {

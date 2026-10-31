@@ -19,7 +19,7 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, sync and storage status, **Share** (`ShareAction.tsx`, its own control beside the status pill), the workspace menu, the account slot, the theme toggle |
 | Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history and outline buttons in `app/WorkspaceShellView.tsx` | Home, the open boards with their peer counts, undo, redo, version history and the outline, in one row |
 | Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface, plus the plan wall and the retry for whoever just paid |
-| Views | `apps/canvas/src/chrome/ViewsBar.tsx` | One icon in the nav row, after the outline, opening the views layer on the projected view. **Development only** (see below) |
+| Views | `apps/canvas/src/chrome/ViewsBar.tsx` | One icon in the nav row, after the outline, opening the views layer on the projected view. **Shut** (see below) |
 | Views layer | `apps/canvas/src/views/ViewsLayer.tsx` | The full-window mode: the rail of saved views with row actions, the presentation in read or edit mode, the context drawer and the pick |
 | Views surface | `apps/canvas/src/views/ViewSurface.tsx` | One view drawn: a table, grid, list or board, or a graph or chart, with grouping, drill-down and in-place cells |
 | Projection float | `apps/canvas/src/canvas/ProjectionFloat.tsx` | The view cast over this reader's board: draggable, remembered, and the bar the pick runs through |
@@ -31,7 +31,7 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Library drawer | `apps/canvas/src/library/LibraryDrawer.tsx` | Every card, board and trashed record, with search, facets and **Add new**, which opens the dock's own menu from the top of the list |
 | Command palette | `apps/canvas/src/command/CommandPalette.tsx` | Navigation and actions from one query |
 | Presence | `apps/canvas/src/presence/` and `apps/canvas/src/cursor/` | Peer cursors, name tags, avatars and the status cursor |
-| Handbook | `apps/canvas/src/handbook/HandbookBubble.tsx` | The contextual article list, the article, its spotlight and the feedback form, in one shell float. **Development only** (see below) |
+| Handbook | `apps/canvas/src/handbook/HandbookBubble.tsx` | The contextual article list, the article, its spotlight and the feedback form, in one shell float. **Shut** (see below) |
 | Account | `apps/canvas/src/auth/SignInEntry.tsx` and `AccountPanel.tsx` | Sign in or the account menu, and one dialog for the account, members, devices and the plan |
 | Launcher | `apps/canvas/src/launcher/WorkspaceLauncher.tsx` | Recents with rename, export and delete, import, and the same account entry the title bar has |
 
@@ -125,11 +125,17 @@ surface takes `readOnly` from the session, and a viewer's or a selection share's
 A picture inserted on a share, or anywhere without an account session, is kept in this browser only and
 is not visible to a peer until it uploads.
 
-### Views are a development-only door
+### Views are shut, and the code is kept
 
-The views icon and the layer behind it are rendered behind one flag, `apps/canvas/src/views/availability.ts`,
-the same arrangement as the handbook's. `import.meta.env.DEV` is a literal Vite inlines, so a production
-bundle drops both branches and the components with them.
+`apps/canvas/src/views/availability.ts` exports `viewsEnabled`, which is `false` in every build. It gates
+seven things, and the list is the whole feature: the nav-row icon, the layer, the projection float, the two
+canvas rows that make a view (`New view`, `New view of this card`), the library's `New view` and its `Views`
+tab, and the palette's view rows, which are built from an empty list. The float needed a guard of its own
+because until now nothing could project without the layer open.
+
+Nothing is deleted. A document that already holds saved views keeps them, and a view card keeps drawing its
+figure, because a card that blanks because a feature was paused is worse than a card nobody can edit yet.
+Turning the surface back on is the flag plus the mount sites it names.
 
 **A configuration is shared; a state is not.** A saved view's context, kind and presentation are document
 data, which is why a view card works: it holds only the id, so editing the view redraws every card that
@@ -279,13 +285,14 @@ opens, and one selected thing jumps to its article; several leave the list filte
 something** arms a capture-phase press that turns the next click into a `Target`, and the pressed
 element's nearest region or card answers. Leaving explain clears the scope, not the pane.
 
-**The handbook is a development-only door.** `handbook/availability.ts` exports one flag, read by
-the shell that mounts the bubble and by the board that mounts the floating explain panel, because the
-two halves have to agree: inside a build with the handbook, explain's context renders in the bubble;
-outside one it renders as a panel over the board, so `explain` never gathers a selection and shows
-nothing. `import.meta.env.DEV` is a literal Vite inlines, so a production bundle drops both branches
-and the components with them. Removing the flag is the whole change when the surface is ready, and
-the release that does it should say so in its notes.
+**The handbook is shut, and its articles are not.** `handbook/availability.ts` exports one flag, read by
+the shell that mounts the bubble and by the board that mounts the floating explain panel, because the two
+halves have to agree: inside a build with the handbook, explain's context renders in the bubble; outside one
+it renders as a panel over the board. That second branch is why `false` is safe: `explain` still answers,
+just in the older surface.
+
+The articles in `handbook/` keep shipping to the docs site, because they document the interface and
+documentation does not need the surface switched on. Turning the bubble back on is the flag.
 
 Feedback is the second pane. `feedback/FeedbackComposer.tsx` is the form the launcher already used,
 now shared: the handbook files a message against `handbook:<articleId>` with the article's title

@@ -3,6 +3,7 @@ import { StatusCursorLayer } from "../../cursor/StatusCursorLayer";
 import { ContextMenu, type ContextMenuItem } from "../../dialogs/ContextMenu";
 import { handbookEnabled } from "../../handbook/availability";
 import { ExplainPanel } from "../../panels/ExplainPanel";
+import { viewsEnabled } from "../../views/availability";
 import { NudgeHint } from "../BoardHints";
 import { DropOffer } from "../DropOffer";
 import { EdgeDescriptionInput } from "../EdgeDescription";
@@ -61,7 +62,9 @@ export function BoardOverlays({ ui, projection, links, menuItems }: BoardOverlay
         <NudgeHint count={selectedNodeIds.length} lifted={selectedNodeIds.length > 1} />
       ) : null}
       <DropOffer />
-      <ProjectionFloat />
+      {/* Nothing can project while the views surfaces are shut, and a float with no way to open it
+          would be chrome for a feature the reader cannot reach. */}
+      {viewsEnabled ? <ProjectionFloat /> : null}
       {/* Explain's gathered context lives in the handbook when this build has one, and stands
           on its own over the board when it does not. */}
       {handbookEnabled ? null : <ExplainPanel />}

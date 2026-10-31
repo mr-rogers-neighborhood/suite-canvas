@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+### Changed
+
+- Views and the handbook are shut in every build, not only in production. `views/availability.ts` and
+  `handbook/availability.ts` are constants now, and the projection float, the two canvas rows that made a
+  view and the library's Views tab gained the guard they were missing. Nothing is deleted: saved views and
+  view cards in an existing document still open, the handbook's articles still ship to the docs site, and
+  `explain` answers in the floating panel again.
+
+## [Unreleased]
+
 ### Added
 
 - Read and Edit are two states of the layer. It opens to the data: the presentation fills the window, the

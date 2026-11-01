@@ -1,4 +1,4 @@
-import { WorkspaceDocument } from "@suite/graph";
+import { propertySources, WorkspaceDocument } from "@suite/graph";
 import { describe, expect, it } from "vitest";
 import { promoteAnnotation, titleFrom } from "./promote";
 
@@ -105,45 +105,124 @@ describe("a card's title from a passage", () => {
 });
 
 describe("what a promoted card says", () => {
-  it("should open with the quote and then name where it came from", () => {
+  it("should write no body at all, because the type's template owns it", () => {
+    const { workspace, annotation } = fixture();
+    const promoted = promoteAnnotation(INBOX(workspace, annotation));
+
+    // The passage is the strip above the body (`AnnotationCardFace`) and the read-only property. A body written here
+    // would overwrite whatever the type's template put in one.
+    expect(workspace.bodyNodes(promoted?.cardId ?? "")).toEqual([]);
+    expect(workspace.cardText(promoted?.cardId ?? "")).toBe("");
+  });
+
+  it("should keep the body a type's template supplied", () => {
+    const { workspace, annotation } = fixture();
+    const claim = workspace.createType({ name: "Claim" });
+    const template = workspace.createCard({ typeId: claim.id, fromTemplate: false });
+    workspace.setTitleText(template.id, "A claim worth making");
+    workspace.setBodyText(template.id, "State the claim, then the evidence.");
+    workspace.updateType(claim.id, { templateCardIds: [template.id] });
+    workspace.patchAnnotationStyle("style-yellow", { templateTypeId: claim.id });
+
+    const promoted = promoteAnnotation(INBOX(workspace, annotation));
+
+    expect(workspace.cardText(promoted?.cardId ?? "")).toBe("State the claim, then the evidence.");
+    // The template's title stands too, because the reader authored it for this kind of card.
+    expect(workspace.displayTitle(promoted?.cardId ?? "")).toBe("A claim worth making");
+  });
+
+  it("should name the book with a Source property, which is what a backlink is", () => {
     const { workspace, annotation, book } = fixture();
     workspace.setTitleText(book.id, "A Small Book");
     const promoted = promoteAnnotation(INBOX(workspace, annotation));
-    const nodes = workspace.bodyNodes(promoted?.cardId ?? "");
+    const card = workspace.getCard(promoted?.cardId ?? "");
+    const field = workspace
+      .getType(card?.primaryTypeId ?? "")
+      ?.fields.find((entry) => entry.name === "Source");
 
-    expect(nodes[0]?.type).toBe("blockquote");
-    expect(nodes[0]?.content?.[0]?.content?.[0]).toEqual({ type: "text", text: "The words." });
-    // The reference is the source card itself, so the backlink is the graph's own mechanism.
-    expect(nodes[1]?.content?.some((node) => node.type === "mention")).toBe(true);
-    expect(
-      nodes[1]?.content?.some(
-        (node) => node.type === "text" && (node.text ?? "").includes("A Small Book"),
-      ),
-    ).toBe(true);
+    expect(field?.kind).toBe("card");
+    expect(card?.properties[field?.id ?? ""]).toBe(book.id);
+    // A mention lives in the body and the body belongs to the template, so the link is a card-valued property. That is
+    // the shape `propertySources` reads as a link, which is what puts the card in the book's Links list.
+    const sources = propertySources(book.id, workspace.listCards(), workspace.listTypes());
+    expect(sources.some((source) => source.cardId === card?.id)).toBe(true);
+    expect(sources.find((source) => source.cardId === card?.id)?.fieldName).toBe("Source");
   });
 
-  it("should carry no quote block when the passage had no words", () => {
-    const { workspace, book } = fixture();
-    const silent = workspace.addAnnotation({
-      sourceCardId: book.id,
-      styleId: "style-blue",
-      anchor: { kind: "time", locator: "episode 1", startMs: 0, endMs: 900 },
-    });
-    const promoted = promoteAnnotation(INBOX(workspace, silent));
-    const nodes = workspace.bodyNodes(promoted?.cardId ?? "");
+  it("should reuse a Source field the type already has, and never clobber one that is not a link", () => {
+    const { workspace, annotation } = fixture();
+    const claim = workspace.createType({ name: "Claim" });
+    const existing = workspace.addField(claim.id, { name: "source", kind: "card" });
+    workspace.patchAnnotationStyle("style-yellow", { templateTypeId: claim.id });
 
-    expect(nodes.map((node) => node.type)).toEqual(["paragraph"]);
-    // No words to quote, but the way back to the recording is still a reference rather than a sentence.
-    expect(nodes[0]?.content?.some((node) => node.type === "mention")).toBe(true);
-  });
-
-  it("should make a real reference, so the card and the book know each other", () => {
-    const { workspace, annotation, book } = fixture();
     const promoted = promoteAnnotation(INBOX(workspace, annotation));
-    workspace.ensureReferences();
+    const card = workspace.getCard(promoted?.cardId ?? "");
+    // One field named Source, the one the type already had — case-insensitively, and not a second one.
+    expect(
+      workspace.getType(claim.id)?.fields.filter((field) => field.name.toLowerCase() === "source"),
+    ).toHaveLength(1);
+    expect(card?.properties[existing.id]).toBe(annotation.sourceCardId);
+  });
 
-    // A reference is the graph's own direction: the card points at the book, which is what makes a backlink.
-    expect(workspace.referencesFor(promoted?.cardId ?? "")).toContain(book.id);
+  it("should leave a title the type's template supplied alone, and let a mapped part win over it", () => {
+    const { workspace, annotation } = fixture();
+    const claim = workspace.createType({ name: "Claim" });
+    const template = workspace.createCard({ typeId: claim.id, fromTemplate: false });
+    workspace.setTitleText(template.id, "A claim worth making");
+    workspace.updateType(claim.id, { templateCardIds: [template.id] });
+    workspace.patchAnnotationStyle("style-yellow", { templateTypeId: claim.id });
+
+    const plain = promoteAnnotation(INBOX(workspace, annotation));
+    expect(workspace.displayTitle(plain?.cardId ?? "")).toBe("A claim worth making");
+
+    // A second highlight of the same kind, with the reader having mapped "words" to the title: the part wins, because
+    // the reader said which words the card is about and the template could not know.
+    const other = workspace.addAnnotation({
+      sourceCardId: annotation.sourceCardId,
+      styleId: "style-yellow",
+      anchor: { kind: "quote", locator: "2", quote: "The words.", prefix: "", suffix: "" },
+      excerpt: "The words.",
+    });
+    workspace.setAnnotationParts(other.id, [
+      { id: "p1", start: 4, end: 9, target: { kind: "title" } },
+    ]);
+    const mapped = promoteAnnotation(INBOX(workspace, other));
+    expect(workspace.displayTitle(mapped?.cardId ?? "")).toBe("words");
+  });
+
+  it("should take the passage's first sentence when there is neither a part nor a template", () => {
+    const { workspace, annotation } = fixture();
+    const promoted = promoteAnnotation(INBOX(workspace, annotation));
+    expect(workspace.displayTitle(promoted?.cardId ?? "")).toBe("The words.");
+  });
+
+  it("should be one gesture to undo, not six", () => {
+    const { workspace, annotation } = fixture();
+    const promoted = promoteAnnotation(INBOX(workspace, annotation));
+    const cardId = promoted?.cardId ?? "";
+    expect(workspace.getCard(cardId)).toBeDefined();
+
+    workspace.undo();
+
+    // One press, one step: the card, its properties, its title and the record's link all leave together.
+    expect(workspace.getCard(cardId)).toBeUndefined();
+    expect(workspace.getAnnotation(annotation.id)?.cardId).toBeUndefined();
+  });
+
+  it("should make no second card for a highlight whose card is in the trash, and say so", () => {
+    const { workspace, annotation } = fixture();
+    const first = promoteAnnotation(INBOX(workspace, annotation));
+    workspace.trashCard(first?.cardId ?? "");
+
+    const again = promoteAnnotation(
+      INBOX(workspace, workspace.getAnnotation(annotation.id) ?? annotation),
+    );
+
+    expect(again?.trashed).toBe(true);
+    expect(again?.existed).toBe(true);
+    expect(again?.cardId).toBe(first?.cardId);
+    // The record still names the card the reader made: restoring it from the library brings it back, linked.
+    expect(workspace.getAnnotation(annotation.id)?.cardId).toBe(first?.cardId);
   });
 });
 
@@ -191,13 +270,13 @@ describe("parts of a highlight", () => {
     expect(card?.properties[field?.id ?? ""]).toBe("The thing that matters here");
   });
 
-  it("should keep the whole passage in the body, because parts carve pieces out of what was marked", () => {
+  it("should keep the whole passage on the card, because parts carve pieces out of what was marked", () => {
     const { workspace, annotation } = partsFixture();
     const promoted = promoteAnnotation(INBOX(workspace, annotation));
-    const quote = workspace.bodyNodes(promoted?.cardId ?? "")[0];
 
-    expect(quote?.type).toBe("blockquote");
-    expect(quote?.content?.[0]?.content?.[0]?.text).toBe(QUOTE);
+    // The strip above the body reads the record, so carving a part out cannot shorten what the card shows.
+    expect(workspace.getAnnotation(annotation.id)?.excerpt).toBe(QUOTE);
+    expect(workspace.bodyNodes(promoted?.cardId ?? "")).toEqual([]);
   });
 
   it("should make one card however many parts the passage is cut into", () => {
@@ -221,7 +300,7 @@ describe("parts of a highlight", () => {
     expect(workspace.listCards()).toHaveLength(before + 1);
     expect(workspace.getCard(promoted?.cardId ?? "")).toBeDefined();
     // Every word is still in the passage, so nothing was dropped by mapping part of it.
-    expect(JSON.stringify(workspace.bodyNodes(promoted?.cardId ?? ""))).toContain(QUOTE);
+    expect(workspace.getAnnotation(annotation.id)?.excerpt).toBe(QUOTE);
   });
 
   it("should open the card a highlight already has instead of making a second one", () => {
@@ -236,18 +315,15 @@ describe("parts of a highlight", () => {
     expect(workspace.getCard(first?.cardId ?? "")).toBeDefined();
   });
 
-  it("should make another card when the reader asks for one deliberately", () => {
+  it("should never orphan a card by writing a second link over the first", () => {
     const { workspace, annotation } = partsFixture();
     const first = promoteAnnotation(INBOX(workspace, annotation));
-    const second = promoteAnnotation({
-      ...INBOX(workspace, workspace.getAnnotation(annotation.id) ?? annotation),
-      again: true,
-    });
+    const second = promoteAnnotation(
+      INBOX(workspace, workspace.getAnnotation(annotation.id) ?? annotation),
+    );
 
-    expect(second?.existed).toBe(false);
-    expect(second?.cardId).not.toBe(first?.cardId);
-    // The record names the newest card; the first is still a card the reader has.
-    expect(workspace.getAnnotation(annotation.id)?.cardId).toBe(second?.cardId);
-    expect(workspace.getCard(first?.cardId ?? "")).toBeDefined();
+    // There is no flag to ask for another card, and no path that makes one behind the reader's back.
+    expect(second?.cardId).toBe(first?.cardId);
+    expect(workspace.getAnnotation(annotation.id)?.cardId).toBe(first?.cardId);
   });
 });

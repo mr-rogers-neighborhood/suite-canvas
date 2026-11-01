@@ -209,13 +209,28 @@ names: without it, any document containing one is rejected. A chip of one shows 
 from.
 
 **A style may carry a recipe**: the targets it expects a highlight to be broken into. It seeds; the highlight decides.
-`promoteAnnotation` opens the card a highlight already has rather than making a second one, and `again` is the
-explicit way to make another.
+
+**Promotion writes properties, and the type's template writes the body.** `promoteAnnotation` makes an ordinary card
+and gives it two things it could not invent: a read-only `Highlight` property naming the record, and a `Source`
+`card` property naming the book. It writes no body nodes — a type's template card already supplies a body, and
+`createCard` copies it, so a promotion that wrote its own quote over the top would discard the template the reader
+authored for that kind. A type with no template produces a card with no body, exactly as it would for any other new
+card. The `Source` property is what keeps the backlink: `propertySources` and `outgoingPropertyLinks` read a
+`card`-valued property as a link, so the book's Links list shows the card and the card's shows the book.
+
+**Title precedence is part, then template, then passage.** A part the reader mapped to `title` names the card;
+otherwise the template's own title stands; otherwise the passage's first sentence does, through `titleFrom`.
+
+**One highlight is one card, and the link is never overwritten.** `promoteAnnotation` opens the card the record already
+names; a card in the trash is reported rather than replaced, because a second card would orphan the first — the record
+holds one `cardId`. The whole promotion runs in one `workspace.batch`, so it is one undo step, and the record is re-read
+from the document at the top so a surface holding a stale copy cannot make the second card the rule forbids.
 
 **`cardId` is a link a reader can take back.** `setAnnotationCard(id, null)` clears it, which is what **Keep it** on a
-promoted card does: the quote is already in the card's body as ordinary text, the card's `annotation` property is
-cleared as the app, and the highlight may produce another card later. The highlight is never deleted by de-linking,
-because the mark is still in the book.
+promoted card does. Because promotion writes no body, de-linking is the one moment the passage has to be handed over:
+it appends the quote as a blockquote and a paragraph mentioning the book, clears the card's `annotation` property as
+the app, and does all three in one batch. The highlight is never deleted by de-linking, because the mark is still in
+the book.
 
 **A highlight dies with its source, not with its card.** Purging a book deletes its highlights in the same commit
 (`deleteAnnotationsOf`), because a mark on a source that no longer exists can never be painted again. Trashing a book

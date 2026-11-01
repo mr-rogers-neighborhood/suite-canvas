@@ -1,6 +1,7 @@
 import type { Annotation, Card, WorkspaceDocument } from "@suite/graph";
 import { annotationIdOf } from "@suite/graph";
 import { IconGlyph } from "../icons/IconGlyph";
+import { passageNodes, sourceTitle } from "../reader/promote";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 
@@ -31,8 +32,9 @@ export function annotationOfCard(
  * the same page are told apart before either is read.
  *
  * **Reopen** goes back to the book — the reader's own place in it is remembered, so the passage they came from is on
- * the page they left. **Keep it** de-links: the passage is already in the body as a quote, so the card becomes an
- * ordinary note the reader owns, and the highlight may produce another card later.
+ * the page they left. **Keep it** de-links and hands the passage over: promotion writes no body, because the body
+ * belongs to the type's template, so de-linking is the one moment the words have to be written into it. The card
+ * becomes an ordinary note the reader owns, and the highlight may produce another card later.
  */
 export function AnnotationCardFace({ card }: { card: Card }) {
   const workspace = useCanvasStore((state) => state.workspace);
@@ -94,13 +96,26 @@ export function AnnotationCardFace({ card }: { card: Card }) {
           data-testid="annotation-strip-keep"
           onClick={(event) => {
             event.stopPropagation();
-            workspace.setAnnotationCard(annotation.id, null);
-            const field = workspace
-              .getType(card.primaryTypeId)
-              ?.fields.find((entry) => entry.kind === "annotation");
-            // The app is clearing its own field: it is read-only to the reader, which is the point of the field.
-            if (field !== undefined)
-              workspace.setProperty(card.id, field.id, null, { asApp: true });
+            // One gesture, one undo step: the passage, the record's link and the app's own field all leave together.
+            workspace.batch("annotation:detach", () => {
+              const passage = passageNodes(
+                annotation.anchor.kind === "quote" ? annotation.anchor.quote : null,
+                {
+                  cardId: annotation.sourceCardId,
+                  title: sourceTitle(workspace, annotation),
+                },
+              );
+              // Appended, never replacing: a card that came from a highlight is already a card the reader writes in,
+              // and de-linking must not throw that writing away.
+              workspace.setBodyNodes(card.id, [...workspace.bodyNodes(card.id), ...passage]);
+              workspace.setAnnotationCard(annotation.id, null);
+              const field = workspace
+                .getType(card.primaryTypeId)
+                ?.fields.find((entry) => entry.kind === "annotation");
+              // The app is clearing its own field: it is read-only to the reader, which is the point of the field.
+              if (field !== undefined)
+                workspace.setProperty(card.id, field.id, null, { asApp: true });
+            });
           }}
         >
           <IconGlyph icon="lucide:unlink" size={12} />

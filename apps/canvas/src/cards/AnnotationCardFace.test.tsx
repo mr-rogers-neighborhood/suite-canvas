@@ -67,15 +67,39 @@ describe("the annotation on a card", () => {
     );
   });
 
-  it("should keep the card and forget the highlight, leaving the passage in the body", async () => {
+  it("should write the passage into the body when the reader keeps the card", async () => {
     render(<AnnotationCardFace card={card} />);
     fireEvent.click(screen.getByTestId("annotation-strip-keep"));
 
     await waitFor(() => expect(workspace.getAnnotation(annotationId)?.cardId).toBeUndefined());
-    // The card is still a card, and the passage is still in it: the reader owns what they were given.
+    // The card is still a card, and the passage is now in it: promotion writes no body, so de-linking is the moment
+    // the words have to be handed over. They arrive as the blockquote a promoted card used to open with.
     const kept = workspace.getCard(card.id);
     expect(kept).toBeDefined();
-    expect(JSON.stringify(workspace.bodyNodes(card.id))).toContain("The sentence that mattered.");
+    const nodes = workspace.bodyNodes(card.id);
+    expect(nodes[0]?.type).toBe("blockquote");
+    expect(nodes[0]?.content?.[0]?.content?.[0]).toEqual({
+      type: "text",
+      text: "The sentence that mattered.",
+    });
+    // And the way back is a real reference, not a sentence: a mention of the book.
+    expect(nodes[1]?.content?.some((node) => node.type === "mention")).toBe(true);
+  });
+
+  it("should clear the read-only property, and leave the passage alone when undone", async () => {
+    render(<AnnotationCardFace card={card} />);
+    fireEvent.click(screen.getByTestId("annotation-strip-keep"));
+
+    await waitFor(() => expect(workspace.getAnnotation(annotationId)?.cardId).toBeUndefined());
+    const field = workspace
+      .getType(card.primaryTypeId)
+      ?.fields.find((entry) => entry.kind === "annotation");
+    expect(workspace.getCard(card.id)?.properties[field?.id ?? ""]).toBeUndefined();
+
+    // One gesture, one undo step: the body, the link and the field come back together.
+    workspace.undo();
+    expect(workspace.getAnnotation(annotationId)?.cardId).toBe(card.id);
+    expect(workspace.bodyNodes(card.id)).toEqual([]);
   });
 
   it("should draw nothing for a card that never came from a book", () => {

@@ -306,6 +306,18 @@ export function cardTypesMethods(ctx: DocContext) {
       return isMap(fields) ? fields : undefined;
     },
 
+    /**
+     * Drops the cached type after a write to its fields.
+     *
+     * The document event that normally invalidates `typeCache` arrives with a commit, and a batch defers every commit
+     * to its end — so a field added inside a batch would be invisible to `getType` for the rest of that batch, and a
+     * caller that adds a field and immediately writes a value to it would be told the field does not exist.
+     * `seedPortalType` already had to do this by hand for the same reason.
+     */
+    refreshType(typeId: string): void {
+      ctx.typeCache.delete(typeId);
+    },
+
     touchType(typeId: string): void {
       const type = ctx.types.get(typeId);
       if (isMap(type)) type.set("updatedAt", Date.now());
@@ -362,6 +374,7 @@ export function cardTypesMethods(ctx: DocContext) {
         });
       }
       ctx.api.cardTypes.touchType(typeId);
+      ctx.api.cardTypes.refreshType(typeId);
       ctx.commit(`${STRUCT_ORIGIN}field`);
       return fieldFromMap(id, field);
     },
@@ -386,6 +399,7 @@ export function cardTypesMethods(ctx: DocContext) {
         else if (field.get("display") !== undefined) field.delete("display");
       }
       ctx.api.cardTypes.touchType(typeId);
+      ctx.api.cardTypes.refreshType(typeId);
       ctx.commit(`${STRUCT_ORIGIN}field`);
     },
 
@@ -402,6 +416,7 @@ export function cardTypesMethods(ctx: DocContext) {
       if (!fields || fields.get(fieldId) === undefined) return;
       fields.delete(fieldId);
       ctx.api.cardTypes.touchType(typeId);
+      ctx.api.cardTypes.refreshType(typeId);
       ctx.commit(`${STRUCT_ORIGIN}field`);
     },
 
@@ -418,6 +433,7 @@ export function cardTypesMethods(ctx: DocContext) {
         if (isMap(target)) target.set("order", index);
       });
       ctx.api.cardTypes.touchType(typeId);
+      ctx.api.cardTypes.refreshType(typeId);
       ctx.commit(`${STRUCT_ORIGIN}field`);
     },
 
@@ -434,6 +450,7 @@ export function cardTypesMethods(ctx: DocContext) {
       if (input.color) option.set("color", input.color);
       option.set("order", nextOrder(options));
       ctx.api.cardTypes.touchType(typeId);
+      ctx.api.cardTypes.refreshType(typeId);
       ctx.commit(`${STRUCT_ORIGIN}field`);
       return optionFromMap(id, option);
     },
@@ -452,6 +469,7 @@ export function cardTypesMethods(ctx: DocContext) {
         else if (option.get("color") !== undefined) option.delete("color");
       }
       ctx.api.cardTypes.touchType(typeId);
+      ctx.api.cardTypes.refreshType(typeId);
       ctx.commit(`${STRUCT_ORIGIN}field`);
     },
 
@@ -460,6 +478,7 @@ export function cardTypesMethods(ctx: DocContext) {
       if (!options || options.get(optionId) === undefined) return;
       options.delete(optionId);
       ctx.api.cardTypes.touchType(typeId);
+      ctx.api.cardTypes.refreshType(typeId);
       ctx.commit(`${STRUCT_ORIGIN}field`);
     },
 

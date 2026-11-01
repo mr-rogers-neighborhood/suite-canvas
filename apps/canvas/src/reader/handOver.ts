@@ -30,6 +30,13 @@ export interface HandOverResult {
   readonly inHand: boolean;
   /** True when the card was already on a board, so there is nothing to carry. */
   readonly placedAlready: boolean;
+  /**
+   * True when the card the highlight already has is in the trash.
+   *
+   * Nothing is carried: a card in the trash has no placement, and handing one over would put the reader's own card
+   * back on a board while its library row still said it was deleted. Restoring it is the library's job.
+   */
+  readonly trashed: boolean;
 }
 
 export function handOverHighlight(input: HandOverInput): HandOverResult | null {
@@ -37,9 +44,25 @@ export function handOverHighlight(input: HandOverInput): HandOverResult | null {
   const promoted = promoteAnnotation({ workspace, annotation, placement: { inbox: true } });
   if (promoted === null) return null;
 
+  if (promoted.trashed) {
+    return {
+      cardId: promoted.cardId,
+      existed: true,
+      inHand: false,
+      placedAlready: false,
+      trashed: true,
+    };
+  }
+
   const alreadyPlaced = workspace.listCardPlacements(promoted.cardId).length > 0;
   if (promoted.existed && alreadyPlaced) {
-    return { cardId: promoted.cardId, existed: true, inHand: false, placedAlready: true };
+    return {
+      cardId: promoted.cardId,
+      existed: true,
+      inHand: false,
+      placedAlready: true,
+      trashed: false,
+    };
   }
   if (!canEditPlacement) {
     return {
@@ -47,6 +70,7 @@ export function handOverHighlight(input: HandOverInput): HandOverResult | null {
       existed: promoted.existed,
       inHand: false,
       placedAlready: false,
+      trashed: false,
     };
   }
 
@@ -58,5 +82,6 @@ export function handOverHighlight(input: HandOverInput): HandOverResult | null {
     existed: promoted.existed,
     inHand: true,
     placedAlready: false,
+    trashed: false,
   };
 }

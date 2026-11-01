@@ -2,20 +2,25 @@ import type { Annotation, PortableNode, WorkspaceDocument } from "@suite/graph";
 import { annotationValue, fieldParts, partFor } from "@suite/graph";
 
 /**
- * Turning a highlight into a card — or into the cards a reader broke it into.
+ * Turning a highlight into a card.
  *
  * A promoted highlight becomes **an ordinary card in every way**: it can be tagged, retyped, linked, searched and
- * trashed like anything else, because it is anything else. What it arrives with is the mapping the reader gave it: a
- * part marked `title` names the card, and a part marked `field` fills a property. Everything else stays in the
- * passage.
+ * trashed like anything else, because it is anything else.
+ *
+ * **Promotion writes properties, and the type writes the body.** A type's template card already supplies a body, a
+ * title, properties, tags and connectors, and `createCard` copies all of it. Promotion used to write a blockquote and
+ * a "From …" paragraph over the top of that, which meant a reader could map a highlight onto a type and then have the
+ * type's own template thrown away. So what arrives now is the mapping the reader gave it — a part marked `title` names
+ * the card, a part marked `field` fills a property — plus two facts the card could not invent: the read-only
+ * `annotation` property, and a `Source` card property naming the book. A type with a template keeps its body; a type
+ * without one gets no body, which is what an ordinary new card of that type looks like.
  *
  * **One highlight, one card.** The count used to depend on the mapping — a part marked "a card of its own" made
  * another — which meant one press could produce an unpredictable number of cards and no single gesture could undo it.
- * The destinations are now all places on one card.
- *
- * The reference back to the source needs no field of its own: the card points at the annotation, the annotation names
- * its source. A comment on a highlight needs no feature either, because the card is an ordinary card.
+ * The destinations are now all places on one card, and a highlight that already has one is never given a second: the
+ * press opens the card, or says the card is in the trash.
  */
+
 /**
  * Where a promoted card lands.
  *
@@ -31,13 +36,6 @@ export interface PromoteInput {
   workspace: WorkspaceDocument;
   annotation: Annotation;
   placement: Placement;
-  /**
-   * Make another card even though this highlight already has one.
-   *
-   * Off by default, and that is a rule rather than a preference: a press on a highlight that already came out of the
-   * book should take the reader to *that* card, not silently make a second one and orphan the first from its record.
-   */
-  again?: boolean;
 }
 
 export interface PromoteResult {
@@ -45,18 +43,34 @@ export interface PromoteResult {
   readonly cardId: string;
   /** True when the highlight already had a card and nothing was created. */
   readonly existed: boolean;
+  /**
+   * True when the card the record names is in the trash.
+   *
+   * Nothing is created for it. A second card would orphan the link to the first — the record holds one id — and the
+   * card the reader already made is still theirs, sitting in the trash with everything they wrote in it.
+   */
+  readonly trashed: boolean;
   /** The passage had no words to borrow, so the card is titled from its style instead. */
   readonly excerptMissing: boolean;
 }
 
 export function promoteAnnotation(input: PromoteInput): PromoteResult | null {
-  const { workspace, annotation, placement: target, again = false } = input;
+  const { workspace, placement: target } = input;
+  // The caller's copy of the record, re-read from the document. A stale object — the one a surface captured when it
+  // rendered — has no `cardId`, and a promotion that trusted it would make a second card and overwrite the link to
+  // the first. That is the orphaning this rule exists to prevent, so the record is read where it is true.
+  const annotation = workspace.getAnnotation(input.annotation.id) ?? input.annotation;
 
-  if (!again && annotation.cardId !== undefined) {
+  if (annotation.cardId !== undefined) {
     const existing = workspace.getCard(annotation.cardId);
     if (existing !== undefined && existing.deletedAt == null) {
-      return { cardId: existing.id, existed: true, excerptMissing: false };
+      return { cardId: existing.id, existed: true, trashed: false, excerptMissing: false };
     }
+    if (existing !== undefined) {
+      return { cardId: existing.id, existed: true, trashed: true, excerptMissing: false };
+    }
+    // A record naming a card that no longer exists is a dead link, not a second card: fall through and make one, and
+    // the link below replaces the one that cannot resolve.
   }
 
   const style = workspace.getAnnotationStyle(annotation.styleId);
@@ -66,14 +80,23 @@ export function promoteAnnotation(input: PromoteInput): PromoteResult | null {
     "onBoard" in target
       ? { boardId: target.onBoard.boardId, position: target.onBoard.position }
       : {};
+  const fallbackTitle = titleFrom(excerpt ?? style?.name ?? "Highlight");
 
-  const make = (title: string, quote: string | null): string => {
+  // One gesture, one undo step. `createCard`, `setTitleText`, `addField`, `setProperty` and `setAnnotationCard` each
+  // commit on their own, and a promotion that took six presses of undo to reverse is exactly the thing the one-card
+  // rule was meant to stop.
+  const cardId = workspace.batch("annotation:promote", () => {
     // The style's template is how "green highlights become Claim cards" without a branch on a type.
     const card = workspace.createCard({
       ...(style?.templateTypeId === undefined ? {} : { typeId: style.templateTypeId }),
       ...placement,
     });
-    workspace.setTitleText(card.id, title);
+
+    // A part the reader mapped to the title wins; otherwise the template's own title stands, because the template is
+    // what the reader authored for this kind of card; otherwise the passage's first sentence names it.
+    const templateTitle = workspace.cardTitle(card.id).trim();
+    if (titlePart !== null) workspace.setTitleText(card.id, titlePart.text);
+    else if (templateTitle.length === 0) workspace.setTitleText(card.id, fallbackTitle);
 
     const fieldId = ensureAnnotationField(workspace, card.primaryTypeId);
     if (fieldId !== null) {
@@ -81,7 +104,14 @@ export function promoteAnnotation(input: PromoteInput): PromoteResult | null {
         asApp: true,
       });
     }
-    workspace.setBodyNodes(card.id, bodyFor(quote, sourceTitle(workspace, annotation), annotation));
+
+    // The backlink. A mention would have worked, but a mention lives in the body and the body now belongs to the
+    // template. A card-valued property is the same relationship in the one place the reader can arrange it: the book's
+    // Links list shows the card, and the card's shows the book.
+    const sourceFieldId = ensureSourceField(workspace, card.primaryTypeId);
+    if (sourceFieldId !== null) {
+      workspace.setProperty(card.id, sourceFieldId, annotation.sourceCardId);
+    }
 
     // Every part that names a property, placed on this card. A missing property is made here: a recipe has to
     // survive a type change, so it names fields rather than binding to ids.
@@ -89,16 +119,15 @@ export function promoteAnnotation(input: PromoteInput): PromoteResult | null {
       const target = ensureTextField(workspace, card.primaryTypeId, entry.name);
       if (target !== null) workspace.setProperty(card.id, target, entry.text);
     }
-    return card.id;
-  };
 
-  const title = titlePart?.text ?? titleFrom(excerpt ?? style?.name ?? "Highlight");
-  const cardId = make(title, excerpt);
-  workspace.setAnnotationCard(annotation.id, cardId);
+    workspace.setAnnotationCard(annotation.id, card.id);
+    return card.id;
+  });
 
   return {
     cardId,
     existed: false,
+    trashed: false,
     excerptMissing: excerpt === null && titlePart === null,
   };
 }
@@ -119,6 +148,27 @@ function ensureAnnotationField(workspace: WorkspaceDocument, typeId: string): st
   } catch {
     // A type whose schema refuses the field is a type with no place for a highlight; the card is still made, and the
     // record still remembers it.
+    return null;
+  }
+}
+
+/**
+ * A `card` property naming the book, which is the promoted card's link back to its source.
+ *
+ * A property rather than a paragraph because the body belongs to the type's template now, and a field is the one place
+ * a reader can arrange what a card shows. A `card` kind and not `annotation`: `propertySources` and
+ * `outgoingPropertyLinks` read a card-valued property as a link, so the book's Links list shows the card and the card's
+ * shows the book. An existing `Source` of another kind is left alone — a text field holding an id would be a link in
+ * name only, and overwriting the reader's own field to make one is worse than having none.
+ */
+function ensureSourceField(workspace: WorkspaceDocument, typeId: string): string | null {
+  const type = workspace.getType(typeId);
+  if (type === undefined) return null;
+  const named = type.fields.find((field) => field.name.trim().toLowerCase() === "source");
+  if (named !== undefined) return named.kind === "card" ? named.id : null;
+  try {
+    return workspace.addField(typeId, { name: "Source", kind: "card" }).id;
+  } catch {
     return null;
   }
 }
@@ -144,9 +194,9 @@ function ensureTextField(
  * The source's name, or null when it has none worth printing.
  *
  * `displayTitle` answers "Untitled" for a card with no words, and that is a placeholder for a card, not a name for a
- * book: quoting it would make every promoted card say `From …, "Untitled"`.
+ * book: quoting it would make every passage say `From …, "Untitled"`.
  */
-function sourceTitle(workspace: WorkspaceDocument, annotation: Annotation): string | null {
+export function sourceTitle(workspace: WorkspaceDocument, annotation: Annotation): string | null {
   const source = workspace.getCard(annotation.sourceCardId);
   if (source === undefined) return null;
   const title = workspace.displayTitle(source.id).trim();
@@ -154,17 +204,16 @@ function sourceTitle(workspace: WorkspaceDocument, annotation: Annotation): stri
 }
 
 /**
- * What a promoted card says.
+ * The passage as body nodes: the words as a blockquote, then a paragraph naming where they came from.
  *
- * The passage as a blockquote — the whole quote, even when parts carved pieces out of it, because the passage is what
- * was marked and a card that silently dropped the rest would be a card about a sentence nobody can find again — then
- * one paragraph naming where it came from. The paragraph carries the source's own card as a mention, so the reference
- * is a real backlink in the graph rather than a second kind of link.
+ * Promotion does not write this any more — the type's template is the body. One place still needs it: **Keep it**,
+ * which de-links a card from its highlight and has to leave the reader with the passage that was the whole reason for
+ * the card. It is one function rather than two shapes, so a card that keeps its passage reads the same as a card that
+ * was promoted before templates existed.
  */
-function bodyFor(
+export function passageNodes(
   quote: string | null,
-  source: string | null,
-  annotation: Annotation,
+  source: { readonly cardId: string; readonly title: string | null },
 ): PortableNode[] {
   const nodes: PortableNode[] = [];
   if (quote !== null && quote.trim().length > 0) {
@@ -175,15 +224,14 @@ function bodyFor(
   }
   // The mention is always there: it is what makes the backlink a real reference in the graph, and a card whose source
   // has no title still came from somewhere. The title is quoted only when the source has one worth printing.
-  const paragraph: PortableNode = {
+  nodes.push({
     type: "paragraph",
     content: [
       { type: "text", text: "From " },
-      { type: "mention", attrs: { cardId: annotation.sourceCardId } },
-      ...(source === null ? [] : [{ type: "text" as const, text: `, “${source}”` }]),
+      { type: "mention", attrs: { cardId: source.cardId } },
+      ...(source.title === null ? [] : [{ type: "text" as const, text: `, “${source.title}”` }]),
     ],
-  };
-  nodes.push(paragraph);
+  });
   return nodes;
 }
 

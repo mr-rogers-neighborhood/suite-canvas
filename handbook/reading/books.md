@@ -84,8 +84,19 @@ A card made from a highlight wears the passage above its body: the kind's colour
 book it came from. The writing underneath is yours, and it is where a comment on the passage belongs — there is no
 separate comment system, because there is no separate kind of card.
 
-**Reopen** goes back to the book. **Keep it** cuts the link: the passage stays in the card as a quote, the card becomes
-an ordinary note you own, and the highlight can produce another card later if you want one.
+The card arrives with two properties rather than a body: a read-only **Highlight** that names the passage, and a
+**Source** that names the book. If the kind produces a card type with a template, the card gets that template's body,
+title and properties — so a claim template can open with "State the claim" and the passage still sits above it. A kind
+whose type has no template makes a card with no body at all, the same as any other new card of that type. That is what
+makes the mapping worth writing: the parts fill properties, and the card type decides how those properties read.
+
+One highlight makes one card. **Place** hands it to your pointer; pressing Place again opens the card the highlight
+already made rather than making a second one, and a card you have put in the trash says so instead of being quietly
+replaced.
+
+**Reopen** goes back to the book. **Keep it** cuts the link and writes the passage into the card's body as a quote with
+a link to the book, so the card becomes an ordinary note you own — and the highlight can still produce another card
+later if you want one.
 
 ## How it reads
 

@@ -1,4 +1,5 @@
 import type { AnnotationPart } from "@suite/graph";
+import { ANNOTATION_QUOTE_MAX_LENGTH } from "@suite/graph";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type OpenedBook, openEpub, protectionOf } from "../archive/epub/open";
 import { sanitiseChapter } from "../archive/epub/sanitise";
@@ -66,6 +67,15 @@ export function BookReader({
   const [chapterXml, setChapterXml] = useState<string | null>(null);
   const [panel, setPanel] = useState<"none" | "contents" | "highlights">("none");
   const remembered = useBookPosition(attachmentId);
+  /**
+   * Where to open this book, read once.
+   *
+   * `remembered` is a fresh object on every write, and `remember` writes on every page turn and on a 250 ms trailing
+   * timer while scrolling. Depending on it directly re-opened the whole archive — the package, the spine, the nav —
+   * once per turn, so the reader's own progress was the thing making it slow. This is the position the book opens on
+   * and nothing more; a page turn writes it and never reads it back here.
+   */
+  const [opensAt] = useState(() => remembered);
   const remember = useBookStore((store) => store.remember);
   const highlights = useHighlights(sourceCardId ?? "");
   const workspace = useCanvasStore((state) => state.workspace);
@@ -116,11 +126,11 @@ export function BookReader({
         // The remembered place, when the book still has that chapter: a book that was edited since must open on
         // something, and the top of the first chapter is a better answer than an empty column.
         const first =
-          remembered !== null && book.chapters.includes(remembered.path)
-            ? remembered.path
+          opensAt !== null && book.chapters.includes(opensAt.path)
+            ? opensAt.path
             : book.chapters[0];
         setChapterPath(first ?? null);
-        setPendingOffset(remembered?.offset ?? 0);
+        setPendingOffset(opensAt?.offset ?? 0);
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -133,8 +143,9 @@ export function BookReader({
     return () => {
       cancelled = true;
     };
-    // `remembered` is read once, on purpose: a reader turning a page must not restart the parse.
-  }, [bytes, remembered]);
+    // `opensAt` is state, so its identity never changes: listing it is honest and it still cannot re-run this effect.
+    // A reader turning a page must not restart the parse — the book (`bytes`) is what this effect is for.
+  }, [bytes, opensAt]);
 
   // One chapter is decompressed at a time, when it is the chapter being read: a book is hundreds of kilobytes
   // of markup and a reader who opens the contents should not pay for all of it.
@@ -526,7 +537,18 @@ export function BookReader({
           styles={highlights.styles}
           anchor={selection.anchor}
           onPick={(styleId: string) => {
-            highlights.add({ styleId, anchor: selection.anchor, excerpt: selection.anchor.quote });
+            const made = highlights.add({
+              styleId,
+              anchor: selection.anchor,
+              excerpt: selection.anchor.quote,
+            });
+            if (made === null) {
+              toast.neutral(
+                `That passage is too long to mark. A highlight can hold ${String(
+                  ANNOTATION_QUOTE_MAX_LENGTH,
+                )} characters — mark a sentence or a paragraph instead.`,
+              );
+            }
             setSelection(null);
           }}
           onDismiss={() => setSelection(null)}

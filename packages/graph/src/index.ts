@@ -8,6 +8,7 @@ export type {
   AnnotationStyle,
 } from "./annotations.js";
 export {
+  ANNOTATION_QUOTE_MAX_LENGTH,
   anchorRectSchema,
   annotationAnchorSchema,
   annotationSchema,

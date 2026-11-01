@@ -1,4 +1,5 @@
 import type { Annotation, AnnotationStyle, WorkspaceDocument } from "@suite/graph";
+import { ANNOTATION_QUOTE_MAX_LENGTH } from "@suite/graph";
 import { useCallback, useEffect, useState } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
 
@@ -46,12 +47,26 @@ export function useHighlights(sourceCardId: string): Highlights {
   const add = useCallback(
     (input: { styleId: string; anchor: Annotation["anchor"]; excerpt?: string }) => {
       if (workspace === null) return null;
-      return workspace.addAnnotation({
-        sourceCardId,
-        styleId: input.styleId,
-        anchor: input.anchor,
-        ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
-      });
+      // A selection longer than a highlight may be is refused here rather than thrown out of a click handler: a schema
+      // parse that throws inside `onClick` is a press that does nothing and says nothing.
+      if (
+        input.anchor.kind === "quote" &&
+        input.anchor.quote.length > ANNOTATION_QUOTE_MAX_LENGTH
+      ) {
+        return null;
+      }
+      try {
+        return workspace.addAnnotation({
+          sourceCardId,
+          styleId: input.styleId,
+          anchor: input.anchor,
+          ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
+        });
+      } catch {
+        // The schema is the authority and the guard above is only the case we can name in advance. Anything else it
+        // refuses is still a press that must not crash the reader.
+        return null;
+      }
     },
     [workspace, sourceCardId],
   );

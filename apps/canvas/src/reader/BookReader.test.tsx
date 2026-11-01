@@ -13,13 +13,33 @@ import { useBookStore } from "./bookStore";
  * The bytes go in through the local-attachment path rather than the relay, which is the path a freshly dropped
  * book takes anyway: the reader reads this browser's copy first, so a book opens before it has uploaded.
  */
-const { bytes } = vi.hoisted(() => ({
+const { bytes, opens } = vi.hoisted(() => ({
   bytes: { value: new Uint8Array() as Uint8Array<ArrayBuffer> },
+  opens: { count: 0 },
 }));
 
 vi.mock("./useBookBytes", () => ({
-  useBookBytes: () => ({ status: "ready", bytes: bytes.value }),
+  // The stored result keeps its identity across renders, exactly as the real hook does — a fresh literal per render
+  // would make the reader look like it re-opens on every paint for a reason that only exists in this file.
+  useBookBytes: () => {
+    cached ??= { status: "ready" as const, bytes: bytes.value };
+    cached.bytes = bytes.value;
+    return cached;
+  },
 }));
+
+let cached: { status: "ready"; bytes: Uint8Array } | null = null;
+
+vi.mock("../archive/epub/open", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../archive/epub/open")>();
+  return {
+    ...real,
+    openEpub: async (input: Uint8Array) => {
+      opens.count += 1;
+      return real.openEpub(input);
+    },
+  };
+});
 
 vi.mock("../editor/attachmentNode", () => ({
   ATTACHMENT_ID_PATTERN: /^[0-9a-f]{32}$/u,
@@ -45,9 +65,26 @@ beforeEach(async () => {
   bookCardId = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } }).id;
   useCanvasStore.setState({ workspace: doc });
   bytes.value = await bookBytes();
+  opens.count = 0;
 });
 
 describe("the book reader", () => {
+  it("should open the archive once, however often the reading position is written", async () => {
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
+    await waitFor(() => expect(screen.getByTestId("book-reader")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-body").textContent).toContain("first sentence"),
+    );
+    const afterOpen = opens.count;
+
+    // Every page turn and every scroll settle writes the position. That used to re-open the package, the spine and
+    // the nav — the reader's own progress was what made it slow.
+    useBookStore.getState().remember("a".repeat(32), "OEBPS/text/chapter1.xhtml", 40);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(opens.count).toBe(afterOpen);
+  });
+
   it("should open on the book's title and its first chapter", async () => {
     render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
 

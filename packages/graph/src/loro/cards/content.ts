@@ -92,6 +92,16 @@ export function contentMethods(ctx: DocContext) {
       return observeIn(ctx.titleListeners, cardId, listener);
     },
 
+    /**
+     * The card's own title, and nothing else.
+     *
+     * `displayTitle` falls back to the body, which is right for a row in a list and wrong for a caller that has to
+     * tell "the template gave this card a title" from "the template gave it a first paragraph".
+     */
+    cardTitle(cardId: string): string {
+      return firstLine(textOf(ctx.api.cards.peekTitle(cardId)));
+    },
+
     /** Title text, falling back to the body's first line, then "Untitled". */
     displayTitle(cardId: string): string {
       const title = firstLine(textOf(ctx.api.cards.peekTitle(cardId)));

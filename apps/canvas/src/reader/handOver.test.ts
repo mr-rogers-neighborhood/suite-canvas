@@ -99,6 +99,25 @@ describe("handing a highlight over", () => {
     expect(usePlaceStackStore.getState().queue).toEqual([]);
   });
 
+  it("should carry nothing when the highlight's card is in the trash", () => {
+    const { workspace, annotation } = fixture();
+    const first = handOverHighlight({ workspace, annotation, canEditPlacement: true });
+    usePlaceStackStore.getState().stop();
+    workspace.trashCard(first?.cardId ?? "");
+
+    const again = handOverHighlight({
+      workspace,
+      annotation: workspace.getAnnotation(annotation.id) ?? annotation,
+      canEditPlacement: true,
+    });
+
+    // Nothing in hand: a trashed card has no placement, so putting it down would contradict the library.
+    expect(again?.trashed).toBe(true);
+    expect(again?.inHand).toBe(false);
+    expect(again?.cardId).toBe(first?.cardId);
+    expect(usePlaceStackStore.getState().queue).toEqual([]);
+  });
+
   it("should leave the card in the inbox when the reader may not place anything", () => {
     const { workspace, annotation } = fixture();
     const outcome = handOverHighlight({ workspace, annotation, canEditPlacement: false });

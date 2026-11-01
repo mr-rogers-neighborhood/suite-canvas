@@ -14,6 +14,15 @@ import { entityIdSchema } from "./schema.js";
  * anchor is a **quote** rather than an offset, because reflow invalidates an offset on every screen.
  */
 
+/**
+ * The longest passage a highlight may quote, in characters.
+ *
+ * A cap rather than none because a record travels in every snapshot and every share, and a highlight of a whole chapter
+ * is a copy of the book rather than a note about it. Named here so a surface can refuse a selection with the same
+ * number the schema enforces, instead of discovering it in a thrown parse error with nothing to show the reader.
+ */
+export const ANNOTATION_QUOTE_MAX_LENGTH = 4000;
+
 /** A rectangle in a page's own coordinates, 0..1, so it survives a zoom. */
 export const anchorRectSchema = z.object({
   x: z.number().min(0).max(1),
@@ -38,7 +47,7 @@ export const annotationAnchorSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("quote"),
     locator: z.string().min(1),
-    quote: z.string().min(1).max(4000),
+    quote: z.string().min(1).max(ANNOTATION_QUOTE_MAX_LENGTH),
     prefix: z.string().max(200),
     suffix: z.string().max(200),
   }),
@@ -104,7 +113,7 @@ export const annotationSchema = z
     /** An `AnnotationStyle`, which is shared across media because a colour is a colour. */
     styleId: entityIdSchema,
     anchor: annotationAnchorSchema,
-    excerpt: z.string().max(4000).optional(),
+    excerpt: z.string().max(ANNOTATION_QUOTE_MAX_LENGTH).optional(),
     /** The card it was promoted into, once it has one. A highlight has no card until it earns one. */
     cardId: entityIdSchema.optional(),
     /**

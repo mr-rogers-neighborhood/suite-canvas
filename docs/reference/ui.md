@@ -390,6 +390,12 @@ expect, and a part outside the recipe is shown rather than hidden. The mapping i
 `AnnotationKindsDialog`, opened through `AnnotationKindsHost` from the library, the raise surface and a card, and
 choosing a card type seeds the slots from that type's own text properties.
 
+**A promotion is one undo step, and never makes a second card.** `promoteAnnotation` runs inside `workspace.batch`
+because `createCard`, `setTitleText`, `addField`, `setProperty` and `setAnnotationCard` each commit on their own — six
+presses of undo for one gesture was the thing the one-card rule was meant to prevent. A highlight whose card is in the
+trash is reported, not replaced: `handOverHighlight` carries nothing in that case, so a press cannot put a deleted card
+on a board while its library row says it is deleted.
+
 **A highlight is carried, or handed over.** A press that travels past `HIGHLIGHT_DRAG_THRESHOLD` puts the highlight in
 `useHighlightDrag`, the focus surface conceals itself the way the library drawer does, and a release over the canvas
 promotes it at that point. A release anywhere else creates nothing, so a changed mind leaves no card behind. **Place**
@@ -397,10 +403,12 @@ is the same idea without the travel: `handOverHighlight` makes the card in the i
 `usePlaceStackStore`, the stack the library's own "Place cards" uses, and the focus surface conceals itself while a
 stack is in hand. The card lands where the reader presses, which is why Place never picks a point for them.
 
-**A promoted card wears its passage.** `AnnotationCardFace` draws a strip above the body, not instead of it: the kind's
-colour, the words, the book, **Reopen** and **Keep it**. `Keep it` de-links: `setAnnotationCard(id, null)` clears the
-record's card and the card's `annotation` property is cleared as the app, leaving the quote in the body as the reader's
-own text.
+**A promoted card wears its passage, and its body is its type's.** `AnnotationCardFace` draws a strip above the body,
+not instead of it: the kind's colour, the words, the book, **Reopen** and **Keep it**. Promotion writes no body — the
+type's template is the body, and a type without one gives a card with no body — so a card whose type shows `Source` in
+its template reads the book from the property rather than from a paragraph. `Keep it` is the one moment the words are
+written down: it appends the quote as a blockquote and a paragraph mentioning the book, clears the `annotation`
+property as the app, and clears the record's `cardId`, all in one batch.
 
 ## Error codes
 

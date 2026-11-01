@@ -139,6 +139,11 @@ export class CardsFacade extends AnnotationsFacade {
     return this.cardsApi.displayTitle(cardId);
   }
 
+  /** The card's own title alone, without the body fallback `displayTitle` adds. */
+  cardTitle(cardId: string): string {
+    return this.cardsApi.cardTitle(cardId);
+  }
+
   referencesFor(cardId: string): string[] {
     return this.cardsApi.referencesFor(cardId);
   }

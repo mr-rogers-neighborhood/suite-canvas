@@ -21,7 +21,8 @@ result is a merge rather than a last-write-wins surprise.
 
 ## Adding media
 
-`/media` in a body and **New media…** on the canvas open the same picker, and the picker is the only place a kind is
+`/media` in a body, **New media…** on the canvas and **New media…** in the New card menu (the dock's pill and the
+library's Add new alike) open the same picker, and the picker is the only place a kind is
 chosen: an image, a video, a book, a YouTube embed, or a picture by link. What differs is where the answer lands. At a
 caret it is inserted where you are writing; from the canvas it becomes a card of the media type at the point you
 pressed, with the block inside it.

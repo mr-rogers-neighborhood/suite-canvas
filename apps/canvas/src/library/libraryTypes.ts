@@ -120,6 +120,8 @@ export interface LibraryDrawerProps {
   onCreateCard?: ((typeId: string) => void) | undefined;
   onCreateSketch?: (() => void) | undefined;
   onCreateSection?: (() => void) | undefined;
+  /** The media picker: a file first, then the card. No handler, no row. */
+  onCreateMedia?: (() => void) | undefined;
   onCreatePortal?: ((targetBoardId: string) => void) | undefined;
   /** Switches to the board. */
   onOpenBoard?: (boardId: string) => void;

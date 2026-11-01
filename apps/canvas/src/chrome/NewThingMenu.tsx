@@ -3,6 +3,9 @@ import { PORTAL_GLYPH } from "../cards/portal";
 import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import type { NewThingMenuModel } from "./newThingMenu";
 
+/** A media card's glyph, next to the sketch's: both are verbs that make a card of a built-in type. */
+const MEDIA_GLYPH = "\u25a3";
+
 /** A sketch's glyph, drawn as text: the type is a runtime one, not an icon. */
 export const SKETCH_GLYPH = "\u270e";
 export const SECTION_GLYPH = "\u25a2";
@@ -47,8 +50,8 @@ export function NewThingMenu({
   onTogglePortal,
   onDone,
 }: NewThingMenuProps) {
-  const { creatableTypes, sketch, section, board, portal } = model;
-  const hasRuntimeRows = sketch !== null || section !== null;
+  const { creatableTypes, sketch, media, section, board, portal } = model;
+  const hasRuntimeRows = sketch !== null || media !== null || section !== null;
   const portalAction = portal !== null && (portal.targets.length > 0 || portal.newBoard);
 
   return (
@@ -100,6 +103,23 @@ export function NewThingMenu({
             {SKETCH_GLYPH}
           </span>
           <span className="min-w-0 flex-1 truncate">{sketch.label}</span>
+        </button>
+      )}
+      {media === null ? null : (
+        <button
+          type="button"
+          role="menuitem"
+          data-testid={`${prefix}-new-media`}
+          className={rowClass}
+          onClick={() => {
+            onDone();
+            media.run();
+          }}
+        >
+          <span aria-hidden="true" className={glyphClass}>
+            {MEDIA_GLYPH}
+          </span>
+          <span className="min-w-0 flex-1 truncate">{media.label}</span>
         </button>
       )}
       {section === null ? null : (

@@ -160,6 +160,8 @@ export interface WorkspaceShellViewProps {
   createPortal: (targetBoardId: string, point?: { x: number; y: number }) => void;
   createSketch: () => void;
   createSection: () => void;
+  /** Media from the dock or the library: the picker, then the card. */
+  createMedia: () => void;
   createBoardPortal: () => void;
   openTypeSettings: UiState["openTypeSettings"];
   paletteItems: PaletteItem[];
@@ -264,6 +266,7 @@ export function WorkspaceShellView({
   createPortal,
   createSketch,
   createSection,
+  createMedia,
   createBoardPortal,
   openTypeSettings,
   paletteItems,
@@ -688,6 +691,7 @@ export function WorkspaceShellView({
             onCreatePortal={createPortal}
             onCreateSketch={createSketch}
             onCreateSection={createSection}
+            onCreateMedia={createMedia}
             onCreateBoardPortal={createBoardPortal}
             onManageTypes={openTypeSettings}
             canManageSchema={canManageSchema}
@@ -736,6 +740,7 @@ export function WorkspaceShellView({
                   onCreateCard: createCard,
                   onCreateSketch: createSketch,
                   onCreateSection: createSection,
+                  onCreateMedia: createMedia,
                   onCreatePortal: (targetBoardId: string) => createPortal(targetBoardId),
                 }
               : {})}

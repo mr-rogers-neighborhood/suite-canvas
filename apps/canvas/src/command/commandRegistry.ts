@@ -119,6 +119,13 @@ export interface CommandActions {
   createSketch(): void;
   createSection(): void;
   /**
+   * Open the media picker and make the card after a file is chosen.
+   *
+   * Optional until the shell supplies it, the way the portal action is: a surface with no handler offers no row, so the
+   * menu never lists something that cannot run.
+   */
+  createMedia?: (() => void) | undefined;
+  /**
    * A portal on the active board that opens `targetBoardId`. Optional until the
    * shell supplies it: without a handler the portal rows are not offered, so the
    * palette never lists a command that cannot run.
@@ -521,6 +528,23 @@ export const commands: readonly CommandDefinition[] = [
         weight: 40,
         run: (live) => live.actions.focusCard(card.id),
       })),
+  }),
+  define({
+    id: "card.createMedia",
+    label: "New media…",
+    group: "create",
+    owner: "canvas",
+    capabilities: ["canCreateContent"],
+    available: (context) => onBoard(context) && context.actions.createMedia !== undefined,
+    // The same verb the canvas right-click offers. The picker asks for the file first and makes the card after, so
+    // cancelling leaves nothing behind.
+    palette: {
+      group: "Create",
+      weight: 54,
+      subtitle: "Image, video, book or link",
+      keywords: ["media", "image", "video", "book", "epub", "youtube", "picture", "new"],
+    },
+    run: (context) => context.actions.createMedia?.(),
   }),
   define({
     id: "card.createSketch",

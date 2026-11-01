@@ -71,6 +71,7 @@ export function LibraryDrawer({
   onCreateCard,
   onCreateSketch,
   onCreateSection,
+  onCreateMedia,
   onCreatePortal,
   onOpenBoard = () => {},
   onPlaceBoard = () => {},
@@ -535,6 +536,7 @@ export function LibraryDrawer({
       ...(onCreateSection === undefined ? {} : { createSection: onCreateSection }),
       ...(onCreatePortal === undefined ? {} : { createPortal: onCreatePortal }),
       ...(onCreateBoard === undefined ? {} : { createBoard: onCreateBoard }),
+      ...(onCreateMedia === undefined ? {} : { createMedia: onCreateMedia }),
     },
   });
   /** What a new thing does once it exists: the drawer steps aside so it is in view. */

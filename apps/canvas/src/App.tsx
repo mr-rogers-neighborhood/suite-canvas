@@ -30,6 +30,7 @@ import { BootSkeleton } from "./chrome/BootSkeleton";
 import { useSavedViews } from "./chrome/ViewsBar";
 import { usePresenceStore } from "./collab/usePresenceStore";
 import { countRender } from "./dev/perf";
+import { openMediaPickerOnBoard } from "./editor/mediaPicker";
 import { useBootGate } from "./hooks/useBootGate";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "./hooks/useLibrarySearch";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
@@ -597,6 +598,21 @@ function WorkspaceShell({
     createCard(ensureWhiteboardType(workspace).id);
   }, [canCreateContent, createCard, workspace]);
 
+  /**
+   * Media from the dock or the library: ask for the file, then make the card.
+   *
+   * The card lands at the middle of what the reader is looking at, centred the way a placed card is. Nothing exists until
+   * a file is chosen, which is why this opens a picker rather than creating anything.
+   */
+  const createMedia = useCallback(() => {
+    if (!activeBoardId || !canCreateContent) return;
+    const centre = canvasPoint();
+    openMediaPickerOnBoard(activeBoardId, {
+      x: centre.x - DEFAULT_CARD_WIDTH / 2,
+      y: centre.y - DEFAULT_CARD_HEIGHT / 2,
+    });
+  }, [activeBoardId, canCreateContent, canvasPoint]);
+
   /** A new section around nothing, centred where a new card would land. */
   const createSection = useCallback(() => {
     if (!activeBoardId || !canCreateContent) return;
@@ -725,6 +741,7 @@ function WorkspaceShell({
         createCard={createCard}
         createPortal={createPortal}
         createSketch={createSketch}
+        createMedia={createMedia}
         createSection={createSection}
         createBoardPortal={createBoardPortal}
         openTypeSettings={openTypeSettings}

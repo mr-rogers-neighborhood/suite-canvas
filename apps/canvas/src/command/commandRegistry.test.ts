@@ -54,6 +54,7 @@ function actions(overrides: Partial<CommandActions> = {}): CommandActions {
     createCardInInbox: vi.fn(),
     createSketch: vi.fn(),
     createSection: vi.fn(),
+    createMedia: vi.fn(),
     createPortalOnBoard: vi.fn(),
     createBoard: vi.fn(),
     editCard: vi.fn(),
@@ -119,6 +120,8 @@ const fixtures: Readonly<Record<string, Fixture>> = {
   "section.focus": { unavailable: { state: { sections: [] } } },
   "card.focus": { unavailable: { state: { cards: [] } } },
   "card.createSketch": { unavailable: { capabilities: [] } },
+  // Available only where a handler exists: a row that cannot run is not offered, so the fixture marks the missing one.
+  "card.createMedia": { unavailable: { capabilities: [] } },
   "section.create": { unavailable: { capabilities: [] } },
   "portal.create": { unavailable: { state: { activeBoardId: null } } },
   "card.edit": { unavailable: { capabilities: [] } },

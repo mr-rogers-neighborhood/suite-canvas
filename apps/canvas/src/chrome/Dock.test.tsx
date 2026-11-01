@@ -191,3 +191,24 @@ describe("Dock controls", () => {
     expect(await screen.findByTestId("shortcut-sheet")).toBeInTheDocument();
   });
 });
+
+describe("New media in the New card menu", () => {
+  it("should offer the picker, not a blank card of some type", () => {
+    const onCreateMedia = vi.fn();
+    mount({ onCreateMedia });
+
+    fireEvent.click(screen.getByTestId("dock-new-card"));
+    fireEvent.click(screen.getByTestId("dock-new-media"));
+
+    // The row that used to be missing: a media card is not an authorable type, so choosing a type made a blank note.
+    expect(onCreateMedia).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("dock-new-media")).toBeNull();
+  });
+
+  it("should not offer a row it cannot run", () => {
+    mount();
+    fireEvent.click(screen.getByTestId("dock-new-card"));
+    // No handler, no row: a menu item that does nothing is worse than an absent one.
+    expect(screen.queryByTestId("dock-new-media")).toBeNull();
+  });
+});

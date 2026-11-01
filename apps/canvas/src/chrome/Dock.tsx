@@ -21,6 +21,8 @@ export interface DockProps {
   onCreateSketch?: (() => void) | undefined;
   /** A section is not a card, so it needs its own action. */
   onCreateSection?: (() => void) | undefined;
+  /** The media picker: a file first, then the card. No handler, no row. */
+  onCreateMedia?: (() => void) | undefined;
   onCreatePortal?: (targetBoardId: string) => void;
   onCreateBoardPortal?: () => void;
   onManageTypes: () => void;
@@ -47,6 +49,7 @@ export function Dock({
   onCreateCard,
   onCreateSketch,
   onCreateSection,
+  onCreateMedia,
   onCreatePortal,
   onCreateBoardPortal,
   onManageTypes,
@@ -114,6 +117,7 @@ export function Dock({
     handlers: {
       ...(onCreateSketch === undefined ? {} : { createSketch: onCreateSketch }),
       ...(onCreateSection === undefined ? {} : { createSection: onCreateSection }),
+      ...(onCreateMedia === undefined ? {} : { createMedia: onCreateMedia }),
       ...(onCreatePortal === undefined ? {} : { createPortal: onCreatePortal }),
       ...(onCreateBoardPortal === undefined ? {} : { createBoardPortal: onCreateBoardPortal }),
     },

@@ -31,6 +31,13 @@ export interface NewThingInput {
     createBoardPortal?: (() => void) | undefined;
     /** A board on its own, no portal: the library offers it, the dock has no need. */
     createBoard?: (() => void) | undefined;
+    /**
+     * The media picker: file first, card after.
+     *
+     * A media card is not one of the authorable types, so it cannot be a row in `creatableTypes` — that is why the row
+     * exists separately, and why choosing a type was making a blank card where a reader expected a picker.
+     */
+    createMedia?: (() => void) | undefined;
   };
 }
 
@@ -38,6 +45,8 @@ export interface NewThingMenuModel {
   /** The types a reader authors a card of: never a behaviour, which has its own door. */
   creatableTypes: CardType[];
   sketch: { label: string; run: () => void } | null;
+  /** "New media…": the picker, then the card. */
+  media: { label: string; run: () => void } | null;
   section: { label: string; run: () => void } | null;
   /** An empty board, offered only where the caller can make one. */
   board: { label: string; run: () => void } | null;
@@ -88,12 +97,14 @@ export function newThingMenuModel(input: NewThingInput): NewThingMenuModel {
       createSketch: () => handlers.createSketch?.(),
       createSection: () => handlers.createSection?.(),
       ...(handlers.createPortal ? { createPortalOnBoard: handlers.createPortal } : {}),
+      ...(handlers.createMedia ? { createMedia: handlers.createMedia } : {}),
     } as CommandActions,
   };
   const canvasCommands = commandsFor("canvas", commandContext);
   const find = (id: string) => canvasCommands.find((command) => command.id === id);
 
   const sketch = handlers.createSketch === undefined ? undefined : find("card.createSketch");
+  const media = handlers.createMedia === undefined ? undefined : find("card.createMedia");
   const section = handlers.createSection === undefined ? undefined : find("section.create");
   const portal = handlers.createPortal === undefined ? undefined : find("portal.create");
   const portalTargets = portal?.expand?.(commandContext) ?? [];
@@ -106,6 +117,7 @@ export function newThingMenuModel(input: NewThingInput): NewThingMenuModel {
         : { label: "New board", run: handlers.createBoard },
     creatableTypes: types.filter((type) => !isBehaviourType(type.id)),
     sketch: sketch ? { label: sketch.label, run: () => sketch.run?.(commandContext) } : null,
+    media: media ? { label: media.label, run: () => media.run?.(commandContext) } : null,
     section: section ? { label: section.label, run: () => section.run?.(commandContext) } : null,
     portal: portal
       ? {

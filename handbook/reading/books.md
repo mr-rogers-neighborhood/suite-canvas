@@ -156,6 +156,16 @@ and raises the passage.
 
 The colours appear over the words you selected rather than at the bottom of the page.
 
+## The cards a book has made
+
+Every card you place out of a book points back at it, so the book can list them: the **cards** button in the header
+shows the cards this book produced, by title, and a press peeks at one wherever it sits on a board. Underneath are the
+cards that point the other way — ones that mention the book in their body, or fill a card-valued property with it —
+each labelled with the property that made the link.
+
+Nothing is listed twice. A card made from a highlight already points at the book through the source property that
+promotion writes, so it appears once, as a card the book made rather than as a reference to itself.
+
 ## What it will not do
 
 A book protected by DRM cannot be opened, and says so rather than failing halfway. A fixed-layout book — a comic,

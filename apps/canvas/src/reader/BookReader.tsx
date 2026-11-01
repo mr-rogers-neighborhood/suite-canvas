@@ -7,6 +7,7 @@ import { toast } from "../feedback/toast";
 import { IconGlyph } from "../icons/IconGlyph";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { BookBacklinks } from "./BookBacklinks";
 import { BookHighlights } from "./BookHighlights";
 import { BookSearchPanel } from "./BookSearchPanel";
 import { useBookPosition, useBookStore } from "./bookStore";
@@ -50,6 +51,31 @@ export interface BookReaderProps {
   source?: { readonly status: "ready"; readonly bytes: Uint8Array } | undefined;
 }
 
+/** The book's side panels, in the order the header offers them: the words first, then what came out of them. */
+const PANELS = [
+  {
+    panel: "search",
+    label: "Search this book",
+    icon: "lucide:search",
+    testId: "reader-search-toggle",
+  },
+  { panel: "contents", label: "Contents", icon: "lucide:list", testId: "reader-contents-toggle" },
+  {
+    panel: "highlights",
+    label: "Your highlights",
+    icon: "lucide:highlighter",
+    testId: "reader-highlights-toggle",
+  },
+  {
+    panel: "cards",
+    label: "Cards from this book",
+    icon: "lucide:square-stack",
+    testId: "reader-cards-toggle",
+  },
+] as const;
+
+type Panel = (typeof PANELS)[number]["panel"];
+
 type State =
   | { readonly status: "loading" }
   | { readonly status: "refused"; readonly reason: string }
@@ -82,7 +108,7 @@ export function BookReader({
    * already chosen. Without it a link's fragment was applied to the chapter being left behind.
    */
   const [markupPath, setMarkupPath] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"none" | "contents" | "highlights" | "search">("none");
+  const [panel, setPanel] = useState<Panel | "none">("none");
   /** The book's words, indexed once, and the hit a reader asked to be taken to. */
   const search = useBookSearch(state.status === "open" ? state.book : null);
   const settleHit = search.settle;
@@ -562,39 +588,20 @@ export function BookReader({
       style={{ position: "relative" }}
     >
       <header className="reader-head">
-        <button
-          type="button"
-          className="views-icon-button"
-          aria-label="Search this book"
-          title="Search this book"
-          aria-expanded={panel === "search"}
-          data-testid="reader-search-toggle"
-          onClick={() => setPanel((open) => (open === "search" ? "none" : "search"))}
-        >
-          <IconGlyph icon="lucide:search" size={14} />
-        </button>
-        <button
-          type="button"
-          className="views-icon-button"
-          aria-label="Contents"
-          title="Contents"
-          aria-expanded={panel === "contents"}
-          data-testid="reader-contents-toggle"
-          onClick={() => setPanel((open) => (open === "contents" ? "none" : "contents"))}
-        >
-          <IconGlyph icon="lucide:list" size={14} />
-        </button>
-        <button
-          type="button"
-          className="views-icon-button"
-          aria-label="Highlights"
-          aria-expanded={panel === "highlights"}
-          data-testid="reader-highlights-toggle"
-          title="Your highlights"
-          onClick={() => setPanel((open) => (open === "highlights" ? "none" : "highlights"))}
-        >
-          <IconGlyph icon="lucide:highlighter" size={14} />
-        </button>
+        {PANELS.map((entry) => (
+          <button
+            key={entry.panel}
+            type="button"
+            className="views-icon-button"
+            aria-label={entry.label}
+            title={entry.label}
+            aria-expanded={panel === entry.panel}
+            data-testid={entry.testId}
+            onClick={() => setPanel((open) => (open === entry.panel ? "none" : entry.panel))}
+          >
+            <IconGlyph icon={entry.icon} size={14} />
+          </button>
+        ))}
         <span className="reader-title" title={book.book.title}>
           {book.book.title}
         </span>
@@ -652,6 +659,14 @@ export function BookReader({
           <span className="reader-progress-bar" ref={progressRef} data-testid="reader-progress" />
         </span>
       </header>
+
+      {panel === "cards" ? (
+        <BookBacklinks
+          bookCardId={sourceCardId ?? ""}
+          annotations={highlights.annotations}
+          onOpen={(cardId) => openCardFocus(cardId)}
+        />
+      ) : null}
 
       {panel === "search" ? (
         <BookSearchPanel

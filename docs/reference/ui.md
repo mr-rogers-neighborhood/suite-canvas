@@ -398,6 +398,14 @@ nothing, so no release depends on listener order. The mention chip is still a so
 `MentionChipNodeView` dispatches to `AnnotationMentionChip` for a node carrying `annotationId`, which is in the publish
 allowlist for `mention`.
 
+**Placing from a book is a session, not a press.** A stack records the book it came from (`placeStack.fromBook`), and
+while that is set `CardFocusHost` keeps the focus surface concealed even after the last card lands, so the board stays
+usable for a nudge or a resize. `ReturnToBookBar` then offers **Return to book** and **Place more annotations**, with
+Escape meaning the same as returning. `PlaceStackOutline` shows the queue in order while it lasts, with reorder, remove
+and stop, and `[` and `]` flip it; both read the store, so the library's Place cards and a book's Place N get them
+without knowing they exist. The book's own outline carries a checkbox per row, a **Place N** bar, and a disclosure that
+shows a row's whole passage and what each part is for.
+
 **The palette sits where the words are.** A selection reports its own bounding rect and the reader converts it into its
 own box, rather than pinning the palette to the bottom edge where a reader has to go looking for it. The x is clamped so
 a selection at either edge keeps its buttons on the page, and the palette flips above the words when there is no room
@@ -429,12 +437,23 @@ is the same idea without the travel: `handOverHighlight` makes the card in the i
 `usePlaceStackStore`, the stack the library's own "Place cards" uses, and the focus surface conceals itself while a
 stack is in hand. The card lands where the reader presses, which is why Place never picks a point for them.
 
-**A promoted card wears its passage, and its body is its type's.** `AnnotationCardFace` draws a strip above the body,
-not instead of it: the kind's colour, the words, the book, **Reopen** and **Keep it**. Promotion writes no body: the
-type's template is the body, and a type without one gives a card with no body. So a card whose type shows `Source` in
-its template reads the book from the property rather than from a paragraph. `Keep it` is the one moment the words are
-written down: it appends the quote as a blockquote and a paragraph mentioning the book, clears the `annotation`
-property as the app, and clears the record's `cardId`, all in one batch.
+**A promoted card wears its passage, and its body is its type's.** `AnnotationPassage` draws it: the spine in the kind's
+colour, the words **in full**, and the kind and the book underneath. `AnnotationCardFace` wraps that in **Reopen** and
+**Keep it** and draws it above the body, and a `Highlight` property block in the body draws the same component inline.
+The header is a fallback: it returns null when the body already carries a block for the `annotation` field, so a template
+that embeds the field owns the quotation and the passage appears once.
+
+That is why `FieldKindEntry` has `rendersReadOnlyFace`: `PropertyField` formats every read-only field before it consults
+the registry, which is right for a kind a reader could otherwise edit, and wrong for the one whose value is a passage.
+Promotion writes no body, so a card whose type shows `Source` in its template reads the book from the property rather
+than from a paragraph. `Keep it` is the one moment the words are written down: it appends the quote as a blockquote and
+a paragraph mentioning the book, clears the `annotation` property as the app, and clears the record's `cardId`, all in
+one batch.
+
+**An annotation card fits its passage.** `cardSizing` decides the box from three facts: a card holding a highlight takes
+its height from its content while the placement stores none, and a stored height wins because a resize is a decision. An
+empty body stops claiming the rest of the card, so a passage with no writing under it hugs the passage. Every other card
+keeps `DEFAULT_CARD_HEIGHT`, which is what the board's selection, the section fit and the drop offset all assume.
 
 ## Error codes
 

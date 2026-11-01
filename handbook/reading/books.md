@@ -72,6 +72,19 @@ pointer: the surface steps aside, one press on the board puts the card down, and
 adds to the stack rather than starting a new one. A highlight whose card is already on a board opens that card instead
 of making a second one.
 
+## Placing several at once
+
+Tick the checkboxes in the book's **Highlights** panel and press **Place N** to hand the whole selection to your
+pointer, one card per press. The order you ticked them is the order they go down: the list in the corner of the board
+shows the queue, and you can move a card up or down, take it out, or flip the whole queue with `[` and `]` without
+leaving the board.
+
+The triangle beside a row opens it to the whole passage, and to what each part of a broken-up highlight is for.
+
+When the last card lands you are not thrown back into the book. A bar offers **Return to book** and **Place more
+annotations**, and the board stays yours in the meantime, so a card that landed a little to the left can be moved. Escape
+means **Return to book**.
+
 The highlights you have made collect in the book's **Highlights** panel, beside its contents, with the ones that
 became cards marked. They are also in the library's **Annotations** tab, grouped by book — pressing one opens the
 passage, the arrow beside it places the card, and dragging one onto the board puts it down where you let go. A row
@@ -94,9 +107,17 @@ One highlight makes one card. **Place** hands it to your pointer; pressing Place
 already made rather than making a second one, and a card you have put in the trash says so instead of being quietly
 replaced.
 
-**Reopen** goes back to the book. **Keep it** cuts the link and writes the passage into the card's body as a quote with
-a link to the book, so the card becomes an ordinary note you own — and the highlight can still produce another card
-later if you want one.
+The card is as tall as its passage, so a sentence is not buried under a fixed 240px box, and the passage is shown in
+full rather than clipped to two lines. Once you resize one, the size you chose is kept.
+
+**You can put the passage where you want it.** Add the **Highlight** property to a card's body and the passage moves down
+there, drawn in full, and the strip above the body steps aside so it never appears twice. Put that block in a card
+type's template and every card of that kind puts it wherever the template says, with the strip above the body as the
+fallback for types that do not.
+
+**Reopen** goes back to the passage, not merely to the book: the reader turns to its chapter, scrolls it into view and
+raises it. **Keep it** cuts the link and writes the passage into the card's body as a quote with a link to the book, so
+the card becomes an ordinary note you own, and the highlight can still produce another card later if you want one.
 
 ## How it reads
 

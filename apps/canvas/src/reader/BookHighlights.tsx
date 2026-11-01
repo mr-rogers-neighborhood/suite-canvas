@@ -21,6 +21,8 @@ export interface BookHighlightsProps {
   onPlace: (annotationId: string) => void;
   /** Put several in one hand, in the order the reader ticked them. */
   onPlaceMany?: ((annotationIds: readonly string[]) => void) | undefined;
+  /** Take the whole list somewhere else, as Markdown. */
+  onCopyMarkdown?: (() => void) | undefined;
 }
 
 export function BookHighlights({
@@ -29,6 +31,7 @@ export function BookHighlights({
   onOpen,
   onPlace,
   onPlaceMany,
+  onCopyMarkdown,
 }: BookHighlightsProps) {
   /** `null` is everything; `"unplaced"` is the ones with no card; anything else is a kind's id. */
   const [filter, setFilter] = useState<string | null>(null);
@@ -58,10 +61,24 @@ export function BookHighlights({
     <div className="reader-marks" data-testid="book-highlights">
       {/* A card may be waiting in the inbox, so the panel counts cards rather than claiming they are on a board: where
           a card sits is the library's answer to give, and it is the one place that can see placements. */}
-      <p className="reader-marks-count" data-testid="reader-marks-count">
-        {annotations.length} {annotations.length === 1 ? "highlight" : "highlights"} · {cards}{" "}
-        {cards === 1 ? "card" : "cards"}
-      </p>
+      <div className="reader-marks-head">
+        <p className="reader-marks-count" data-testid="reader-marks-count">
+          {annotations.length} {annotations.length === 1 ? "highlight" : "highlights"} · {cards}{" "}
+          {cards === 1 ? "card" : "cards"}
+        </p>
+        {onCopyMarkdown === undefined ? null : (
+          <button
+            type="button"
+            className="views-icon-button"
+            aria-label="Copy these highlights as Markdown"
+            title="Copy these highlights as Markdown"
+            data-testid="reader-marks-copy"
+            onClick={onCopyMarkdown}
+          >
+            <IconGlyph icon="lucide:clipboard-copy" size={12} />
+          </button>
+        )}
+      </div>
       <div
         className="reader-mark-filters"
         role="toolbar"

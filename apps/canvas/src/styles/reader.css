@@ -945,10 +945,26 @@
   border-bottom: 1px solid var(--hairline);
 }
 
+/* The count and any one affordance beside it: the header of a panel, not a row of its own. */
+.reader-marks-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
 .reader-marks-count {
   margin: 0 0 4px;
   font-size: 10px;
   color: var(--ink-muted);
+}
+
+.reader-marks-head .reader-marks-count {
+  margin: 0;
+}
+
+.reader-marks-head .views-icon-button {
+  margin-left: auto;
 }
 
 .reader-marks-rows {

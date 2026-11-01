@@ -169,4 +169,31 @@ describe("seeing a highlight's whole contents", () => {
     expect(full).toHaveTextContent("Title");
     expect(full).toHaveTextContent("the domain");
   });
+
+  it("should offer to take the whole list away as Markdown", () => {
+    const onCopyMarkdown = vi.fn();
+    render(
+      <BookHighlights
+        annotations={[annotation()]}
+        styles={styles}
+        onOpen={() => {}}
+        onPlace={() => {}}
+        onCopyMarkdown={onCopyMarkdown}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("reader-marks-copy"));
+    expect(onCopyMarkdown).toHaveBeenCalled();
+  });
+
+  it("should not offer an export a caller has not wired up", () => {
+    render(
+      <BookHighlights
+        annotations={[annotation()]}
+        styles={styles}
+        onOpen={() => {}}
+        onPlace={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId("reader-marks-copy")).toBeNull();
+  });
 });

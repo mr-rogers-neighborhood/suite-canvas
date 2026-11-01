@@ -13,6 +13,7 @@ import { BookSearchPanel } from "./BookSearchPanel";
 import { useBookPosition, useBookStore } from "./bookStore";
 import { ChapterNotice } from "./ChapterNotice";
 import { imageMime, imagePaths, resolveImages } from "./chapterAssets";
+import { copyHighlights } from "./copyHighlights";
 import { HighlightFocus } from "./HighlightFocus";
 import { HighlightMenu } from "./HighlightMenu";
 import { HighlightPalette } from "./HighlightPalette";
@@ -715,6 +716,20 @@ export function BookReader({
             setRaisedId(id);
           }}
           onPlace={(id) => place(id)}
+          onCopyMarkdown={() => {
+            // Markdown rather than a citation: a citation is one passage pasted into prose, and this is a whole book's
+            // marks going into a note.
+            void copyHighlights({
+              book,
+              contents,
+              annotations: highlights.annotations,
+              styles: highlights.styles,
+            }).then((count) =>
+              toast.neutral(
+                `Copied ${String(count)} ${count === 1 ? "highlight" : "highlights"} as Markdown.`,
+              ),
+            );
+          }}
         />
       ) : null}
 

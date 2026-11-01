@@ -156,6 +156,12 @@ and raises the passage.
 
 The colours appear over the words you selected rather than at the bottom of the page.
 
+## Taking your highlights with you
+
+The copy button in the **Highlights** panel puts every mark in the book on the clipboard as Markdown: the chapters in
+reading order, each passage quoted, its kind on the line under it and any note you wrote beside that. A chapter you
+have not got a heading for is listed under **Highlights** rather than under a file name.
+
 ## The cards a book has made
 
 Every card you place out of a book points back at it, so the book can list them: the **cards** button in the header

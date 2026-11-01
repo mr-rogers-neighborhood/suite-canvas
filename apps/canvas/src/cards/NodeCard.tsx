@@ -20,6 +20,7 @@ import { AnnotationCardFace, annotationOfCard } from "./AnnotationCardFace";
 import { BookCardFace } from "./BookCardFace";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import type { CardMeta } from "./cardMeta";
+import { cardSizing } from "./cardSizing";
 import { mentionLabelIn } from "./mentionLabel";
 import { StaticCardFace, StaticCardTitle } from "./StaticCardFace";
 import { ViewCardFace } from "./ViewCardFace";
@@ -418,6 +419,23 @@ export function NodeCard({
     width: width ?? DEFAULT_CARD_WIDTH,
     height: height ?? DEFAULT_CARD_HEIGHT,
   });
+  /**
+   * A card that came out of a book fits its passage until the reader says otherwise.
+   *
+   * The box has always been `height ?? DEFAULT_CARD_HEIGHT`, which is why the quotation was clamped to two lines to fit
+   * a 240px card. A passage is usually one sentence, so this card's height comes from its content while it has none
+   * stored: measured by React Flow, and replaced the moment the reader drags a handle, because a resize is a decision.
+   */
+  const passage = annotationOfCard(nodeWorkspace, card);
+  const { heightStyle, bodyClass } = cardSizing(
+    {
+      hasPassage: passage !== null,
+      height,
+      collapsed,
+      bodyText: nodeWorkspace?.cardText(card.id) ?? "",
+    },
+    DEFAULT_CARD_HEIGHT,
+  );
 
   const cardClass = [
     "node-card relative flex flex-col rounded-md border border-[var(--hairline)]",
@@ -507,7 +525,8 @@ export function NodeCard({
           ...presenceStyle,
           ...paintStyle(paint),
           width: width ?? DEFAULT_CARD_WIDTH,
-          height: height ?? DEFAULT_CARD_HEIGHT,
+          // `auto` when the passage decides, and React Flow measures what it decided.
+          ...heightStyle,
           // Where the silhouette is not the box, the chrome inside it has to be pulled
           // away from corners the paint does not have. Published as variables so the
           // stylesheet owns the spacing and the numbers stay in one table.
@@ -748,14 +767,12 @@ export function NodeCard({
       {collapsed ? null : (
         <>
           {/* The passage first, then the writing: a card that came out of a book says what it is before it says what
-              the reader made of it. */}
-          {annotationOfCard(nodeWorkspace, card) === null ? null : (
-            <AnnotationCardFace card={card} />
-          )}
+              the reader made of it. The face steps aside when the body carries the block itself. */}
+          {passage === null ? null : <AnnotationCardFace card={card} />}
           {/* biome-ignore lint/a11y/noStaticElementInteractions: the nested ProseMirror editor owns keyboard interaction */}
           {/* biome-ignore lint/a11y/useKeyWithClickEvents: the title overlay and the Inspector's Edit action are the keyboard path into this editor */}
           <div
-            className={`card-body-scroll min-h-0 flex-1 overflow-auto ${
+            className={`card-body-scroll min-h-0 ${bodyClass} overflow-auto ${
               editing === "body" ? "nodrag" : ""
             }`}
             data-testid="card-body"

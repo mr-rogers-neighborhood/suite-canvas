@@ -19,6 +19,7 @@ import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./canvas/interactions/m
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
 import { placementLookup, resolveSelection } from "./canvas/placeSelection";
 import { usePlaceStackStore } from "./canvas/placeStack";
+import { placeThese } from "./canvas/placeThese";
 import type { CanvasPurpose } from "./canvas/purpose";
 import { useRecordEngine } from "./canvas/useRecordEngine";
 import { zoomBand } from "./canvas/zoomRange";
@@ -766,19 +767,18 @@ function WorkspaceShell({
         setLibraryTab={setLibraryTab}
         placeCard={placeCard}
         startPlaceStack={(cardIds) => {
-          // Only what is not already here goes in the hand: the count on the stack is
-          // then the number of presses the reader will actually make.
-          const lookup = placementLookup(workspace);
-          const missing = cardIds.filter(
-            (id) =>
-              lookup.isBoard(id) ||
-              activeBoardId === null ||
-              workspace.getPlacement(activeBoardId, id) === undefined,
-          );
-          // The macro's seed is the card the reader had selected, which is the hub a fan
-          // keeps; a thread moves its anchor on with each placement.
-          const seed = useUiStore.getState().selectedNodeIds[0] ?? null;
-          usePlaceStackStore.getState().start(missing, seed);
+          // The same gesture the book uses: what is not already on this board goes in the hand, so the count is the
+          // number of presses the reader will actually make. A board row passes through, because it is a row the stack
+          // turns into a portal rather than a placement.
+          placeThese({
+            workspace,
+            cardIds,
+            boardId: activeBoardId,
+            // The macro's seed is the card the reader had selected, which is the hub a fan keeps; a thread moves its
+            // anchor on with each placement.
+            anchorId: useUiStore.getState().selectedNodeIds[0] ?? null,
+            canEditPlacement: useUiStore.getState().canEditLayout,
+          });
         }}
         onDropSelection={onDropSelection}
         toggleLibraryType={toggleLibraryType}

@@ -1,5 +1,5 @@
 import type { Annotation, WorkspaceDocument } from "@suite/graph";
-import { stackInHand, usePlaceStackStore } from "../canvas/placeStack";
+import { placeThese } from "../canvas/placeThese";
 import { promoteAnnotation } from "./promote";
 
 /**
@@ -73,10 +73,13 @@ export function handOverHighlight(input: HandOverInput): HandOverResult {
     };
   }
 
-  const stack = usePlaceStackStore.getState();
-  if (stackInHand()) stack.add([promoted.cardId]);
   // The origin is the book, so running out of cards offers the reader the choice of going back rather than throwing them.
-  else stack.start([promoted.cardId], null, { fromBook: annotation.sourceCardId });
+  placeThese({
+    workspace,
+    cardIds: [promoted.cardId],
+    fromBook: annotation.sourceCardId,
+    canEditPlacement: true,
+  });
   return {
     cardId: promoted.cardId,
     existed: promoted.existed,
@@ -127,17 +130,15 @@ export function handOverHighlights(input: {
     cardIds.push(promoted.cardId);
   }
 
-  // A card already on a board has nothing to place: the point of the gesture is the ones that are not.
-  const placeable = cardIds.filter((cardId) => workspace.listCardPlacements(cardId).length === 0);
-  if (placeable.length === 0 || !canEditPlacement) {
-    return { cardIds: placeable, existed, trashed, inHand: false };
-  }
-
-  const stack = usePlaceStackStore.getState();
-  if (stackInHand()) stack.add(placeable);
-  else
-    stack.start(placeable, null, {
-      fromBook: annotations[0]?.sourceCardId ?? null,
-    });
-  return { cardIds: placeable, existed, trashed, inHand: true };
+  // The placing itself is the library's gesture too: one implementation, so the two cannot drift.
+  const placed = placeThese({
+    workspace,
+    cardIds,
+    // A highlight's card is placed on a board the caller does not name, so the question is "anywhere at all": a card
+    // already somewhere is a card the reader can go to, and a second press should not move it.
+    boardId: null,
+    fromBook: annotations[0]?.sourceCardId ?? null,
+    canEditPlacement,
+  });
+  return { cardIds: placed.cardIds, existed, trashed, inHand: placed.inHand };
 }

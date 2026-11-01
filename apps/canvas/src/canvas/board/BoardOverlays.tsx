@@ -10,6 +10,7 @@ import { EdgeDescriptionInput } from "../EdgeDescription";
 import { HighlightDropLayer } from "../HighlightDropLayer";
 import { LibraryDropPreview } from "../PeerLibraryDragLayer";
 import { PlaceStackCursor } from "../PlaceStackCursor";
+import { PlaceStackOutline } from "../PlaceStackOutline";
 import { PortalTransitionLayer } from "../PortalTransitionLayer";
 import { ProjectionFloat } from "../ProjectionFloat";
 import { ThreadLinkPreview } from "./ThreadLinkPreview";
@@ -73,6 +74,9 @@ export function BoardOverlays({ ui, projection, links, menuItems }: BoardOverlay
       <StatusCursorLayer />
       <LibraryDropPreview />
       <PlaceStackCursor />
+      {/* What is in hand, and in what order it will go down: a stack is placed one press at a time, so the order is the
+          one decision the reader can still make. */}
+      <PlaceStackOutline />
       <PortalTransitionLayer />
       {edgeDescription ? (
         <EdgeDescriptionInput

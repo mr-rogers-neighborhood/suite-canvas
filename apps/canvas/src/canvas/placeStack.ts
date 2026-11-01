@@ -52,6 +52,21 @@ interface PlaceStackState {
   start: (cardIds: readonly string[], anchorId?: string | null) => void;
   /** Adds to the hand without clearing what is already in it. */
   add: (cardIds: readonly string[]) => void;
+  /**
+   * Moves one card to a position in the queue, which is the order the presses will take.
+   *
+   * A stack is placed in the order it is built, so "which of these goes down first" is a real decision and the only one
+   * the reader has before the first press. Out-of-range positions are ignored rather than clamped: a move that cannot
+   * happen is better left alone than turned into something else.
+   */
+  move: (cardId: string, to: number) => void;
+  /**
+   * Flips the queue by one: `forward` sends the top card to the back, `back` pulls the last card to the front.
+   *
+   * This is what the bracket keys do while a stack is in hand, so a reader can put a different card down without
+   * leaving the pointer or opening a panel.
+   */
+  rotate: (direction: "forward" | "back") => void;
   setAnchor: (cardId: string | null) => void;
   setLastPlaced: (cardId: string | null) => void;
   notePlaced: (cardId: string) => void;
@@ -81,6 +96,24 @@ export const usePlaceStackStore = create<PlaceStackState>()((set, get) => ({
   add: (cardIds) => {
     const unique = [...new Set([...get().queue, ...cardIds])];
     set({ queue: unique });
+  },
+  move: (cardId, to) => {
+    const queue = get().queue;
+    const from = queue.indexOf(cardId);
+    if (from === -1 || to < 0 || to >= queue.length || to === from) return;
+    const next = [...queue];
+    next.splice(from, 1);
+    next.splice(to, 0, cardId);
+    set({ queue: next });
+  },
+  rotate: (direction) => {
+    const queue = get().queue;
+    if (queue.length < 2) return;
+    const next =
+      direction === "forward"
+        ? [...queue.slice(1), queue[0] as string]
+        : [queue[queue.length - 1] as string, ...queue.slice(0, -1)];
+    set({ queue: next });
   },
   setAnchor: (anchorId) => set({ anchorId }),
   setLastPlaced: (lastPlacedId) => set({ lastPlacedId }),

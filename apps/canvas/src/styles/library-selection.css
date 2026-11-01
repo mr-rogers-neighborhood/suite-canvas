@@ -122,3 +122,106 @@
 .link-mode-control:hover {
   background: color-mix(in srgb, var(--value-hue) 10%, var(--value-fill));
 }
+
+/*
+ * The stack in hand, listed in the order it will be placed.
+ *
+ * A stack goes down one press at a time, in the order it was built, so the order is the reader's last decision before
+ * the first press. It sits bottom-left, out of the pointer's way and away from the library's own drawer on the right.
+ */
+.place-outline {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  z-index: 71;
+  display: flex;
+  width: 244px;
+  max-height: 42vh;
+  flex-direction: column;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px -18px rgb(0 0 0 / 0.5);
+  font-size: 11px;
+  overflow: hidden;
+}
+
+.place-outline-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.place-outline-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.place-outline-rows {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  margin: 0;
+  padding: 3px 0;
+  list-style: none;
+}
+
+.place-outline-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+}
+
+/* The card that goes down next: the one the next press will place. */
+.place-outline-row[data-first="true"] {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.place-outline-index {
+  width: 12px;
+  flex: none;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.place-outline-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-outline-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 1px;
+}
+
+.place-outline-hint {
+  flex: none;
+  padding: 4px 6px;
+  border-top: 1px solid var(--hairline);
+  color: var(--ink-muted);
+  font-size: 10px;
+}
+
+.place-outline-hint kbd {
+  padding: 0 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  font-size: 9px;
+}

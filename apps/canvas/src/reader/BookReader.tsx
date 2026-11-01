@@ -202,6 +202,14 @@ export function BookReader({
   }, [chapterXml, chapterPath]);
 
   /**
+   * The chapter as it is drawn: the sanitiser's markup, with the pictures pointed at the URLs that loaded.
+   *
+   * Memoised on its own because `resolveImages` parses the markup, and this component re-renders for reasons that have
+   * nothing to do with the chapter: raising a highlight, or opening the contents.
+   */
+  const chapterHtml = useMemo(() => resolveImages(markup.html, assets), [markup.html, assets]);
+
+  /**
    * The chapter's pictures, as object URLs.
    *
    * The sanitiser leaves an `src` as the archive path, so drawing the chapter without this asks the app's own origin
@@ -449,8 +457,10 @@ export function BookReader({
       annotation: parts === undefined ? found : { ...found, parts: [...parts] },
       canEditPlacement: canEditLayout,
     });
-    if (outcome === null) return;
-    if (outcome.placedAlready) openCardFocus(outcome.cardId);
+    // The order matters: a trashed card is neither placed nor in hand, and saying "saved to the inbox" about one would
+    // be a sentence about nothing.
+    if (outcome.trashed) toast.neutral("Its card is in the trash. Restore it from the library.");
+    else if (outcome.placedAlready) openCardFocus(outcome.cardId);
     else if (!outcome.inHand) toast.neutral("Saved to the inbox: this board is read-only for you.");
   };
 
@@ -581,7 +591,7 @@ export function BookReader({
           <p className="reader-note">This chapter could not be read.</p>
         ) : (
           <ReaderChapter
-            html={resolveImages(markup.html, assets)}
+            html={chapterHtml}
             locator={chapterPath}
             annotations={highlights.annotations}
             styles={highlights.styles}

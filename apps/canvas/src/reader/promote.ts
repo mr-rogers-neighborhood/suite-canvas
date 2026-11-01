@@ -54,7 +54,7 @@ export interface PromoteResult {
   readonly excerptMissing: boolean;
 }
 
-export function promoteAnnotation(input: PromoteInput): PromoteResult | null {
+export function promoteAnnotation(input: PromoteInput): PromoteResult {
   const { workspace, placement: target } = input;
   // The caller's copy of the record, re-read from the document. A stale object — the one a surface captured when it
   // rendered — has no `cardId`, and a promotion that trusted it would make a second card and overwrite the link to

@@ -39,10 +39,9 @@ export interface HandOverResult {
   readonly trashed: boolean;
 }
 
-export function handOverHighlight(input: HandOverInput): HandOverResult | null {
+export function handOverHighlight(input: HandOverInput): HandOverResult {
   const { workspace, annotation, canEditPlacement } = input;
   const promoted = promoteAnnotation({ workspace, annotation, placement: { inbox: true } });
-  if (promoted === null) return null;
 
   if (promoted.trashed) {
     return {

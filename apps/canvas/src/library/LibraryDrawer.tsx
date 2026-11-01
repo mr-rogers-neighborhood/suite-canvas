@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 import { NewThingMenu } from "../chrome/NewThingMenu";
 import { newThingMenuModel } from "../chrome/newThingMenu";
 import { useSavedViews } from "../chrome/ViewsBar";
+import { toast } from "../feedback/toast";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
 import { handOverHighlight } from "../reader/handOver";
 import { useAnnotations } from "../reader/useHighlights";
@@ -616,9 +617,13 @@ export function LibraryDrawer({
               annotation,
               canEditPlacement: canEditLayout,
             });
-            if (outcome?.placedAlready === true) openCardFocus(outcome.cardId);
+            // A card in the trash is neither placed nor in hand, so the drawer stays open and says why rather than
+            // doing nothing at all.
+            if (outcome.trashed)
+              toast.neutral("Its card is in the trash. Restore it to place it again.");
+            else if (outcome.placedAlready) openCardFocus(outcome.cardId);
             // The drawer gets out of the way of the press that is about to place the card.
-            else if (outcome?.inHand === true) close();
+            else if (outcome.inHand) close();
           }}
           onRemove={(annotation) => workspace?.deleteAnnotation(annotation.id)}
           onEditKinds={openAnnotationKinds}

@@ -5,6 +5,7 @@ import { useRecordRunStore } from "../canvas/recordRun";
 import { getSession, type SessionCapabilities, sessionCapabilities } from "../session/session";
 import type { ShareScope } from "../session/shares";
 import { type InteractionMode, interactionModePatch, nextInteractionMode } from "./interactionMode";
+import { type ReaderUiSlice, readerUiActions, readerUiInitial } from "./readerUiSlice";
 
 export type { InteractionMode } from "./interactionMode";
 
@@ -177,7 +178,7 @@ const nextNavigationNonce = () => {
   return navigationNonce;
 };
 
-interface UiState extends SessionCapabilities {
+interface UiState extends SessionCapabilities, ReaderUiSlice {
   /** Board currently on screen; null until the shell resolves one. */
   activeBoardId: string | null;
   /**
@@ -207,33 +208,16 @@ interface UiState extends SessionCapabilities {
   typeMenu: { cardId: string; anchor: DOMRect } | null;
   openTypeMenu: (cardId: string, anchor: DOMRect) => void;
   closeTypeMenu: () => void;
+  /**
+   * The full-canvas focus surface, and its two actions.
+   *
+   * These stay on the store rather than in `readerUiSlice`: opening the focus surface also closes the inspector, and
+   * closing it ends a focus editing session. The slice owns the reading *requests*, not the surface's own lifecycle.
+   */
+  openCardFocus: (cardId: string) => void;
+  closeCardFocus: () => void;
   /** A portal entry waiting for the camera transition to play. */
   portalEntry: PortalEntryRequest | null;
-  /** Card shown on the full-canvas focus surface, if any. */
-  cardFocusId: string | null;
-  /**
-   * The kinds of highlight there are, and what each one becomes.
-   *
-   * A shell surface rather than a drawer panel: it is opened from the library, from the raise surface in a book and
-   * from the card panel, so it cannot belong to any of them — a dialog led by the drawer's state could be unmounted by
-   * closing the drawer it was opened from.
-   */
-  annotationKindsOpen: boolean;
-  /**
-   * A highlight a surface asked the reader to open, by id.
-   *
-   * A highlight lives in a record, not in a card, so "open this passage" is two facts: the book's card for the focus
-   * surface, and this for the passage inside it. The reader consumes it on mount and clears it, which is why it is a
-   * request rather than a selection.
-   */
-  focusedAnnotationId: string | null;
-  /**
-   * A panel the book reader should open when it next appears.
-   *
-   * "Place more annotations" is the same surface as reading, opened at the list you were working through, and the panel
-   * is the reader's own state. A request rather than a selection, spent on arrival, so nothing has to be un-set.
-   */
-  bookPanelRequest: "contents" | "highlights" | null;
   /**
    * Viewer shorthand; capability flags remain the gate for every write path.
    * It is UI state (not read from the session in each component) so tests and
@@ -415,15 +399,6 @@ interface UiState extends SessionCapabilities {
   clearViewportRequest: () => void;
   requestPortalEntry: (request: PortalEntryRequest) => void;
   clearPortalEntry: () => void;
-  openCardFocus: (cardId: string) => void;
-  closeCardFocus: () => void;
-  openAnnotationKinds: () => void;
-  closeAnnotationKinds: () => void;
-  /** Ask the book reader to open one highlight. The caller opens the book's card; the reader raises the passage. */
-  openAnnotation: (annotationId: string) => void;
-  clearFocusedAnnotation: () => void;
-  requestBookPanel: (panel: "contents" | "highlights") => void;
-  clearBookPanelRequest: () => void;
   setLibraryOpen: (open: boolean, reason?: LibraryReason) => void;
   /** The named style rules: the list and its editor. */
   setLibraryTab: (tab: LibraryTab) => void;
@@ -511,10 +486,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   boardHistory: [],
   viewportRequest: null,
   portalEntry: null,
-  cardFocusId: null,
-  annotationKindsOpen: false,
-  focusedAnnotationId: null,
-  bookPanelRequest: null,
+  ...readerUiInitial,
   readOnly: getSession().readOnly,
   setReadOnly: (readOnly) => set({ readOnly }),
   setCapabilities: (capabilities) => set(capabilities),
@@ -673,12 +645,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   clearPortalEntry: () => set({ portalEntry: null }),
   openTypeMenu: (cardId, anchor) => set({ typeMenu: { cardId, anchor } }),
   closeTypeMenu: () => set({ typeMenu: null }),
-  openAnnotationKinds: () => set({ annotationKindsOpen: true }),
-  closeAnnotationKinds: () => set({ annotationKindsOpen: false }),
-  openAnnotation: (focusedAnnotationId) => set({ focusedAnnotationId }),
-  clearFocusedAnnotation: () => set({ focusedAnnotationId: null }),
-  requestBookPanel: (bookPanelRequest) => set({ bookPanelRequest }),
-  clearBookPanelRequest: () => set({ bookPanelRequest: null }),
+  ...readerUiActions(set),
   openCardFocus: (cardFocusId) =>
     // Focus owns the canvas: the drawer would duplicate the same card and
     // reserve a strip of the focus surface.

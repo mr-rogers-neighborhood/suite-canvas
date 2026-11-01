@@ -289,6 +289,8 @@ describe("a book with a highlight", () => {
     if (row === undefined) throw new Error("no highlight row");
     fireEvent.click(row);
     await waitFor(() => expect(screen.getByTestId("highlight-raise")).toBeInTheDocument());
+    // The list stays open under the raised passage, so working through a book is not one passage per visit.
+    expect(screen.getByTestId("book-highlights")).toBeInTheDocument();
   });
 
   it("should put the card in the reader's hand when Place is pressed", async () => {

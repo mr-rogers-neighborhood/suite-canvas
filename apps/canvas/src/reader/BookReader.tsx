@@ -651,8 +651,10 @@ export function BookReader({
             }
           }}
           onOpen={(id) => {
+            // The list stays open underneath the raised passage. Closing it made working through a book one passage per
+            // visit: raise, finish, and the list you were reading from is gone, so the next one starts with reopening it.
+            // The raised surface is a layer over the reader, and this is what it uncovers.
             setRaisedId(id);
-            setPanel("none");
           }}
           onPlace={(id) => place(id)}
         />

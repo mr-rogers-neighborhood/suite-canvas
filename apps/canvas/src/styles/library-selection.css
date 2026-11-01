@@ -282,3 +282,81 @@
   border: 1px solid var(--hairline);
   border-radius: 6px;
 }
+
+/* What a selection box picks up: one control in the canvas pill, opening to three toggles. */
+.select-mode {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.select-mode-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  background: var(--value-fill);
+  color: var(--value-ink);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.select-mode-toggle:hover {
+  background: color-mix(in srgb, var(--value-hue) 10%, var(--value-fill));
+}
+
+/* The count in force, so a closed widget still says something about the mode. */
+.select-mode-count {
+  font-size: 8px;
+  opacity: 0.75;
+}
+
+.select-mode-menu {
+  position: absolute;
+  bottom: 0;
+  left: 30px;
+  z-index: 5;
+  display: flex;
+  width: 132px;
+  flex-direction: column;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 26px -16px rgb(0 0 0 / 0.5);
+}
+
+.select-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 5px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font-size: 11px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.select-mode-row:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.select-mode-label {
+  flex: 1 1 auto;
+}
+
+.select-mode-tick {
+  width: 9px;
+  color: var(--accent);
+}

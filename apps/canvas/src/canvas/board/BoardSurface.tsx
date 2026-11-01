@@ -26,6 +26,7 @@ import { PurposeControl } from "../PurposeControl";
 import { pickCard } from "../pickCard";
 import { PeerReconnectLayer } from "../presence/PeerReconnectLayer";
 import { PresenceLayer } from "../presence/PresenceLayer";
+import { SelectModeControl } from "../SelectModeControl";
 import { SnapGuideLayer } from "../SnapGuideLayer";
 import { SectionLayer } from "../sections/SectionLayer";
 import { type SnapGuide, type SnapRect, snapRect } from "../snapping";
@@ -857,6 +858,7 @@ export function BoardSurface({
       <Background color="var(--rf-dot)" />
       <Controls showInteractive={false}>
         <ModeControl />
+        <SelectModeControl />
         <PurposeControl />
         {/* Zoom to what is selected, inside the pill React Flow already draws:
             a readout and a grid switch in a second corner stack were a control

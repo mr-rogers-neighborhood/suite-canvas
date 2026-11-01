@@ -1,6 +1,7 @@
 import type { Edge, Node } from "@xyflow/react";
 import { useOnSelectionChange, useStore } from "@xyflow/react";
 import { useCallback, useEffect, useRef } from "react";
+import { useUiStore } from "../../store/useUiStore";
 import { segmentCrossesRect } from "../links/linkGeometry";
 import { DRAG_THROTTLE_MS, leavesSection } from "./boardSupport";
 import type { useBoardNodes } from "./useBoardNodes";
@@ -51,6 +52,7 @@ export function useBoardSelection(
     selectedEdgeIds,
     selectedNodeIds,
     selectedSectionId,
+    selectSection,
   } = ui;
   const { refs, projection, nodes } = input;
   const { sectionMembershipMap, boardSections, projectedLinks } = projection;
@@ -147,6 +149,26 @@ export function useBoardSelection(
    */
   /** Section links a box covers. They are drawn by the canvas, so React Flow
    * never reports them; the box is what decides they are selected. */
+  /**
+   * Sections a box touches.
+   *
+   * Intersection rather than containment: a reader sweeping across a section means that section, and requiring the whole
+   * frame inside the box would make a large section unselectable by a box drawn inside it.
+   */
+  const sectionsInBox = useCallback(
+    (rect: { x: number; y: number; width: number; height: number }) =>
+      boardSections
+        .filter(
+          (section) =>
+            section.x < rect.x + rect.width &&
+            rect.x < section.x + section.width &&
+            section.y < rect.y + rect.height &&
+            rect.y < section.y + section.height,
+        )
+        .map((section) => section.id),
+    [boardSections],
+  );
+
   const sectionLinksInBox = useCallback(
     (rect: { x: number; y: number; width: number; height: number }) =>
       projectedLinks.sections
@@ -159,7 +181,11 @@ export function useBoardSelection(
   const endMarquee = useCallback(() => {
     const box = marqueeBox.current;
     marqueeBox.current = null;
-    const boxedLinks = box ? sectionLinksInBox(box) : [];
+    const selects = useUiStore.getState().marqueeSelects;
+    // The toggles decide what the box was *for*: a box drawn to catch links must not take the cards underneath, and one
+    // drawn for cards must not collect the arrow it crossed. Filtered here rather than only while drawing, because
+    // React Flow reports every card it touched whatever the reader meant.
+    const boxedLinks = box && selects.links ? sectionLinksInBox(box) : [];
     // The scope is enforced here as well as while the box is drawn. `selectable`
     // only stops a card React Flow has not picked up yet, and whether it lands
     // before the first box frame depends on gesture timing; the commit cannot be
@@ -184,9 +210,11 @@ export function useBoardSelection(
     releaseMarqueeScope();
     if (!marqueeActive.current) return;
     marqueeActive.current = false;
-    const ids = scope
+    const inScope = scope
       ? live.filter((id) => sectionMembershipMap.get(id) === scope.sectionId)
       : live;
+    const ids = selects.cards ? inScope : [];
+    const sections = box && selects.sections ? sectionsInBox(box) : [];
     // Set before the store write, so the repaint it causes sees an unchanged key
     // and keeps the selection this pass painted.
     paintedSelection.current = ids.join(",");
@@ -200,14 +228,18 @@ export function useBoardSelection(
       .edges.filter((edge) => edge.selected)
       .map((edge) => edge.id);
     setSelectedEdgeIds([...new Set([...flowEdgeIds, ...boxedLinks])]);
+    // A section is selected by its own store field, so a box for sections is a different selection, not a wider one.
+    if (sections.length > 0) selectSection(sections[sections.length - 1] ?? null);
   }, [
     applyBoardNodes,
     liveSelectedIds,
     releaseMarqueeScope,
     sectionLinksInBox,
+    sectionsInBox,
     sectionMembershipMap,
     setSelectedEdgeIds,
     setSelectedNodeIds,
+    selectSection,
     store,
   ]);
 

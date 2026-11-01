@@ -237,6 +237,17 @@ interface UiState extends SessionCapabilities, ReaderUiSlice {
   selectedNodeIds: string[];
   selectedEdgeIds: string[];
   /**
+   * What a selection box is allowed to pick up.
+   *
+   * A marquee used to box cards, and to sweep up a section link it crossed, with no way to say which of those the reader
+   * meant. Three toggles, because a box over a busy board often wants "just the links" or "just the sections", and
+   * because "any of them" is a combination rather than a mode to cycle through.
+   *
+   * A section is not a card: selecting one is a different thing to select, so it is off by default.
+   */
+  marqueeSelects: { cards: boolean; links: boolean; sections: boolean };
+  toggleMarqueeSelect: (subject: "cards" | "links" | "sections") => void;
+  /**
    * A card being dragged out of the library, in *screen* units. The drawer owns
    * the gesture; the canvas owns the camera, so it converts this to flow space
    * before publishing presence.
@@ -496,6 +507,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   trashedMediaIds: [],
   selectedNodeIds: [],
   selectedEdgeIds: [],
+  marqueeSelects: { cards: true, links: true, sections: false },
   selectedSectionId: null,
   containerInspector: null,
   tour: null,
@@ -672,6 +684,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   emptyMediaTrash: () => set({ trashedMediaIds: [] }),
   setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
   setSelectedEdgeIds: (selectedEdgeIds) => set({ selectedEdgeIds }),
+  toggleMarqueeSelect: (subject) =>
+    set((state) => ({
+      marqueeSelects: { ...state.marqueeSelects, [subject]: !state.marqueeSelects[subject] },
+    })),
   setLibraryDrag: (libraryDrag) => set({ libraryDrag }),
   startLinkEndMove: (linkEndMove) => set({ linkEndMove }),
   cancelLinkEndMove: () => set({ linkEndMove: null }),

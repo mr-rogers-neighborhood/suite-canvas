@@ -27,12 +27,22 @@ function annotation(patch: Partial<Annotation> = {}): Annotation {
   };
 }
 
-function draw(annotations: readonly Annotation[] = [annotation()]) {
+function draw(
+  annotations: readonly Annotation[] = [annotation()],
+  { multi = true }: { multi?: boolean } = {},
+) {
   const onPlace = vi.fn();
+  const onPlaceMany = vi.fn();
   render(
-    <BookHighlights annotations={annotations} styles={styles} onOpen={vi.fn()} onPlace={onPlace} />,
+    <BookHighlights
+      annotations={annotations}
+      styles={styles}
+      onOpen={vi.fn()}
+      onPlace={onPlace}
+      onPlaceMany={multi ? onPlaceMany : undefined}
+    />,
   );
-  return { onPlace };
+  return { onPlace, onPlaceMany };
 }
 
 describe("a book's highlights panel", () => {
@@ -76,5 +86,87 @@ describe("a book's highlights panel", () => {
     const { onPlace } = draw();
     fireEvent.click(screen.getByTestId("book-highlight-place-a1"));
     expect(onPlace).toHaveBeenCalledWith("a1");
+  });
+});
+
+describe("picking several highlights", () => {
+  const three = [
+    annotation({ id: "a1", excerpt: "First words." }),
+    annotation({ id: "a2", excerpt: "Second words." }),
+    annotation({ id: "a3", excerpt: "Third words." }),
+  ];
+
+  it("should offer no picker on a surface that cannot place a stack", () => {
+    draw([annotation()], { multi: false });
+    expect(screen.queryByTestId("book-highlight-pick-a1")).toBeNull();
+  });
+
+  it("should hand the picked highlights over in the order they were ticked", () => {
+    const { onPlaceMany } = draw(three);
+
+    fireEvent.click(screen.getByTestId("book-highlight-pick-a3"));
+    fireEvent.click(screen.getByTestId("book-highlight-pick-a1"));
+    fireEvent.click(screen.getByTestId("reader-marks-place-selection"));
+
+    // The order is the whole point: a stack goes down in the order it was built, so the tick order is the board.
+    expect(onPlaceMany).toHaveBeenCalledWith(["a3", "a1"]);
+  });
+
+  it("should show how many are picked, and clear them", () => {
+    draw(three);
+    fireEvent.click(screen.getByTestId("book-highlight-pick-a1"));
+    fireEvent.click(screen.getByTestId("book-highlight-pick-a2"));
+    expect(screen.getByTestId("reader-marks-selection")).toHaveTextContent("2 highlights picked");
+
+    fireEvent.click(screen.getByTestId("reader-marks-clear"));
+    expect(screen.queryByTestId("reader-marks-selection")).toBeNull();
+  });
+
+  it("should untick a row that is ticked again", () => {
+    const { onPlaceMany } = draw(three);
+    fireEvent.click(screen.getByTestId("book-highlight-pick-a1"));
+    fireEvent.click(screen.getByTestId("book-highlight-pick-a1"));
+
+    expect(screen.queryByTestId("reader-marks-selection")).toBeNull();
+    expect(onPlaceMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("seeing a highlight's whole contents", () => {
+  it("should expand a row to the whole passage, which a row's line cannot show", () => {
+    const long =
+      "A sentence that runs on far past the point where a single row can show it, so the whole of it has to be " +
+      "available somewhere.";
+    // The anchor's quote is the marked words, so it is what a full view must show: an excerpt can be shorter.
+    draw([
+      annotation({
+        excerpt: long,
+        anchor: { kind: "quote", locator: "1", quote: long, prefix: "", suffix: "" },
+      }),
+    ]);
+
+    expect(screen.queryByTestId("book-highlight-full-a1")).toBeNull();
+    fireEvent.click(screen.getByTestId("book-highlight-expand-a1"));
+
+    expect(screen.getByTestId("book-highlight-full-a1")).toHaveTextContent("available somewhere");
+  });
+
+  it("should show where a broken-up highlight sends each part", () => {
+    const quote = "The thing that matters here is the domain.";
+    const start = quote.indexOf("the domain");
+    draw([
+      annotation({
+        excerpt: quote,
+        anchor: { kind: "quote", locator: "1", quote, prefix: "", suffix: "" },
+        parts: [{ id: "p1", start, end: start + 10, target: { kind: "title" } }],
+      }),
+    ]);
+
+    fireEvent.click(screen.getByTestId("book-highlight-expand-a1"));
+
+    const full = screen.getByTestId("book-highlight-full-a1");
+    // The same words the raise surface uses for a destination, so the two surfaces cannot drift.
+    expect(full).toHaveTextContent("Title");
+    expect(full).toHaveTextContent("the domain");
   });
 });

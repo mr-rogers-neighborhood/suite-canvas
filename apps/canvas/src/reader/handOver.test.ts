@@ -1,7 +1,7 @@
 import { WorkspaceDocument } from "@suite/graph";
 import { afterEach, describe, expect, it } from "vitest";
 import { usePlaceStackStore } from "../canvas/placeStack";
-import { handOverHighlight } from "./handOver";
+import { handOverHighlight, handOverHighlights } from "./handOver";
 
 /**
  * Putting a highlight on the board.
@@ -124,6 +124,107 @@ describe("handing a highlight over", () => {
 
     expect(outcome?.inHand).toBe(false);
     expect(outcome?.cardId).toBeDefined();
+    expect(usePlaceStackStore.getState().queue).toEqual([]);
+  });
+});
+
+describe("handing several highlights over", () => {
+  /** Three highlights in one book, which is the shape the outline's picker produces. */
+  function three() {
+    const { workspace, board, book, annotation } = fixture();
+    const second = workspace.addAnnotation({
+      sourceCardId: book.id,
+      styleId: "style-blue",
+      anchor: { kind: "quote", locator: "2", quote: "More words.", prefix: "", suffix: "" },
+      excerpt: "More words.",
+    });
+    const third = workspace.addAnnotation({
+      sourceCardId: book.id,
+      styleId: "style-green",
+      anchor: { kind: "quote", locator: "2", quote: "Last words.", prefix: "", suffix: "" },
+      excerpt: "Last words.",
+    });
+    return { workspace, board, book, annotations: [annotation, second, third] };
+  }
+
+  it("should put every card in one hand, in the order given", () => {
+    const { workspace, annotations } = three();
+    const outcome = handOverHighlights({
+      workspace,
+      annotations,
+      canEditPlacement: true,
+    });
+
+    expect(outcome.inHand).toBe(true);
+    expect(outcome.cardIds).toHaveLength(3);
+    // One press each, in the order the reader ticked: that is the sequence they chose.
+    expect(usePlaceStackStore.getState().queue).toEqual(outcome.cardIds);
+  });
+
+  it("should reuse the card a highlight already has rather than making a second", () => {
+    const { workspace, annotations } = three();
+    const first = handOverHighlight({
+      workspace,
+      annotation: annotations[0] as (typeof annotations)[number],
+      canEditPlacement: false,
+    });
+    usePlaceStackStore.getState().stop();
+
+    const outcome = handOverHighlights({
+      workspace,
+      annotations: [annotations[0] as (typeof annotations)[number]],
+      canEditPlacement: true,
+    });
+
+    expect(outcome.existed).toBe(1);
+    expect(outcome.cardIds).toEqual([first.cardId]);
+  });
+
+  it("should skip a highlight whose card is in the trash, and say how many", () => {
+    const { workspace, annotations } = three();
+    const doomed = handOverHighlight({
+      workspace,
+      annotation: annotations[1] as (typeof annotations)[number],
+      canEditPlacement: false,
+    });
+    usePlaceStackStore.getState().stop();
+    workspace.trashCard(doomed.cardId);
+
+    const outcome = handOverHighlights({
+      workspace,
+      annotations,
+      canEditPlacement: true,
+    });
+
+    expect(outcome.trashed).toBe(1);
+    expect(outcome.cardIds).toHaveLength(2);
+    expect(outcome.cardIds).not.toContain(doomed.cardId);
+  });
+
+  it("should not carry a card that is already on the board", () => {
+    const { workspace, board, annotations } = three();
+    const placed = handOverHighlight({
+      workspace,
+      annotation: annotations[0] as (typeof annotations)[number],
+      canEditPlacement: false,
+    });
+    workspace.placeCard(board.id, placed.cardId, { x: 10, y: 10 });
+    usePlaceStackStore.getState().stop();
+
+    const outcome = handOverHighlights({ workspace, annotations, canEditPlacement: true });
+
+    // The gesture is about the ones that are not there yet.
+    expect(outcome.cardIds).not.toContain(placed.cardId);
+    expect(outcome.cardIds).toHaveLength(2);
+  });
+
+  it("should hand nothing over for a reader who may not place", () => {
+    const { workspace, annotations } = three();
+    const outcome = handOverHighlights({ workspace, annotations, canEditPlacement: false });
+
+    expect(outcome.inHand).toBe(false);
+    // The cards exist: they are in the inbox, which is what "saved" means for a read-only board.
+    expect(outcome.cardIds).toHaveLength(3);
     expect(usePlaceStackStore.getState().queue).toEqual([]);
   });
 });

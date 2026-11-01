@@ -84,3 +84,56 @@ export function handOverHighlight(input: HandOverInput): HandOverResult {
     trashed: false,
   };
 }
+
+/**
+ * Putting several highlights into one hand.
+ *
+ * The same act as one, repeated: every selected highlight becomes its card in the inbox, and the cards go into the stack
+ * together so one press puts one down. A highlight that already has a card contributes *that* card rather than a second
+ * one, and one whose card is in the trash is skipped and reported, because handing it over would put a deleted card on a
+ * board.
+ *
+ * Returns what happened per highlight so the surface can say "two of these were already cards" rather than nothing.
+ */
+export interface HandOverManyResult {
+  /** The ids in the order they will be put down. */
+  readonly cardIds: readonly string[];
+  /** How many were already cards, so nothing was created for them. */
+  readonly existed: number;
+  /** How many were skipped because the card they name is in the trash. */
+  readonly trashed: number;
+  /** True when the cards are in hand and the next press on the board puts one down. */
+  readonly inHand: boolean;
+}
+
+export function handOverHighlights(input: {
+  workspace: WorkspaceDocument;
+  annotations: readonly Annotation[];
+  canEditPlacement: boolean;
+}): HandOverManyResult {
+  const { workspace, annotations, canEditPlacement } = input;
+  const cardIds: string[] = [];
+  let existed = 0;
+  let trashed = 0;
+
+  for (const annotation of annotations) {
+    const promoted = promoteAnnotation({ workspace, annotation, placement: { inbox: true } });
+    if (promoted.trashed) {
+      trashed += 1;
+      continue;
+    }
+    if (promoted.existed) existed += 1;
+    cardIds.push(promoted.cardId);
+  }
+
+  // A card already on a board has nothing to place: the point of the gesture is the ones that are not.
+  const placeable = cardIds.filter((cardId) => workspace.listCardPlacements(cardId).length === 0);
+  if (placeable.length === 0 || !canEditPlacement) {
+    return { cardIds: placeable, existed, trashed, inHand: false };
+  }
+
+  const stack = usePlaceStackStore.getState();
+  if (stackInHand()) stack.add(placeable);
+  else stack.start(placeable);
+  return { cardIds: placeable, existed, trashed, inHand: true };
+}

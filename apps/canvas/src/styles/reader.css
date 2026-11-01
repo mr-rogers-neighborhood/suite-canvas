@@ -826,7 +826,31 @@
 }
 
 /* A row is a press away from being raised: the words are what a reader is choosing between, so they lead. */
+.reader-mark-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  border-radius: 6px;
+  padding-right: 2px;
+}
+
+/* A picked row reads as picked without moving: the tick is the affordance, the tint only confirms it. */
+.reader-mark-row[data-picked="true"] {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.reader-mark-pick {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  margin: 5px 0 0 4px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .reader-mark {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   width: 100%;
   align-items: center;
@@ -843,6 +867,59 @@
 
 .reader-mark:hover {
   background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+/* Expanded, a row shows the whole passage: the line is a first sight, not the thing itself. */
+.reader-mark-text[data-expanded="true"] {
+  white-space: pre-wrap;
+}
+
+.reader-mark-full {
+  flex: 1 0 100%;
+  margin: 2px 4px 6px 20px;
+  padding: 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.reader-mark-full-words {
+  display: block;
+  white-space: pre-wrap;
+}
+
+.reader-mark-full-parts {
+  margin: 6px 0 0;
+  padding-left: 14px;
+  color: var(--ink-muted);
+}
+
+.reader-mark-full-target {
+  margin-right: 5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* The bar that appears with a selection: the order it will be placed in is the order rows were ticked. */
+.reader-marks-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: 11px;
+}
+
+.reader-marks-bar-count {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-muted);
 }
 
 .reader-mark-dot {

@@ -2,6 +2,7 @@ import type { Annotation, AnnotationStyle } from "@suite/graph";
 import { partText } from "@suite/graph";
 import { useState } from "react";
 import { IconGlyph } from "../icons/IconGlyph";
+import { slotLabel } from "./HighlightFocus";
 import { beginHighlightDrag } from "./highlightDrag";
 
 /**
@@ -18,11 +19,28 @@ export interface BookHighlightsProps {
   onOpen: (annotationId: string) => void;
   /** Put this highlight in the reader's hand, so a press on the board can put it down. */
   onPlace: (annotationId: string) => void;
+  /** Put several in one hand, in the order the reader ticked them. */
+  onPlaceMany?: ((annotationIds: readonly string[]) => void) | undefined;
 }
 
-export function BookHighlights({ annotations, styles, onOpen, onPlace }: BookHighlightsProps) {
+export function BookHighlights({
+  annotations,
+  styles,
+  onOpen,
+  onPlace,
+  onPlaceMany,
+}: BookHighlightsProps) {
   /** `null` is everything; `"unplaced"` is the ones with no card; anything else is a kind's id. */
   const [filter, setFilter] = useState<string | null>(null);
+  /**
+   * The rows the reader has ticked, in the order they ticked them.
+   *
+   * Order is the whole point: a stack goes down in the order it was built, so the same list of highlights arranged two
+   * ways is two different boards. Ticking appends, and the sequence editor can reorder afterwards.
+   */
+  const [selected, setSelected] = useState<readonly string[]>([]);
+  /** Rows expanded to their whole passage, which a two-line row cannot show. */
+  const [expanded, setExpanded] = useState<readonly string[]>([]);
 
   if (annotations.length === 0) {
     return (
@@ -78,11 +96,62 @@ export function BookHighlights({ annotations, styles, onOpen, onPlace }: BookHig
           Nothing of this kind yet.
         </p>
       ) : null}
+      {selected.length === 0 || onPlaceMany === undefined ? null : (
+        <div className="reader-marks-bar" data-testid="reader-marks-selection">
+          <span className="reader-marks-bar-count">
+            {selected.length} {selected.length === 1 ? "highlight" : "highlights"} picked
+          </span>
+          <button
+            type="button"
+            className="views-button views-button--quiet"
+            data-testid="reader-marks-clear"
+            onClick={() => setSelected([])}
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            className="views-button views-button--primary"
+            data-testid="reader-marks-place-selection"
+            onClick={() => {
+              // In the order they were ticked: a stack goes down in the order it was built, and that is the reader's only
+              // chance to say which of these belongs nearest the idea they are placing from.
+              onPlaceMany(selected);
+              setSelected([]);
+            }}
+          >
+            Place {selected.length}
+          </button>
+        </div>
+      )}
       <ul className="reader-marks-rows">
         {shown.map((annotation) => {
           const style = styles.find((entry) => entry.id === annotation.styleId);
+          const picked = selected.includes(annotation.id);
+          const open = expanded.includes(annotation.id);
           return (
-            <li key={annotation.id}>
+            <li
+              key={annotation.id}
+              className="reader-mark-row"
+              data-picked={picked ? "true" : undefined}
+            >
+              {onPlaceMany === undefined ? null : (
+                <input
+                  type="checkbox"
+                  className="reader-mark-pick"
+                  aria-label={`Pick “${wordsOf(annotation).slice(0, 40)}” to place`}
+                  data-testid={`book-highlight-pick-${annotation.id}`}
+                  checked={picked}
+                  onChange={() =>
+                    // Ticking appends, so the order the reader ticks in is the order the stack is in.
+                    setSelected((current) =>
+                      current.includes(annotation.id)
+                        ? current.filter((id) => id !== annotation.id)
+                        : [...current, annotation.id],
+                    )
+                  }
+                />
+              )}
               <button
                 type="button"
                 className="reader-mark"
@@ -100,12 +169,49 @@ export function BookHighlights({ annotations, styles, onOpen, onPlace }: BookHig
                   className="reader-mark-dot"
                   style={{ background: style?.color ?? "var(--accent)" }}
                 />
-                <span className="reader-mark-text">{wordsOf(annotation)}</span>
+                <span className="reader-mark-text" data-expanded={open ? "true" : undefined}>
+                  {wordsOf(annotation)}
+                </span>
                 {annotation.cardId === undefined ? null : (
                   <span className="reader-mark-placed" title="This highlight is a card">
                     <IconGlyph icon="lucide:check" size={11} />
                   </span>
                 )}
+              </button>
+              {open ? (
+                <div
+                  className="reader-mark-full"
+                  data-testid={`book-highlight-full-${annotation.id}`}
+                >
+                  <span className="reader-mark-full-words">{passageOf(annotation)}</span>
+                  {annotation.parts === undefined || annotation.parts.length === 0 ? null : (
+                    <ol className="reader-mark-full-parts">
+                      {annotation.parts.map((part) => (
+                        <li key={part.id}>
+                          <span className="reader-mark-full-target">{slotLabel(part.target)}</span>
+                          <span>{partText(annotation, part) ?? ""}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="views-icon-button"
+                aria-label={open ? "Collapse this highlight" : "Show the whole passage"}
+                aria-expanded={open}
+                title={open ? "Collapse" : "Show the whole passage"}
+                data-testid={`book-highlight-expand-${annotation.id}`}
+                onClick={() =>
+                  setExpanded((current) =>
+                    current.includes(annotation.id)
+                      ? current.filter((id) => id !== annotation.id)
+                      : [...current, annotation.id],
+                  )
+                }
+              >
+                <IconGlyph icon={open ? "lucide:chevron-up" : "lucide:chevron-down"} size={12} />
               </button>
               <button
                 type="button"
@@ -123,6 +229,12 @@ export function BookHighlights({ annotations, styles, onOpen, onPlace }: BookHig
       </ul>
     </div>
   );
+}
+
+/** The passage in full, which a row's first line is not. */
+function passageOf(annotation: Annotation): string {
+  if (annotation.anchor.kind !== "quote") return wordsOf(annotation);
+  return annotation.anchor.quote;
 }
 
 /** Whether a highlight belongs in the current filter. */

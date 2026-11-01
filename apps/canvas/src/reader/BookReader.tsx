@@ -14,7 +14,7 @@ import { imageMime, imagePaths, resolveImages } from "./chapterAssets";
 import { HighlightFocus } from "./HighlightFocus";
 import { HighlightMenu } from "./HighlightMenu";
 import { HighlightPalette } from "./HighlightPalette";
-import { handOverHighlight } from "./handOver";
+import { handOverHighlight, handOverHighlights } from "./handOver";
 import { beginHighlightDrag } from "./highlightDrag";
 import {
   type PendingSelection,
@@ -615,6 +615,27 @@ export function BookReader({
         <BookHighlights
           annotations={highlights.annotations}
           styles={highlights.styles}
+          onPlaceMany={(ids) => {
+            if (workspace === null) return;
+            const found = ids.flatMap((id) => {
+              const annotation = highlights.annotations.find((entry) => entry.id === id);
+              return annotation === undefined ? [] : [annotation];
+            });
+            const outcome = handOverHighlights({
+              workspace,
+              annotations: found,
+              canEditPlacement: canEditLayout,
+            });
+            if (outcome.trashed > 0) {
+              toast.neutral(
+                outcome.trashed === 1
+                  ? "One of those has its card in the trash. Restore it from the library."
+                  : `${String(outcome.trashed)} of those have their cards in the trash. Restore them from the library.`,
+              );
+            } else if (!outcome.inHand && outcome.cardIds.length > 0) {
+              toast.neutral("Those are already on this board.");
+            }
+          }}
           onOpen={(id) => {
             setRaisedId(id);
             setPanel("none");

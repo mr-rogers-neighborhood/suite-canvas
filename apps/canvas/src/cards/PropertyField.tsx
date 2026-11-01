@@ -152,8 +152,11 @@ export function FieldValueInput({
   className,
 }: FieldValueInputProps) {
   // A field the app fills is a reading, not an input: a template wrote it, an import wrote it, a promotion wrote
-  // it, and the graph refuses a change from anyone else. Showing the value is the whole of its editor.
-  if (field.readOnly === true) {
+  // it, and the graph refuses a change from anyone else. Showing the value is the whole of its editor, unless the kind
+  // says its editor *is* a reading — an `annotation` value is a passage, and the generic formatter can only print the
+  // word. A kind that could otherwise be edited is not let through: marking a rating read-only must still lock it.
+  const registered = fieldKindEntry(field.kind);
+  if (field.readOnly === true && registered?.rendersReadOnlyFace !== true) {
     return (
       <span
         className="views-cell-plain"
@@ -167,7 +170,6 @@ export function FieldValueInput({
 
   // A kind that registered its own editor takes precedence: that is what lets a
   // composite kind ship without editing this switch (ADR-0057).
-  const registered = fieldKindEntry(field.kind);
   if (registered) {
     const Editor = registered.editor;
     return (

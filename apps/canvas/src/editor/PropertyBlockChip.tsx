@@ -6,6 +6,7 @@ import { FieldValueInput } from "../cards/PropertyField";
 import { ValueTemplate } from "../cards/ValueTemplate";
 import { ContextMenu } from "../dialogs/ContextMenu";
 import { DisplayStyleDialog } from "../dialogs/DisplayStyleDialog";
+import { fieldKindEntry } from "../field/fieldKindRegistry";
 import { useCardPresence, useCardTitle } from "../hooks/useCardContainers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
@@ -117,8 +118,53 @@ export function PropertyBlockChip({
   });
   const display = reading.text;
   const opensPanelOnly = field.kind === "card" || field.kind === "multiSelect";
-
+  /**
+   * A kind whose editor is a reading rather than an input.
+   *
+   * The `annotation` kind is the one: its value is a passage, and a block that showed a formatted sentence behind a
+   * press would be the one place in the body where the quotation could not be read. It draws the passage directly, in
+   * the same component the card's header uses, so a template that embeds this field owns the passage and the header
+   * steps aside.
+   */
   const stopPointer = (event: { stopPropagation: () => void }) => event.stopPropagation();
+  const readingKind = field.readOnly === true ? fieldKindEntry(field.kind) : undefined;
+  if (readingKind?.rendersReadOnlyFace === true) {
+    const Face = readingKind.editor;
+    return (
+      // biome-ignore lint/a11y/noStaticElementInteractions: the wrapper only stops a press from starting body editing; the passage inside is read-only text and the remove button is a button.
+      // biome-ignore lint/a11y/useKeyWithClickEvents: no action happens here, so there is nothing to trigger from the keyboard.
+      <span
+        data-testid="property-block"
+        data-field-id={field.id}
+        data-field-kind={field.kind}
+        className="property-block property-block-passage"
+        contentEditable={false}
+        onPointerDown={stopPointer}
+        onMouseDown={stopPointer}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <Face field={field} value={value} onCommit={onCommit} />
+        {onRemove && !readOnly ? (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="Remove property block from the body"
+            title={`Remove ${field.name} from the body; the value stays on the card`}
+            data-testid="property-block-remove"
+            className="property-block-remove"
+            onPointerDown={stopPointer}
+            onMouseDown={stopPointer}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemove();
+            }}
+          >
+            {"\u00d7"}
+          </button>
+        ) : null}
+      </span>
+    );
+  }
 
   let control: ReactNode;
   if (reading.notShared) {

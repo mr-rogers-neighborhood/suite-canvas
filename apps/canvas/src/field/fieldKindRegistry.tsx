@@ -39,6 +39,15 @@ export interface FieldEditorProps {
 export interface FieldKindEntry {
   kind: string;
   editor: ComponentType<FieldEditorProps>;
+  /**
+   * True when this kind's editor is a *reading* rather than an input, so it is used even for a read-only field.
+   *
+   * Without it `PropertyField` returns a formatted string for every read-only field before it consults this registry,
+   * which is right for a kind a reader could otherwise edit — a read-only rating must not become editable by
+   * registering an editor. The `annotation` kind is the opposite case: its value *is* a passage, and the generic
+   * formatter can only print a placeholder, so the kind has to draw it.
+   */
+  rendersReadOnlyFace?: boolean;
 }
 
 const entries = new Map<string, FieldKindEntry>();

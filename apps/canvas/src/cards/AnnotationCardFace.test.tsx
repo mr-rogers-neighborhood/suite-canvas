@@ -53,7 +53,7 @@ beforeEach(() => {
 describe("the annotation on a card", () => {
   it("should show the passage and where it came from", () => {
     render(<AnnotationCardFace card={card} />);
-    expect(screen.getByTestId("annotation-strip-passage")).toHaveTextContent(
+    expect(screen.getByTestId("annotation-passage-words")).toHaveTextContent(
       "The sentence that mattered.",
     );
     expect(screen.getByText("A Small Book")).toBeInTheDocument();
@@ -100,6 +100,19 @@ describe("the annotation on a card", () => {
     workspace.undo();
     expect(workspace.getAnnotation(annotationId)?.cardId).toBe(card.id);
     expect(workspace.bodyNodes(card.id)).toEqual([]);
+  });
+
+  it("should step aside when the body already shows the passage", () => {
+    // A `Highlight` block in the body draws the same passage, and the same words twice on one card is one too many. This
+    // is what lets a template own the quotation and keep the header only as a fallback.
+    const field = workspace
+      .getType(card.primaryTypeId)
+      ?.fields.find((entry) => entry.kind === "annotation");
+    if (field === undefined) throw new Error("no annotation field");
+    workspace.appendPropertyBlock(card.id, field.id);
+    const { container } = render(<AnnotationCardFace card={{ ...card }} />);
+
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("should draw nothing for a card that never came from a book", () => {

@@ -406,8 +406,8 @@ and stop, and `[` and `]` flip it; both read the store, so the library's Place c
 without knowing they exist. The book's own outline carries a checkbox per row, a **Place N** bar, and a disclosure that
 shows a row's whole passage and what each part is for.
 
-**A selection box picks up what the reader says it does.** `marqueeSelects` holds three toggles — cards, links,
-sections — offered from `SelectModeControl` in the canvas controls. The commit filters React Flow's own report by them,
+**A selection box picks up what the reader says it does.** `marqueeSelects` holds three toggles (cards, links,
+sections) offered from `SelectModeControl` in the canvas controls. The commit filters React Flow's own report by them,
 because a marquee reports every card it touched whatever the reader meant, and a section is selected through its own store
 field rather than widened into the card selection. Sections are off by default: selecting one is a different thing to
 select.

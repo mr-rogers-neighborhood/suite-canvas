@@ -8,6 +8,7 @@ import { IconGlyph } from "../icons/IconGlyph";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { BookHighlights } from "./BookHighlights";
+import { BookSearchPanel } from "./BookSearchPanel";
 import { useBookPosition, useBookStore } from "./bookStore";
 import { ChapterNotice } from "./ChapterNotice";
 import { imageMime, imagePaths, resolveImages } from "./chapterAssets";
@@ -23,6 +24,7 @@ import {
   scrollToId,
 } from "./ReaderChapter";
 import { useBookBytes } from "./useBookBytes";
+import { useBookSearch } from "./useBookSearch";
 import { useHighlights } from "./useHighlights";
 import "../styles/reader.css";
 
@@ -80,7 +82,10 @@ export function BookReader({
    * already chosen. Without it a link's fragment was applied to the chapter being left behind.
    */
   const [markupPath, setMarkupPath] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"none" | "contents" | "highlights">("none");
+  const [panel, setPanel] = useState<"none" | "contents" | "highlights" | "search">("none");
+  /** The book's words, indexed once, and the hit a reader asked to be taken to. */
+  const search = useBookSearch(state.status === "open" ? state.book : null);
+  const settleHit = search.settle;
   const remembered = useBookPosition(attachmentId);
   /**
    * Where to open this book, read once.
@@ -358,6 +363,11 @@ export function BookReader({
     if (scrollToAnnotation(bodyRef.current, pendingMark.id)) setPendingMark(null);
   }, [pendingMark, markupPath, markup.html, paintRevision]);
 
+  // A search hit, landed once its chapter is the one drawn: `settle` holds it until then.
+  useEffect(() => {
+    settleHit(bodyRef.current, markupPath ?? "", markup.html.length > 0);
+  }, [settleHit, markupPath, markup.html]);
+
   /**
    * A passage some other surface asked for: the library's Annotations tab, or a `@` mention of a highlight.
    *
@@ -447,6 +457,13 @@ export function BookReader({
         target instanceof HTMLElement &&
         target.closest('input, textarea, [contenteditable="true"]')
       ) {
+        return;
+      }
+      // The find bar a reader reaches for, pointed at the book rather than at the page's own markup: the words are in a
+      // chapter that is drawn, so the browser's own find would search the whole puzzle of chrome around it.
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        setPanel("search");
         return;
       }
       const selected = window.getSelection();
@@ -548,6 +565,17 @@ export function BookReader({
         <button
           type="button"
           className="views-icon-button"
+          aria-label="Search this book"
+          title="Search this book"
+          aria-expanded={panel === "search"}
+          data-testid="reader-search-toggle"
+          onClick={() => setPanel((open) => (open === "search" ? "none" : "search"))}
+        >
+          <IconGlyph icon="lucide:search" size={14} />
+        </button>
+        <button
+          type="button"
+          className="views-icon-button"
           aria-label="Contents"
           title="Contents"
           aria-expanded={panel === "contents"}
@@ -624,6 +652,21 @@ export function BookReader({
           <span className="reader-progress-bar" ref={progressRef} data-testid="reader-progress" />
         </span>
       </header>
+
+      {panel === "search" ? (
+        <BookSearchPanel
+          indexing={search.indexing}
+          query={search.query}
+          onQuery={search.setQuery}
+          chapters={search.results.chapters}
+          total={search.results.total}
+          onGo={(path, match, occurrence) => {
+            // The chapter turns, and the scroll waits for it: the hit is answered once that chapter is drawn.
+            search.goTo(path, match, occurrence);
+            if (path !== chapterPath) pick(path);
+          }}
+        />
+      ) : null}
 
       {panel === "highlights" ? (
         <BookHighlights

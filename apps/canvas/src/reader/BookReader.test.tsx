@@ -373,4 +373,56 @@ describe("where the reader is", () => {
       expect(screen.getByTestId("reader-where").textContent).toMatch(/^Chapter 2/),
     );
   });
+
+  /**
+   * Searching inside a book.
+   *
+   * The whole spine is read and searched, not the chapter on the page: the words a reader remembers are not filed under
+   * the chapter they happened to be reading. A hit is a page turn and a scroll, so both have to happen.
+   */
+  it("should find a passage in another chapter and turn to it", async () => {
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-body").textContent).toContain("first sentence"),
+    );
+
+    fireEvent.click(screen.getByTestId("reader-search-toggle"));
+    // The index is built from the whole book when it opens, so a query is answered only once every chapter is read.
+    fireEvent.change(screen.getByTestId("reader-search-input"), {
+      target: { value: "link can point at" },
+    });
+    const hit = await screen.findByTestId("reader-search-hit");
+    expect(screen.getByTestId("reader-search-count").textContent).toContain("1 match in 1 chapter");
+
+    fireEvent.click(hit);
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-where").textContent).toMatch(/^Chapter 2/),
+    );
+    expect(screen.getByTestId("reader-body").textContent).toContain("A place a link can point at.");
+  });
+
+  it("should say plainly that a word is not in the book", async () => {
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-body").textContent).toContain("first sentence"),
+    );
+
+    fireEvent.click(screen.getByTestId("reader-search-toggle"));
+    fireEvent.change(screen.getByTestId("reader-search-input"), {
+      target: { value: "zzzz-not-in-this-book" },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-search-count").textContent).toBe("No matches."),
+    );
+  });
+
+  it("should open the book's search on the find shortcut rather than the browser's", async () => {
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-body").textContent).toContain("first sentence"),
+    );
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    expect(screen.getByTestId("reader-search-input")).toBeInTheDocument();
+  });
 });

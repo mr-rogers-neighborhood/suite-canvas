@@ -133,6 +133,15 @@ The keyboard works the way a book does: **right** and **space** for the next cha
 the one before, **home** and **end** for the top and bottom of this chapter. Text you have selected keeps the space bar
 for itself.
 
+## Finding a passage by its words
+
+The search button in the header reads the whole book once and searches all of it, so a passage you remember but
+cannot place is a query rather than a guess at a chapter. **ctrl-f** or **cmd-f** opens the same field; each result
+shows the words around the hit with the match lit inside them, grouped under the chapter it is in.
+
+Pressing a result turns to that chapter and scrolls to the words themselves, which is the same landing a highlight
+from the outline gives you. Two hits in one chapter land on their own occurrences rather than both on the first.
+
 ## Marks you can reach
 
 A mark is a control: it takes focus with **tab**, opens with **enter** or **space**, and its menu opens with the

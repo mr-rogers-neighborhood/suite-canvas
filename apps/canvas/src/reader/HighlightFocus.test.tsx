@@ -36,6 +36,10 @@ function draw(
   onDone = vi.fn(),
   onPlace = vi.fn(),
   onNote?: (note: string | null) => void,
+  tags: {
+    tags?: { readonly id: string; readonly name: string }[];
+    onTags?: (tagIds: readonly string[]) => void;
+  } = {},
 ) {
   render(
     <HighlightFocus
@@ -49,6 +53,8 @@ function draw(
       onRemove={vi.fn()}
       onClose={vi.fn()}
       onNote={onNote}
+      tags={tags.tags}
+      onTags={tags.onTags}
     />,
   );
   return { onDone, onPlace };
@@ -185,5 +191,42 @@ describe("a note on the raised passage", () => {
     // A field that writes nowhere is worse than no field: the reader types and nothing happens.
     draw();
     expect(screen.queryByTestId("raise-note")).toBeNull();
+  });
+});
+
+describe("tags on the raised passage", () => {
+  const tags = [
+    { id: "tag-1", name: "retrieval" },
+    { id: "tag-2", name: "chapter two" },
+  ];
+
+  it("should offer the workspace's own tags", () => {
+    draw({}, SLOTS, vi.fn(), vi.fn(), vi.fn(), { tags, onTags: vi.fn() });
+    expect(screen.getByTestId("raise-tag-tag-1")).toBeInTheDocument();
+    expect(screen.getByTestId("raise-tag-tag-2")).toBeInTheDocument();
+  });
+
+  it("should write the whole list when one is toggled", () => {
+    const onTags = vi.fn();
+    draw({}, SLOTS, vi.fn(), vi.fn(), vi.fn(), { tags, onTags });
+
+    fireEvent.click(screen.getByTestId("raise-tag-tag-2"));
+
+    // A tag list is a set, so it is written whole rather than added to.
+    expect(onTags).toHaveBeenCalledWith(["tag-2"]);
+  });
+
+  it("should take a tag off again", () => {
+    const onTags = vi.fn();
+    draw({ tagIds: ["tag-1", "tag-2"] }, SLOTS, vi.fn(), vi.fn(), vi.fn(), { tags, onTags });
+
+    fireEvent.click(screen.getByTestId("raise-tag-tag-1"));
+
+    expect(onTags).toHaveBeenCalledWith(["tag-2"]);
+  });
+
+  it("should not offer tags on a surface that cannot write them", () => {
+    draw();
+    expect(screen.queryByTestId("raise-tags")).toBeNull();
   });
 });

@@ -124,6 +124,9 @@ export function annotationsMethods(ctx: DocContext) {
         ? {}
         : { cardId: readString(fields, "cardId") }),
       ...(readString(fields, "note") === undefined ? {} : { note: readString(fields, "note") }),
+      ...(readTags(fields.get("tagIds")) === undefined
+        ? {}
+        : { tagIds: readTags(fields.get("tagIds")) }),
       ...(readParts(fields.get("parts")) === undefined
         ? {}
         : { parts: readParts(fields.get("parts")) }),
@@ -132,6 +135,14 @@ export function annotationsMethods(ctx: DocContext) {
     // A hand-edited or corrupt record is skipped rather than thrown on: one bad highlight must not cost a
     // reader their book.
     return parsed.success ? parsed.data : undefined;
+  };
+
+  /** A highlight's tags, from either representation, keeping only ids that are strings. */
+  const readTags = (value: unknown): string[] | undefined => {
+    const items = isList(value) ? value.toArray() : Array.isArray(value) ? value : null;
+    if (items === null) return undefined;
+    const ids = items.filter((item): item is string => typeof item === "string" && item.length > 0);
+    return ids.length === 0 ? undefined : ids;
   };
 
   const readStyle = (id: string): AnnotationStyle | undefined => {
@@ -183,6 +194,7 @@ export function annotationsMethods(ctx: DocContext) {
         anchor: input.anchor,
         ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
         ...(input.note === undefined ? {} : { note: input.note }),
+        ...(input.tagIds === undefined ? {} : { tagIds: input.tagIds }),
         ...(input.parts === undefined ? {} : { parts: input.parts }),
         createdAt: input.createdAt ?? Date.now(),
       });
@@ -193,6 +205,8 @@ export function annotationsMethods(ctx: DocContext) {
       fields.set("createdAt", annotation.createdAt);
       if (annotation.excerpt !== undefined) fields.set("excerpt", annotation.excerpt);
       if (annotation.note !== undefined) fields.set("note", annotation.note);
+      if (annotation.tagIds !== undefined && annotation.tagIds.length > 0)
+        fields.set("tagIds", annotation.tagIds);
       if (annotation.parts !== undefined) fields.set("parts", annotation.parts);
       ctx.commit(`${STRUCT_ORIGIN}add-annotation`);
       notify();
@@ -244,6 +258,23 @@ export function annotationsMethods(ctx: DocContext) {
       if (trimmed.length === 0) fields.delete("note");
       else fields.set("note", trimmed);
       ctx.commit(`${STRUCT_ORIGIN}annotate-note`);
+      notify();
+      return ctx.api.annotations.getAnnotation(id);
+    },
+
+    /**
+     * Replaces a highlight's tags whole, the way its parts are written whole.
+     *
+     * Whole because a tag list is a set rather than a merge: two readers adding different tags to one passage would
+     * otherwise produce duplicates nobody chose, and one list with last-writer-wins is the honest semantics.
+     */
+    setAnnotationTags(id: string, tagIds: readonly string[]): Annotation | undefined {
+      const fields = ctx.annotationsMap.get(id);
+      if (!isMap(fields)) return undefined;
+      const unique = [...new Set(tagIds)];
+      if (unique.length === 0) fields.delete("tagIds");
+      else fields.set("tagIds", unique);
+      ctx.commit(`${STRUCT_ORIGIN}annotate-tags`);
       notify();
       return ctx.api.annotations.getAnnotation(id);
     },

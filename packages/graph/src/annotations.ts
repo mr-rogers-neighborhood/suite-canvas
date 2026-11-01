@@ -131,6 +131,14 @@ export const annotationSchema = z
      */
     note: z.string().max(ANNOTATION_MAX_NOTE_LENGTH).optional(),
     /**
+     * The workspace's tags, so a mark can join a collection the reader already keeps.
+     *
+     * The *kind* is the colour and stays the colour; a tag crosses kinds, which is the whole point of having both: "this
+     * is a claim" and "this is from the chapter on retrieval" are different questions about the same sentence. Stored by
+     * id and read through the workspace, so renaming a tag renames it here too.
+     */
+    tagIds: z.array(entityIdSchema).max(24).optional(),
+    /**
      * The ranges a reader broke this highlight into, and where each one goes.
      *
      * Absent means "the whole quote is the passage", which is the ordinary case: a part exists because somebody

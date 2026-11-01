@@ -1503,3 +1503,15 @@
   color: var(--ink-muted);
   white-space: pre-wrap;
 }
+
+/* The tags a mark joins, as the same chips the outline filters with. */
+.raise-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 6px 0 0;
+}
+
+.raise-tag {
+  font-size: 10px;
+}

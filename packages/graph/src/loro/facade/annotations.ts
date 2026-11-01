@@ -45,6 +45,11 @@ export class AnnotationsFacade {
     return this.annotationsApi.setAnnotationNote(id, note);
   }
 
+  /** Replaces a highlight's tags whole: a tag list is a set, so it is one value. */
+  setAnnotationTags(id: string, tagIds: readonly string[]): Annotation | undefined {
+    return this.annotationsApi.setAnnotationTags(id, tagIds);
+  }
+
   /** Replaces a highlight's parts whole: they describe each other, so they are one value. */
   setAnnotationParts(id: string, parts: AnnotationPart[]): Annotation | undefined {
     return this.annotationsApi.setAnnotationParts(id, parts);

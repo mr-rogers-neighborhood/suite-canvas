@@ -209,6 +209,8 @@ export interface CreateAnnotationInput {
   excerpt?: string;
   /** What the reader thought, when the mark is made with a remark already in mind. */
   note?: string;
+  /** Tags the mark joins, when it is made into a collection rather than loose. */
+  tagIds?: string[];
   /** The ranges this highlight was broken into, if the reader broke it. */
   parts?: AnnotationPart[];
   createdAt?: number;

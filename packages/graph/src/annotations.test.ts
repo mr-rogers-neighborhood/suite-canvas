@@ -442,3 +442,53 @@ describe("a note on a highlight", () => {
     expect(workspace.getAnnotation(made.id)?.note).toBe("Worth returning to.");
   });
 });
+
+describe("tags on a highlight", () => {
+  it("should carry the workspace's tags, by id", () => {
+    const { workspace, book } = fixture();
+    const tag = workspace.createTag({ name: "retrieval" });
+    const mark = highlight(workspace, book.id);
+
+    const written = workspace.setAnnotationTags(mark.id, [tag.id]);
+
+    expect(written?.tagIds).toEqual([tag.id]);
+    // Read through the workspace, so renaming a tag renames it here too rather than leaving a stale copy.
+    workspace.renameTag(tag.id, "retrieval practice");
+    expect(workspace.listTags().find((entry) => entry.id === tag.id)?.name).toBe(
+      "retrieval practice",
+    );
+  });
+
+  it("should be a set, not a list a reader can duplicate", () => {
+    const { workspace, book } = fixture();
+    const tag = workspace.createTag({ name: "one" });
+    const mark = highlight(workspace, book.id);
+
+    workspace.setAnnotationTags(mark.id, [tag.id, tag.id]);
+
+    expect(workspace.getAnnotation(mark.id)?.tagIds).toEqual([tag.id]);
+  });
+
+  it("should clear rather than store an empty list", () => {
+    const { workspace, book } = fixture();
+    const tag = workspace.createTag({ name: "one" });
+    const mark = highlight(workspace, book.id);
+    workspace.setAnnotationTags(mark.id, [tag.id]);
+
+    workspace.setAnnotationTags(mark.id, []);
+
+    expect(workspace.getAnnotation(mark.id)?.tagIds).toBeUndefined();
+  });
+
+  it("should be written with the mark when it joins a collection as it is made", () => {
+    const { workspace, book } = fixture();
+    const tag = workspace.createTag({ name: "one" });
+    const made = workspace.addAnnotation({
+      sourceCardId: book.id,
+      styleId: "style-yellow",
+      anchor: QUOTE,
+      tagIds: [tag.id],
+    });
+    expect(workspace.getAnnotation(made.id)?.tagIds).toEqual([tag.id]);
+  });
+});

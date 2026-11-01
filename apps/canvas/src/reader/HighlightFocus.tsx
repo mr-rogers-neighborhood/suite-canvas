@@ -39,6 +39,16 @@ export interface HighlightFocusProps {
    * something a promotion has to carry. `null` clears it.
    */
   onNote?: ((note: string | null) => void) | undefined;
+  /**
+   * The tags the mark joins, and the tags this workspace has.
+   *
+   * Absent together: a surface that cannot write tags shows none, and one that can shows the workspace's own list rather
+   * than a second vocabulary invented here.
+   */
+  tags?:
+    | { readonly id: string; readonly name: string; readonly color?: string | undefined }[]
+    | undefined;
+  onTags?: ((tagIds: readonly string[]) => void) | undefined;
   onStyle: (styleId: string) => void;
   onRemove: () => void;
   onClose: () => void;
@@ -61,6 +71,8 @@ export function HighlightFocus({
   onPlace,
   onDone,
   onNote,
+  tags = [],
+  onTags,
   onStyle,
   onRemove,
   onClose,
@@ -73,6 +85,19 @@ export function HighlightFocus({
   const [pending, setPending] = useState<{ start: number; end: number } | null>(null);
   /** The note as it stands, committed on blur so the document is not written per keystroke. */
   const [note, setNote] = useState(annotation.note ?? "");
+  /**
+   * The tags in force, toggled one at a time and written whole.
+   *
+   * A tag list is a set, so it is written as one value: two readers adding different tags would otherwise produce
+   * duplicates nobody chose.
+   */
+  const [tagIds, setTagIds] = useState<readonly string[]>(annotation.tagIds ?? []);
+  const toggleTag = (tagId: string) => {
+    const next = tagIds.includes(tagId) ? tagIds.filter((id) => id !== tagId) : [...tagIds, tagId];
+    setTagIds(next);
+    onTags?.(next);
+  };
+
   const commitNote = () => {
     const trimmed = note.trim();
     if (trimmed === (annotation.note ?? "")) return;
@@ -235,6 +260,25 @@ export function HighlightFocus({
             </span>
           ))}
         </p>
+
+        {onTags === undefined || tags.length === 0 ? null : (
+          <fieldset className="raise-tags" data-testid="raise-tags" aria-label="Tags">
+            {tags.map((tag) => (
+              <button
+                key={tag.id}
+                type="button"
+                className="style-chip raise-tag"
+                data-testid={`raise-tag-${tag.id}`}
+                aria-pressed={tagIds.includes(tag.id)}
+                data-checked={tagIds.includes(tag.id) ? "true" : undefined}
+                title={tag.name}
+                onClick={() => toggleTag(tag.id)}
+              >
+                {tag.name}
+              </button>
+            ))}
+          </fieldset>
+        )}
 
         {onNote === undefined ? null : (
           <label className="raise-note">

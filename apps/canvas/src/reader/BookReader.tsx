@@ -741,6 +741,11 @@ export function BookReader({
             highlights.refresh();
             setRaisedId(null);
           }}
+          tags={workspace?.listTags() ?? []}
+          onTags={(tagIds) => {
+            workspace?.setAnnotationTags(raised.id, [...tagIds]);
+            highlights.refresh();
+          }}
           onNote={(note) => {
             workspace?.setAnnotationNote(raised.id, note);
             highlights.refresh();

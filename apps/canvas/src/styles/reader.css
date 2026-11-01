@@ -1452,3 +1452,54 @@
     transition: none;
   }
 }
+
+/* The note a reader wrote on the mark: on the raised surface, and in the outline's expanded row. */
+.raise-note {
+  display: block;
+  margin: 6px 0 2px;
+}
+
+.raise-note-label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+
+.raise-note-input {
+  width: 100%;
+  resize: vertical;
+  padding: 5px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.reader-mark-full-note {
+  margin: 6px 0 0;
+  padding-left: 7px;
+  border-left: 2px solid var(--hairline);
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+.reader-mark-note {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--ink-muted);
+}
+
+/* The note on a card's strip: the reader's own remark, quieter than the passage it is about. */
+.annotation-passage-note {
+  display: block;
+  padding-left: 6px;
+  border-left: 2px solid var(--hairline);
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--ink-muted);
+  white-space: pre-wrap;
+}

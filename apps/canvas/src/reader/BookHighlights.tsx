@@ -172,6 +172,11 @@ export function BookHighlights({
                 <span className="reader-mark-text" data-expanded={open ? "true" : undefined}>
                   {wordsOf(annotation)}
                 </span>
+                {annotation.note === undefined ? null : (
+                  <span className="reader-mark-note" title="This highlight has a note">
+                    <IconGlyph icon="lucide:message-square" size={10} />
+                  </span>
+                )}
                 {annotation.cardId === undefined ? null : (
                   <span className="reader-mark-placed" title="This highlight is a card">
                     <IconGlyph icon="lucide:check" size={11} />
@@ -193,6 +198,14 @@ export function BookHighlights({
                         </li>
                       ))}
                     </ol>
+                  )}
+                  {annotation.note === undefined ? null : (
+                    <p
+                      className="reader-mark-full-note"
+                      data-testid={`book-highlight-note-${annotation.id}`}
+                    >
+                      {annotation.note}
+                    </p>
                   )}
                 </div>
               ) : null}

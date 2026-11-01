@@ -1,6 +1,7 @@
 import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
 import {
+  ANNOTATION_MAX_NOTE_LENGTH,
   type Annotation,
   type AnnotationAnchor,
   annotationsOf,
@@ -392,5 +393,52 @@ describe("a highlight's life with its source", () => {
     const { workspace, book } = fixture();
     highlight(workspace, book.id);
     expect(workspace.forgetAnnotationCard("a-card-nobody-used")).toBe(0);
+  });
+});
+
+describe("a note on a highlight", () => {
+  it("should be written and read back on the record, not on a card", () => {
+    const { workspace, book } = fixture();
+    const mark = highlight(workspace, book.id);
+
+    const written = workspace.setAnnotationNote(mark.id, "  This contradicts chapter two.  ");
+
+    // Trimmed, because a note is a sentence and a trailing newline is not part of it.
+    expect(written?.note).toBe("This contradicts chapter two.");
+    expect(workspace.getAnnotation(mark.id)?.note).toBe("This contradicts chapter two.");
+    // It is still not a card: a remark is not a thing somebody wrote up.
+    expect(workspace.getAnnotation(mark.id)?.cardId).toBeUndefined();
+  });
+
+  it("should clear rather than store an empty note", () => {
+    const { workspace, book } = fixture();
+    const mark = highlight(workspace, book.id);
+    workspace.setAnnotationNote(mark.id, "Something.");
+
+    workspace.setAnnotationNote(mark.id, "   ");
+
+    // "No note" and "an empty note" are one state, so a surface never has to trim before deciding what to show.
+    expect(workspace.getAnnotation(mark.id)?.note).toBeUndefined();
+  });
+
+  it("should refuse a note longer than the record allows", () => {
+    const { workspace, book } = fixture();
+    const mark = highlight(workspace, book.id);
+
+    expect(() =>
+      workspace.setAnnotationNote(mark.id, "a".repeat(ANNOTATION_MAX_NOTE_LENGTH + 1)),
+    ).toThrow();
+    expect(workspace.getAnnotation(mark.id)?.note).toBeUndefined();
+  });
+
+  it("should be written with the mark when the reader already has one in mind", () => {
+    const { workspace, book } = fixture();
+    const made = workspace.addAnnotation({
+      sourceCardId: book.id,
+      styleId: "style-yellow",
+      anchor: QUOTE,
+      note: "Worth returning to.",
+    });
+    expect(workspace.getAnnotation(made.id)?.note).toBe("Worth returning to.");
   });
 });

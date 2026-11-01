@@ -741,6 +741,10 @@ export function BookReader({
             highlights.refresh();
             setRaisedId(null);
           }}
+          onNote={(note) => {
+            workspace?.setAnnotationNote(raised.id, note);
+            highlights.refresh();
+          }}
           onClose={() => setRaisedId(null)}
         />
       )}

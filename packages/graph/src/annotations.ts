@@ -14,6 +14,9 @@ import { entityIdSchema } from "./schema.js";
  * anchor is a **quote** rather than an offset, because reflow invalidates an offset on every screen.
  */
 
+/** The longest note a highlight may carry, in characters. Shorter than a quote: a note is a remark, not a paragraph. */
+export const ANNOTATION_MAX_NOTE_LENGTH = 2000;
+
 /**
  * The longest passage a highlight may quote, in characters.
  *
@@ -116,6 +119,17 @@ export const annotationSchema = z
     excerpt: z.string().max(ANNOTATION_QUOTE_MAX_LENGTH).optional(),
     /** The card it was promoted into, once it has one. A highlight has no card until it earns one. */
     cardId: entityIdSchema.optional(),
+    /**
+     * What the reader thought, on the mark itself.
+     *
+     * A comment used to need a card: the argument was that a card is where writing belongs. That is true of a *note*, and
+     * false of the sentence a reader wants to attach to a passage while reading — promoting one to say "this contradicts
+     * chapter two" fills the library with cards nobody wrote a note on. So the note lives on the record, and the card is
+     * still where a longer thought goes.
+     *
+     * Additive: absent is a highlight nobody has written on, which is most of them.
+     */
+    note: z.string().max(ANNOTATION_MAX_NOTE_LENGTH).optional(),
     /**
      * The ranges a reader broke this highlight into, and where each one goes.
      *

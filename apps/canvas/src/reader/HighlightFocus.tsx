@@ -32,6 +32,13 @@ export interface HighlightFocusProps {
   fieldNames: readonly string[];
   onPlace: (parts: readonly AnnotationPart[]) => void;
   onDone: (parts: readonly AnnotationPart[]) => void;
+  /**
+   * What the reader thought, committed when the field loses focus or the surface closes.
+   *
+   * A note is usually written *after* the mark, and often while still reading, so it is its own write rather than
+   * something a promotion has to carry. `null` clears it.
+   */
+  onNote?: ((note: string | null) => void) | undefined;
   onStyle: (styleId: string) => void;
   onRemove: () => void;
   onClose: () => void;
@@ -53,6 +60,7 @@ export function HighlightFocus({
   fieldNames,
   onPlace,
   onDone,
+  onNote,
   onStyle,
   onRemove,
   onClose,
@@ -63,6 +71,13 @@ export function HighlightFocus({
     [...(annotation.parts ?? [])].sort((a, b) => a.start - b.start),
   );
   const [pending, setPending] = useState<{ start: number; end: number } | null>(null);
+  /** The note as it stands, committed on blur so the document is not written per keystroke. */
+  const [note, setNote] = useState(annotation.note ?? "");
+  const commitNote = () => {
+    const trimmed = note.trim();
+    if (trimmed === (annotation.note ?? "")) return;
+    onNote?.(trimmed.length === 0 ? null : trimmed);
+  };
   /**
    * The row the next selection fills.
    *
@@ -221,6 +236,22 @@ export function HighlightFocus({
           ))}
         </p>
 
+        {onNote === undefined ? null : (
+          <label className="raise-note">
+            <span className="raise-note-label">Your note</span>
+            <textarea
+              className="raise-note-input"
+              data-testid="raise-note"
+              rows={2}
+              maxLength={2000}
+              placeholder="What did this passage do?"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              onBlur={commitNote}
+            />
+          </label>
+        )}
+
         <ul className="raise-parts" data-testid="raise-parts">
           {rows.map((row) => (
             <SlotRow
@@ -301,7 +332,10 @@ export function HighlightFocus({
               type="button"
               className="views-button views-button--quiet"
               data-testid="raise-done"
-              onClick={() => onDone(parts)}
+              onClick={() => {
+                commitNote();
+                onDone(parts);
+              }}
             >
               Done
             </button>

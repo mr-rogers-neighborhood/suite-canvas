@@ -40,6 +40,11 @@ export class AnnotationsFacade {
     return this.annotationsApi.setAnnotationStyle(id, styleId);
   }
 
+  /** Writes what the reader thought of the passage, or clears it with `null`. */
+  setAnnotationNote(id: string, note: string | null): Annotation | undefined {
+    return this.annotationsApi.setAnnotationNote(id, note);
+  }
+
   /** Replaces a highlight's parts whole: they describe each other, so they are one value. */
   setAnnotationParts(id: string, parts: AnnotationPart[]): Annotation | undefined {
     return this.annotationsApi.setAnnotationParts(id, parts);

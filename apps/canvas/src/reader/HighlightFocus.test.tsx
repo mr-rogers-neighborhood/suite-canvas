@@ -35,6 +35,7 @@ function draw(
   slots: AnnotationPartTarget[] = SLOTS,
   onDone = vi.fn(),
   onPlace = vi.fn(),
+  onNote?: (note: string | null) => void,
 ) {
   render(
     <HighlightFocus
@@ -47,6 +48,7 @@ function draw(
       onStyle={vi.fn()}
       onRemove={vi.fn()}
       onClose={vi.fn()}
+      onNote={onNote}
     />,
   );
   return { onDone, onPlace };
@@ -128,5 +130,60 @@ describe("raising a highlight", () => {
     fireEvent.click(screen.getByTestId("raise-add-part"));
     // Arming the extra row is the escape hatch: the reader selects words, then chooses a destination.
     expect(screen.getByTestId("raise-add-part")).toHaveTextContent("Select words for a new part");
+  });
+});
+
+describe("a note on the raised passage", () => {
+  it("should commit on blur rather than on every keystroke", () => {
+    const onNote = vi.fn();
+    draw({}, SLOTS, vi.fn(), vi.fn(), onNote);
+    const field = screen.getByTestId("raise-note");
+
+    fireEvent.change(field, { target: { value: "This contradicts chapter two." } });
+    // Typing is a draft: one write per keystroke would be a commit per character.
+    expect(onNote).not.toHaveBeenCalled();
+
+    fireEvent.blur(field);
+    expect(onNote).toHaveBeenCalledWith("This contradicts chapter two.");
+  });
+
+  it("should clear rather than store whitespace", () => {
+    const onNote = vi.fn();
+    draw({ note: "Something." }, SLOTS, vi.fn(), vi.fn(), onNote);
+
+    const field = screen.getByTestId("raise-note");
+    fireEvent.change(field, { target: { value: "   " } });
+    fireEvent.blur(field);
+
+    expect(onNote).toHaveBeenCalledWith(null);
+  });
+
+  it("should keep a note typed and then confirmed with Done", () => {
+    const onNote = vi.fn();
+    draw({}, SLOTS, vi.fn(), vi.fn(), onNote);
+
+    fireEvent.change(screen.getByTestId("raise-note"), { target: { value: "Kept." } });
+    fireEvent.click(screen.getByTestId("raise-done"));
+
+    expect(onNote).toHaveBeenCalledWith("Kept.");
+  });
+
+  it("should not write when nothing changed", () => {
+    const onNote = vi.fn();
+    draw({ note: "Already there." }, SLOTS, vi.fn(), vi.fn(), onNote);
+
+    fireEvent.blur(screen.getByTestId("raise-note"));
+    expect(onNote).not.toHaveBeenCalled();
+  });
+
+  it("should show the note the record already carries", () => {
+    draw({ note: "Already there." }, SLOTS, vi.fn(), vi.fn(), vi.fn());
+    expect(screen.getByTestId("raise-note")).toHaveValue("Already there.");
+  });
+
+  it("should offer no note field on a surface that cannot write one", () => {
+    // A field that writes nowhere is worse than no field: the reader types and nothing happens.
+    draw();
+    expect(screen.queryByTestId("raise-note")).toBeNull();
   });
 });

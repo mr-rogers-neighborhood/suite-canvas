@@ -207,6 +207,8 @@ export interface CreateAnnotationInput {
   styleId: string;
   anchor: AnnotationAnchor;
   excerpt?: string;
+  /** What the reader thought, when the mark is made with a remark already in mind. */
+  note?: string;
   /** The ranges this highlight was broken into, if the reader broke it. */
   parts?: AnnotationPart[];
   createdAt?: number;

@@ -57,6 +57,11 @@ export function AnnotationPassage({
         <span className="annotation-passage-words" data-testid="annotation-passage-words">
           {words}
         </span>
+        {annotation.note === undefined ? null : (
+          <span className="annotation-passage-note" data-testid="annotation-passage-note">
+            {annotation.note}
+          </span>
+        )}
         <span className="annotation-passage-where">
           <span>{kindName} from</span>
           {onOpenSource === undefined ? (

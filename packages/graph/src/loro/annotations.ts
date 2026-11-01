@@ -123,6 +123,7 @@ export function annotationsMethods(ctx: DocContext) {
       ...(readString(fields, "cardId") === undefined
         ? {}
         : { cardId: readString(fields, "cardId") }),
+      ...(readString(fields, "note") === undefined ? {} : { note: readString(fields, "note") }),
       ...(readParts(fields.get("parts")) === undefined
         ? {}
         : { parts: readParts(fields.get("parts")) }),
@@ -181,6 +182,7 @@ export function annotationsMethods(ctx: DocContext) {
         styleId: input.styleId,
         anchor: input.anchor,
         ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
+        ...(input.note === undefined ? {} : { note: input.note }),
         ...(input.parts === undefined ? {} : { parts: input.parts }),
         createdAt: input.createdAt ?? Date.now(),
       });
@@ -190,6 +192,7 @@ export function annotationsMethods(ctx: DocContext) {
       fields.set("anchor", annotation.anchor);
       fields.set("createdAt", annotation.createdAt);
       if (annotation.excerpt !== undefined) fields.set("excerpt", annotation.excerpt);
+      if (annotation.note !== undefined) fields.set("note", annotation.note);
       if (annotation.parts !== undefined) fields.set("parts", annotation.parts);
       ctx.commit(`${STRUCT_ORIGIN}add-annotation`);
       notify();
@@ -219,6 +222,28 @@ export function annotationsMethods(ctx: DocContext) {
       if (cardId === null) fields.delete("cardId");
       else fields.set("cardId", cardId);
       ctx.commit(`${STRUCT_ORIGIN}annotate-promoted`);
+      notify();
+      return ctx.api.annotations.getAnnotation(id);
+    },
+
+    /**
+     * Writes what the reader thought, or clears it.
+     *
+     * Its own write rather than part of `addAnnotation` because a note is usually written *after* the mark: the reader
+     * reads on, then says what the sentence did. `null` removes the key, so "no note" and "an empty note" stay the same
+     * thing and a surface does not have to trim before deciding.
+     */
+    setAnnotationNote(id: string, note: string | null): Annotation | undefined {
+      const fields = ctx.annotationsMap.get(id);
+      if (!isMap(fields)) return undefined;
+      const current = ctx.api.annotations.getAnnotation(id);
+      if (current === undefined) return undefined;
+      const trimmed = note?.trim() ?? "";
+      // Validated against the schema before writing: a note past the limit would be a highlight that cannot be read.
+      annotationSchema.parse({ ...current, ...(trimmed.length === 0 ? {} : { note: trimmed }) });
+      if (trimmed.length === 0) fields.delete("note");
+      else fields.set("note", trimmed);
+      ctx.commit(`${STRUCT_ORIGIN}annotate-note`);
       notify();
       return ctx.api.annotations.getAnnotation(id);
     },

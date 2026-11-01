@@ -828,6 +828,9 @@
 /* A row is a press away from being raised: the words are what a reader is choosing between, so they lead. */
 .reader-mark-row {
   display: flex;
+  /* The expanded passage is a line of its own: without wrapping, `flex: 1 0 100%` below squeezes the row's own controls
+     to nothing and overflows the panel instead of growing it. */
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 2px;
   border-radius: 6px;
@@ -876,6 +879,7 @@
 
 .reader-mark-full {
   flex: 1 0 100%;
+  min-width: 0;
   margin: 2px 4px 6px 20px;
   padding: 6px;
   border-radius: 6px;

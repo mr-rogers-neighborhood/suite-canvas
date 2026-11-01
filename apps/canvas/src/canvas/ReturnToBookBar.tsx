@@ -41,7 +41,7 @@ export function ReturnToBookBar() {
     <div className="return-to-book" data-testid="return-to-book" role="toolbar" aria-label="Placed">
       <span className="return-to-book-done">
         <IconGlyph icon="lucide:check" size={12} />
-        Placed. The board is yours to arrange.
+        Placed. You can arrange the cards or return to the book now.
       </span>
       <button
         type="button"

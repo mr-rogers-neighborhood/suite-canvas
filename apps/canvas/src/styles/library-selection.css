@@ -127,11 +127,12 @@
  * The stack in hand, listed in the order it will be placed.
  *
  * A stack goes down one press at a time, in the order it was built, so the order is the reader's last decision before
- * the first press. It sits bottom-left, out of the pointer's way and away from the library's own drawer on the right.
+ * the first press. It sits **top-left**, under the 44px app bar: bottom-left is React Flow's own `<Controls>` pill, which
+ * holds the placement-mode and purpose buttons, and a panel over it hides the controls the gesture needs.
  */
 .place-outline {
   position: fixed;
-  bottom: 16px;
+  top: 56px;
   left: 16px;
   z-index: 71;
   display: flex;
@@ -255,4 +256,29 @@
   gap: 5px;
   color: var(--ink-muted);
   white-space: nowrap;
+}
+
+/* The placement mode, under the queue's header: one control, the same component the canvas pill draws. */
+.place-outline-mode {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.place-outline-mode-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+
+/* In the panel the button is a button, not an edge of the pill: same glyph, its own frame. */
+.place-outline-mode-button {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
 }

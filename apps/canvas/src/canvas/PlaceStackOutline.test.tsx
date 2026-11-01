@@ -2,6 +2,7 @@ import { WorkspaceDocument } from "@suite/graph";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { useUiStore } from "../store/useUiStore";
 import { PlaceStackOutline } from "./PlaceStackOutline";
 import { usePlaceStackStore } from "./placeStack";
 
@@ -95,5 +96,20 @@ describe("the stack outline", () => {
     render(<PlaceStackOutline />);
     fireEvent.click(screen.getByTestId("place-outline-stop"));
     expect(usePlaceStackStore.getState().queue).toEqual([]);
+  });
+});
+
+describe("the placement mode inside the panel", () => {
+  it("should be the same control the canvas pill draws, and change the same mode", () => {
+    useUiStore.setState({ mode: "place", canManageLinks: true });
+    render(<PlaceStackOutline />);
+
+    const button = screen.getByTestId("place-outline-mode");
+    expect(button).toHaveAttribute("data-mode", "place");
+
+    fireEvent.click(button);
+
+    // One store field, so the pill and the panel cannot disagree: there is one mode, shown twice.
+    expect(useUiStore.getState().mode).toBe("thread");
   });
 });

@@ -17,7 +17,9 @@ describe("shortcut rows", () => {
     expect(keys).toContain("\u2318Enter");
     expect(keys).toContain("\u2318G");
     expect(keys).toContain("\u2318Z");
-    expect(keys).toContain("[");
+    // The outline answers `\`, because both brackets belong to the stack in the reader's hand.
+    expect(keys).toContain("\\");
+    expect(keys).not.toContain("[");
   });
 
   it("groups the rows in registry order, then the board's own keys", () => {

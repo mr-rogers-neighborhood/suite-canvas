@@ -11,7 +11,8 @@ targets:
 
 The outline is the board's structure in reading order: every section, with the cards it holds, and
 the people currently on each. It is a rail beside the canvas, and the toggle beside version history
-opens it (`[`).
+opens it (`\`). Both brackets belong to the stack of cards in your hand, so the outline answers `\`
+instead: a key that means two things depends on which listener happens to run first.
 
 It exists because a large board is hard to navigate by eye. A press on a row moves the camera to
 what the row names, so the rail is a table of contents rather than a second copy of the board. Peer

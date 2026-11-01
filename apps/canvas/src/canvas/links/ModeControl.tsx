@@ -33,7 +33,19 @@ export function switchLabel(mode: CanvasMode): string {
   return `Switch to ${next.label.charAt(0).toLowerCase()}${next.label.slice(1)}`;
 }
 
-export function ModeControl() {
+/**
+ * The button itself, so the canvas pill and the stack panel mount one control rather than two that can disagree.
+ *
+ * Both read the same store field, so "in sync" is not something to arrange — there is one mode, shown twice. The test id
+ * is a parameter because two elements with one id is not a thing a test can tell apart.
+ */
+export function ModeButton({
+  testId = "link-mode-toggle",
+  className = "",
+}: {
+  testId?: string;
+  className?: string;
+}) {
   const mode = useUiStore((state) => state.mode);
   const setMode = useUiStore((state) => state.setMode);
   // A viewer cannot draw links, so the button would cycle a mode that writes nothing.
@@ -43,18 +55,23 @@ export function ModeControl() {
   return (
     <button
       type="button"
-      className="link-mode-control"
-      data-testid="link-mode-toggle"
+      className={`link-mode-control ${className}`.trim()}
+      data-testid={testId}
       data-mode={mode}
       aria-label={MODES[mode].label}
       title={switchLabel(mode)}
       onClick={() => setMode(nextMode(mode))}
     >
-      <span aria-hidden="true" data-testid="link-mode-glyph">
+      <span aria-hidden="true" data-testid={`${testId}-glyph`}>
         {MODES[mode].glyph}
       </span>
     </button>
   );
+}
+
+/** The canvas pill's copy: one glyph, cycling place → thread → fan. */
+export function ModeControl() {
+  return <ModeButton />;
 }
 
 /** The modes in the order the button cycles them; exported for tests and the pill. */

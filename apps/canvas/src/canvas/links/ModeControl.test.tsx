@@ -13,7 +13,7 @@ describe("the link tool", () => {
     render(<ModeControl />);
 
     expect(screen.getByTestId("link-mode-toggle")).toHaveAttribute("data-mode", "place");
-    expect(screen.getByTestId("link-mode-glyph").textContent).toBe("\u2194");
+    expect(screen.getByTestId("link-mode-toggle-glyph").textContent).toBe("\u2194");
     expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 
@@ -23,7 +23,7 @@ describe("the link tool", () => {
 
     fireEvent.click(button);
     expect(useUiStore.getState().mode).toBe("thread");
-    expect(screen.getByTestId("link-mode-glyph").textContent).toBe("\u2933");
+    expect(screen.getByTestId("link-mode-toggle-glyph").textContent).toBe("\u2933");
 
     fireEvent.click(button);
     expect(useUiStore.getState().mode).toBe("fan");

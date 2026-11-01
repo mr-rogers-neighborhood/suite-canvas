@@ -37,7 +37,7 @@ export function shortcutGroupLabel(group: ShortcutRow["group"]): string {
  * documented nowhere; it is here so the sheet is the whole answer.
  */
 export const BOARD_KEY_ROWS: readonly ShortcutRow[] = [
-  { keys: "[", label: "Show or hide the outline", group: "keys" },
+  { keys: "\\", label: "Show or hide the outline", group: "keys" },
   { keys: "Enter", label: "Open the selected card", group: "keys" },
   { keys: "Delete", label: "Take the selection off this board", group: "keys" },
   { keys: "Shift\u21e5Delete", label: "Move the selection to the trash", group: "keys" },

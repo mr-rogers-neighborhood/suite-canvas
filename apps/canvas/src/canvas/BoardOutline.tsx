@@ -188,7 +188,9 @@ export function BoardOutlineHost() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.key !== "[") return;
+      // `\` rather than `[`: both brackets flip the stack in the reader's hand, and a key that means two things
+      // depends on which listener ran first. The outline's own key has to be one nothing else wants.
+      if (event.defaultPrevented || event.key !== "\\") return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (

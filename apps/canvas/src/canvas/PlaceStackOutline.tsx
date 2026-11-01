@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from "react";
 import { IconGlyph } from "../icons/IconGlyph";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { ModeButton } from "./links/ModeControl";
 import { usePlaceStackStore } from "./placeStack";
 
 /**
@@ -74,6 +75,12 @@ export function PlaceStackOutline() {
           <IconGlyph icon="lucide:x" size={12} />
         </button>
       </header>
+      {/* The same control the canvas pill draws, from the same store: what a press attaches to is a decision this
+          gesture needs, and it used to live under a panel that covered it. */}
+      <div className="place-outline-mode">
+        <span className="place-outline-mode-label">Links</span>
+        <ModeButton testId="place-outline-mode" className="place-outline-mode-button" />
+      </div>
       <ol className="place-outline-rows">
         {queue.map((cardId, index) => {
           return (

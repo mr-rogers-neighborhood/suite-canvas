@@ -355,10 +355,20 @@ const DASH_PATTERN: Partial<Record<StyleEdgePaint, { pattern: string; cycle: num
  * means solid, which is why an unstyled link returns only its ink and renders
  * exactly as it did before the paint system.
  */
-export function linkStroke(style: ResolvedSurfaceStyle): Record<string, string | number> {
+export function linkStroke(
+  style: ResolvedSurfaceStyle,
+  /**
+   * The colour the link's swatch resolved to, when it names one.
+   *
+   * A swatch is a *named* colour with a light and a dark value, while an ink role is a token the theme resolves. A link
+   * had only the role, which is why picking a colour in the menu changed nothing and why a link that lost its swatch
+   * looked exactly like one that never had one: both painted the accent. A card's fill already travels this way.
+   */
+  swatchColour: string | null = null,
+): Record<string, string | number> {
   const edge = style.sides.top;
   const stroke: Record<string, string | number> = {
-    stroke: colourRoleVar(edge?.colour ?? style.ink),
+    stroke: swatchColour ?? colourRoleVar(edge?.colour ?? style.ink),
   };
   if (edge?.width !== undefined) stroke.strokeWidth = edge.width;
   const dash = edge ? DASH_PATTERN[edge.paint] : undefined;

@@ -10,6 +10,7 @@ import { isWhiteboardCard } from "../../cards/whiteboard";
 import { useUiStore } from "../../store/useUiStore";
 import type { EdgeDescriptionData } from "../EdgeDescription";
 import type { CardNodeData } from "../nodeData";
+import { swatchOf, useSurfacePaint } from "../surfaceContext";
 import { toFlowEdge } from "./boardSupport";
 import type { useBoardProjection } from "./useBoardProjection";
 import type { useBoardRefs } from "./useBoardRefs";
@@ -37,6 +38,8 @@ export function useBoardNodes(
 ) {
   const { store, peers, lens, selectedEdgeIds } = ui;
   const { refs, projection, cardOffsetsMap, labelHandlers } = input;
+  // The palette and the mode on screen, so a link's swatch resolves to the colour a card's fill would.
+  const surfacePaint = useSurfacePaint();
   // Reader state, read as values: a fold repaints the board, and it never
   // touches the document.
   const collapsedCards = useUiStore((state) => state.collapsedCards);
@@ -459,6 +462,8 @@ export function useBoardNodes(
         selectedEdges.has(link.edge.id),
         labelHandlers,
         peerByEdge.get(link.edge.id),
+        // The link's own colour, resolved the way a card's fill is: a swatch is a named colour with a value per mode.
+        swatchOf(link.edge.style, surfacePaint)?.colour ?? null,
       );
       // An arrow leaves the lens when either endpoint does: a line to a card the
       // view excluded is context, not a result.
@@ -466,7 +471,8 @@ export function useBoardNodes(
       return reconnecting.has(link.edge.id) ? { ...painted, hidden: true } : painted;
     });
     setEdges(flowEdges);
-  }, [projectedLinks, peers, selectedEdgeIds, setEdges, labelHandlers]);
+    // The palette and the mode are inputs too: a theme change must repaint a coloured link, as it repaints a card.
+  }, [projectedLinks, peers, selectedEdgeIds, setEdges, labelHandlers, surfacePaint]);
   return {
     nodes,
     edges,

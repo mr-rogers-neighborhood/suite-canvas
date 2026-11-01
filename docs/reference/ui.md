@@ -437,6 +437,13 @@ is the same idea without the travel: `handOverHighlight` makes the card in the i
 `usePlaceStackStore`, the stack the library's own "Place cards" uses, and the focus surface conceals itself while a
 stack is in hand. The card lands where the reader presses, which is why Place never picks a point for them.
 
+**A link's colour is a swatch, and its stroke takes it.** `linkStroke` paints
+`swatchOf(edge.style, context)?.colour` when the link names a swatch and the theme's link colour otherwise, which is what
+"unstyled" means. Before this the stroke came only from an ink *role*, so the right-click colour changed nothing and a
+link that lost its swatch looked exactly like one that never had one. The inspector's colour and line rows write through
+`setEdgeStyle`, **reading the live style at write time**: two presses in a row that both spread the style as it was at
+render time would have the second undo the first, which is how a colour used to vanish.
+
 **A promoted card wears its passage, and its body is its type's.** `AnnotationPassage` draws it: the spine in the kind's
 colour, the words **in full**, and the kind and the book underneath. `AnnotationCardFace` wraps that in **Reopen** and
 **Keep it** and draws it above the body, and a `Highlight` property block in the body draws the same component inline.

@@ -176,6 +176,8 @@ export function toFlowEdge(
   selected: boolean,
   data: Pick<EdgeDescriptionData, "onLabelDrag" | "onLabelEdit">,
   peerColor?: string,
+  /** The colour the link's swatch resolves to on this screen, or null when it names none. */
+  swatchColour: string | null = null,
 ): Edge {
   const marker = {
     type: MarkerType.ArrowClosed,
@@ -188,7 +190,7 @@ export function toFlowEdge(
   // presence, not document state, so it wins while it lasts.
   const style = edge.style
     ? {
-        ...linkStroke(resolveSurfaceStyle(edge.style, "link")),
+        ...linkStroke(resolveSurfaceStyle(edge.style, "link"), swatchColour),
         ...(peerColor ? { stroke: peerColor } : {}),
       }
     : peerColor

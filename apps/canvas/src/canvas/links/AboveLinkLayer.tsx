@@ -2,6 +2,7 @@ import { resolveSurfaceStyle } from "@suite/graph";
 import { ViewportPortal } from "@xyflow/react";
 import { useEdges } from "../../store/workspaceStore";
 import { useIsolatedEdgeId } from "../routeIsolation";
+import { swatchOf, useSurfacePaint } from "../surfaceContext";
 import { linkStroke } from "../surfacePaint";
 import { linkRoutePath, type SectionLink } from "./SectionLinkLayer";
 
@@ -31,6 +32,7 @@ export function AboveLinkLayer({
   onEdgeContextMenu,
 }: AboveLinkLayerProps) {
   const edges = useEdges();
+  const surfacePaint = useSurfacePaint();
   const isolatedEdgeId = useIsolatedEdgeId();
   if (links.length === 0) return null;
 
@@ -55,7 +57,11 @@ export function AboveLinkLayer({
           // one never changes how it looks (ADR-0051 §1) — and none when the link
           // was never styled, so this layer's own CSS keeps painting it.
           const paint = link.edge.style
-            ? linkStroke(resolveSurfaceStyle(link.edge.style, "link"))
+            ? linkStroke(
+                resolveSurfaceStyle(link.edge.style, "link"),
+                // The same swatch the edge layer resolves, so raising a link never changes its colour.
+                swatchOf(link.edge.style, surfacePaint)?.colour ?? null,
+              )
             : undefined;
           return (
             <g

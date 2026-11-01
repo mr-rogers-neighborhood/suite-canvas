@@ -19,6 +19,15 @@ export interface PendingSelection {
 export interface ReaderChapterProps {
   /** The sanitiser's output. */
   html: string;
+  /**
+   * This chapter's path inside the book, which is what a highlight records and what decides whether a recorded one
+   * belongs on this page.
+   *
+   * A highlight used to record the chapter's *length*, so nothing could tell one chapter's marks from another's: a
+   * quote repeated in chapter nine was painted in chapter two as well, and every chapter counted all the other
+   * chapters' highlights as "not in this chapter".
+   */
+  locator: string;
   annotations: readonly Annotation[];
   styles: readonly { id: string; color: string }[];
   onSelect: (selection: PendingSelection) => void;
@@ -36,6 +45,7 @@ export interface ReaderChapterProps {
 
 export function ReaderChapter({
   html,
+  locator,
   annotations,
   styles,
   onSelect,
@@ -49,23 +59,25 @@ export function ReaderChapter({
   // second copy of it: the chapter is the source, and the mark is a wrapper around a range.
   const [unplaced, setUnplaced] = useState(0);
 
+  // `html` is a dependency even though the effect never reads it: a new chapter *replaces* the container's children
+  // through `dangerouslySetInnerHTML`, so without it the effect never runs again and the marks are simply gone — which
+  // is exactly how every page turn used to lose its highlights. `locator` travels with the same markup.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the chapter's markup is the invalidation signal.
   useEffect(() => {
     const root = container.current;
     if (root === null) return;
-    const report = paintHighlights(root, annotations, styles);
+    const report = paintHighlights(root, { locator, annotations, styles });
     // Written only when it changes: painting runs on every annotation change, and a state write per paint is a render
     // per paint.
     setUnplaced((current) => (current === report.unplaced ? current : report.unplaced));
-    // `html` is not a dependency: React has replaced the container's children by the time this runs, so the ref
-    // already points at the new markup.
-  }, [annotations, styles]);
+  }, [html, locator, annotations, styles]);
 
   const capture = useCallback(() => {
     const root = container.current;
     if (root === null) return;
-    const pending = selectionAnchor(root);
+    const pending = selectionAnchor(root, locator);
     if (pending !== null) onSelect({ anchor: pending });
-  }, [onSelect]);
+  }, [onSelect, locator]);
 
   return (
     <>
@@ -140,6 +152,7 @@ export function ReaderChapter({
  */
 function selectionAnchor(
   root: HTMLElement,
+  locator: string,
 ): Extract<Annotation["anchor"], { kind: "quote" }> | null {
   const selected = window.getSelection();
   if (selected === null || selected.isCollapsed || selected.rangeCount === 0) return null;
@@ -159,7 +172,7 @@ function selectionAnchor(
 
   return {
     kind: "quote",
-    locator: index.text.length.toString(),
+    locator,
     quote,
     prefix: around.prefix,
     suffix: around.suffix,
@@ -184,7 +197,12 @@ export interface PaintReport {
 }
 
 /**
- * Wrappers around every highlight that still finds its words.
+ * Painting a chapter's marks, from a clean page.
+ *
+ * Two rules make this the reset it has to be. Painting starts by **unwrapping** every mark already in the chapter,
+ * because a repaint that wrapped again would nest a `<mark>` inside the previous one on every restyle until the words
+ * were thirty elements deep — and the offsets the next pass reads would be the ones the last pass left behind. And it
+ * paints only the highlights that belong to **this** chapter, which is what `locator` now answers.
  *
  * A highlight that cannot be placed is not painted, and the reader is told rather than shown a mark in the wrong
  * sentence: a highlight in the wrong place is a lie the reader cannot detect.
@@ -197,23 +215,35 @@ export interface PaintReport {
  */
 function paintHighlights(
   root: HTMLElement,
-  annotations: readonly Annotation[],
-  styles: readonly { id: string; color: string }[],
+  chapter: {
+    locator: string;
+    annotations: readonly Annotation[];
+    styles: readonly { id: string; color: string }[];
+  },
 ): PaintReport {
+  unwrapMarks(root);
+
   const index = chapterTextIndex(root);
   const marks: { segment: Range; color: string; id: string }[] = [];
   let painted = 0;
   let unplaced = 0;
 
-  for (const annotation of annotations) {
+  for (const annotation of chapter.annotations) {
     if (annotation.anchor.kind !== "quote") continue;
+    const home = chapterOf(annotation.anchor.locator, chapter.locator);
+    // Somebody else's chapter: not painted, and not reported either. A reader turning the page has not lost anything,
+    // and the old code counted every other chapter's marks as "not in this chapter".
+    if (home === "elsewhere") continue;
     const found = resolveQuote(index.text, annotation.anchor);
     const segments = found.status === "found" ? segmentsOf(index, found.start, found.end) : [];
     if (segments.length === 0) {
+      // An unknown home is a record written before the anchor named a chapter. It paints where it resolves, and it is
+      // never counted: there is no honest answer to "which chapter lost it".
+      if (home === "unknown") continue;
       unplaced += 1;
       continue;
     }
-    const style = styles.find((entry) => entry.id === annotation.styleId);
+    const style = chapter.styles.find((entry) => entry.id === annotation.styleId);
     const color = style?.color ?? "var(--accent)";
     for (const segment of segments) marks.push({ segment, color, id: annotation.id });
     painted += 1;
@@ -243,6 +273,38 @@ function paintHighlights(
   }
 
   return { painted, unplaced };
+}
+
+/**
+ * Removes every mark this painter put there, keeping the words that were inside them.
+ *
+ * Unwrapping rather than re-rendering the chapter keeps the reader's place: replacing the markup on every restyle would
+ * throw away the scroll position and any live selection, and the chapter is not ours to rewrite once it is drawn.
+ *
+ * Normalised after, because unwrapping leaves the text nodes it split in place — harmless for offsets, but a chapter
+ * whose nodes number in the thousands after a hundred repaints is a chapter that gets slower every time somebody
+ * changes a colour.
+ */
+function unwrapMarks(root: HTMLElement): void {
+  for (const mark of [...root.querySelectorAll("mark[data-annotation-id]")]) {
+    mark.replaceWith(...mark.childNodes);
+  }
+  root.normalize();
+}
+
+/**
+ * Whether a recorded locator names this chapter.
+ *
+ * `elsewhere` is the ordinary answer and means "not on this page". `unknown` is a record written before the anchor
+ * named a chapter at all: schema 5 stored the chapter's character count, which is indistinguishable from a spine index
+ * and matches no path, so those records are painted wherever they resolve and never counted as lost. There is no
+ * migration script for the same reason the schema-5 part target has none — a reader that tolerates the old shape is
+ * the whole repair.
+ */
+function chapterOf(recorded: string, locator: string): "here" | "elsewhere" | "unknown" {
+  if (recorded === locator) return "here";
+  if (recorded.length > 0 && /^\d+$/u.test(recorded)) return "unknown";
+  return "elsewhere";
 }
 
 /**

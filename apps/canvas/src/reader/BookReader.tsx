@@ -448,6 +448,7 @@ export function BookReader({
         ) : (
           <ReaderChapter
             html={markup.html}
+            locator={chapterPath}
             annotations={highlights.annotations}
             styles={highlights.styles}
             onSelect={setSelection}

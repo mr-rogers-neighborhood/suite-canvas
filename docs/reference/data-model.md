@@ -177,6 +177,13 @@ video. `locator` names the part of the source and each kind fixes its meaning, s
 without a fourth schema change. All three parse from the first build; a document carrying an anchor this build
 cannot render says so rather than drawing nothing.
 
+**A book's `locator` is the chapter's path in the archive**, not a spine index: a path survives a re-spined book, an
+index does not. It is what decides whether a highlight belongs on the page being read, so a quote that repeats in
+another chapter is no longer painted there. Records written before the field meant anything hold a character count;
+a purely numeric locator reads as "chapter unknown", paints where it resolves and is never reported as lost. No
+migration script: a reader that tolerates the old shape is the whole repair, the same choice schema 6 made for a
+stored `own-card` part target.
+
 There is no `medium` field: `anchor.kind` carries it, and `excerpt` is optional because a quote, a page and a
 timestamp are different facts and a canvas region has none.
 

@@ -360,7 +360,14 @@ covers an element, so a passage over a bold word, a link or a paragraph break us
 nothing said. `paintHighlights` segments the match against the chapter's own text index instead, one range per text
 node, so every wrap sits inside a single node and a crossing passage becomes adjacent marks that share the highlight's
 id. Every mark carries `tabindex`, `role="button"` and the keys `ReaderChapter` delegates: Enter or Space raises it, the
-menu key or Shift-F10 opens its menu. A highlight the chapter cannot place is counted and reported under the header.
+menu key or Shift-F10 opens its menu.
+
+**Painting is a reset, and it only paints this chapter.** `paintHighlights` unwraps every mark already in the chapter
+before it draws — a repaint that wrapped again nested a mark inside the previous one on every restyle — and the effect
+depends on the rendered markup as well as the annotations, because a new chapter replaces the container's children and
+the previous pass is simply gone. Which highlights belong here is `anchor.locator`'s job: a chapter's path in the
+archive. A highlight of another chapter is neither painted nor counted, and one this chapter cannot place is counted
+and reported under the header.
 
 **Two paragraphs are two words apart.** `chapterTextIndex` separates block-level runs with one space and gives a
 whitespace-only node no run at all, because a reader's selection across a paragraph break arrives normalised to single

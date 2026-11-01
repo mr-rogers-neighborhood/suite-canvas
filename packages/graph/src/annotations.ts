@@ -25,8 +25,14 @@ export const anchorRectSchema = z.object({
 /**
  * Where in a source an annotation sits.
  *
- * `locator` names the *part* of the source and each kind fixes what it means: a spine index for a book, a page
+ * `locator` names the *part* of the source and each kind fixes what it means: a chapter's path inside a book, a page
  * for a PDF, a transcript id for a video. It is a closed field, not an extension point.
+ *
+ * A book's locator is an **archive path** rather than a spine index, because that is the thing a reader can still
+ * match after the book is re-spined: a path survives an inserted chapter, an index does not. Records written before
+ * the anchor meant anything hold a character count instead; a surface that paints reads a purely numeric locator as
+ * "chapter unknown" and tolerates it, which is the whole repair — the same choice schema 6 made for a stored
+ * `own-card` target. There is deliberately no migration script for either.
  */
 export const annotationAnchorSchema = z.discriminatedUnion("kind", [
   z.object({

@@ -15,7 +15,7 @@
 
 export interface QuoteAnchor {
   readonly kind: "quote";
-  /** The part of the source the quote sits in: a spine index for a book, a page for a PDF. */
+  /** The part of the source the quote sits in: a chapter's archive path for a book, a page for a PDF. */
   readonly locator: string;
   readonly quote: string;
   readonly prefix: string;

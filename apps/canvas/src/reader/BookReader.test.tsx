@@ -49,7 +49,7 @@ beforeEach(async () => {
 
 describe("the book reader", () => {
   it("should open on the book's title and its first chapter", async () => {
-    render(<BookReader attachmentId={"a".repeat(32)} mime="application/epub+zip" name="book" />);
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
 
     await waitFor(() => expect(screen.getByTestId("book-reader")).toBeInTheDocument());
     expect(screen.getByText("A Small Book")).toBeInTheDocument();
@@ -62,7 +62,7 @@ describe("the book reader", () => {
   });
 
   it("should draw the contents the book declares, and turn to another chapter", async () => {
-    render(<BookReader attachmentId={"a".repeat(32)} mime="application/epub+zip" name="book" />);
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
     await waitFor(() => expect(screen.getByTestId("reader-contents-toggle")).toBeInTheDocument());
 
     screen.getByTestId("reader-contents-toggle").click();
@@ -76,7 +76,7 @@ describe("the book reader", () => {
   });
 
   it("should render a chapter without its script or its remote image", async () => {
-    render(<BookReader attachmentId={"a".repeat(32)} mime="application/epub+zip" name="book" />);
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
     // The chapter is read on demand, so wait for its markup rather than for the frame around it.
     await waitFor(() =>
       expect(screen.getByTestId("reader-body").innerHTML).toContain("A second paragraph"),
@@ -93,7 +93,7 @@ describe("the book reader", () => {
 
   it("should say a book cannot be opened rather than showing an empty page", async () => {
     bytes.value = new TextEncoder().encode("this is not a book") as Uint8Array<ArrayBuffer>;
-    render(<BookReader attachmentId={"a".repeat(32)} mime="application/epub+zip" name="book" />);
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
 
     await waitFor(() => expect(screen.getByTestId("book-refused")).toBeInTheDocument());
     expect(screen.getByText(/not a zip archive/u)).toBeInTheDocument();
@@ -104,7 +104,7 @@ describe("the book reader", () => {
     bytes.value = (await zipOf([
       { path: "mimetype", text: "application/epub+zip" },
     ])) as Uint8Array<ArrayBuffer>;
-    render(<BookReader attachmentId={"a".repeat(32)} mime="application/epub+zip" name="book" />);
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
 
     await waitFor(() => expect(screen.getByTestId("book-refused")).toBeInTheDocument());
     expect(screen.getByText(/container\.xml/u)).toBeInTheDocument();
@@ -129,14 +129,7 @@ describe("a book with a highlight", () => {
       excerpt: "The first sentence of the book.",
     });
 
-    render(
-      <BookReader
-        attachmentId={"a".repeat(32)}
-        mime="application/epub+zip"
-        name="book"
-        sourceCardId={bookCardId}
-      />,
-    );
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" sourceCardId={bookCardId} />);
 
     await waitFor(() =>
       expect(screen.getByTestId("reader-body").textContent).toContain("The first sentence"),
@@ -160,14 +153,7 @@ describe("a book with a highlight", () => {
       excerpt: "The first sentence of the book.",
     });
 
-    render(
-      <BookReader
-        attachmentId={"a".repeat(32)}
-        mime="application/epub+zip"
-        name="book"
-        sourceCardId={bookCardId}
-      />,
-    );
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" sourceCardId={bookCardId} />);
     await waitFor(() => expect(screen.getByTestId("reader-highlights-toggle")).toBeInTheDocument());
 
     screen.getByTestId("reader-highlights-toggle").click();
@@ -204,14 +190,7 @@ describe("a book with a highlight", () => {
     useUiStore.setState({ canEditLayout: true });
     usePlaceStackStore.getState().stop();
 
-    render(
-      <BookReader
-        attachmentId={"a".repeat(32)}
-        mime="application/epub+zip"
-        name="book"
-        sourceCardId={bookCardId}
-      />,
-    );
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" sourceCardId={bookCardId} />);
     await waitFor(() => expect(screen.getByTestId("reader-highlights-toggle")).toBeInTheDocument());
     screen.getByTestId("reader-highlights-toggle").click();
     await waitFor(() => expect(screen.getByTestId("book-highlights")).toBeInTheDocument());
@@ -231,14 +210,14 @@ describe("a book with a highlight", () => {
 
 describe("where the reader is", () => {
   it("should say which chapter it is showing", async () => {
-    render(<BookReader attachmentId={"a".repeat(32)} mime="application/epub+zip" name="book" />);
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
     await waitFor(() => expect(screen.getByTestId("reader-where")).toBeInTheDocument());
     expect(screen.getByTestId("reader-where").textContent).toMatch(/^Chapter 1 of \d+$/);
   });
 
   it("should turn the page with the arrow keys", async () => {
     // The reader is the one surface where this is expected and the only one that did not do it.
-    render(<BookReader attachmentId={"a".repeat(32)} mime="application/epub+zip" name="book" />);
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
     await waitFor(() =>
       expect(screen.getByTestId("reader-body").textContent).toContain("The first sentence"),
     );
@@ -259,9 +238,7 @@ describe("where the reader is", () => {
     window.localStorage.clear();
     useBookStore.setState({ positions: {} });
 
-    const first = render(
-      <BookReader attachmentId={"a".repeat(32)} mime="application/epub+zip" name="book" />,
-    );
+    const first = render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
     await waitFor(() => expect(screen.getByTestId("reader-next")).toBeInTheDocument());
     screen.getByTestId("reader-next").click();
     await waitFor(() =>
@@ -269,7 +246,7 @@ describe("where the reader is", () => {
     );
     first.unmount();
 
-    render(<BookReader attachmentId={"a".repeat(32)} mime="application/epub+zip" name="book" />);
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
     await waitFor(() =>
       expect(screen.getByTestId("reader-where").textContent).toMatch(/^Chapter 2/),
     );

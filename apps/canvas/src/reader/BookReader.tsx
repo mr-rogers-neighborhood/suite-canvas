@@ -21,7 +21,6 @@ import "../styles/reader.css";
 export interface BookReaderProps {
   /** The attachment whose bytes this block names. */
   attachmentId: string;
-  mime: string;
   name: string;
   /**
    * The card that holds this block, which is what a highlight is recorded against.

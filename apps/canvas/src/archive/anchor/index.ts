@@ -1,48 +1,18 @@
 /**
  * The anchor model, and the registry every medium registers with.
  *
- * This is the file that has to be right before any medium exists, because two more are coming: a PDF
- * annotation is a rectangle on a page and a video annotation is a span of time, and both have to share one
- * record, one set of styles, one field kind and one promotion command with the book's quote. So the union is
- * defined once here, and each medium contributes a module rather than a shape.
- */
-
-/** A rectangle in a page's own coordinates, for a medium that draws where a highlight sits. */
-export interface AnchorRect {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
-
-/**
- * Where in a source an annotation sits.
+ * The union itself lives in `@suite/graph`, because the document is what stores it: `annotationSchema` is the only
+ * definition, and this module re-exports it rather than keeping a second copy that a schema change would leave
+ * behind. What belongs here is the part the graph cannot own — the registry a medium registers with, and the
+ * functions that ask a registered medium to describe or open an anchor.
  *
- * `locator` names the *part* of the source: a spine index for a book, a page for a PDF, a transcript id for a
- * video. Each kind fixes what it means, so it is a closed field rather than an extension point.
+ * Two more media are coming: a PDF annotation is a rectangle on a page and a video annotation is a span of time,
+ * and both share this record, this palette, the `annotation` field kind and one promotion command with a book's
+ * quote. So each medium contributes a module, never a shape.
  */
-export type AnnotationAnchor =
-  | {
-      readonly kind: "quote";
-      readonly locator: string;
-      readonly quote: string;
-      readonly prefix: string;
-      readonly suffix: string;
-    }
-  | {
-      readonly kind: "page";
-      readonly locator: string;
-      readonly page: number;
-      readonly rects: readonly AnchorRect[];
-    }
-  | {
-      readonly kind: "time";
-      readonly locator: string;
-      readonly startMs: number;
-      readonly endMs: number;
-    };
+import type { AnchorKind, AnnotationAnchor } from "@suite/graph";
 
-export type AnchorKind = AnnotationAnchor["kind"];
+export type { AnchorKind, AnchorRect, AnnotationAnchor } from "@suite/graph";
 
 /**
  * What a medium contributes.

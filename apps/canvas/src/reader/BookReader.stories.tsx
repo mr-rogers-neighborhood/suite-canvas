@@ -30,7 +30,6 @@ function Reader() {
       ) : (
         <BookReader
           attachmentId={"a".repeat(32)}
-          mime="application/epub+zip"
           name="A Small Book"
           source={{ status: "ready", bytes }}
         />

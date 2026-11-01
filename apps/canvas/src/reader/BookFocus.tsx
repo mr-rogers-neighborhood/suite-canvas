@@ -17,7 +17,7 @@ import { BookReader } from "./BookReader";
  */
 export function BookFocus({ cardId }: { cardId: string }) {
   const workspace = useCanvasStore((state) => state.workspace);
-  const [block, setBlock] = useState<{ id: string; mime: string; name: string } | null>(null);
+  const [block, setBlock] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     if (workspace === null) {
@@ -44,12 +44,7 @@ export function BookFocus({ cardId }: { cardId: string }) {
 
   return (
     <div className="book-focus" data-testid="book-focus">
-      <BookReader
-        attachmentId={block.id}
-        mime={block.mime}
-        name={block.name}
-        sourceCardId={cardId}
-      />
+      <BookReader attachmentId={block.id} name={block.name} sourceCardId={cardId} />
     </div>
   );
 }
@@ -58,15 +53,17 @@ export function BookFocus({ cardId }: { cardId: string }) {
 function bookBlockOf(
   workspace: NonNullable<ReturnType<typeof useCanvasStore.getState>["workspace"]>,
   cardId: string,
-): { id: string; mime: string; name: string } | null {
+): { id: string; name: string } | null {
   const nodes = workspace.bodyNodes(cardId);
   for (const node of nodes) {
     if (node.type !== MEDIA_NODE_NAME) continue;
     const attrs = node.attrs ?? {};
     if (attrs.kind !== "epub") continue;
+    // The block's `mime` is a hint the reader does not need: the archive itself is the truth, and `openEpub`
+    // refuses a file that is not one. Reading the hint here would turn away a book whose upload recorded
+    // `application/octet-stream`, which some platforms report for a perfectly good `.epub`.
     return {
       id: typeof attrs.id === "string" ? attrs.id : "",
-      mime: typeof attrs.mime === "string" ? attrs.mime : "application/epub+zip",
       name: typeof attrs.name === "string" ? attrs.name : "Untitled book",
     };
   }

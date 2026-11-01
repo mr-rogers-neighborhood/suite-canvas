@@ -67,10 +67,10 @@ they are one gesture with four starting points.
 Typing `@` in a card body offers your highlights beside your cards: picking one inserts a chip that names the passage,
 in its colour, and pressing that chip opens where the passage came from.
 
-**Done** keeps the parts and leaves the highlight where it is. **Place** makes the cards and hands them to your
-pointer, and says how many it will make before you press it: the surface steps aside, one press on the board puts the
-top card down, and pressing Place again before you place adds to the stack rather than starting a new one. A highlight
-whose card is already on a board opens that card instead of making a second one.
+**Done** keeps the parts and leaves the highlight where it is. **Place** makes its one card and hands it to your
+pointer: the surface steps aside, one press on the board puts the card down, and pressing Place again before you place
+adds to the stack rather than starting a new one. A highlight whose card is already on a board opens that card instead
+of making a second one.
 
 The highlights you have made collect in the book's **Highlights** panel, beside its contents, with the ones that
 became cards marked. They are also in the library's **Annotations** tab, grouped by book — pressing one opens the
@@ -116,7 +116,8 @@ A book protected by DRM cannot be opened, and says so rather than failing halfwa
 a page-image textbook — draws the text it can find and not the pages it cannot.
 
 The book's own stylesheet is dropped on purpose, because it would fight the app's type and could reach the network
-for a font. Pictures inside the book are drawn from the book's own files and never fetched from anywhere else.
+for a font. Every picture comes from the book's own files and is never fetched from anywhere else; the cover is drawn
+on the card, and a picture inside a chapter is not drawn yet.
 
 ## Getting a book onto the board
 

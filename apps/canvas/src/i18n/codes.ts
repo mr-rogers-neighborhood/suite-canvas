@@ -6,17 +6,13 @@
  * touching the code that raised the failure. A log line, a bug report and a test
  * all name the same string.
  *
- * The shape is `domain.subject.reason`, lowercase: `annotation.range.unanchored`
+ * The shape is `domain.subject.reason`, lowercase: `blueprint.install.unsupported`
  * says which surface, which thing and which failure without opening the module.
  *
  * Adding a code is additive. Append it here and the catalogue fails to compile
  * until it has a message, so a code cannot ship mute.
  */
 export const errorCodes = [
-  "annotation.range.stale",
-  "annotation.range.unanchored",
-  "annotation.record.incomplete",
-  "annotation.source.missing",
   "blueprint.install.empty",
   "blueprint.install.unsupported",
   "peek.target.missing",

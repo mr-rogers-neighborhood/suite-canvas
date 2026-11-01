@@ -238,7 +238,9 @@ What an inspector shows is one table, `apps/canvas/src/inspector/capabilities.ts
 
 `ContainerPanel` covers the container selection (section or portal), `LinkInspector` covers one edge, and `ExplainPanel` shows the explain context, embedded in the handbook rather than floating over the board. `TypeSettingsDialog` edits the type registry and its fields. Each of these writes through `@suite/graph`; none keeps a copy of the record it edits.
 
-Two panels read a card's metadata without owning it. `apps/canvas/src/panels/AnnotationReader.tsx` shows the passage an annotation card points into, resolved against the source's text (ADR-0072). A record keeps the quoted text and the offsets it was captured at; the quote is the anchor and the offsets are a hint, so an edit above the passage shifts the range silently. Stale means one thing: the source no longer contains the quote at all, or the source card is gone. Only that state asks the reader to act. `apps/canvas/src/panels/BlueprintInstallPanel.tsx` shows what installing a type blueprint would write, one checkbox per field, and it reads its own footer from `planBlueprintInstall` rather than counting on its own.
+One panel reads a card's metadata without owning it. `apps/canvas/src/panels/BlueprintInstallPanel.tsx` shows what installing a type blueprint would write, one checkbox per field, and it reads its own footer from `planBlueprintInstall` rather than counting on its own.
+
+A card that came out of a book has no such panel: its passage is read from the record through the read-only `annotation` field kind (`field/annotationKind.tsx`), and `AnnotationCardFace` draws the strip above its body. That is the whole surface — a highlight the build cannot find says so in the field rather than in a second resolver.
 
 ## Hover peek
 
@@ -327,10 +329,11 @@ a module each. Promotion (`reader/promote.ts`) makes an ordinary card holding a 
 whose value is `{ annotationId }`.
 
 **A book card draws itself.** `NodeCard` branches to `BookCardFace` for a card holding a book, the way it branches
-to `ViewCardFace` for a view. The cover is extracted once per session by `reader/bookCoverCache.ts` and published to a
-store the face subscribes to: a face draws synchronously and a board of forty of them must not open forty archives
-before first paint, so the tile appears, then the picture. Read is a `nodrag nopan` press on the card, because a node
-is otherwise a drag surface.
+to `ViewCardFace` for a view. The cover is extracted once per session by `reader/bookMeta.ts` and published to a
+three-state store the face subscribes to (`pending`, `none`, `ready`) — a first paint that races an upload keeps
+retrying instead of deciding the book has no cover. A face draws synchronously and a board of forty of them must not
+open forty archives before first paint, so the tile appears, then the picture. Read is a `nodrag nopan` press on the
+card, because a node is otherwise a drag surface.
 
 **The block is a cover; reading is a surface.** `BookView` reads only the package (title, author, declared cover)
 and offers Read; `CardFocusHost` branches to `BookFocus` for a card holding a book, as it already branches to
@@ -561,7 +564,7 @@ Focus is always visible on interactive elements, and a focusable read-only contr
 | Hover-peek timing and dismissal | `apps/canvas/src/canvas/peek/usePeek.test.ts` |
 | Peek resolution per entity kind | `apps/canvas/src/canvas/peek/peekResolver.test.ts` |
 | Outline peek wiring | `apps/canvas/src/canvas/peek/outlinePeek.test.tsx` |
-| Annotation range states | `apps/canvas/src/canvas/annotations/annotationRecord.test.ts` |
+| Highlight resolution | `apps/canvas/src/archive/anchor/resolve.test.ts` |
 | Blueprint install diff and partial install | `apps/canvas/src/canvas/blueprints/blueprint.test.ts` |
 | Error codes and the catalogue | `apps/canvas/src/i18n/i18n.test.ts` |
 

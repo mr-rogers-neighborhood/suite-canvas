@@ -31,7 +31,7 @@ describe("error codes", () => {
 
 describe("messageFor", () => {
   it("should return the catalogue sentence for a code", () => {
-    expect(messageFor("annotation.source.missing")).toContain("source this annotation points into");
+    expect(messageFor("blueprint.install.empty")).toContain("declares no fields");
   });
 
   it("should fill the placeholders a message declares", () => {
@@ -78,7 +78,7 @@ describe("formatMessage", () => {
   });
 
   it("should type the code set as a closed union", () => {
-    const code: ErrorCode = "annotation.range.unanchored";
+    const code: ErrorCode = "blueprint.install.unsupported";
     expect(errorCodes).toContain(code);
   });
 });

@@ -49,7 +49,19 @@ interface PlaceStackState {
    * nothing on screen to explain where it went.
    */
   placed: readonly string[];
-  start: (cardIds: readonly string[], anchorId?: string | null) => void;
+  /**
+   * The book a stack was picked up from, when it came from a reader.
+   *
+   * A stack is picked up from the library or from a book, and the two want different things when it runs out: the library
+   * is done, while a reader who placed three passages is still in the middle of reading. This is where that difference
+   * lives, and it dies with the stack like everything else here.
+   */
+  readonly fromBook: string | null;
+  start: (
+    cardIds: readonly string[],
+    anchorId?: string | null,
+    options?: { readonly fromBook?: string | null },
+  ) => void;
   /** Adds to the hand without clearing what is already in it. */
   add: (cardIds: readonly string[]) => void;
   /**
@@ -86,12 +98,20 @@ export const usePlaceStackStore = create<PlaceStackState>()((set, get) => ({
   lastPlacedId: null,
   flash: [],
   placed: [],
-  start: (cardIds, anchorId = null) => {
+  fromBook: null,
+  start: (cardIds, anchorId = null, options = {}) => {
     // A stack is a set: the same card twice would be one card placed twice.
     const unique = [...new Set(cardIds)];
     // A seeded anchor is the card the reader meant, so it is also the "last placed"
     // a mode switch would continue from.
-    set({ queue: unique, anchorId, lastPlacedId: anchorId, flash: [], placed: [] });
+    set({
+      queue: unique,
+      anchorId,
+      lastPlacedId: anchorId,
+      flash: [],
+      placed: [],
+      fromBook: options.fromBook ?? null,
+    });
   },
   add: (cardIds) => {
     const unique = [...new Set([...get().queue, ...cardIds])];
@@ -159,7 +179,7 @@ export const usePlaceStackStore = create<PlaceStackState>()((set, get) => ({
   stop: () => {
     if (flashTimer !== null) window.clearTimeout(flashTimer);
     flashTimer = null;
-    set({ queue: [], anchorId: null, lastPlacedId: null, flash: [], placed: [] });
+    set({ queue: [], anchorId: null, lastPlacedId: null, flash: [], placed: [], fromBook: null });
   },
 }));
 

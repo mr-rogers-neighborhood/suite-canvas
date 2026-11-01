@@ -13,6 +13,7 @@ import { PlaceStackCursor } from "../PlaceStackCursor";
 import { PlaceStackOutline } from "../PlaceStackOutline";
 import { PortalTransitionLayer } from "../PortalTransitionLayer";
 import { ProjectionFloat } from "../ProjectionFloat";
+import { ReturnToBookBar } from "../ReturnToBookBar";
 import { ThreadLinkPreview } from "./ThreadLinkPreview";
 import type { useBoardLinks } from "./useBoardLinks";
 import type { useBoardProjection } from "./useBoardProjection";
@@ -77,6 +78,8 @@ export function BoardOverlays({ ui, projection, links, menuItems }: BoardOverlay
       {/* What is in hand, and in what order it will go down: a stack is placed one press at a time, so the order is the
           one decision the reader can still make. */}
       <PlaceStackOutline />
+      {/* The moment after the last press, held open: the board is still usable and the reader says when they are done. */}
+      <ReturnToBookBar />
       <PortalTransitionLayer />
       {edgeDescription ? (
         <EdgeDescriptionInput

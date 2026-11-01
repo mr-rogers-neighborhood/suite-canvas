@@ -42,7 +42,11 @@ export function CardFocusHost() {
   // Something in the reader's hand — a carried highlight, or a card they were handed from Place — means the next press
   // belongs to the board. A focus surface floating over it would eat that press.
   const inHand = usePlaceStackStore((state) => state.queue.length > 0);
-  const concealed = carrying || inHand;
+  // A stack that came from a book keeps the surface concealed *after* its last card lands too: the reader is arranging
+  // what they just put down, and `ReturnToBookBar` is how they say they are finished. Without this the book reappeared
+  // the instant the queue emptied, which is the throw the bar exists to replace.
+  const placing = usePlaceStackStore((state) => state.fromBook !== null);
+  const concealed = carrying || inHand || placing;
   const model = useCardPanelModel(cardFocusId, "focus");
   const sketch = model ? isWhiteboardCard(model.card) : false;
   // A book reads in this surface rather than in its body: a selection inside `contentEditable` belongs to

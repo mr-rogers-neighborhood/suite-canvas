@@ -99,6 +99,8 @@ export function BookReader({
   const openAnnotationKinds = useUiStore((state) => state.openAnnotationKinds);
   const focusedAnnotationId = useUiStore((state) => state.focusedAnnotationId);
   const clearFocusedAnnotation = useUiStore((state) => state.clearFocusedAnnotation);
+  const bookPanelRequest = useUiStore((state) => state.bookPanelRequest);
+  const clearBookPanelRequest = useUiStore((state) => state.clearBookPanelRequest);
   const [selection, setSelection] = useState<PendingSelection | null>(null);
   /** The highlight on the raised surface, by id: a press raises, and the surface is where it is taken apart. */
   const [raisedId, setRaisedId] = useState<string | null>(null);
@@ -326,6 +328,18 @@ export function BookReader({
     const next = opened?.chapters[chapterIndex + step];
     if (next !== undefined) pick(next);
   };
+
+  /**
+   * A panel a surface asked for on the way in: "Place more annotations" is this book, at the passage list.
+   *
+   * Applied on arrival rather than read as the initial state, because the request arrives with the same render that
+   * mounts this surface and the panel is the reader's own state from then on.
+   */
+  useEffect(() => {
+    if (bookPanelRequest === null) return;
+    setPanel(bookPanelRequest);
+    clearBookPanelRequest();
+  }, [bookPanelRequest, clearBookPanelRequest]);
 
   /**
    * Scrolling to a passage once its chapter is on the page.

@@ -225,3 +225,34 @@
   background: color-mix(in srgb, var(--ink) 5%, transparent);
   font-size: 9px;
 }
+
+/*
+ * The choice after the last card lands.
+ *
+ * Centred at the bottom rather than pinned to a corner: it is a decision about the whole gesture, not a tool, and the
+ * board beneath it has to stay usable while it is up.
+ */
+.return-to-book {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  z-index: 72;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px -18px rgb(0 0 0 / 0.5);
+  font-size: 11px;
+  transform: translateX(-50%);
+}
+
+.return-to-book-done {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}

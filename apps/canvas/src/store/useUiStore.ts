@@ -228,6 +228,13 @@ interface UiState extends SessionCapabilities {
    */
   focusedAnnotationId: string | null;
   /**
+   * A panel the book reader should open when it next appears.
+   *
+   * "Place more annotations" is the same surface as reading, opened at the list you were working through, and the panel
+   * is the reader's own state. A request rather than a selection, spent on arrival, so nothing has to be un-set.
+   */
+  bookPanelRequest: "contents" | "highlights" | null;
+  /**
    * Viewer shorthand; capability flags remain the gate for every write path.
    * It is UI state (not read from the session in each component) so tests and
    * stories can render a read-only surface without a `?share=` URL. Editor
@@ -415,6 +422,8 @@ interface UiState extends SessionCapabilities {
   /** Ask the book reader to open one highlight. The caller opens the book's card; the reader raises the passage. */
   openAnnotation: (annotationId: string) => void;
   clearFocusedAnnotation: () => void;
+  requestBookPanel: (panel: "contents" | "highlights") => void;
+  clearBookPanelRequest: () => void;
   setLibraryOpen: (open: boolean, reason?: LibraryReason) => void;
   /** The named style rules: the list and its editor. */
   setLibraryTab: (tab: LibraryTab) => void;
@@ -505,6 +514,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   cardFocusId: null,
   annotationKindsOpen: false,
   focusedAnnotationId: null,
+  bookPanelRequest: null,
   readOnly: getSession().readOnly,
   setReadOnly: (readOnly) => set({ readOnly }),
   setCapabilities: (capabilities) => set(capabilities),
@@ -667,6 +677,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   closeAnnotationKinds: () => set({ annotationKindsOpen: false }),
   openAnnotation: (focusedAnnotationId) => set({ focusedAnnotationId }),
   clearFocusedAnnotation: () => set({ focusedAnnotationId: null }),
+  requestBookPanel: (bookPanelRequest) => set({ bookPanelRequest }),
+  clearBookPanelRequest: () => set({ bookPanelRequest: null }),
   openCardFocus: (cardFocusId) =>
     // Focus owns the canvas: the drawer would duplicate the same card and
     // reserve a strip of the focus surface.

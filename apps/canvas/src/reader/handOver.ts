@@ -75,7 +75,8 @@ export function handOverHighlight(input: HandOverInput): HandOverResult {
 
   const stack = usePlaceStackStore.getState();
   if (stackInHand()) stack.add([promoted.cardId]);
-  else stack.start([promoted.cardId]);
+  // The origin is the book, so running out of cards offers the reader the choice of going back rather than throwing them.
+  else stack.start([promoted.cardId], null, { fromBook: annotation.sourceCardId });
   return {
     cardId: promoted.cardId,
     existed: promoted.existed,
@@ -134,6 +135,9 @@ export function handOverHighlights(input: {
 
   const stack = usePlaceStackStore.getState();
   if (stackInHand()) stack.add(placeable);
-  else stack.start(placeable);
+  else
+    stack.start(placeable, null, {
+      fromBook: annotations[0]?.sourceCardId ?? null,
+    });
   return { cardIds: placeable, existed, trashed, inHand: true };
 }

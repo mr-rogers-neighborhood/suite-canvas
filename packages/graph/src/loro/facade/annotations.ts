@@ -58,6 +58,11 @@ export class AnnotationsFacade {
     return this.annotationsApi.deleteAnnotationsOf(sourceCardId);
   }
 
+  /** Clears the promotion link on every highlight that named this card, which is what deleting the card needs. */
+  forgetAnnotationCard(cardId: string): number {
+    return this.annotationsApi.forgetAnnotationCard(cardId);
+  }
+
   listAnnotationStyles(): AnnotationStyle[] {
     return this.annotationsApi.listAnnotationStyles();
   }

@@ -252,7 +252,9 @@ export function annotationsMethods(ctx: DocContext) {
       notify();
     },
 
-    /** Removes every highlight of one source, which is what deleting a book's card has to do. */
+    /**
+     * Removes every highlight of one source, which is what deleting a book's card has to do.
+     */
     deleteAnnotationsOf(sourceCardId: string): number {
       const doomed = ctx.api.annotations
         .listAnnotationsOf(sourceCardId)
@@ -262,6 +264,29 @@ export function annotationsMethods(ctx: DocContext) {
       ctx.commit(`${STRUCT_ORIGIN}delete-annotations`);
       notify();
       return doomed.length;
+    },
+
+    /**
+     * Forgets the card that named each of these highlights, without touching the highlights themselves.
+     *
+     * The other half of a card's death. A promoted card is deletable like any other, and a record that still named it
+     * would be a book claiming a passage became a card that no longer exists — the book's panel would keep its tick,
+     * and a second promotion would be refused for a card nobody can open. The mark stays: it is in the book either
+     * way, and the reader may promote it again.
+     */
+    forgetAnnotationCard(cardId: string): number {
+      let changed = 0;
+      for (const annotation of ctx.api.annotations.listAnnotations()) {
+        if (annotation.cardId !== cardId) continue;
+        const fields = ctx.annotationsMap.get(annotation.id);
+        if (!isMap(fields)) continue;
+        fields.delete("cardId");
+        changed += 1;
+      }
+      if (changed === 0) return 0;
+      ctx.commit(`${STRUCT_ORIGIN}annotations-unpromoted`);
+      notify();
+      return changed;
     },
 
     /** The palette, in the order it is drawn; the defaults when a workspace has never set one. */

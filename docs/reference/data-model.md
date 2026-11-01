@@ -210,6 +210,13 @@ promoted card does: the quote is already in the card's body as ordinary text, th
 cleared as the app, and the highlight may produce another card later. The highlight is never deleted by de-linking,
 because the mark is still in the book.
 
+**A highlight dies with its source, not with its card.** Purging a book deletes its highlights in the same commit
+(`deleteAnnotationsOf`), because a mark on a source that no longer exists can never be painted again. Trashing a book
+does not: trash is reversible and the mark is the reader's writing, so a restored book comes back with its marks.
+Purging a *card* is the other direction and only clears the link (`forgetAnnotationCard`), so the passage stays
+promotable and the book stops claiming a card that is gone. Purge stays one undo step because both calls run inside
+its batch.
+
 **Promotion says where it is going.** `promoteAnnotation` takes a `Placement` union, `{ onBoard: { boardId,
 position } }` or `{ inbox: true }`, rather than an optional board and an optional point. A caller that names a board
 must say where the card goes, so the state that wrote neither (a card in the inbox that its creator believed was on a

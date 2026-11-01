@@ -329,3 +329,68 @@ describe("a share and its annotations", () => {
     expect(projected.withheldAnnotations).toBe(1);
   });
 });
+
+describe("a highlight's life with its source", () => {
+  it("should go when its book is purged, because a mark on a gone book can never be painted", () => {
+    const { workspace, book } = fixture();
+    highlight(workspace, book.id);
+
+    workspace.purgeCard(book.id);
+
+    expect(workspace.listAnnotations()).toEqual([]);
+  });
+
+  it("should stay when its book is only trashed, and come back when the book is restored", () => {
+    const { workspace, book } = fixture();
+    const mark = highlight(workspace, book.id);
+
+    workspace.trashCard(book.id);
+    expect(workspace.getAnnotation(mark.id)).toBeDefined();
+
+    workspace.restoreCard(book.id);
+    expect(workspace.listAnnotationsOf(book.id).map((entry) => entry.id)).toEqual([mark.id]);
+  });
+
+  it("should lose its promotion link when the card it became is purged, and keep the mark", () => {
+    const { workspace, book } = fixture();
+    const mark = highlight(workspace, book.id);
+    const card = workspace.createCard();
+    workspace.setAnnotationCard(mark.id, card.id);
+
+    workspace.purgeCard(card.id);
+
+    // One mark, still there, and promotable again: the card was a decision, the passage is the record.
+    expect(workspace.getAnnotation(mark.id)?.cardId).toBeUndefined();
+    expect(workspace.getAnnotation(mark.id)?.sourceCardId).toBe(book.id);
+  });
+
+  it("should take a purged card and its highlights back together, in one undo step", () => {
+    const { workspace, book } = fixture();
+    highlight(workspace, book.id);
+    highlight(workspace, book.id);
+
+    workspace.purgeCard(book.id);
+    expect(workspace.listAnnotations()).toHaveLength(0);
+
+    workspace.undo();
+
+    expect(workspace.getCard(book.id)).toBeDefined();
+    expect(workspace.listAnnotationsOf(book.id)).toHaveLength(2);
+  });
+
+  it("should empty the trash and its highlights together", () => {
+    const { workspace, book } = fixture();
+    highlight(workspace, book.id);
+    workspace.trashCard(book.id);
+
+    workspace.emptyTrash();
+
+    expect(workspace.listAnnotations()).toEqual([]);
+  });
+
+  it("should report nothing to forget for a card no highlight named", () => {
+    const { workspace, book } = fixture();
+    highlight(workspace, book.id);
+    expect(workspace.forgetAnnotationCard("a-card-nobody-used")).toBe(0);
+  });
+});

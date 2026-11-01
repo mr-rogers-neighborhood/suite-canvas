@@ -406,6 +406,11 @@ export function cardMethods(ctx: DocContext) {
      * on, and keeping it meant a restored card grew a second line every time it was
      * linked again. Restoring brings the card back without them; that is the honest
      * trade, and it is what "delete the links" means.
+     *
+     * A highlight is the exception, and the reason is the same one that makes it a
+     * record rather than a card: it is the reader's writing about the source, not a
+     * link the source owns. Trashing a book and emptying the trash are two different
+     * decisions, and only the second one is "this book is gone".
      */
     trashCard(id: string): void {
       const card = ctx.api.cards.getCard(id);
@@ -426,22 +431,31 @@ export function cardMethods(ctx: DocContext) {
     },
 
     purgeCard(id: string): void {
-      const placements = ctx.api.placements.listCardPlacements(id);
-      const edges = ctx.api.edges
-        .listEdges()
-        .filter((edge) => edge.source === id || edge.target === id);
-      ctx.cards.delete(id);
-      for (const placement of placements) {
-        ctx.placements.delete(placementKey(placement.boardId, placement.cardId));
-      }
-      for (const edge of edges) ctx.edges.delete(edge.id);
-      ctx.content.delete(id);
-      ctx.titles.delete(id);
-      ctx.drawings.delete(id);
-      // The card's own outgoing refs are derived from content that is gone;
-      // other cards keep their dangling ids on purpose.
-      ctx.references.delete(id);
-      ctx.commit(`${STRUCT_ORIGIN}purge-card`);
+      // One commit, one undo step — including the highlights below, which commit on their own and are folded into
+      // this batch.
+      ctx.batch(`${STRUCT_ORIGIN}purge-card`, () => {
+        const placements = ctx.api.placements.listCardPlacements(id);
+        const edges = ctx.api.edges
+          .listEdges()
+          .filter((edge) => edge.source === id || edge.target === id);
+        ctx.cards.delete(id);
+        for (const placement of placements) {
+          ctx.placements.delete(placementKey(placement.boardId, placement.cardId));
+        }
+        for (const edge of edges) ctx.edges.delete(edge.id);
+        ctx.content.delete(id);
+        ctx.titles.delete(id);
+        ctx.drawings.delete(id);
+        // The card's own outgoing refs are derived from content that is gone;
+        // other cards keep their dangling ids on purpose.
+        ctx.references.delete(id);
+        // A highlight is the reader's writing *about* a source, so it leaves with the source: a mark whose book is
+        // gone can never be painted again, and keeping it would leave the library full of passages pointing at
+        // nothing. The other direction is a link, not writing, so a card being purged only clears the record's
+        // `cardId` and the mark stays promotable.
+        ctx.api.annotations.deleteAnnotationsOf(id);
+        ctx.api.annotations.forgetAnnotationCard(id);
+      });
     },
 
     emptyTrash(): void {

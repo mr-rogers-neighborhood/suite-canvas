@@ -111,6 +111,47 @@ describe("the book reader", () => {
     );
   });
 
+  it("should turn to a passage's chapter and scroll it into view when a surface asks for it", async () => {
+    // A highlight in the second chapter, asked for the way the library and a `@` mention ask.
+    const chapterTwo = bookCardId;
+    const workspace = useCanvasStore.getState().workspace;
+    if (workspace === null) throw new Error("no workspace");
+    const annotation = workspace.addAnnotation({
+      sourceCardId: chapterTwo,
+      styleId: "style-yellow",
+      anchor: {
+        kind: "quote",
+        locator: "OEBPS/text/chapter2.xhtml",
+        quote: "A place a link can point at.",
+        prefix: "",
+        suffix: "",
+      },
+      excerpt: "A place a link can point at.",
+    });
+    // jsdom has no `scrollIntoView` at all, so the stub defines it: where the reader would scroll is the assertion.
+    const scrolled: string[] = [];
+    const prototype = HTMLElement.prototype as unknown as Record<string, unknown>;
+    const original = prototype.scrollIntoView;
+    prototype.scrollIntoView = function scrollIntoView(this: HTMLElement) {
+      scrolled.push(this.getAttribute("data-annotation-id") ?? this.tagName);
+    };
+
+    try {
+      useUiStore.getState().openAnnotation(annotation.id);
+      render(<BookReader attachmentId={"a".repeat(32)} name="book" sourceCardId={chapterTwo} />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId("reader-body").textContent).toContain(
+          "A place a link can point at.",
+        ),
+      );
+      // The passage, not the chapter: the mark that was painted for this highlight is what got scrolled to.
+      await waitFor(() => expect(scrolled).toContain(annotation.id));
+    } finally {
+      prototype.scrollIntoView = original;
+    }
+  });
+
   it("should open the archive once, however often the reading position is written", async () => {
     render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
     await waitFor(() => expect(screen.getByTestId("book-reader")).toBeInTheDocument());

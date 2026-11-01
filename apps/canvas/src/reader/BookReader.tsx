@@ -16,7 +16,12 @@ import { HighlightMenu } from "./HighlightMenu";
 import { HighlightPalette } from "./HighlightPalette";
 import { handOverHighlight } from "./handOver";
 import { beginHighlightDrag } from "./highlightDrag";
-import { type PendingSelection, ReaderChapter, scrollToId } from "./ReaderChapter";
+import {
+  type PendingSelection,
+  ReaderChapter,
+  scrollToAnnotation,
+  scrollToId,
+} from "./ReaderChapter";
 import { useBookBytes } from "./useBookBytes";
 import { useHighlights } from "./useHighlights";
 import "../styles/reader.css";
@@ -67,6 +72,14 @@ export function BookReader({
   const [state, setState] = useState<State>({ status: "loading" });
   const [chapterPath, setChapterPath] = useState<string | null>(null);
   const [chapterXml, setChapterXml] = useState<string | null>(null);
+  /**
+   * The chapter the current markup actually belongs to.
+   *
+   * `chapterPath` changes the instant a page turns, while `chapterXml` still holds the previous chapter until the next
+   * read lands, so anything that scrolls to a place in the chapter has to ask *this* rather than the path the reader has
+   * already chosen. Without it a link's fragment was applied to the chapter being left behind.
+   */
+  const [markupPath, setMarkupPath] = useState<string | null>(null);
   const [panel, setPanel] = useState<"none" | "contents" | "highlights">("none");
   const remembered = useBookPosition(attachmentId);
   /**
@@ -102,6 +115,18 @@ export function BookReader({
     readonly path: string;
     readonly id: string;
   } | null>(null);
+  /**
+   * A highlight to scroll to once its chapter is painted.
+   *
+   * Separate from the fragment because it is answered by a mark rather than an id, and because it survives the chapter
+   * not being loaded yet: the reader turns the page, and the scroll happens when the words are on it.
+   */
+  const [pendingMark, setPendingMark] = useState<{
+    readonly path: string;
+    readonly id: string;
+  } | null>(null);
+  /** Bumped by every paint, so a scroll can wait for the marks rather than for a guess about ordering. */
+  const [paintRevision, setPaintRevision] = useState(0);
   /** Archive path → object URL for the pictures in this chapter. Revoked when the chapter changes. */
   const [assets, setAssets] = useState<ReadonlyMap<string, string>>(new Map());
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -187,6 +212,7 @@ export function BookReader({
     // Cleared while the next chapter is read, so the reader never draws one chapter's words under another chapter's
     // name. The pause is a tick; a stale pairing is a highlight painted against the wrong text.
     setChapterXml(null);
+    setMarkupPath(chapterPath);
     void state.book.readChapter(chapterPath).then((xml) => {
       if (!cancelled) setChapterXml(xml);
     });
@@ -302,6 +328,23 @@ export function BookReader({
   };
 
   /**
+   * Scrolling to a passage once its chapter is on the page.
+   *
+   * Guarded on the markup being non-empty for the same reason the fragment is: scrolling against the previous chapter
+   * would land on a mark that is about to be replaced, which looks like a jump and then a second jump.
+   */
+  // `paintRevision` is a dependency the effect never reads: it is the signal that the marks arrived, and the scroll it
+  // triggers is the whole point of waiting for them.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the paint is the invalidation signal.
+  useEffect(() => {
+    if (pendingMark === null) return;
+    if (markupPath !== pendingMark.path || markup.html.length === 0) return;
+    // Kept until the mark is really there: the paint is its own commit, so a chapter the painter could not place leaves
+    // this waiting rather than scrolling to nothing.
+    if (scrollToAnnotation(bodyRef.current, pendingMark.id)) setPendingMark(null);
+  }, [pendingMark, markupPath, markup.html, paintRevision]);
+
+  /**
    * A passage some other surface asked for: the library's Annotations tab, or a `@` mention of a highlight.
    *
    * Those surfaces know the highlight and the book, and neither is inside the reader, so the request arrives through the
@@ -314,7 +357,14 @@ export function BookReader({
     // A highlight this book does not hold belongs to another source; the store's request is spent either way.
     if (target !== undefined) {
       const locator = target.anchor.locator;
-      if (state.book.chapters.includes(locator) && locator !== chapterPath) pick(locator);
+      if (state.book.chapters.includes(locator) && locator !== chapterPath) {
+        // The chapter it needs, and the scroll it needs, waiting for that chapter to paint.
+        setPendingMark({ path: locator, id: target.id });
+        pick(locator);
+      } else if (chapterPath !== null) {
+        // Already here: scroll now rather than after a chapter that is not coming.
+        scrollToAnnotation(bodyRef.current, target.id);
+      }
       setRaisedId(target.id);
     }
     clearFocusedAnnotation();
@@ -344,18 +394,26 @@ export function BookReader({
    */
   useEffect(() => {
     if (pendingFragment === null) return;
-    if (chapterPath !== pendingFragment.path || markup.html.length === 0) return;
+    if (markupPath !== pendingFragment.path || markup.html.length === 0) return;
     // A miss is a link to an anchor the book no longer has, and there is nothing more to wait for.
     scrollToId(bodyRef.current, pendingFragment.id);
     setPendingFragment(null);
-  }, [pendingFragment, chapterPath, markup.html]);
+  }, [pendingFragment, markupPath, markup.html]);
 
   useEffect(() => {
     const body = bodyRef.current;
     if (body === null) return;
     const onScroll = () => applyScroll();
     body.addEventListener("scroll", onScroll, { passive: true });
-    return () => body.removeEventListener("scroll", onScroll);
+    return () => {
+      body.removeEventListener("scroll", onScroll);
+      // A trailing write must not outlive the surface that scheduled it: a timer firing after the book closes writes a
+      // position nobody asked for, and this one is occasionally the previous chapter's.
+      if (rememberTimer.current !== null) {
+        window.clearTimeout(rememberTimer.current);
+        rememberTimer.current = null;
+      }
+    };
   }, [applyScroll]);
 
   /**
@@ -586,7 +644,9 @@ export function BookReader({
       {/* The sanitiser's own account of what it refused, shown only when a reader would notice the loss. */}
       {markup.report === null ? null : <ChapterNotice report={markup.report} />}
 
-      <div className="reader-body" data-testid="reader-body">
+      {/* The ref is what the remembered offset, the progress rule and the scroll-position writes all read, so a reader
+          who closes a book halfway down a chapter comes back to it. */}
+      <div ref={bodyRef} className="reader-body" data-testid="reader-body">
         {markup.html.length === 0 ? (
           <p className="reader-note">This chapter could not be read.</p>
         ) : (
@@ -596,6 +656,7 @@ export function BookReader({
             annotations={highlights.annotations}
             styles={highlights.styles}
             onSelect={setSelection}
+            onPainted={() => setPaintRevision((current) => current + 1)}
             onNavigate={(path, fragment) => {
               // A link into another document is a page turn that lands on a place: `pick` resets the offset, and the
               // fragment is applied once the new chapter is in the DOM.

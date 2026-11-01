@@ -59,12 +59,16 @@ describe("the annotation on a card", () => {
     expect(screen.getByText("A Small Book")).toBeInTheDocument();
   });
 
-  it("should go back to the book the passage is in", () => {
+  it("should go back to the passage, not just the book", () => {
     render(<AnnotationCardFace card={card} />);
     fireEvent.click(screen.getByTestId("annotation-strip-reopen"));
+
+    // The book's card opens the reader, and the highlight is what the reader is asked to show: without it the book comes
+    // back on whatever chapter the reader last left, which need not be where the sentence is.
     expect(useUiStore.getState().cardFocusId).toBe(
       workspace.getAnnotation(annotationId)?.sourceCardId,
     );
+    expect(useUiStore.getState().focusedAnnotationId).toBe(annotationId);
   });
 
   it("should write the passage into the body when the reader keeps the card", async () => {

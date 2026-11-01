@@ -55,6 +55,14 @@ export interface ReaderChapterProps {
     onDrop: ((annotationId: string, screen: { x: number; y: number }) => void) | null,
   ) => void;
   /**
+   * Called after every paint, once the marks are in the DOM.
+   *
+   * The marks arrive in a commit of their own: the chapter's markup and its annotations do not land together, so a host
+   * that wants to scroll to a passage has nothing to wait on but this. Guessing at the ordering is what made the first
+   * attempt at "reopen at the passage" scroll nothing at all.
+   */
+  onPainted?: ((report: PaintReport) => void) | undefined;
+  /**
    * A footnotes-and-contents link, which the sanitiser rewrote into `#<archive path>[#<fragment>]`.
    *
    * The chapter cannot follow one itself: another document is another read, and the reader owns which chapter is
@@ -73,6 +81,7 @@ export function ReaderChapter({
   onMenu,
   onCarry,
   onNavigate,
+  onPainted,
 }: ReaderChapterProps) {
   const container = useRef<HTMLDivElement | null>(null);
 
@@ -91,6 +100,7 @@ export function ReaderChapter({
     // Written only when it changes: painting runs on every annotation change, and a state write per paint is a render
     // per paint.
     setUnplaced((current) => (current === report.unplaced ? current : report.unplaced));
+    onPainted?.(report);
   }, [html, locator, annotations, styles]);
 
   const capture = useCallback(() => {
@@ -330,7 +340,31 @@ export function scrollToId(root: HTMLElement | null, id: string): boolean {
   if (root === null) return false;
   for (const element of root.querySelectorAll("[id]")) {
     if (element.id !== id) continue;
-    element.scrollIntoView({ block: "start" });
+    // Optional for the same reason `scrollToAnnotation`'s is: an engine without it must not break the link press.
+    element.scrollIntoView?.({ block: "start" });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Scrolls a chapter to one highlight, and centres it.
+ *
+ * A mark is the one element that knows where a passage actually is on the page: the painter put it there this render, so
+ * its box is the sentence's box. `block: "center"` rather than `"start"` because the point is to *show* the passage, and
+ * a line at the very top edge reads as "this is where you are" about as well as a line at the bottom does.
+ *
+ * False when the chapter does not hold that mark, which is the honest answer for a highlight that resolves nowhere: a
+ * reader who is not moved should not be left believing the book jumped.
+ */
+export function scrollToAnnotation(root: HTMLElement | null, annotationId: string): boolean {
+  if (root === null) return false;
+  // Compared, not interpolated into a selector: an id that arrived from another client is not a place to build one.
+  for (const mark of root.querySelectorAll("mark[data-annotation-id]")) {
+    if (mark.getAttribute("data-annotation-id") !== annotationId) continue;
+    // Optional on purpose: scrolling is a courtesy, and a surface without it (a test environment, an old engine) must not
+    // lose the raise that came with it.
+    mark.scrollIntoView?.({ block: "center" });
     return true;
   }
   return false;

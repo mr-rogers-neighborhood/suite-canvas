@@ -41,6 +41,13 @@ export interface ReaderChapterProps {
     start: { x: number; y: number },
     onDrop: ((annotationId: string, screen: { x: number; y: number }) => void) | null,
   ) => void;
+  /**
+   * A footnotes-and-contents link, which the sanitiser rewrote into `#<archive path>[#<fragment>]`.
+   *
+   * The chapter cannot follow one itself: another document is another read, and the reader owns which chapter is
+   * open. A link to a place in *this* chapter needs nothing from the caller and is scrolled here.
+   */
+  onNavigate: (path: string, fragment: string | null) => void;
 }
 
 export function ReaderChapter({
@@ -52,6 +59,7 @@ export function ReaderChapter({
   onActivate,
   onMenu,
   onCarry,
+  onNavigate,
 }: ReaderChapterProps) {
   const container = useRef<HTMLDivElement | null>(null);
 
@@ -126,9 +134,22 @@ export function ReaderChapter({
         onClick={(event) => {
           // A press on a mark is a press on the highlight, and a press anywhere else is a press on the words: the
           // selection gesture must not be mistaken for a promotion.
-          const mark = (event.target as HTMLElement).closest("mark[data-annotation-id]");
+          const target = event.target as HTMLElement;
+          const mark = target.closest("mark[data-annotation-id]");
           const id = mark?.getAttribute("data-annotation-id");
           if (id !== null && id !== undefined && id.length > 0) onActivate(id);
+          const link = target.closest("a[href^='#']");
+          const href = link?.getAttribute("href");
+          if (href === null || href === undefined || href.length <= 1) return;
+          // The sanitiser's own shape: `#<archive path>` or `#<archive path>#<fragment>`, and a bare `#fragment` for a
+          // mark inside this chapter. Nothing here is a URL, so there is no third case to fall through to.
+          event.preventDefault();
+          const [path = "", fragment] = href.slice(1).split("#");
+          if (path.length === 0) {
+            if (fragment !== undefined) scrollToId(container.current, fragment);
+            return;
+          }
+          onNavigate(path, fragment ?? null);
         }}
         onContextMenu={(event) => {
           const mark = (event.target as HTMLElement).closest("mark[data-annotation-id]");
@@ -273,6 +294,22 @@ function paintHighlights(
   }
 
   return { painted, unplaced };
+}
+
+/**
+ * Scrolls a chapter to the element a link named, if this chapter still has it.
+ *
+ * `element.id === id` rather than a selector, because an anchor written by a publisher can be anything a selector
+ * would have to escape, and a footnote numbered `1` would otherwise throw inside a click handler.
+ */
+export function scrollToId(root: HTMLElement | null, id: string): boolean {
+  if (root === null) return false;
+  for (const element of root.querySelectorAll("[id]")) {
+    if (element.id !== id) continue;
+    element.scrollIntoView({ block: "start" });
+    return true;
+  }
+  return false;
 }
 
 /**

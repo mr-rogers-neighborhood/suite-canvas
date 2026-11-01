@@ -9,12 +9,14 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { BookHighlights } from "./BookHighlights";
 import { useBookPosition, useBookStore } from "./bookStore";
+import { ChapterNotice } from "./ChapterNotice";
+import { imageMime, imagePaths, resolveImages } from "./chapterAssets";
 import { HighlightFocus } from "./HighlightFocus";
 import { HighlightMenu } from "./HighlightMenu";
 import { HighlightPalette } from "./HighlightPalette";
 import { handOverHighlight } from "./handOver";
 import { beginHighlightDrag } from "./highlightDrag";
-import { type PendingSelection, ReaderChapter } from "./ReaderChapter";
+import { type PendingSelection, ReaderChapter, scrollToId } from "./ReaderChapter";
 import { useBookBytes } from "./useBookBytes";
 import { useHighlights } from "./useHighlights";
 import "../styles/reader.css";
@@ -93,6 +95,13 @@ export function BookReader({
    * on every render would fight a reader who scrolled away from where they were put.
    */
   const [pendingOffset, setPendingOffset] = useState(0);
+  /** A fragment a link asked for, and the chapter that holds it, waiting until that chapter has been drawn. */
+  const [pendingFragment, setPendingFragment] = useState<{
+    readonly path: string;
+    readonly id: string;
+  } | null>(null);
+  /** Archive path → object URL for the pictures in this chapter. Revoked when the chapter changes. */
+  const [assets, setAssets] = useState<ReadonlyMap<string, string>>(new Map());
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const progressRef = useRef<HTMLSpanElement | null>(null);
 
@@ -152,6 +161,9 @@ export function BookReader({
   useEffect(() => {
     if (state.status !== "open" || chapterPath === null) return;
     let cancelled = false;
+    // Cleared while the next chapter is read, so the reader never draws one chapter's words under another chapter's
+    // name. The pause is a tick; a stale pairing is a highlight painted against the wrong text.
+    setChapterXml(null);
     void state.book.readChapter(chapterPath).then((xml) => {
       if (!cancelled) setChapterXml(xml);
     });
@@ -165,6 +177,47 @@ export function BookReader({
     const sanitised = sanitiseChapter(chapterXml, chapterPath);
     return { html: sanitised.html, report: sanitised.report };
   }, [chapterXml, chapterPath]);
+
+  /**
+   * The chapter's pictures, as object URLs.
+   *
+   * The sanitiser leaves an `src` as the archive path, so drawing the chapter without this asks the app's own origin
+   * for `OEBPS/images/picture.png` and 404s. The bytes are in the book the reader already has open.
+   */
+  useEffect(() => {
+    const book = state.status === "open" ? state.book : null;
+    const paths = book === null ? [] : imagePaths(markup.html);
+    if (book === null || paths.length === 0) {
+      setAssets((current) => (current.size === 0 ? current : new Map()));
+      return;
+    }
+    let cancelled = false;
+    const made: string[] = [];
+    void Promise.all(
+      paths.map(async (path) => {
+        const bytes = await book.readResource(path);
+        if (bytes === null || typeof URL.createObjectURL !== "function") return null;
+        const url = URL.createObjectURL(
+          new Blob([bytes as unknown as BlobPart], { type: imageMime(path) }),
+        );
+        made.push(url);
+        return [path, url] as const;
+      }),
+    ).then((entries) => {
+      if (cancelled) {
+        for (const url of made) URL.revokeObjectURL(url);
+        return;
+      }
+      setAssets(
+        new Map(entries.filter((entry): entry is readonly [string, string] => entry !== null)),
+      );
+    });
+    return () => {
+      cancelled = true;
+      // A chapter's pictures are its own: leaving them attached is a leak the reader never notices and never stops.
+      for (const url of made) URL.revokeObjectURL(url);
+    };
+  }, [state, markup.html]);
 
   // The open book, or null while it loads: everything below is a hook, and a hook cannot sit behind an early return.
   const opened = state.status === "open" ? state.book : null;
@@ -222,6 +275,20 @@ export function BookReader({
     body.scrollTop = pendingOffset;
     applyScroll();
   }, [pendingOffset, applyScroll]);
+
+  /**
+   * A link's destination, applied once the chapter that holds it is on the page.
+   *
+   * Guarded on the chapter matching and on the markup being non-empty, because the two arrive a tick apart: scrolling
+   * against the previous chapter's markup would land on an anchor that has the same name in the wrong place.
+   */
+  useEffect(() => {
+    if (pendingFragment === null) return;
+    if (chapterPath !== pendingFragment.path || markup.html.length === 0) return;
+    // A miss is a link to an anchor the book no longer has, and there is nothing more to wait for.
+    scrollToId(bodyRef.current, pendingFragment.id);
+    setPendingFragment(null);
+  }, [pendingFragment, chapterPath, markup.html]);
 
   useEffect(() => {
     const body = bodyRef.current;
@@ -453,16 +520,26 @@ export function BookReader({
         </ol>
       ) : null}
 
+      {/* The sanitiser's own account of what it refused, shown only when a reader would notice the loss. */}
+      {markup.report === null ? null : <ChapterNotice report={markup.report} />}
+
       <div className="reader-body" data-testid="reader-body">
         {markup.html.length === 0 ? (
           <p className="reader-note">This chapter could not be read.</p>
         ) : (
           <ReaderChapter
-            html={markup.html}
+            html={resolveImages(markup.html, assets)}
             locator={chapterPath}
             annotations={highlights.annotations}
             styles={highlights.styles}
             onSelect={setSelection}
+            onNavigate={(path, fragment) => {
+              // A link into another document is a page turn that lands on a place: `pick` resets the offset, and the
+              // fragment is applied once the new chapter is in the DOM.
+              if (!book.chapters.includes(path)) return;
+              if (fragment !== null) setPendingFragment({ path, id: fragment });
+              pick(path);
+            }}
             onCarry={(annotationId, start, onDrop) =>
               beginHighlightDrag(annotationId, start, onDrop)
             }

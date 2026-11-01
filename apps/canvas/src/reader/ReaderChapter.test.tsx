@@ -41,6 +41,7 @@ function draw(
 ) {
   const onActivate = vi.fn();
   const onMenu = vi.fn();
+  const onNavigate = vi.fn();
   const { container } = render(
     <ReaderChapter
       html={html}
@@ -51,10 +52,11 @@ function draw(
       onCarry={vi.fn()}
       onActivate={onActivate}
       onMenu={onMenu}
+      onNavigate={onNavigate}
       {...handlers}
     />,
   );
-  return { container, onActivate, onMenu };
+  return { container, onActivate, onMenu, onNavigate };
 }
 
 describe("painting a chapter", () => {
@@ -154,6 +156,7 @@ describe("painting a chapter", () => {
         onCarry={vi.fn()}
         onActivate={vi.fn()}
         onMenu={vi.fn()}
+        onNavigate={vi.fn()}
       />,
     );
     expect(container.querySelectorAll("mark.reader-highlight")).toHaveLength(1);
@@ -168,6 +171,7 @@ describe("painting a chapter", () => {
         onCarry={vi.fn()}
         onActivate={vi.fn()}
         onMenu={vi.fn()}
+        onNavigate={vi.fn()}
       />,
     );
 
@@ -192,6 +196,7 @@ describe("painting a chapter", () => {
       onCarry: vi.fn(),
       onActivate: vi.fn(),
       onMenu: vi.fn(),
+      onNavigate: vi.fn(),
     };
     const { container, rerender } = render(<ReaderChapter {...props} styles={[blue]} />);
     expect(container.querySelectorAll("mark")).toHaveLength(1);

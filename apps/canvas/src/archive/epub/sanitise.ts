@@ -260,8 +260,13 @@ export function resolveResource(src: string, basePath: string): string | null {
 }
 
 /**
- * A link, as reader navigation: `#fragment` stays local, a path within the book becomes an archive path, and
- * anything outside the book loses its href rather than becoming a live link to the web.
+ * A link, as reader navigation: a fragment stays local, a path within the book becomes an archive path, and anything
+ * outside the book loses its href rather than becoming a live link to the web.
+ *
+ * The fragment is kept, as `#<archive path>#<fragment>`, because a footnote in a book almost always points at a *place*
+ * inside another document and not at the top of it. Dropping it — which this did — means a footnote press lands on the
+ * first line of the notes file and the reader has to find the number themselves. An archive path cannot contain a `#`
+ * (the resolver has already split it off), so the second one is unambiguous.
  */
 export function rewriteLink(href: string, basePath: string): string | null {
   const trimmed = href.trim();
@@ -269,7 +274,15 @@ export function rewriteLink(href: string, basePath: string): string | null {
   if (trimmed.startsWith("#")) return trimmed;
   if (/^[a-z][a-z0-9+.-]*:/iu.test(trimmed)) return null;
   const resolved = resolveRelative(trimmed, basePath);
-  return resolved === null ? null : `#${resolved}`;
+  if (resolved === null) return null;
+  const fragment = fragmentOf(trimmed);
+  return fragment === null ? `#${resolved}` : `#${resolved}#${fragment}`;
+}
+
+/** The fragment an href names, or null when it names none. */
+function fragmentOf(href: string): string | null {
+  const at = href.indexOf("#");
+  return at === -1 ? null : href.slice(at + 1);
 }
 
 /** Resolve a relative path against the document it appears in, dropping any fragment. */

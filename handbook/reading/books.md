@@ -127,8 +127,12 @@ A book protected by DRM cannot be opened, and says so rather than failing halfwa
 a page-image textbook — draws the text it can find and not the pages it cannot.
 
 The book's own stylesheet is dropped on purpose, because it would fight the app's type and could reach the network
-for a font. Every picture comes from the book's own files and is never fetched from anywhere else; the cover is drawn
-on the card, and a picture inside a chapter is not drawn yet.
+for a font. Pictures come from the book's own files and never from anywhere else — the cover on the card and the
+illustrations inside a chapter are both read out of the archive. A book that points at a picture on the web keeps the
+words and loses the picture, and the chapter says so under the header.
+
+A footnote is a link, and it works like one: pressing one turns to the page it names and scrolls to the place it
+points at, and a link back to a mark on the same page goes there without turning.
 
 ## Getting a book onto the board
 

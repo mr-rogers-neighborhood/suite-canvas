@@ -69,6 +69,48 @@ beforeEach(async () => {
 });
 
 describe("the book reader", () => {
+  it("should follow a link into another chapter, and land on the place it names", async () => {
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-body").textContent).toContain("first sentence"),
+    );
+
+    // The fixture's first chapter links to `chapter2.xhtml#deeper`, and the sanitiser keeps the fragment: a footnote
+    // points at a place in the notes, not at their first line.
+    const link = screen.getByText("link");
+    fireEvent.click(link);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-body").textContent).toContain(
+        "A place a link can point at.",
+      ),
+    );
+    expect(screen.getByTestId("reader-where").textContent).toContain("Chapter 2 of");
+  });
+
+  it("should draw a picture from the book rather than asking its own origin for one", async () => {
+    const { bookEntries, zipOf } = await import("../archive/epub/fixture");
+    // The fixture's own entries, with the first chapter replaced: an appended entry would lose to the original.
+    const entries = bookEntries().map((entry) =>
+      entry.path === "OEBPS/text/chapter1.xhtml"
+        ? {
+            ...entry,
+            text: `<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>One</title></head>
+<body><p>The first sentence of the book.</p><img src="../images/cover.png" alt="A cover"/></body></html>`,
+          }
+        : entry,
+    );
+    bytes.value = (await zipOf(entries)) as Uint8Array<ArrayBuffer>;
+
+    render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
+    // A blob URL from the archive's own bytes, which is the whole point: the archive path in `src` is a request
+    // against the app's origin, and it 404s.
+    await waitFor(() =>
+      expect(screen.getByAltText("A cover").getAttribute("src") ?? "").toMatch(/^blob:/u),
+    );
+  });
+
   it("should open the archive once, however often the reading position is written", async () => {
     render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
     await waitFor(() => expect(screen.getByTestId("book-reader")).toBeInTheDocument());

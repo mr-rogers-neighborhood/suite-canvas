@@ -82,7 +82,8 @@ describe("sanitising a chapter", () => {
       `<html><body><p><a href="../text/chapter2.xhtml#deeper">Onward</a> <a href="https://example.com">Out</a></p></body></html>`,
       BASE,
     );
-    expect(html).toContain('href="#OEBPS/text/chapter2.xhtml"');
+    // The fragment survives, because a footnote points at a place in the notes file rather than at its first line.
+    expect(html).toContain('href="#OEBPS/text/chapter2.xhtml#deeper"');
     expect(html).not.toContain("example.com");
     expect(html).toContain("Out");
     expect(report.links).toBe(1);
@@ -115,6 +116,12 @@ describe("resolving the paths a book writes", () => {
 
   it("should keep a fragment local", () => {
     expect(rewriteLink("#deeper", BASE)).toBe("#deeper");
+  });
+
+  it("should keep the fragment of a link into another document", () => {
+    // A footnote points at a *place* in the notes file. Dropping the fragment lands the reader at its first line.
+    expect(rewriteLink("notes.xhtml#n3", BASE)).toBe("#OEBPS/text/notes.xhtml#n3");
+    expect(rewriteLink("../notes.xhtml#n3", BASE)).toBe("#OEBPS/notes.xhtml#n3");
   });
 
   it("should refuse a link that leaves the book", () => {

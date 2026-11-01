@@ -240,7 +240,7 @@ What an inspector shows is one table, `apps/canvas/src/inspector/capabilities.ts
 
 One panel reads a card's metadata without owning it. `apps/canvas/src/panels/BlueprintInstallPanel.tsx` shows what installing a type blueprint would write, one checkbox per field, and it reads its own footer from `planBlueprintInstall` rather than counting on its own.
 
-A card that came out of a book has no such panel: its passage is read from the record through the read-only `annotation` field kind (`field/annotationKind.tsx`), and `AnnotationCardFace` draws the strip above its body. That is the whole surface — a highlight the build cannot find says so in the field rather than in a second resolver.
+A card that came out of a book has no such panel: its passage is read from the record through the read-only `annotation` field kind (`field/annotationKind.tsx`), and `AnnotationCardFace` draws the strip above its body. That is the whole surface. A highlight the build cannot find says so in the field rather than in a second resolver.
 
 ## Hover peek
 
@@ -330,7 +330,7 @@ whose value is `{ annotationId }`.
 
 **A book card draws itself.** `NodeCard` branches to `BookCardFace` for a card holding a book, the way it branches
 to `ViewCardFace` for a view. The cover is extracted once per session by `reader/bookMeta.ts` and published to a
-three-state store the face subscribes to (`pending`, `none`, `ready`) — a first paint that races an upload keeps
+three-state store the face subscribes to (`pending`, `none`, `ready`): a first paint that races an upload keeps
 retrying instead of deciding the book has no cover. A face draws synchronously and a board of forty of them must not
 open forty archives before first paint, so the tile appears, then the picture. Read is a `nodrag nopan` press on the
 card, because a node is otherwise a drag surface.
@@ -363,11 +363,26 @@ id. Every mark carries `tabindex`, `role="button"` and the keys `ReaderChapter` 
 menu key or Shift-F10 opens its menu.
 
 **Painting is a reset, and it only paints this chapter.** `paintHighlights` unwraps every mark already in the chapter
-before it draws — a repaint that wrapped again nested a mark inside the previous one on every restyle — and the effect
+before it draws, because a repaint that wrapped again nested a mark inside the previous one on every restyle, and the effect
 depends on the rendered markup as well as the annotations, because a new chapter replaces the container's children and
 the previous pass is simply gone. Which highlights belong here is `anchor.locator`'s job: a chapter's path in the
 archive. A highlight of another chapter is neither painted nor counted, and one this chapter cannot place is counted
 and reported under the header.
+
+**A book's pictures come from the book.** The sanitiser leaves an `src` as the archive path, because nothing here is
+fetched at render time. So `chapterAssets.ts` reads the paths out of the markup, loads each from the open archive, and
+`resolveImages` points the image at a blob URL, revoking them when the chapter changes. A picture the archive cannot
+produce gets an empty `src` and keeps its `alt`, rather than a request against the app's own origin that 404s.
+
+**Footnotes land where they point.** The sanitiser rewrites a link into `#<archive path>[#<fragment>]` and keeps the
+fragment, because a footnote points at a *place* in the notes document rather than at its first line. A link to
+another chapter is a page turn through `pick`, with the fragment applied once that chapter is drawn; a bare `#fragment`
+scrolls within this one. `scrollToId` matches on `element.id` rather than a selector, because a publisher's anchor can
+be anything a selector would have to escape.
+
+**What a chapter lost is said out loud.** `sanitiseChapter` returns a report of every refusal, and `ChapterNotice`
+shows the two a reader would notice: a picture the book points outside itself for, and script that was removed. The
+routine ones (the book's stylesheet, its `meta` and `link`) would be noise every chapter.
 
 **Two paragraphs are two words apart.** `chapterTextIndex` separates block-level runs with one space and gives a
 whitespace-only node no run at all, because a reader's selection across a paragraph break arrives normalised to single
@@ -391,7 +406,7 @@ expect, and a part outside the recipe is shown rather than hidden. The mapping i
 choosing a card type seeds the slots from that type's own text properties.
 
 **A promotion is one undo step, and never makes a second card.** `promoteAnnotation` runs inside `workspace.batch`
-because `createCard`, `setTitleText`, `addField`, `setProperty` and `setAnnotationCard` each commit on their own — six
+because `createCard`, `setTitleText`, `addField`, `setProperty` and `setAnnotationCard` each commit on their own, and six
 presses of undo for one gesture was the thing the one-card rule was meant to prevent. A highlight whose card is in the
 trash is reported, not replaced: `handOverHighlight` carries nothing in that case, so a press cannot put a deleted card
 on a board while its library row says it is deleted.
@@ -404,8 +419,8 @@ is the same idea without the travel: `handOverHighlight` makes the card in the i
 stack is in hand. The card lands where the reader presses, which is why Place never picks a point for them.
 
 **A promoted card wears its passage, and its body is its type's.** `AnnotationCardFace` draws a strip above the body,
-not instead of it: the kind's colour, the words, the book, **Reopen** and **Keep it**. Promotion writes no body — the
-type's template is the body, and a type without one gives a card with no body — so a card whose type shows `Source` in
+not instead of it: the kind's colour, the words, the book, **Reopen** and **Keep it**. Promotion writes no body: the
+type's template is the body, and a type without one gives a card with no body. So a card whose type shows `Source` in
 its template reads the book from the property rather than from a paragraph. `Keep it` is the one moment the words are
 written down: it appends the quote as a blockquote and a paragraph mentioning the book, clears the `annotation`
 property as the app, and clears the record's `cardId`, all in one batch.

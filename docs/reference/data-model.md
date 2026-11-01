@@ -212,7 +212,7 @@ from.
 
 **Promotion writes properties, and the type's template writes the body.** `promoteAnnotation` makes an ordinary card
 and gives it two things it could not invent: a read-only `Highlight` property naming the record, and a `Source`
-`card` property naming the book. It writes no body nodes — a type's template card already supplies a body, and
+`card` property naming the book. It writes no body nodes: a type's template card already supplies a body, and
 `createCard` copies it, so a promotion that wrote its own quote over the top would discard the template the reader
 authored for that kind. A type with no template produces a card with no body, exactly as it would for any other new
 card. The `Source` property is what keeps the backlink: `propertySources` and `outgoingPropertyLinks` read a
@@ -222,7 +222,7 @@ card. The `Source` property is what keeps the backlink: `propertySources` and `o
 otherwise the template's own title stands; otherwise the passage's first sentence does, through `titleFrom`.
 
 **One highlight is one card, and the link is never overwritten.** `promoteAnnotation` opens the card the record already
-names; a card in the trash is reported rather than replaced, because a second card would orphan the first — the record
+names; a card in the trash is reported rather than replaced, because a second card would orphan the first, and the record
 holds one `cardId`. The whole promotion runs in one `workspace.batch`, so it is one undo step, and the record is re-read
 from the document at the top so a surface holding a stale copy cannot make the second card the rule forbids.
 

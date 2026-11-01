@@ -1,5 +1,6 @@
 import type { Annotation, AnnotationStyle } from "@suite/graph";
 import { partText } from "@suite/graph";
+import { useMemo, useState } from "react";
 import { IconGlyph } from "../icons/IconGlyph";
 import { beginHighlightDrag } from "../reader/highlightDrag";
 
@@ -12,6 +13,11 @@ import { beginHighlightDrag } from "../reader/highlightDrag";
  *
  * A row is not a `LibraryItem`: an item is a card or a board, and a highlight is neither. The list is its own
  * component for the same reason `LibraryMediaList` is, and for the same reason it is honest about it.
+ *
+ * **The row controls live here, not in the drawer.** The drawer's search box and facets are built for cards, and a
+ * highlight has neither a type nor a section, so the tab carries its own: a query over the words and the book's name,
+ * and the kinds as chips, which is the same filter the book's own panel offers. Keeping them in this component is what
+ * lets the drawer stay a frame.
  */
 export interface LibraryAnnotationListProps {
   annotations: readonly Annotation[];
@@ -41,9 +47,34 @@ export function LibraryAnnotationList({
   onRemove,
   onEditKinds,
 }: LibraryAnnotationListProps) {
-  const kindsButton =
-    onEditKinds === undefined ? null : (
-      <div className="library-annotations-head">
+  /** `null` is every kind; `"none"` is the ones with no card yet; anything else is a kind's id. */
+  const [kind, setKind] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
+  const shown = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return annotations.filter((annotation) => {
+      if (kind === "none" && annotation.cardId !== undefined) return false;
+      if (kind !== null && kind !== "none" && annotation.styleId !== kind) return false;
+      if (needle.length === 0) return true;
+      const words = annotation.excerpt ?? quoteOf(annotation);
+      const book = bookTitles.get(annotation.sourceCardId) ?? "";
+      return `${words} ${book}`.toLowerCase().includes(needle);
+    });
+  }, [annotations, kind, query, bookTitles]);
+
+  const kindsButton = (
+    <div className="library-annotations-head">
+      <input
+        className="views-input library-annotations-search"
+        type="search"
+        aria-label="Search your highlights"
+        placeholder="Search highlights"
+        data-testid="library-annotation-search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      {onEditKinds === undefined ? null : (
         <button
           type="button"
           className="views-button views-button--quiet"
@@ -53,8 +84,9 @@ export function LibraryAnnotationList({
           <IconGlyph icon="lucide:sliders-horizontal" size={12} />
           Kinds
         </button>
-      </div>
-    );
+      )}
+    </div>
+  );
 
   if (annotations.length === 0) {
     return (
@@ -67,11 +99,41 @@ export function LibraryAnnotationList({
     );
   }
 
-  const books = [...groupBy(annotations, (annotation) => annotation.sourceCardId).entries()];
+  const books = [...groupBy(shown, (annotation) => annotation.sourceCardId).entries()];
 
   return (
     <div className="library-annotations" data-testid="library-annotations">
       {kindsButton}
+      <div
+        className="reader-mark-filters"
+        role="toolbar"
+        aria-label="Filter the highlights"
+        data-testid="library-annotation-filters"
+      >
+        <KindChip label="All" active={kind === null} onPick={() => setKind(null)} testId="all" />
+        <KindChip
+          label="Not a card yet"
+          active={kind === "none"}
+          onPick={() => setKind("none")}
+          testId="none"
+        />
+        {styles.map((entry) => (
+          <KindChip
+            key={entry.id}
+            label={entry.name}
+            colour={entry.color}
+            active={kind === entry.id}
+            onPick={() => setKind(kind === entry.id ? null : entry.id)}
+            testId={entry.id}
+          />
+        ))}
+      </div>
+      {shown.length === 0 ? (
+        <p className="views-empty" data-testid="library-annotations-filtered-empty">
+          <span className="views-empty-title">Nothing matches</span>
+          <span>Clear the search or pick another kind.</span>
+        </p>
+      ) : null}
       {books.map(([bookId, entries]) => (
         <section key={bookId} className="library-annotation-book">
           <h3 className="library-annotation-book-title">{bookTitles.get(bookId) ?? "A book"}</h3>
@@ -150,6 +212,41 @@ export function LibraryAnnotationList({
         </section>
       ))}
     </div>
+  );
+}
+
+/** One filter as a chip, with its kind's colour when it is a kind. The book's panel uses the same shape. */
+function KindChip({
+  label,
+  colour,
+  active,
+  onPick,
+  testId,
+}: {
+  label: string;
+  colour?: string | undefined;
+  active: boolean;
+  onPick: () => void;
+  testId: string;
+}) {
+  return (
+    <button
+      type="button"
+      className="style-chip"
+      data-testid={`library-annotation-filter-${testId}`}
+      data-checked={active ? "true" : undefined}
+      aria-pressed={active}
+      onClick={onPick}
+    >
+      {colour === undefined ? null : (
+        <span
+          aria-hidden="true"
+          className="reader-mark-dot"
+          style={{ background: colour, marginRight: 4 }}
+        />
+      )}
+      {label}
+    </button>
   );
 }
 

@@ -84,6 +84,8 @@ export function BookReader({
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const openCardFocus = useUiStore((state) => state.openCardFocus);
   const openAnnotationKinds = useUiStore((state) => state.openAnnotationKinds);
+  const focusedAnnotationId = useUiStore((state) => state.focusedAnnotationId);
+  const clearFocusedAnnotation = useUiStore((state) => state.clearFocusedAnnotation);
   const [selection, setSelection] = useState<PendingSelection | null>(null);
   /** The highlight on the raised surface, by id: a press raises, and the surface is where it is taken apart. */
   const [raisedId, setRaisedId] = useState<string | null>(null);
@@ -103,11 +105,32 @@ export function BookReader({
   /** Archive path → object URL for the pictures in this chapter. Revoked when the chapter changes. */
   const [assets, setAssets] = useState<ReadonlyMap<string, string>>(new Map());
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  const readerRef = useRef<HTMLDivElement | null>(null);
   const progressRef = useRef<HTMLSpanElement | null>(null);
 
   // Derived *after* the state it reads. A derived value above the `useState` that feeds it is a temporal dead zone:
   // a crash on the first render of a book that has highlights, and nothing at all in a book that has none.
   const raised = highlights.annotations.find((entry) => entry.id === raisedId) ?? null;
+
+  /**
+   * Where the palette goes: under the words that were selected.
+   *
+   * Measured against the reader's own box rather than the viewport, because the palette is positioned inside it. The
+   * x is clamped so a selection at either edge keeps its buttons on the page, and the palette flips above the words when
+   * there is no room below them, which is the common case for the last line of a screen.
+   */
+  const paletteAt = useMemo(() => {
+    if (selection === null) return undefined;
+    const root = readerRef.current;
+    if (root === null) return undefined;
+    const box = root.getBoundingClientRect();
+    const { rect } = selection;
+    const centre = rect.left + rect.width / 2 - box.left;
+    const x = Math.min(Math.max(centre, 92), Math.max(92, box.width - 92));
+    const below = rect.top + rect.height - box.top + 8;
+    const above = rect.top - box.top - 44;
+    return { x, y: below + 44 > box.height && above > 0 ? above : below };
+  }, [selection]);
   // The properties a promoted highlight can fill: the type's own fields, so a reader can point a part at a property
   // that already means something rather than typing a name and hoping.
   const fieldNames = (workspace?.listTypes() ?? [])
@@ -253,19 +276,48 @@ export function BookReader({
     }, 250);
   }, [attachmentId, chapterCount, chapterIndex, chapterPath, remember]);
 
-  const pick = (path: string) => {
-    setChapterPath(path);
-    setPanel("none");
-    // A new chapter starts at its top: carrying the offset over would drop the reader mid-page somewhere they have
-    // never been.
-    setPendingOffset(0);
-    remember(attachmentId, path, 0);
-  };
+  const pick = useCallback(
+    (path: string) => {
+      setChapterPath(path);
+      setPanel("none");
+      // A new chapter starts at its top: carrying the offset over would drop the reader mid-page somewhere they have
+      // never been.
+      setPendingOffset(0);
+      remember(attachmentId, path, 0);
+    },
+    [attachmentId, remember],
+  );
 
   const turn = (step: number) => {
     const next = opened?.chapters[chapterIndex + step];
     if (next !== undefined) pick(next);
   };
+
+  /**
+   * A passage some other surface asked for: the library's Annotations tab, or a `@` mention of a highlight.
+   *
+   * Those surfaces know the highlight and the book, and neither is inside the reader, so the request arrives through the
+   * UI store. Opening it means two things at once: turn to the chapter the passage sits in, so that closing the raised
+   * surface leaves the reader where the words are, and raise the passage itself.
+   */
+  useEffect(() => {
+    if (focusedAnnotationId === null || state.status !== "open") return;
+    const target = highlights.annotations.find((entry) => entry.id === focusedAnnotationId);
+    // A highlight this book does not hold belongs to another source; the store's request is spent either way.
+    if (target !== undefined) {
+      const locator = target.anchor.locator;
+      if (state.book.chapters.includes(locator) && locator !== chapterPath) pick(locator);
+      setRaisedId(target.id);
+    }
+    clearFocusedAnnotation();
+  }, [
+    focusedAnnotationId,
+    state,
+    highlights.annotations,
+    chapterPath,
+    pick,
+    clearFocusedAnnotation,
+  ]);
 
   // The remembered offset is applied once the chapter is in the DOM, and only once: re-applying it would drag a
   // reader back to where they were every time anything re-rendered.
@@ -404,6 +456,7 @@ export function BookReader({
 
   return (
     <div
+      ref={readerRef}
       className="reader"
       data-testid="book-reader"
       data-handbook-region="book-reader"
@@ -613,6 +666,7 @@ export function BookReader({
         <HighlightPalette
           styles={highlights.styles}
           anchor={selection.anchor}
+          at={paletteAt}
           onPick={(styleId: string) => {
             const made = highlights.add({
               styleId,

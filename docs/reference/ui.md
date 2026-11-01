@@ -398,6 +398,17 @@ nothing, so no release depends on listener order. The mention chip is still a so
 `MentionChipNodeView` dispatches to `AnnotationMentionChip` for a node carrying `annotationId`, which is in the publish
 allowlist for `mention`.
 
+**The palette sits where the words are.** A selection reports its own bounding rect and the reader converts it into its
+own box, rather than pinning the palette to the bottom edge where a reader has to go looking for it. The x is clamped so
+a selection at either edge keeps its buttons on the page, and the palette flips above the words when there is no room
+below them. With no measurement it falls back to the bottom edge, because a palette somewhere beats a palette nowhere.
+
+**Opening a highlight opens the passage.** The library's Annotations tab and a `@` mention both put the highlight's id
+in the UI store and then open the book's card: the reader turns to the chapter the anchor names and raises the mark. A
+chip used to open the card a highlight became, which is a different thing and one the reader may not have made; its
+tooltip promised the passage. The library's own tab carries its own search and kind chips rather than borrowing the
+drawer's, because a highlight has no type, tag or section to facet on.
+
 **A kind is the mapping.** A highlight has a **kind**; a card has a **type**. `AnnotationStyle.templateTypeId` names the
 card a kind produces and `.recipe` lists the destinations it fills. The raise surface renders that list as slots, so a
 reader fills properties instead of choosing destinations each time; `Add a part` still allows one the kind did not

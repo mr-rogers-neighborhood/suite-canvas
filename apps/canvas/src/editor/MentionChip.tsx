@@ -382,7 +382,7 @@ function AnnotationMentionChip({ annotationId }: { annotationId: string }) {
   const styles = workspace?.listAnnotationStyles() ?? [];
   const annotation = annotations.find((entry) => entry.id === annotationId);
   const openCardFocus = useUiStore((state) => state.openCardFocus);
-  const openInspector = useUiStore((state) => state.openInspector);
+  const openAnnotation = useUiStore((state) => state.openAnnotation);
 
   if (annotation === undefined) {
     return (
@@ -412,10 +412,11 @@ function AnnotationMentionChip({ annotationId }: { annotationId: string }) {
         style={{ borderColor: style?.color ?? "var(--accent)" }}
         onClick={(event) => {
           event.preventDefault();
-          // The card is the thing a surface can open; the passage is where the book should land, which the reader
-          // does by opening the book's card and pressing the mark there.
-          if (annotation.cardId !== undefined) openCardFocus(annotation.cardId);
-          else openInspector(annotation.sourceCardId);
+          // The chip is a reference to a passage, so it opens the passage: the reader turns to that chapter and raises
+          // the mark. It used to open the promoted card, which is a different thing the reader may not have made, and
+          // the tooltip promised otherwise.
+          openAnnotation(annotation.id);
+          openCardFocus(annotation.sourceCardId);
         }}
       >
         <span

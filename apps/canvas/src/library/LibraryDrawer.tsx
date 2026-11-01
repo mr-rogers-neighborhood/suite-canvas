@@ -123,6 +123,7 @@ export function LibraryDrawer({
   const views = useSavedViews(workspace);
   const openCardFocus = useUiStore((state) => state.openCardFocus);
   const openAnnotationKinds = useUiStore((state) => state.openAnnotationKinds);
+  const openAnnotation = useUiStore((state) => state.openAnnotation);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   /** The workspace's highlights, re-read when one changes: this list is the reader's record of what they marked. */
   const annotations = useAnnotations(workspace);
@@ -602,6 +603,9 @@ export function LibraryDrawer({
           bookTitles={annotationBookTitles}
           onOpen={(annotation) => {
             close();
+            // The book *and* the passage: the reader raises the highlight and turns to the chapter it sits in, so
+            // "open" means the words rather than the cover.
+            openAnnotation(annotation.id);
             openCardFocus(annotation.sourceCardId);
           }}
           onPlace={(annotation) => {

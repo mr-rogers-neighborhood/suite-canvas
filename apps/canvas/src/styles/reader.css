@@ -227,6 +227,12 @@
   transform: translateX(-50%);
 }
 
+/* Measured: the host reports where the words are, so the fallback above is only for a surface that cannot. */
+.reader-palette[data-positioned="true"] {
+  bottom: auto;
+  transform: translateX(-50%);
+}
+
 .reader-palette-color {
   width: 18px;
   height: 18px;
@@ -1073,8 +1079,16 @@
 
 .library-annotations-head {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
   padding-bottom: 2px;
+}
+
+/* The row's own search: the drawer's is built for cards, and a highlight has no type or section to facet on. */
+.library-annotations-search {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 11px;
 }
 
 /* ---------- A mention of a highlight ---------- */

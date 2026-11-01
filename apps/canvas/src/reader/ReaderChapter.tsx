@@ -14,6 +14,19 @@ import { IconGlyph } from "../icons/IconGlyph";
  */
 export interface PendingSelection {
   readonly anchor: Extract<Annotation["anchor"], { kind: "quote" }>;
+  /**
+   * Where the words are, in viewport coordinates.
+   *
+   * A palette pinned to the bottom of the reader is a palette the reader has to find: the selection it acts on is under
+   * their eyes, so the buttons belong there. The rect is reported as the browser measured it and the host converts it,
+   * because the chapter does not know what the palette's offset parent is.
+   */
+  readonly rect: {
+    readonly left: number;
+    readonly top: number;
+    readonly width: number;
+    readonly height: number;
+  };
 }
 
 export interface ReaderChapterProps {
@@ -84,7 +97,18 @@ export function ReaderChapter({
     const root = container.current;
     if (root === null) return;
     const pending = selectionAnchor(root, locator);
-    if (pending !== null) onSelect({ anchor: pending });
+    if (pending === null) return;
+    const range = window.getSelection()?.getRangeAt(0);
+    const rect = range?.getBoundingClientRect();
+    onSelect({
+      anchor: pending,
+      rect: {
+        left: rect?.left ?? 0,
+        top: rect?.top ?? 0,
+        width: rect?.width ?? 0,
+        height: rect?.height ?? 0,
+      },
+    });
   }, [onSelect, locator]);
 
   return (

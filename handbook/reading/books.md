@@ -119,7 +119,12 @@ A mark is a control: it takes focus with **tab**, opens with **enter** or **spac
 that all belong to one highlight, and a highlight the chapter cannot find is counted under the header rather than
 quietly left out.
 
-The **Highlights** panel filters: everything, the ones that are not cards yet, or one kind at a time.
+The **Highlights** panel filters: everything, the ones that are not cards yet, or one kind at a time. The library's
+**Annotations** tab carries the same filters plus a search over the words and the book's name, which is what you want
+once a book has a hundred marks. Pressing a highlight there opens it where it lives: the reader turns to that chapter
+and raises the passage.
+
+The colours appear over the words you selected rather than at the bottom of the page.
 
 ## What it will not do
 

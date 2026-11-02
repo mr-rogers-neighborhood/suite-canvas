@@ -2117,8 +2117,11 @@ html[data-inspector-linking] .card-inspector {
   opacity: 0.85;
 }
 
+/* `context-stroke` lets one marker take the colour of the line it ends, so a coloured section link gets a coloured
+   arrowhead without a marker per link. */
 .section-link-arrow {
   fill: var(--ink-muted);
+  fill: context-stroke;
 }
 
 .section-link.is-off-lens {

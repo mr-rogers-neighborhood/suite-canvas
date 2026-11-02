@@ -1,8 +1,10 @@
-import type { GraphEdge } from "@suite/graph";
+import { type GraphEdge, resolveSurfaceStyle } from "@suite/graph";
 import { ViewportPortal } from "@xyflow/react";
 import { useState } from "react";
 import { useEdges } from "../../store/workspaceStore";
 import { useIsolatedEdgeId } from "../routeIsolation";
+import { swatchOf, useSurfacePaint } from "../surfaceContext";
+import { linkStroke } from "../surfacePaint";
 import {
   asRouteMode,
   pairOffset,
@@ -98,6 +100,7 @@ export function SectionLinkLayer({
   } | null>(null);
   const edges = useEdges();
   const isolatedEdgeId = useIsolatedEdgeId();
+  const surfacePaint = useSurfacePaint();
 
   if (links.length === 0) return null;
 
@@ -200,6 +203,12 @@ export function SectionLinkLayer({
                   selected ? " is-selected" : ""
                 }`}
                 d={path}
+                // A section has no React Flow node, so this line is drawn here rather than by the edge layer, and it used
+                // to take its colour from CSS alone: a link to a section kept the theme's blue whatever swatch it wore.
+                style={linkStroke(
+                  resolveSurfaceStyle(link.edge.style, "link"),
+                  swatchOf(link.edge.style, surfacePaint)?.colour ?? null,
+                )}
                 markerEnd="url(#section-link-arrow)"
               />
             </g>

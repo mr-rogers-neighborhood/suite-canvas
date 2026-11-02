@@ -444,22 +444,53 @@ function paintAreas(
   const layer = document.createElement("div");
   layer.className = "reader-areas";
   layer.setAttribute("aria-hidden", "true");
+  const rootBox = root.getBoundingClientRect();
   for (const annotation of chapter.annotations) {
     const rects = rectsOf(annotation);
     if (rects.length === 0) continue;
     if (annotation.anchor.kind !== "quote") continue;
     if (chapterOf(annotation.anchor.locator, chapter.locator) === "elsewhere") continue;
-    const color =
+    const colour =
       chapter.styles.find((entry) => entry.id === annotation.styleId)?.color ?? "var(--accent)";
-    for (const rect of rects) {
-      const box = document.createElement("div");
+    const paint = (box: HTMLElement) => {
       box.className = "reader-area";
-      box.style.left = `${String(rect.x * 100)}%`;
-      box.style.top = `${String(rect.y * 100)}%`;
-      box.style.width = `${String(rect.width * 100)}%`;
-      box.style.height = `${String(rect.height * 100)}%`;
-      box.style.background = `color-mix(in srgb, ${color} 22%, transparent)`;
+      box.style.background = `color-mix(in srgb, ${colour} 22%, transparent)`;
       layer.append(box);
+    };
+
+    /**
+     * The words decide the box whenever the chapter still has them.
+     *
+     * A stored rectangle is a fraction of the column, measured at one text size on one screen, so it drifts the moment the
+     * reader changes either — and the words do not. Painting over the marks the painter has just placed means the box
+     * follows the passage through a reflow instead of hanging where it was first drawn; one box per line the passage runs
+     * over is also what an area highlight should look like once it settles.
+     *
+     * The stored rectangle is still the record, and still what is painted when the words cannot be found: a medium with no
+     * text to resolve has nothing better.
+     */
+    const marks = [...root.querySelectorAll<HTMLElement>("mark[data-annotation-id]")].filter(
+      (mark) => mark.getAttribute("data-annotation-id") === annotation.id,
+    );
+    const boxes = marks.flatMap((mark) => [...mark.getClientRects()]);
+    if (boxes.length > 0) {
+      for (const box of boxes) {
+        const div = document.createElement("div");
+        div.style.left = `${String(box.left - rootBox.left)}px`;
+        div.style.top = `${String(box.top - rootBox.top)}px`;
+        div.style.width = `${String(box.width)}px`;
+        div.style.height = `${String(box.height)}px`;
+        paint(div);
+      }
+      continue;
+    }
+    for (const rect of rects) {
+      const div = document.createElement("div");
+      div.style.left = `${String(rect.x * 100)}%`;
+      div.style.top = `${String(rect.y * 100)}%`;
+      div.style.width = `${String(rect.width * 100)}%`;
+      div.style.height = `${String(rect.height * 100)}%`;
+      paint(div);
     }
   }
   // Prepended, so the layer sits before the words: the text is drawn over its own highlight, not through it.

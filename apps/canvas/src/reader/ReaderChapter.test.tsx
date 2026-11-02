@@ -334,4 +334,43 @@ describe("painting a chapter", () => {
     );
     expect(container.querySelectorAll(".reader-areas")).toHaveLength(1);
   });
+
+  /**
+   * The box follows the words.
+   *
+   * A stored rectangle is a fraction of the column at one text size on one screen, so it drifts as soon as the reader
+   * changes either. The marks the painter has just placed do not drift, so the box is drawn over them whenever they are
+   * there — and over the stored fractions only when the words cannot be found.
+   */
+  it("should draw the area over its words rather than where it was first dragged", () => {
+    const boxes = [
+      { left: 10, top: 20, width: 100, height: 18 },
+      { left: 10, top: 38, width: 60, height: 18 },
+    ] as DOMRectList;
+    const original = Element.prototype.getClientRects;
+    Element.prototype.getClientRects = () => boxes;
+    try {
+      const { container } = draw("<p>The first sentence of the book.</p>", [
+        annotation("first sentence", {
+          anchor: {
+            kind: "quote",
+            locator: CHAPTER,
+            quote: "first sentence",
+            prefix: "",
+            suffix: "",
+            // The drag that made it, at a text size this chapter no longer has.
+            rects: [{ x: 0.5, y: 0.5, width: 0.1, height: 0.01 }],
+          },
+        }),
+      ]);
+      const areas = [...container.querySelectorAll<HTMLElement>(".reader-area")];
+      // One box per line the passage runs over, at the words' own coordinates.
+      expect(areas).toHaveLength(2);
+      expect(areas[0]?.style.left).toBe("10px");
+      expect(areas[0]?.style.width).toBe("100px");
+      expect(areas[1]?.style.top).toBe("38px");
+    } finally {
+      Element.prototype.getClientRects = original;
+    }
+  });
 });

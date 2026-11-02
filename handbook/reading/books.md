@@ -155,8 +155,9 @@ The dashed-square button in the header turns a drag into a rectangle instead of 
 quoted, so a paragraph, a table or a figure becomes one highlight in the usual way, and the palette arrives over it
 like any other passage. Press the button again and dragging selects words again.
 
-The rectangle is drawn with the highlight and stored beside the words rather than instead of them. That is the whole
-design: if the book reflows and the box drifts, the highlight still knows its words, and the mark is still right.
+The rectangle is drawn with the highlight and stored beside the words rather than instead of them, and the box you see
+is drawn over the words themselves: change the text size, the width or the theme, and the box moves with the passage
+rather than staying where it was first dragged. The stored rectangle is what a medium without text would fall back to.
 
 ## Finding a passage by its words
 

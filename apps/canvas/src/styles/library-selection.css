@@ -233,7 +233,34 @@
  * Centred at the bottom rather than pinned to a corner: it is a decision about the whole gesture, not a tool, and the
  * board beneath it has to stay usable while it is up.
  */
-.return-to-book {
+.action-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+/* The note is the sentence; the actions keep their width, because the numbers in them move as a reader picks. */
+.action-bar-note {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-muted);
+}
+
+/*
+ * The choice after the last card lands.
+ *
+ * Centred at the bottom rather than pinned to a corner: it is a decision about the whole gesture, not a tool, and the
+ * board beneath it has to stay usable while it is up.
+ */
+.action-bar--floating {
   position: fixed;
   bottom: 18px;
   left: 50%;
@@ -248,14 +275,6 @@
   box-shadow: 0 12px 32px -18px rgb(0 0 0 / 0.5);
   font-size: 11px;
   transform: translateX(-50%);
-}
-
-.return-to-book-done {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--ink-muted);
-  white-space: nowrap;
 }
 
 /* The placement mode, under the queue's header: one control, the same component the canvas pill draws. */

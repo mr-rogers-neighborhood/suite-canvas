@@ -1139,23 +1139,10 @@
 }
 
 /* The bar that appears with a selection: the order it will be placed in is the order rows were ticked. */
-.reader-marks-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
+/* The same bar as the one that floats over the board, seated in this panel: it ends a gesture here too. */
+.reader-marks .action-bar {
   border-bottom: 1px solid var(--hairline);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
-  font-size: 11px;
-}
-
-.reader-marks-bar-count {
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ink-muted);
 }
 
 /* ---------- The library's annotation list ---------- */

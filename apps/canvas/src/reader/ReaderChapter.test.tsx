@@ -346,7 +346,7 @@ describe("painting a chapter", () => {
     const boxes = [
       { left: 10, top: 20, width: 100, height: 18 },
       { left: 10, top: 38, width: 60, height: 18 },
-    ] as DOMRectList;
+    ] as unknown as DOMRectList;
     const original = Element.prototype.getClientRects;
     Element.prototype.getClientRects = () => boxes;
     try {

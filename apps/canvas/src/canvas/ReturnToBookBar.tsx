@@ -1,3 +1,4 @@
+import { ActionBar } from "../chrome/ActionBar";
 import { IconGlyph } from "../icons/IconGlyph";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useUiStore } from "../store/useUiStore";
@@ -53,29 +54,30 @@ export function ReturnToBookBar() {
   if (fromBook === null || toPlace > 0) return null;
 
   return (
-    <div className="return-to-book" data-testid="return-to-book" role="toolbar" aria-label="Placed">
-      <span className="return-to-book-done">
-        <IconGlyph icon="lucide:check" size={12} />
-        Placed. Arrange the cards, or go back.
-      </span>
-      <button
-        type="button"
-        className="views-button views-button--quiet"
-        data-testid="return-to-book-more"
-        title="Back to the book with your highlights open"
-        onClick={placeMore}
-      >
-        Place more annotations
-      </button>
-      <button
-        type="button"
-        className="views-button views-button--primary"
-        data-testid="return-to-book-go"
-        title="Back to the page you were reading"
-        onClick={returnToBook}
-      >
-        Return to book
-      </button>
-    </div>
+    <ActionBar
+      testId="return-to-book"
+      floating
+      note={
+        <>
+          <IconGlyph icon="lucide:check" size={12} />
+          Placed. Arrange the cards, or go back.
+        </>
+      }
+      actions={[
+        {
+          label: "Place more annotations",
+          testId: "return-to-book-more",
+          title: "Back to the book with your highlights open",
+          onSelect: placeMore,
+        },
+        {
+          label: "Return to book",
+          testId: "return-to-book-go",
+          title: "Back to the page you were reading",
+          primary: true,
+          onSelect: returnToBook,
+        },
+      ]}
+    />
   );
 }

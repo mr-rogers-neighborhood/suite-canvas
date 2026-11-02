@@ -2,6 +2,7 @@ import type { Annotation, AnnotationStyle } from "@suite/graph";
 import { useState } from "react";
 import { AnnotationKindChips, matchesKind } from "../annotations/AnnotationKindChips";
 import { AnnotationRow, wordsOf } from "../annotations/AnnotationRow";
+import { ActionBar } from "../chrome/ActionBar";
 import { IconGlyph } from "../icons/IconGlyph";
 
 /**
@@ -93,32 +94,24 @@ export function BookHighlights({
         </p>
       ) : null}
       {selected.length === 0 || onPlaceMany === undefined ? null : (
-        <div className="reader-marks-bar" data-testid="reader-marks-selection">
-          <span className="reader-marks-bar-count">
-            {selected.length} {selected.length === 1 ? "highlight" : "highlights"} picked
-          </span>
-          <button
-            type="button"
-            className="views-button views-button--quiet"
-            data-testid="reader-marks-clear"
-            onClick={() => setSelected([])}
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            className="views-button views-button--primary"
-            data-testid="reader-marks-place-selection"
-            onClick={() => {
-              // In the order they were ticked: a stack goes down in the order it was built, and that is the reader's only
-              // chance to say which of these belongs nearest the idea they are placing from.
-              onPlaceMany(selected);
-              setSelected([]);
-            }}
-          >
-            Place {selected.length}
-          </button>
-        </div>
+        <ActionBar
+          testId="reader-marks-selection"
+          note={`${String(selected.length)} ${selected.length === 1 ? "highlight" : "highlights"} picked`}
+          actions={[
+            { label: "Clear", testId: "reader-marks-clear", onSelect: () => setSelected([]) },
+            {
+              label: `Place ${String(selected.length)}`,
+              testId: "reader-marks-place-selection",
+              primary: true,
+              onSelect: () => {
+                // In the order they were ticked: a stack goes down in the order it was built, and that is the reader's
+                // only chance to say which of these belongs nearest the idea they are placing from.
+                onPlaceMany(selected);
+                setSelected([]);
+              },
+            },
+          ]}
+        />
       )}
       <ul className="reader-marks-rows">
         {shown.map((annotation) => {

@@ -1452,6 +1452,16 @@ body {
   background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
+/*
+ * The app has two buttons and one chip, and this is the rule that keeps it that way.
+ *
+ * `views-button` (views.css) is the bordered button: anything a reader presses to *do something* — a bar's action, a
+ * dialog's, the library's New. This, `library-action`, is its inline variant for a row: the same weight of meaning at the
+ * density a list needs, borderless so a row of them does not read as a toolbar. `style-chip` (paint.css) is the third
+ * *shape*, not a third button: a chip carries a value and a checked state, so it is a choice rather than an action.
+ *
+ * A new control belongs to one of those three; a fourth vocabulary is how the link panel ended up with two colour pickers.
+ */
 .library-action {
   padding: 2px 7px;
   border-radius: 6px;

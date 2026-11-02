@@ -15,6 +15,9 @@ release edits the tag and the id recorded below.
 | Change record | the matching `CHANGELOG.md` section |
 | Evidence | the `pnpm verify` run and the security scan output, quoted in the release notes |
 
+Built on the host on 2026-11-02 that identity was `sha256:e46fe6583cc3c6e765d9dd75427058b8960cb7561ba46f93eb9af0eda224d69e`, taken after a
+pre-deploy snapshot at `/srv/backups/suite-20261102T034020Z.tar.gz`; the rollback path is `suite:v0.1.0-alpha.1`.
+
 `SUITE_VERSION` is baked into the image at build time, so a running container reports what it is:
 `version` in `/api/admin/status`, `suite_build_info{version="…"} 1` in `/metrics`, and the
 `server ready` line. The policy behind the scheme is ADR-0026 in

@@ -297,6 +297,12 @@
 - The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
   selection and the drag then dragged it across the window.
 
+### Deployed
+
+- Live at `app.suite.run`: image `sha256:e46fe6583cc3c6e765d9dd75427058b8960cb7561ba46f93eb9af0eda224d69e`, built on the host
+  from this tag, with the pre-deploy snapshot `suite-20261102T034020Z.tar.gz` and `suite:v0.1.0-alpha.1` as the rollback.
+  The container reports `"version":"v0.1.0-alpha.2"` in its `server ready` line, and `/health` answers on the public origin.
+
 ### Known issues
 
 - The full Playwright suite fails **37 of 213** at this tag, and the same 37 fail at `812f5074`, the commit this session

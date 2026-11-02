@@ -207,6 +207,45 @@ describe("a highlight", () => {
     expect(workspace.getAnnotation(time.id)?.anchor.kind).toBe("time");
   });
 
+  /**
+   * An area highlight.
+   *
+   * A rectangle is how it was drawn, not what it says, so it rides beside the quote rather than replacing it: the words
+   * survive a reflow that moves the rectangle, and a record written before areas existed reads as a highlight of the
+   * passage with no rectangle at all.
+   */
+  it("should keep the rectangle an area highlight was drawn with, beside its words", () => {
+    const { workspace, book } = fixture();
+    const area = highlight(workspace, book.id, {
+      ...QUOTE,
+      rects: [
+        { x: 0, y: 0.25, width: 1, height: 0.02 },
+        { x: 0, y: 0.27, width: 0.6, height: 0.02 },
+      ],
+    });
+    const stored = workspace.getAnnotation(area.id)?.anchor;
+    expect(stored?.kind).toBe("quote");
+    expect(stored?.kind === "quote" ? stored.rects : undefined).toHaveLength(2);
+    expect(stored?.kind === "quote" ? stored.quote : "").toBe(QUOTE.quote);
+  });
+
+  it("should read a highlight of a passage with no rectangle as one", () => {
+    const { workspace, book } = fixture();
+    const made = highlight(workspace, book.id);
+    const anchor = workspace.getAnnotation(made.id)?.anchor;
+    expect(anchor?.kind === "quote" ? anchor.rects : "absent").toBeUndefined();
+  });
+
+  it("should refuse a rectangle that runs off the column", () => {
+    const { workspace, book } = fixture();
+    expect(() =>
+      highlight(workspace, book.id, {
+        ...QUOTE,
+        rects: [{ x: 0, y: 0, width: 4, height: 0.02 }],
+      }),
+    ).toThrow();
+  });
+
   it("should refuse an anchor with no words in it", () => {
     const { workspace, book } = fixture();
     expect(() =>

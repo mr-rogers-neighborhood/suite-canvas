@@ -114,6 +114,8 @@
  * as `--reader-size`, `--reader-measure` and `data-reading`.
  */
 .reader-chapter {
+  /* Positioned for the area layer, which is painted inside the column rather than over the reader. */
+  position: relative;
   max-width: var(--reader-measure, 68ch);
   margin: 0 auto;
   padding: 12px 0 32px;
@@ -933,6 +935,30 @@
   border-radius: 2px;
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   color: var(--ink);
+}
+
+/* ---------- Marking an area ---------- */
+
+/* The layer an area highlight is painted in: over the words, and out of the way of every press. */
+.reader-areas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.reader-area {
+  position: absolute;
+  border-radius: 2px;
+}
+
+/* The rectangle being drawn, in viewport coordinates, so it tracks the pointer rather than the chapter. */
+.reader-area-drag {
+  position: fixed;
+  z-index: 30;
+  border: 1px solid var(--brand);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  pointer-events: none;
 }
 
 /* ---------- The book's own marks ---------- */

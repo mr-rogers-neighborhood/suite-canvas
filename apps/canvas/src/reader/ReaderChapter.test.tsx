@@ -259,4 +259,79 @@ describe("painting a chapter", () => {
     expect(document.querySelectorAll("mark.reader-highlight")).toHaveLength(1);
     expect(screen.queryByTestId("reader-unplaced")).toBeNull();
   });
+
+  /**
+   * An area highlight's rectangle.
+   *
+   * It cannot be a mark: one box covers several lines and possibly a picture, which wrapping text nodes cannot draw. It
+   * is a layer of its own, painted from the fractions the record holds, and rebuilt on every paint so a restyle or a
+   * chapter change cannot leave the last chapter's boxes behind.
+   */
+  it("should paint the rectangle an area highlight was drawn with", () => {
+    const { container } = draw("<p>The first sentence of the book.</p>", [
+      annotation("first sentence", {
+        anchor: {
+          kind: "quote",
+          locator: CHAPTER,
+          quote: "first sentence",
+          prefix: "",
+          suffix: "",
+          rects: [{ x: 0.1, y: 0.2, width: 0.5, height: 0.05 }],
+        },
+      }),
+    ]);
+    const box = container.querySelector<HTMLElement>(".reader-area");
+    expect(box).not.toBeNull();
+    expect(box?.style.left).toBe("10%");
+    expect(box?.style.top).toBe("20%");
+    expect(box?.style.width).toBe("50%");
+    expect(box?.style.height).toBe("5%");
+  });
+
+  it("should draw no area for a highlight of a passage with no rectangle", () => {
+    const { container } = draw("<p>The first sentence of the book.</p>", [
+      annotation("first sentence"),
+    ]);
+    expect(container.querySelector(".reader-area")).toBeNull();
+  });
+
+  it("should replace the area layer rather than stacking one per paint", () => {
+    const marked = annotation("first sentence", {
+      anchor: {
+        kind: "quote",
+        locator: CHAPTER,
+        quote: "first sentence",
+        prefix: "",
+        suffix: "",
+        rects: [{ x: 0, y: 0.1, width: 1, height: 0.02 }],
+      },
+    });
+    const { container, rerender } = render(
+      <ReaderChapter
+        html="<p>The first sentence of the book.</p>"
+        locator={CHAPTER}
+        annotations={[marked]}
+        styles={styles}
+        onSelect={vi.fn()}
+        onCarry={vi.fn()}
+        onActivate={vi.fn()}
+        onMenu={vi.fn()}
+        onNavigate={vi.fn()}
+      />,
+    );
+    rerender(
+      <ReaderChapter
+        html="<p>The first sentence of the book.</p>"
+        locator={CHAPTER}
+        annotations={[{ ...marked, styleId: "style-yellow" }]}
+        styles={styles}
+        onSelect={vi.fn()}
+        onCarry={vi.fn()}
+        onActivate={vi.fn()}
+        onMenu={vi.fn()}
+        onNavigate={vi.fn()}
+      />,
+    );
+    expect(container.querySelectorAll(".reader-areas")).toHaveLength(1);
+  });
 });

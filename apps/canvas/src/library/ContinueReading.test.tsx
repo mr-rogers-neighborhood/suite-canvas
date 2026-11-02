@@ -43,7 +43,6 @@ afterEach(() => {
   // reader's memory rather than this one's.
   window.localStorage.clear();
   useBookStore.setState({ positions: {} });
-  useCanvasStore.setState({ workspace: null });
 });
 
 describe("continuing to read", () => {

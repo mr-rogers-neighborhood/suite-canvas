@@ -142,6 +142,15 @@ title: pressing one opens its card, which is where the book was being read.
 It is this device's memory, like the reading position itself. A collaborator opening the same book card starts at the
 beginning.
 
+## Marking an area
+
+The dashed-square button in the header turns a drag into a rectangle instead of a run of words: what you cover is
+quoted, so a paragraph, a table or a figure becomes one highlight in the usual way, and the palette arrives over it
+like any other passage. Press the button again and dragging selects words again.
+
+The rectangle is drawn with the highlight and stored beside the words rather than instead of them. That is the whole
+design: if the book reflows and the box drifts, the highlight still knows its words, and the mark is still right.
+
 ## Finding a passage by its words
 
 The search button in the header reads the whole book once and searches all of it, so a passage you remember but

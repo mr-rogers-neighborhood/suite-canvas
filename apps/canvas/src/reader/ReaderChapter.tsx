@@ -1,9 +1,24 @@
 import type { Annotation } from "@suite/graph";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ANNOTATION_QUOTE_MAX_LENGTH } from "@suite/graph";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { chapterTextIndex, surroundings } from "../archive/anchor";
 import { resolveQuote } from "../archive/anchor/resolve";
 import type { TextIndex } from "../archive/anchor/textIndex";
 import { IconGlyph } from "../icons/IconGlyph";
+import {
+  type DragRect,
+  isAreaDrag,
+  normalisedRect,
+  quoteInRect,
+  rectBetween,
+  rectsOf,
+} from "./areaHighlight";
 
 /**
  * A chapter, drawn, with its highlights painted over the words they cover.
@@ -69,6 +84,16 @@ export interface ReaderChapterProps {
    * open. A link to a place in *this* chapter needs nothing from the caller and is scrolled here.
    */
   onNavigate: (path: string, fragment: string | null) => void;
+  /**
+   * Marking areas rather than runs of words.
+   *
+   * Off by default: a reader dragging over a sentence wants the sentence, and a mode that turned every drag into a
+   * rectangle would be a mode they never asked for. While it is on, the browser's own selection is suppressed and a drag
+   * reports the words under the rectangle instead.
+   */
+  areaMode?: boolean | undefined;
+  /** The rectangle being drawn, in viewport coordinates, for the host to draw over the page. */
+  onAreaDrag?: ((rect: DragRect | null) => void) | undefined;
 }
 
 export function ReaderChapter({
@@ -82,6 +107,8 @@ export function ReaderChapter({
   onCarry,
   onNavigate,
   onPainted,
+  areaMode = false,
+  onAreaDrag,
 }: ReaderChapterProps) {
   const container = useRef<HTMLDivElement | null>(null);
 
@@ -97,6 +124,7 @@ export function ReaderChapter({
     const root = container.current;
     if (root === null) return;
     const report = paintHighlights(root, { locator, annotations, styles });
+    paintAreas(root, { locator, annotations, styles });
     // Written only when it changes: painting runs on every annotation change, and a state write per paint is a render
     // per paint.
     setUnplaced((current) => (current === report.unplaced ? current : report.unplaced));
@@ -121,6 +149,57 @@ export function ReaderChapter({
     });
   }, [onSelect, locator]);
 
+  /**
+   * Beginning an area drag.
+   *
+   * The press is taken over (`preventDefault`, pointer capture) so the browser does not start its own selection: two
+   * selections at once is a rectangle drawn over words that are also being dragged across the shell.
+   */
+  const areaStart = useRef<{ x: number; y: number } | null>(null);
+  const startArea = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!areaMode || event.button !== 0) return;
+      event.preventDefault();
+      areaStart.current = { x: event.clientX, y: event.clientY };
+      onAreaDrag?.({ left: event.clientX, top: event.clientY, width: 0, height: 0 });
+    },
+    [areaMode, onAreaDrag],
+  );
+
+  const moveArea = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const start = areaStart.current;
+      if (start === null) return;
+      onAreaDrag?.(rectBetween(start, { x: event.clientX, y: event.clientY }));
+    },
+    [onAreaDrag],
+  );
+
+  /** Finishing a drag: the words under the rectangle become an ordinary passage highlight with the rectangle beside it. */
+  const endArea = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const start = areaStart.current;
+      areaStart.current = null;
+      onAreaDrag?.(null);
+      const root = container.current;
+      if (start === null || root === null) return;
+      const drag = rectBetween(start, { x: event.clientX, y: event.clientY });
+      if (!isAreaDrag(drag)) return;
+      const box = root.getBoundingClientRect();
+      const rect = normalisedRect(drag, box);
+      if (rect === null) return;
+      const quote = quoteInRect(root, drag, ANNOTATION_QUOTE_MAX_LENGTH);
+      // A rectangle over a picture has no words in it, and a highlight needs words: saying nothing is the honest answer,
+      // because the alternative is a record whose anchor cannot be repainted.
+      if (quote.length === 0) return;
+      onSelect({
+        anchor: { kind: "quote", locator, quote, prefix: "", suffix: "", rects: [rect] },
+        rect: drag,
+      });
+    },
+    [locator, onAreaDrag, onSelect],
+  );
+
   return (
     <>
       {unplaced === 0 ? null : (
@@ -138,6 +217,11 @@ export function ReaderChapter({
         ref={container}
         className="reader-chapter"
         onMouseUp={capture}
+        // A press and a drag in area mode belong to the rectangle, not to the words: the two gestures would otherwise
+        // both fire, and the passage highlight would be the one the reader did not ask for.
+        onPointerMove={areaMode ? moveArea : undefined}
+        onPointerUp={areaMode ? endArea : undefined}
+        style={areaMode ? { cursor: "crosshair", userSelect: "none" } : undefined}
         onKeyDown={(event) => {
           const mark = (event.target as HTMLElement | null)?.closest?.("mark[data-annotation-id]");
           const id = mark?.getAttribute("data-annotation-id");
@@ -154,6 +238,12 @@ export function ReaderChapter({
           }
         }}
         onPointerDown={(event) => {
+          // In area mode the press belongs to the rectangle: a mark under it is covered by the area being drawn, which
+          // is what the reader is looking at.
+          if (areaMode) {
+            startArea(event);
+            return;
+          }
           // A press on a mark starts the drag; the press itself is answered by the click handler below, which fires
           // only when the pointer never travelled.
           const mark = (event.target as HTMLElement).closest("mark[data-annotation-id]");
@@ -328,6 +418,52 @@ function paintHighlights(
   }
 
   return { painted, unplaced };
+}
+
+/**
+ * Painting the rectangles area highlights were drawn with, over the words they cover.
+ *
+ * A second layer rather than more marks: a rectangle is one box over several lines and possibly over a picture, which no
+ * amount of wrapping text nodes can draw. It is `pointer-events: none` so every press still reaches the mark underneath,
+ * and it is rebuilt from scratch on each paint for the same reason the marks are unwrapped on each paint: the chapter is
+ * the source, and the layer is a drawing of it.
+ *
+ * A rectangle drifts when the book reflows — it was measured against one column width — so it is decoration on a
+ * highlight that still knows its words. When a chapter's rectangle lands somewhere absurd, the words are what a reader
+ * presses and the words are still right.
+ */
+function paintAreas(
+  root: HTMLElement,
+  chapter: {
+    locator: string;
+    annotations: readonly Annotation[];
+    styles: readonly { id: string; color: string }[];
+  },
+): void {
+  for (const old of root.querySelectorAll(".reader-areas")) old.remove();
+  const layer = document.createElement("div");
+  layer.className = "reader-areas";
+  layer.setAttribute("aria-hidden", "true");
+  for (const annotation of chapter.annotations) {
+    const rects = rectsOf(annotation);
+    if (rects.length === 0) continue;
+    if (annotation.anchor.kind !== "quote") continue;
+    if (chapterOf(annotation.anchor.locator, chapter.locator) === "elsewhere") continue;
+    const color =
+      chapter.styles.find((entry) => entry.id === annotation.styleId)?.color ?? "var(--accent)";
+    for (const rect of rects) {
+      const box = document.createElement("div");
+      box.className = "reader-area";
+      box.style.left = `${String(rect.x * 100)}%`;
+      box.style.top = `${String(rect.y * 100)}%`;
+      box.style.width = `${String(rect.width * 100)}%`;
+      box.style.height = `${String(rect.height * 100)}%`;
+      box.style.background = `color-mix(in srgb, ${color} 22%, transparent)`;
+      layer.append(box);
+    }
+  }
+  // Prepended, so the layer sits before the words: the text is drawn over its own highlight, not through it.
+  if (layer.childElementCount > 0) root.prepend(layer);
 }
 
 /**

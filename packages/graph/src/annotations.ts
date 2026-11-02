@@ -53,6 +53,17 @@ export const annotationAnchorSchema = z.discriminatedUnion("kind", [
     quote: z.string().min(1).max(ANNOTATION_QUOTE_MAX_LENGTH),
     prefix: z.string().max(200),
     suffix: z.string().max(200),
+    /**
+     * Where on the column the reader dragged, when they marked an area rather than a run of words.
+     *
+     * Additive and optional: a highlight of a sentence has no rectangle, and one written before areas existed reads as
+     * absent. The quote stays the anchor, so the rectangle can drift when the book reflows without taking the mark with
+     * it — the words are what the record is about, and the rectangle is how it was drawn.
+     *
+     * Fractions of the chapter's column, not pixels, for the same reason a page anchor's rectangles are: the reader's
+     * width is theirs to change.
+     */
+    rects: z.array(anchorRectSchema).max(64).optional(),
   }),
   z.object({
     kind: z.literal("page"),

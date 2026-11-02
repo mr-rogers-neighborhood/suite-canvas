@@ -398,7 +398,12 @@ describe("where the reader is", () => {
     await waitFor(() =>
       expect(screen.getByTestId("reader-where").textContent).toMatch(/^Chapter 2/),
     );
-    expect(screen.getByTestId("reader-body").textContent).toContain("A place a link can point at.");
+    // The turn and the chapter read are separate commits, so the words arrive after the chapter number does.
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-body").textContent).toContain(
+        "A place a link can point at.",
+      ),
+    );
   });
 
   it("should say plainly that a word is not in the book", async () => {
@@ -424,5 +429,35 @@ describe("where the reader is", () => {
 
     fireEvent.keyDown(window, { key: "f", ctrlKey: true });
     expect(screen.getByTestId("reader-search-input")).toBeInTheDocument();
+  });
+
+  /**
+   * Marking an area.
+   *
+   * jsdom lays nothing out, so no words can be found under the rectangle and no highlight is made. What is left to prove
+   * is the gesture itself: the mode is a mode, and the box the reader draws is drawn.
+   */
+  it("should draw the box a reader drags in area mode, and leave no box behind", async () => {
+    const { container } = render(<BookReader attachmentId={"a".repeat(32)} name="book" />);
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-body").textContent).toContain("first sentence"),
+    );
+
+    const toggle = screen.getByTestId("reader-area-toggle");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+
+    const chapter = container.querySelector<HTMLElement>(".reader-chapter");
+    expect(chapter).not.toBeNull();
+    if (chapter === null) return;
+    fireEvent.pointerDown(chapter, { clientX: 10, clientY: 20, button: 0 });
+    fireEvent.pointerMove(chapter, { clientX: 60, clientY: 90 });
+    expect(screen.getByTestId("reader-area-drag")).toBeInTheDocument();
+
+    fireEvent.pointerUp(chapter, { clientX: 60, clientY: 90 });
+    expect(screen.queryByTestId("reader-area-drag")).toBeNull();
+    // No words could be measured, so nothing was marked: an empty rectangle is not a highlight.
+    expect(screen.queryByTestId("highlight-palette")).toBeNull();
   });
 });

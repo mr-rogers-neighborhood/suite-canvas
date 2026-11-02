@@ -7,6 +7,7 @@ import { toast } from "../feedback/toast";
 import { IconGlyph } from "../icons/IconGlyph";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import type { DragRect } from "./areaHighlight";
 import { BookBacklinks } from "./BookBacklinks";
 import { BookHighlights } from "./BookHighlights";
 import { BookSearchPanel } from "./BookSearchPanel";
@@ -25,6 +26,7 @@ import {
   scrollToAnnotation,
   scrollToId,
 } from "./ReaderChapter";
+import { ReaderHead, type ReaderPanel } from "./ReaderHead";
 import { useBookBytes } from "./useBookBytes";
 import { useBookSearch } from "./useBookSearch";
 import { useHighlights } from "./useHighlights";
@@ -51,31 +53,6 @@ export interface BookReaderProps {
    */
   source?: { readonly status: "ready"; readonly bytes: Uint8Array } | undefined;
 }
-
-/** The book's side panels, in the order the header offers them: the words first, then what came out of them. */
-const PANELS = [
-  {
-    panel: "search",
-    label: "Search this book",
-    icon: "lucide:search",
-    testId: "reader-search-toggle",
-  },
-  { panel: "contents", label: "Contents", icon: "lucide:list", testId: "reader-contents-toggle" },
-  {
-    panel: "highlights",
-    label: "Your highlights",
-    icon: "lucide:highlighter",
-    testId: "reader-highlights-toggle",
-  },
-  {
-    panel: "cards",
-    label: "Cards from this book",
-    icon: "lucide:square-stack",
-    testId: "reader-cards-toggle",
-  },
-] as const;
-
-type Panel = (typeof PANELS)[number]["panel"];
 
 type State =
   | { readonly status: "loading" }
@@ -109,7 +86,11 @@ export function BookReader({
    * already chosen. Without it a link's fragment was applied to the chapter being left behind.
    */
   const [markupPath, setMarkupPath] = useState<string | null>(null);
-  const [panel, setPanel] = useState<Panel | "none">("none");
+  const [panel, setPanel] = useState<ReaderPanel | "none">("none");
+  /** Marking areas rather than runs of words: see `ReaderChapter`'s `areaMode`. */
+  const [areaMode, setAreaMode] = useState(false);
+  /** The rectangle being drawn, in viewport coordinates, drawn by the reader rather than by the chapter. */
+  const [areaDrag, setAreaDrag] = useState<DragRect | null>(null);
   /** The book's words, indexed once, and the hit a reader asked to be taken to. */
   const search = useBookSearch(state.status === "open" ? state.book : null);
   const settleHit = search.settle;
@@ -587,78 +568,28 @@ export function BookReader({
       data-handbook-region="book-reader"
       style={{ position: "relative" }}
     >
-      <header className="reader-head">
-        {PANELS.map((entry) => (
-          <button
-            key={entry.panel}
-            type="button"
-            className="views-icon-button"
-            aria-label={entry.label}
-            title={entry.label}
-            aria-expanded={panel === entry.panel}
-            data-testid={entry.testId}
-            onClick={() => setPanel((open) => (open === entry.panel ? "none" : entry.panel))}
-          >
-            <IconGlyph icon={entry.icon} size={14} />
-          </button>
-        ))}
-        <span className="reader-title" title={book.book.title}>
-          {book.book.title}
-        </span>
-        {book.book.creator === null ? null : (
-          <span className="reader-meta">{book.book.creator}</span>
-        )}
-        <span className="reader-meta" data-testid="reader-where">
-          {`Chapter ${String(chapterIndex + 1)} of ${String(book.chapters.length)}`}
-        </span>
-        <span className="ml-auto flex items-center gap-1">
-          <button
-            type="button"
-            className="views-icon-button"
-            aria-label="Previous chapter"
-            data-testid="reader-prev"
-            disabled={indexOf(book, chapterPath) <= 0}
-            onClick={() => {
-              const at = indexOf(book, chapterPath);
-              const previous = book.chapters[at - 1];
-              if (previous !== undefined) pick(previous);
-            }}
-          >
-            <IconGlyph icon="lucide:chevron-left" size={14} />
-          </button>
-          <button
-            type="button"
-            className="views-icon-button"
-            aria-label="Next chapter"
-            data-testid="reader-next"
-            disabled={indexOf(book, chapterPath) >= book.chapters.length - 1}
-            onClick={() => {
-              const at = indexOf(book, chapterPath);
-              const next = book.chapters[at + 1];
-              if (next !== undefined) pick(next);
-            }}
-          >
-            <IconGlyph icon="lucide:chevron-right" size={14} />
-          </button>
-          {onExpand === undefined ? null : (
-            <button
-              type="button"
-              className="views-icon-button"
-              aria-label="Read this book large"
-              title="Read large"
-              data-testid="reader-expand"
-              onClick={onExpand}
-            >
-              <IconGlyph icon="lucide:maximize-2" size={14} />
-            </button>
-          )}
-        </span>
-        {/* Where the reader is in the book, a chapter at a time: the width is written from the scroll rather than
-            from state, so reading does not re-render the chapter. */}
-        <span className="reader-progress" aria-hidden="true">
-          <span className="reader-progress-bar" ref={progressRef} data-testid="reader-progress" />
-        </span>
-      </header>
+      <ReaderHead
+        title={book.book.title}
+        creator={book.book.creator}
+        chapterNumber={chapterIndex + 1}
+        chapterCount={book.chapters.length}
+        panel={panel}
+        onPanel={(next) => setPanel((open) => (open === next ? "none" : next))}
+        areaMode={areaMode}
+        onAreaMode={() => setAreaMode((on) => !on)}
+        canGoBack={indexOf(book, chapterPath) > 0}
+        canGoForward={indexOf(book, chapterPath) < book.chapters.length - 1}
+        onPrevious={() => {
+          const previous = book.chapters[indexOf(book, chapterPath) - 1];
+          if (previous !== undefined) pick(previous);
+        }}
+        onNext={() => {
+          const next = book.chapters[indexOf(book, chapterPath) + 1];
+          if (next !== undefined) pick(next);
+        }}
+        onExpand={onExpand}
+        progressRef={progressRef}
+      />
 
       {panel === "cards" ? (
         <BookBacklinks
@@ -764,7 +695,21 @@ export function BookReader({
             locator={chapterPath}
             annotations={highlights.annotations}
             styles={highlights.styles}
-            onSelect={setSelection}
+            onSelect={(next) => {
+              // One refusal for both gestures: a drag over ten pages is not a highlight of ten pages, and a reader learns
+              // that at the moment they make it rather than after they have picked a colour.
+              if (next.anchor.quote.length > ANNOTATION_QUOTE_MAX_LENGTH) {
+                toast.neutral(
+                  `That passage is too long to mark. A highlight can hold ${String(
+                    ANNOTATION_QUOTE_MAX_LENGTH,
+                  )} characters — mark a sentence or a paragraph instead.`,
+                );
+                return;
+              }
+              setSelection(next);
+            }}
+            areaMode={areaMode}
+            onAreaDrag={setAreaDrag}
             onPainted={() => setPaintRevision((current) => current + 1)}
             onNavigate={(path, fragment) => {
               // A link into another document is a page turn that lands on a place: `pick` resets the offset, and the
@@ -781,6 +726,19 @@ export function BookReader({
           />
         )}
       </div>
+
+      {areaDrag === null ? null : (
+        <div
+          className="reader-area-drag"
+          data-testid="reader-area-drag"
+          style={{
+            left: areaDrag.left,
+            top: areaDrag.top,
+            width: areaDrag.width,
+            height: areaDrag.height,
+          }}
+        />
+      )}
 
       {raised === null ? null : (
         <HighlightFocus

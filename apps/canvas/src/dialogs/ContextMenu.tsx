@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
+import { useSurfacePaint } from "../canvas/surfaceContext";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { focusFirstMenuItem, menuKeyDown } from "./menuKeys";
 
@@ -168,10 +169,12 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
 /**
  * A palette quick-pick: the colour, then its name.
  *
- * The dot carries both modes as a custom property so the same item reads
- * correctly in light and dark without the menu having to know which is on.
+ * The dot is the swatch's value for the theme in force, read from the same context a card's fill reads. It used to set the
+ * light value as the background and park the dark one in a custom property nothing consumed, so every colour in a menu was
+ * the daylight one at night.
  */
 function SwatchLabel({ item }: { item: ContextMenuItem }) {
+  const { mode } = useSurfacePaint();
   if (item.checked !== undefined) {
     return (
       <span className="flex min-w-0 items-center gap-2">
@@ -207,16 +210,14 @@ function SwatchLabel({ item }: { item: ContextMenuItem }) {
   return (
     <>
       <span className="flex min-w-0 items-center gap-2">
+        {/* The dot is the colour for the theme in force, resolved by the same context a card's fill reads. It used to
+            paint the light value with the dark one sitting unused in a custom property, so every swatch in a menu was
+            the wrong colour at night. */}
         <span
           aria-hidden="true"
+          data-testid="menu-swatch"
           className="h-3 w-3 shrink-0 rounded-full border border-[var(--hairline)]"
-          style={
-            {
-              "--swatch-light": item.swatch.light,
-              "--swatch-dark": item.swatch.dark,
-              backgroundColor: "var(--swatch-light)",
-            } as React.CSSProperties
-          }
+          style={{ backgroundColor: mode === "dark" ? item.swatch.dark : item.swatch.light }}
         />
         <span className="truncate">{item.label}</span>
       </span>

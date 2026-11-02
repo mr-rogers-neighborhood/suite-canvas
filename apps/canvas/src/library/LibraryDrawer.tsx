@@ -596,11 +596,10 @@ export function LibraryDrawer({
         onClose={onClose}
       />
 
-      {/* Books are the one kind of row with a place in them, so the ones being read get the top of the list: a
-          reading position is the only thing in this drawer that says "where I was". */}
-      {tab === "media" || tab === "annotations" ? null : (
-        <ContinueReading onOpenCard={onOpenCard} />
-      )}
+      {/* Books are the one kind of row with a place in them, so the ones being read get the top of the list: a reading
+          position is the only thing in this drawer that says "where I was". On every tab, because browsing media is not a
+          reason for the book you were reading to disappear. */}
+      <ContinueReading onOpenCard={onOpenCard} />
 
       {/* The selection bar replaces the search row while a selection exists: what a
           reader picks rows for is acting on them together. */}

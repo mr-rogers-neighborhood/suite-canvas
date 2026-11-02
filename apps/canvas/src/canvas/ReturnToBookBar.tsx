@@ -24,8 +24,23 @@ export function ReturnToBookBar() {
   const openCardFocus = useUiStore((state) => state.openCardFocus);
   const requestBookPanel = useUiStore((state) => state.requestBookPanel);
 
-  /** Back to the book, at the passage list, which is where a reader placing several came from. */
-  const goBack = () => {
+  /**
+   * Back to the book, at the reader's own place.
+   *
+   * No panel: "return to book" means the page they were on, not the list of everything they have marked. The two buttons
+   * here used to run this same call, so the choice the bar exists to offer was not a choice at all.
+   */
+  const returnToBook = () => {
+    if (fromBook === null) return;
+    openCardFocus(fromBook);
+    stop();
+  };
+
+  /**
+   * Back to the book with its passage list open, which is where a reader placing several came from and where the next
+   * batch is ticked.
+   */
+  const placeMore = () => {
     if (fromBook === null) return;
     openCardFocus(fromBook);
     requestBookPanel("highlights");
@@ -33,7 +48,7 @@ export function ReturnToBookBar() {
   };
 
   // Escape belongs to this bar while it is up: the top layer of the stack is the most recently opened surface.
-  useEscapeLayer(goBack, fromBook !== null && toPlace === 0);
+  useEscapeLayer(returnToBook, fromBook !== null && toPlace === 0);
 
   if (fromBook === null || toPlace > 0) return null;
 
@@ -41,18 +56,14 @@ export function ReturnToBookBar() {
     <div className="return-to-book" data-testid="return-to-book" role="toolbar" aria-label="Placed">
       <span className="return-to-book-done">
         <IconGlyph icon="lucide:check" size={12} />
-        Placed. You can arrange the cards or return to the book now.
+        Placed. Arrange the cards, or go back.
       </span>
       <button
         type="button"
         className="views-button views-button--quiet"
         data-testid="return-to-book-more"
-        onClick={() => {
-          if (fromBook === null) return;
-          openCardFocus(fromBook);
-          requestBookPanel("highlights");
-          stop();
-        }}
+        title="Back to the book with your highlights open"
+        onClick={placeMore}
       >
         Place more annotations
       </button>
@@ -60,7 +71,8 @@ export function ReturnToBookBar() {
         type="button"
         className="views-button views-button--primary"
         data-testid="return-to-book-go"
-        onClick={goBack}
+        title="Back to the page you were reading"
+        onClick={returnToBook}
       >
         Return to book
       </button>

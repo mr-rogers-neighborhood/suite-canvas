@@ -44,19 +44,26 @@ describe("the return-to-book bar", () => {
     expect(screen.getAllByTestId("return-to-book").length).toBeGreaterThan(0);
   });
 
-  it("should go back to the book, at the passage list", () => {
+  /**
+   * Two buttons, two jobs.
+   *
+   * Both used to run the same call, which made the choice the bar exists to offer a choice of wording: "return to book" put
+   * a reader in front of the passage list they had just finished with, instead of the page they were reading.
+   */
+  it("should go back to the book, at the page the reader was on", () => {
     usePlaceStackStore.getState().advance();
     render(<ReturnToBookBar />);
 
     fireEvent.click(screen.getByTestId("return-to-book-go"));
 
     expect(useUiStore.getState().cardFocusId).toBe(bookId);
-    expect(useUiStore.getState().bookPanelRequest).toBe("highlights");
+    // No panel: the words they were reading, not the list they have finished.
+    expect(useUiStore.getState().bookPanelRequest).toBeNull();
     // The session is over, so the focus surface is allowed to show again.
     expect(usePlaceStackStore.getState().fromBook).toBeNull();
   });
 
-  it("should offer to keep placing, which is the same trip", () => {
+  it("should offer to keep placing, which opens the passage list", () => {
     usePlaceStackStore.getState().advance();
     render(<ReturnToBookBar />);
 

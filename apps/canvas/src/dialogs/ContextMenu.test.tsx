@@ -1,5 +1,7 @@
+import { DEFAULT_PALETTE } from "@suite/graph";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { SurfacePaintProvider } from "../canvas/surfaceContext";
 import { ContextMenu } from "./ContextMenu";
 
 function open() {
@@ -39,5 +41,37 @@ describe("a context menu", () => {
 
     fireEvent.keyDown(last, { key: "Home" });
     expect(first).toHaveFocus();
+  });
+});
+
+/**
+ * A menu's colour dots.
+ *
+ * The dark value used to sit in a custom property that nothing read, so every swatch in a menu was its daylight colour at
+ * night: a colour picker that shows the wrong colour is worse than one that shows none.
+ */
+describe("a swatch in a menu", () => {
+  const swatch = { light: "#111111", dark: "#eeeeee" };
+
+  function draw(mode: "light" | "dark") {
+    render(
+      <SurfacePaintProvider.Provider value={{ palette: DEFAULT_PALETTE, roles: {}, mode }}>
+        <ContextMenu
+          x={0}
+          y={0}
+          items={[{ label: "Amber", swatch, onSelect: () => {} }]}
+          onClose={() => {}}
+        />
+      </SurfacePaintProvider.Provider>,
+    );
+    return screen.getByTestId("menu-swatch");
+  }
+
+  it("should paint the daylight value in the light theme", () => {
+    expect(draw("light").style.backgroundColor).toBe("rgb(17, 17, 17)");
+  });
+
+  it("should paint the night value in the dark theme", () => {
+    expect(draw("dark").style.backgroundColor).toBe("rgb(238, 238, 238)");
   });
 });

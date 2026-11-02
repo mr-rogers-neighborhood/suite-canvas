@@ -2117,11 +2117,16 @@ html[data-inspector-linking] .card-inspector {
   opacity: 0.85;
 }
 
-/* `context-stroke` lets one marker take the colour of the line it ends, so a coloured section link gets a coloured
-   arrowhead without a marker per link. */
 .section-link-arrow {
   fill: var(--ink-muted);
-  fill: context-stroke;
+}
+
+/* One marker serves every colour: `context-stroke` takes the stroke of the line it ends, where the engine knows it. The
+   muted arrow above is the answer elsewhere, because an arrowhead with no fill is a missing arrowhead. */
+@supports (fill: context-stroke) {
+  .section-link-arrow {
+    fill: context-stroke;
+  }
 }
 
 .section-link.is-off-lens {

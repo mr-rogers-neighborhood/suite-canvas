@@ -197,3 +197,38 @@ describe("seeing a highlight's whole contents", () => {
     expect(screen.queryByTestId("reader-marks-copy")).toBeNull();
   });
 });
+
+/**
+ * The verbs the row offers, which it now shares with the library's list.
+ *
+ * The book's panel could expand and tick but not remove, and the library's could remove but not expand: a highlight was a
+ * different object depending on where it was listed. One row, so both lists offer all of it.
+ */
+describe("the verbs a book's highlight row offers", () => {
+  it("should remove a highlight, which the library's list always could", () => {
+    const onRemove = vi.fn();
+    render(
+      <BookHighlights
+        annotations={[annotation()]}
+        styles={styles}
+        onOpen={() => {}}
+        onPlace={() => {}}
+        onRemove={onRemove}
+      />,
+    );
+    fireEvent.click(screen.getByTestId(`book-highlight-remove-${annotation().id}`));
+    expect(onRemove).toHaveBeenCalledWith(annotation().id);
+  });
+
+  it("should still offer no remove control where the host cannot remove", () => {
+    render(
+      <BookHighlights
+        annotations={[annotation()]}
+        styles={styles}
+        onOpen={() => {}}
+        onPlace={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId(`book-highlight-remove-${annotation().id}`)).toBeNull();
+  });
+});

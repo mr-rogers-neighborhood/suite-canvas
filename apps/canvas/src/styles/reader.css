@@ -1003,10 +1003,10 @@
 }
 
 /* A row is a press away from being raised: the words are what a reader is choosing between, so they lead. */
-.reader-mark-row {
+.annotation-row-wrap {
   display: flex;
-  /* The expanded passage is a line of its own: without wrapping, `flex: 1 0 100%` below squeezes the row's own controls
-     to nothing and overflows the panel instead of growing it. */
+  /* The expanded passage is a line of its own: without wrapping, the full block below squeezes the row's own controls to
+     nothing and overflows the panel instead of growing it. */
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 2px;
@@ -1015,11 +1015,11 @@
 }
 
 /* A picked row reads as picked without moving: the tick is the affordance, the tint only confirms it. */
-.reader-mark-row[data-picked="true"] {
+.annotation-row-wrap[data-picked="true"] {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-.reader-mark-pick {
+.annotation-row-pick {
   width: 12px;
   height: 12px;
   flex: none;
@@ -1028,7 +1028,7 @@
   cursor: pointer;
 }
 
-.reader-mark {
+.annotation-row {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
@@ -1042,19 +1042,24 @@
   text-align: left;
   font-size: 11px;
   color: var(--ink);
-  cursor: pointer;
+  cursor: grab;
 }
 
-.reader-mark:hover {
+.annotation-row:hover {
   background: color-mix(in srgb, var(--ink) 5%, transparent);
 }
 
+.annotation-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* Expanded, a row shows the whole passage: the line is a first sight, not the thing itself. */
-.reader-mark-text[data-expanded="true"] {
+.annotation-row-text[data-expanded="true"] {
   white-space: pre-wrap;
 }
 
-.reader-mark-full {
+.annotation-row-full {
   flex: 1 0 100%;
   min-width: 0;
   margin: 2px 4px 6px 20px;
@@ -1066,21 +1071,71 @@
   color: var(--ink);
 }
 
-.reader-mark-full-words {
+.annotation-row-full-words {
   display: block;
   white-space: pre-wrap;
 }
 
-.reader-mark-full-parts {
+.annotation-row-full-parts {
   margin: 6px 0 0;
   padding-left: 14px;
   color: var(--ink-muted);
 }
 
-.reader-mark-full-target {
+.annotation-row-full-target {
   margin-right: 5px;
   font-weight: 600;
   color: var(--ink);
+}
+
+.annotation-row-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 9999px;
+}
+
+.annotation-row-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.annotation-row-parts {
+  flex: none;
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+
+.annotation-row-where {
+  flex: none;
+  font-size: 10px;
+}
+
+.annotation-row-unplaced {
+  color: var(--ink-muted);
+}
+
+.annotation-row-card {
+  color: var(--ink);
+}
+
+.annotation-row-mark {
+  flex: none;
+  color: var(--ink-muted);
+}
+
+/* Both lists mount this row, so the list is only a column of them. */
+.annotation-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 /* The bar that appears with a selection: the order it will be placed in is the order rows were ticked. */
@@ -1100,26 +1155,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ink-muted);
-}
-
-.reader-mark-dot {
-  width: 7px;
-  height: 7px;
-  flex: none;
-  border-radius: 9999px;
-}
-
-.reader-mark-text {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.reader-mark-placed {
-  flex: none;
   color: var(--ink-muted);
 }
 
@@ -1144,84 +1179,7 @@
   color: var(--ink-muted);
 }
 
-.library-annotation-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* The row and its remove control are siblings: a control inside a control is a button inside a button. */
-.library-annotation-row-wrap {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.library-annotation-row {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  border: none;
-  border-radius: 7px;
-  background: none;
-  text-align: left;
-  font-size: 12px;
-  color: var(--ink);
-  cursor: grab;
-}
-
-.library-annotation-row:hover {
-  background: color-mix(in srgb, var(--ink) 5%, transparent);
-}
-
-.library-annotation-row:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.library-annotation-dot {
-  width: 7px;
-  height: 7px;
-  flex: none;
-  border-radius: 9999px;
-}
-
-.library-annotation-text {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: baseline;
-  gap: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.library-annotation-parts {
-  flex: none;
-  font-size: 10px;
-  color: var(--ink-muted);
-}
-
-.library-annotation-where {
-  flex: none;
-  font-size: 10px;
-}
-
-.library-annotation-card {
-  color: var(--ink-muted);
-}
-
-.library-annotation-unplaced {
-  font-style: italic;
-  color: var(--ink-muted);
-}
+/* The list is the row now: what is left here is the column, the group heading and the search. */
 
 /* ---------- Annotation types ---------- */
 
@@ -1655,19 +1613,12 @@
   color: var(--ink);
 }
 
-.reader-mark-full-note {
+.annotation-row-full-note {
   margin: 6px 0 0;
   padding-left: 7px;
   border-left: 2px solid var(--hairline);
   color: var(--ink);
   white-space: pre-wrap;
-}
-
-.reader-mark-note {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  color: var(--ink-muted);
 }
 
 /* The note on a card's strip: the reader's own remark, quieter than the passage it is about. */

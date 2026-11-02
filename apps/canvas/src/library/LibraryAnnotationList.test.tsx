@@ -192,4 +192,16 @@ describe("the library's annotations", () => {
     expect(onRemove).toHaveBeenCalled();
     expect(onOpen).not.toHaveBeenCalled();
   });
+
+  /**
+   * Expanding a row, which only the book's panel could do before the rows were shared.
+   *
+   * It is the same question in both places — "what does this passage say in full" — so it is the same control, and a reader
+   * who learned it in a book does not have to learn a second thing in the library.
+   */
+  it("should expand a row to its whole passage", () => {
+    draw();
+    fireEvent.click(screen.getByTestId("library-annotation-expand-a1"));
+    expect(screen.getByTestId("library-annotation-full-a1")).toBeInTheDocument();
+  });
 });

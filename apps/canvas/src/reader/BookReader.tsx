@@ -652,6 +652,12 @@ export function BookReader({
             setRaisedId(id);
           }}
           onPlace={(id) => place(id)}
+          onRemove={(id) => {
+            // The same verb the library's list has always offered: a row should not lose one by moving panels. Removing a
+            // highlight whose card exists is the document's cascade to handle, not this panel's.
+            highlights.remove(id);
+            highlights.refresh();
+          }}
           onCopyMarkdown={() => {
             // Markdown rather than a citation: a citation is one passage pasted into prose, and this is a whole book's
             // marks going into a note.

@@ -80,12 +80,18 @@ function draw(overrides: Partial<LinkInspectorModel> = {}) {
   );
 }
 
+/**
+ * A link's appearance, through the one editor every surface uses.
+ *
+ * The panel used to carry its own colour row and its own line rows beside the shared Style tab it already mounted, so a
+ * link had two of each. These tests ask the shared controls, which is the only place either value is edited now.
+ */
 describe("a link's appearance in the panel", () => {
   it("should offer the palette, and write the colour the reader picks", () => {
     draw();
     const swatch = DEFAULT_PALETTE[2];
     if (swatch === undefined) throw new Error("no palette");
-    fireEvent.click(screen.getByTestId(`link-colour-${swatch.id}`));
+    fireEvent.click(screen.getByTestId(`style-swatch-${swatch.id}`));
 
     expect(workspace.getEdge(edge.id)?.style?.swatch).toBe(swatch.id);
   });
@@ -93,7 +99,7 @@ describe("a link's appearance in the panel", () => {
   it("should clear the colour rather than store the word default", () => {
     workspace.setEdgeStyle(edge.id, { swatch: "rose" });
     draw({ edge: workspace.getEdge(edge.id) ?? edge });
-    fireEvent.click(screen.getByTestId("link-colour-default"));
+    fireEvent.click(screen.getByTestId("style-swatch-default"));
 
     // "No swatch" is the theme's link colour, which is exactly what an unstyled link means.
     expect(workspace.getEdge(edge.id)?.style?.swatch).toBeUndefined();
@@ -103,8 +109,8 @@ describe("a link's appearance in the panel", () => {
     workspace.setEdgeStyle(edge.id, { swatch: "rose" });
     draw({ edge: workspace.getEdge(edge.id) ?? edge });
 
-    fireEvent.click(screen.getByTestId("link-line-dashed"));
-    fireEvent.click(screen.getByTestId("link-width-3"));
+    fireEvent.click(screen.getByTestId("style-line-paint-dashed"));
+    fireEvent.change(screen.getByTestId("style-line-width"), { target: { value: "3" } });
 
     const style = workspace.getEdge(edge.id)?.style;
     // The regression the owner reported: a second write that drops the swatch is a link that turned blue.
@@ -120,8 +126,15 @@ describe("a link's appearance in the panel", () => {
     });
     draw({ edge: workspace.getEdge(edge.id) ?? edge });
 
-    expect(screen.getByTestId("link-colour-rose")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByTestId("link-line-dotted")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByTestId("link-width-2")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("style-swatch-rose")).toHaveAttribute("data-checked", "true");
+    expect(screen.getByTestId("style-line-paint-dotted")).toHaveAttribute("data-checked", "true");
+    expect(screen.getByTestId("style-line-width")).toHaveValue("2");
+  });
+
+  it("should offer exactly one colour control, because a second one is how the two drift", () => {
+    draw();
+    expect(screen.getAllByTestId("style-swatches")).toHaveLength(1);
+    expect(screen.queryByTestId("link-colours")).toBeNull();
+    expect(screen.queryByTestId("link-line-styles")).toBeNull();
   });
 });

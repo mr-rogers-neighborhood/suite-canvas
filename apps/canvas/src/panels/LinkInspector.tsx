@@ -37,21 +37,6 @@ const PATHS: Array<{ value: GraphEdge["path"]; label: string }> = [
 const MAX_BENDS = 24;
 
 /**
- * The line styles `linkStroke` actually paints.
- *
- * Only the ones it reads: a control that changes nothing is worse than no control, and a dash pattern the painter does
- * not know would look broken rather than absent.
- */
-const LINE_STYLES = [
-  { value: "solid", label: "Solid" },
-  { value: "dashed", label: "Dashed" },
-  { value: "dotted", label: "Dotted" },
-] as const;
-
-/** The widths the painter honours, in the same units `sides.top.width` stores. */
-const LINE_WIDTHS = [1, 2, 3] as const;
-
-/**
  * One link, inspected.
  *
  * A link is not an entity — it is an edge — so there is no name, type, tag or
@@ -77,8 +62,6 @@ export function LinkInspector({
   const { canEdit, canManageStructure } = model;
   const edgeId = model.edge.id;
   const workspace = useCanvasStore((state) => state.workspace);
-  // The palette the right-click menu offers, from the same source, so the two cannot differ.
-  const palette = workspace?.palette() ?? [];
   const isolating = useIsolatedEdgeId() === edgeId;
 
   // A route write always carries both halves: the document stores the list and
@@ -86,31 +69,6 @@ export function LinkInspector({
   const writeRoute = (bends: LinkInspectorModel["bends"], layer: LinkInspectorModel["layer"]) => {
     workspace.setEdgeRoute(edgeId, { bends, layer });
   };
-
-  /**
-   * The link's colour and line, written through `setEdgeStyle` the way `linkStroke` reads them.
-   *
-   * A link is a single stroke rather than four sides (ADR-0051 §1), so its paint lives on `sides.top`. Spread the current
-   * style every time: writing a fresh object is what drops a swatch a reader chose, and a link that loses its swatch looks
-   * exactly like one that never had one.
-   */
-  const current = () => workspace?.getEdge(edgeId)?.style ?? {};
-  const style = current();
-  // `paint` is required on a side, so a link that has never been styled reads as solid rather than as a missing value.
-  const top = style.sides?.top ?? { paint: "solid" as const };
-  const writeStyle = (patch: {
-    paint?: "none" | "solid" | "dashed" | "dotted";
-    width?: number;
-  }) => {
-    // Read at write time, not at render time: two presses in a row would otherwise both spread the style as it was before
-    // the first one, and the second would undo the first. That is precisely how a colour used to vanish.
-    const live = current();
-    workspace.setEdgeStyle(edgeId, {
-      ...live,
-      sides: { ...live.sides, top: { ...(live.sides?.top ?? { paint: "solid" }), ...patch } },
-    });
-  };
-  const swatch = style.swatch;
 
   /**
    * A new bend at the middle of the line, pushed off it: the same perpendicular
@@ -253,79 +211,6 @@ export function LinkInspector({
                 onClick={() => onSetPath(entry.value)}
               >
                 {entry.label}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-3" data-testid="link-appearance">
-          <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-            Colour
-          </h3>
-          <div className="mt-1 flex flex-wrap gap-1" data-testid="link-colours">
-            {palette.map((entry) => (
-              <button
-                key={entry.id}
-                type="button"
-                className="library-action"
-                aria-pressed={swatch === entry.id}
-                aria-label={entry.name}
-                title={entry.name}
-                disabled={!canEdit}
-                data-testid={`link-colour-${entry.id}`}
-                style={{
-                  background: entry.light,
-                  color: entry.inkLight === "surface-strong" ? "#fff" : "#111",
-                }}
-                onClick={() => workspace.setEdgeStyle(edgeId, { ...current(), swatch: entry.id })}
-              >
-                {entry.name}
-              </button>
-            ))}
-            <button
-              type="button"
-              className="library-action"
-              aria-pressed={swatch === undefined}
-              data-testid="link-colour-default"
-              disabled={!canEdit}
-              title="The theme's own link colour"
-              onClick={() =>
-                // Cleared rather than replaced: "no swatch" is the theme's link colour, which is what unstyled means.
-                workspace.setEdgeStyle(edgeId, { ...current(), swatch: undefined })
-              }
-            >
-              Default
-            </button>
-          </div>
-
-          <h3 className="mt-2 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-            Line
-          </h3>
-          <div className="mt-1 flex flex-wrap gap-1" data-testid="link-line-styles">
-            {LINE_STYLES.map((entry) => (
-              <button
-                key={entry.value}
-                type="button"
-                className="library-action"
-                aria-pressed={(top.paint ?? "solid") === entry.value}
-                disabled={!canEdit}
-                data-testid={`link-line-${entry.value}`}
-                onClick={() => writeStyle({ paint: entry.value })}
-              >
-                {entry.label}
-              </button>
-            ))}
-            {LINE_WIDTHS.map((width) => (
-              <button
-                key={width}
-                type="button"
-                className="library-action"
-                aria-pressed={(top.width ?? 1) === width}
-                disabled={!canEdit}
-                data-testid={`link-width-${String(width)}`}
-                onClick={() => writeStyle({ width })}
-              >
-                {width}px
               </button>
             ))}
           </div>

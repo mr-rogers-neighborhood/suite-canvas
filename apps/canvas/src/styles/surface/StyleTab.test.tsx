@@ -159,4 +159,35 @@ describe("StyleTab for a link", () => {
 
     expect(doc.getEdge(edge.id)?.style?.sides?.top?.paint).toBe("dotted");
   });
+
+  /**
+   * A link's colour.
+   *
+   * The row was hidden for a link, on the reasoning that a stroke has no fill, so the inspector grew a second colour
+   * control of its own. A link wears the palette as its stroke, which is the same row: one vocabulary, one place to fix.
+   */
+  it("should wear the palette as its stroke, and clear back to the theme", () => {
+    const { doc, board, card } = seed();
+    const to = doc.createCard({ boardId: board.id, position: { x: 400, y: 0 } });
+    const edge = doc.addEdge({
+      boardId: board.id,
+      source: card.id,
+      target: to.id,
+      kind: "relates-to",
+    });
+    if (!edge) throw new Error("a link between two placed cards is drawable");
+
+    render(<StyleTab targets={[{ kind: "edge", id: edge.id }]} canEdit />);
+
+    // Named for what it does to a stroke, not for what it does to a box.
+    expect(screen.getByTestId("style-swatches")).toHaveTextContent("Colour");
+    fireEvent.click(screen.getByTestId("style-swatch-rose"));
+    expect(doc.getEdge(edge.id)?.style?.swatch).toBe("rose");
+
+    // A stroke cannot be "no fill": an invisible line is not a state, so the option is not offered.
+    expect(screen.queryByTestId("style-swatch-none")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("style-swatch-default"));
+    expect(doc.getEdge(edge.id)?.style?.swatch).toBeUndefined();
+  });
 });

@@ -204,34 +204,39 @@ export function StyleTab({ targets, canEdit, workspace = null, typeName = null }
 
       <section className="style-tab__group">
         <h3 className="style-tab__heading">Paint</h3>
-        {/* A stroke has no fill, so the background row would be a control that
-            cannot do anything (ADR-0051 §1). */}
-        {isLink ? null : (
-          <div
-            className="style-tab__row"
-            data-testid="style-swatches"
-            data-mixed={mixedKey("swatch") || mixedKey("surface") ? "true" : undefined}
-          >
-            <span>Fill</span>
-            <div className="style-tab__swatches">
-              <button
-                type="button"
-                className="style-swatch"
-                data-testid="style-swatch-default"
-                data-checked={
-                  !mixedKey("swatch") &&
-                  !mixedKey("surface") &&
-                  current.swatch === undefined &&
-                  current.surface === undefined
-                    ? "true"
-                    : undefined
-                }
-                disabled={!canEdit}
-                title="Theme default"
-                onClick={() => update({ ...current, swatch: undefined, surface: undefined })}
-              >
-                Default
-              </button>
+        {/*
+          A link has one stroke and no fill (ADR-0051 §1), so it wears the swatch as its colour rather than as a
+          background. It is the same row on purpose: the palette is the product's one vocabulary for colour, and a link
+          that offered its own list — as it did, in text buttons, in the inspector — drifted from every other surface.
+        */}
+        <div
+          className="style-tab__row"
+          data-testid="style-swatches"
+          data-mixed={mixedKey("swatch") || mixedKey("surface") ? "true" : undefined}
+        >
+          <span>{isLink ? "Colour" : "Fill"}</span>
+          <div className="style-tab__swatches">
+            <button
+              type="button"
+              className="style-swatch"
+              data-testid="style-swatch-default"
+              data-checked={
+                !mixedKey("swatch") &&
+                !mixedKey("surface") &&
+                current.swatch === undefined &&
+                current.surface === undefined
+                  ? "true"
+                  : undefined
+              }
+              disabled={!canEdit}
+              title="Theme default"
+              onClick={() => update({ ...current, swatch: undefined, surface: undefined })}
+            >
+              Default
+            </button>
+            {/* A stroke with no colour is not a state, it is an invisible line, so
+                  the "None" fill is offered only to a surface that has one. */}
+            {isLink ? null : (
               <button
                 type="button"
                 className="style-swatch"
@@ -245,31 +250,31 @@ export function StyleTab({ targets, canEdit, workspace = null, typeName = null }
               >
                 None
               </button>
-              {palette.map((swatch) => (
-                <button
-                  key={swatch.id}
-                  type="button"
-                  className="style-swatch"
-                  data-testid={`style-swatch-${swatch.id}`}
-                  data-checked={
-                    !mixedKey("swatch") && current.swatch === swatch.id ? "true" : undefined
-                  }
-                  disabled={!canEdit}
-                  title={swatch.name}
-                  aria-label={swatch.name}
-                  onClick={() => update({ ...current, swatch: swatch.id })}
-                >
-                  <span
-                    aria-hidden="true"
-                    className="style-swatch__dot"
-                    style={{ backgroundColor: swatch[mode] }}
-                  />
-                  {swatch.name}
-                </button>
-              ))}
-            </div>
+            )}
+            {palette.map((swatch) => (
+              <button
+                key={swatch.id}
+                type="button"
+                className="style-swatch"
+                data-testid={`style-swatch-${swatch.id}`}
+                data-checked={
+                  !mixedKey("swatch") && current.swatch === swatch.id ? "true" : undefined
+                }
+                disabled={!canEdit}
+                title={swatch.name}
+                aria-label={swatch.name}
+                onClick={() => update({ ...current, swatch: swatch.id })}
+              >
+                <span
+                  aria-hidden="true"
+                  className="style-swatch__dot"
+                  style={{ backgroundColor: swatch[mode] }}
+                />
+                {swatch.name}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
         {/* The ink row is gone: it repainted a role the theme already resolves,
             so choosing "Canvas" or "Hairline" on a card changed nothing a reader
             could see. A colour someone can name is the palette, not a token. */}

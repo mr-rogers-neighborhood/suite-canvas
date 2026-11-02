@@ -297,6 +297,13 @@
 - The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
   selection and the drag then dragged it across the window.
 
+### Known issues
+
+- The full Playwright suite fails **37 of 213** at this tag, and the same 37 fail at `812f5074`, the commit this session
+  started from: measured on both, with no test newly failing and none newly fixed. The local gate (`pnpm verify`) is
+  green. The failures cluster where the suite expects editor DOM the app no longer draws that way: mention chips,
+  property blocks, peer cursors, the sealed share surfaces. Each needs its own pass.
+
 ## [0.1.0-alpha.1] - 2026-10-29
 
 The first public release of Suite. The product is the one the hosted deployment runs; what this

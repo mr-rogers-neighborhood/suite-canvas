@@ -79,11 +79,14 @@ pointer, one card per press. The order you ticked them is the order they go down
 shows the queue, and you can move a card up or down, take it out, or flip the whole queue with `[` and `]` without
 leaving the board.
 
-The triangle beside a row opens it to the whole passage, and to what each part of a broken-up highlight is for.
+The triangle beside a row opens it to the whole passage, and to what each part of a broken-up highlight is for. The row
+is the same row the library's **Annotations** tab shows, with the same four verbs — open, expand, place, remove — because
+a highlight is the same thing wherever it is listed.
 
-When the last card lands you are not thrown back into the book. A bar offers **Return to book** and **Place more
-annotations**, and the board stays yours in the meantime, so a card that landed a little to the left can be moved. Escape
-means **Return to book**.
+When the last card lands you are not thrown back into the book. A bar offers **Return to book**, which takes you back to
+the page you were reading, and **Place more annotations**, which opens the passage list so the next batch is a tick away.
+The board stays yours in the meantime, so a card that landed a little to the left can be moved. Escape means **Return to
+book**.
 
 The highlights you have made collect in the book's **Highlights** panel, beside its contents, with the ones that
 became cards marked. They are also in the library's **Annotations** tab, grouped by book — pressing one opens the

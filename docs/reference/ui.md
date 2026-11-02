@@ -400,17 +400,19 @@ allowlist for `mention`.
 
 **Placing from a book is a session, not a press.** A stack records the book it came from (`placeStack.fromBook`), and
 while that is set `CardFocusHost` keeps the focus surface concealed even after the last card lands, so the board stays
-usable for a nudge or a resize. `ReturnToBookBar` then offers **Return to book** and **Place more annotations**, with
-Escape meaning the same as returning. `PlaceStackOutline` shows the queue in order while it lasts, with reorder, remove
+usable for a nudge or a resize. `ReturnToBookBar` then offers **Return to book** (the reading position) and **Place more annotations** (the passage
+list), with Escape meaning the same as returning. Both bars that end a gesture render `ActionBar` from `chrome/`: one
+shape, one stylesheet, and a `floating` flag for the one that sits over the board. `PlaceStackOutline` shows the queue in order while it lasts, with reorder, remove
 and stop, and `[` and `]` flip it; both read the store, so the library's Place cards and a book's Place N get them
 without knowing they exist. The book's own outline carries a checkbox per row, a **Place N** bar, and a disclosure that
 shows a row's whole passage and what each part is for.
 
 **A selection box picks up what the reader says it does.** `marqueeSelects` holds three toggles (cards, links,
-sections) offered from `SelectModeControl` in the canvas controls. The commit filters React Flow's own report by them,
-because a marquee reports every card it touched whatever the reader meant, and a section is selected through its own store
-field rather than widened into the card selection. Sections are off by default: selecting one is a different thing to
-select.
+sections) offered from `SelectModeControl` in the canvas controls. Cards are honoured while the box is drawn, not only at
+commit: React Flow only boxes `selectable` nodes, so the toggle is read into that flag when the gesture starts, or a card
+switched off still lights up under the box and drops on release. Links go through `linksInBox`, which covers the
+React Flow edges as well as the canvas-drawn section lines, because React Flow's own box selects nodes and never edges. The
+last subject on cannot be switched off: a box that picks up nothing is a box that does nothing.
 
 **The palette sits where the words are.** A selection reports its own bounding rect and the reader converts it into its
 own box, rather than pinning the palette to the bottom edge where a reader has to go looking for it. The x is clamped so

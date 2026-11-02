@@ -18,13 +18,13 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "typescript": "~5.9.3"
   },
   "dependencies": {
-    "@better-auth/stripe": "1.7.12",
-    "better-auth": "^1.7.12",
+    "@better-auth/stripe": "1.7.14",
+    "better-auth": "^1.7.14",
     "neverthrow": "^8.2.0",
     "pg": "^8.23.1",
     "stripe": "^22.6.2"

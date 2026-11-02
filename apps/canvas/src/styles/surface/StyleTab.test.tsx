@@ -190,4 +190,41 @@ describe("StyleTab for a link", () => {
     fireEvent.click(screen.getByTestId("style-swatch-default"));
     expect(doc.getEdge(edge.id)?.style?.swatch).toBeUndefined();
   });
+
+  it("should say when the colour it is wearing is no longer in the palette", () => {
+    const { doc, board, card } = seed();
+    const to = doc.createCard({ boardId: board.id, position: { x: 400, y: 0 } });
+    const edge = doc.addEdge({
+      boardId: board.id,
+      source: card.id,
+      target: to.id,
+      kind: "relates-to",
+    });
+    if (!edge) throw new Error("a link between two placed cards is drawable");
+    // What a rename in Settings leaves behind: an id the palette no longer answers to.
+    doc.setEdgeStyle(edge.id, { swatch: "a-colour-that-was-deleted" });
+
+    render(<StyleTab targets={[{ kind: "edge", id: edge.id }]} canEdit />);
+
+    expect(screen.getByTestId("style-swatch-missing")).toHaveTextContent(
+      "That colour is no longer in the palette.",
+    );
+  });
+
+  it("should say nothing when the colour is one the palette still holds", () => {
+    const { doc, board, card } = seed();
+    const to = doc.createCard({ boardId: board.id, position: { x: 400, y: 0 } });
+    const edge = doc.addEdge({
+      boardId: board.id,
+      source: card.id,
+      target: to.id,
+      kind: "relates-to",
+    });
+    if (!edge) throw new Error("a link between two placed cards is drawable");
+    doc.setEdgeStyle(edge.id, { swatch: "rose" });
+
+    render(<StyleTab targets={[{ kind: "edge", id: edge.id }]} canEdit />);
+
+    expect(screen.queryByTestId("style-swatch-missing")).toBeNull();
+  });
 });

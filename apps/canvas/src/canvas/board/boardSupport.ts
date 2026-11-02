@@ -179,23 +179,21 @@ export function toFlowEdge(
   /** The colour the link's swatch resolves to on this screen, or null when it names none. */
   swatchColour: string | null = null,
 ): Edge {
+  // A link's own paint (ADR-0051 §1: one stroke, `sides.top`) rides React Flow's edge style. Always, not only when the
+  // link was styled: an edge whose style resolves to nothing used to be handed no stroke at all, so it fell through to
+  // React Flow's default grey — "unstyled" — while every other link drew the theme's colour. A peer's colour is presence,
+  // not document state, so it wins while it lasts.
+  const stroke = linkStroke(resolveSurfaceStyle(edge.style, "link"), swatchColour);
+  const style = peerColor ? { ...stroke, stroke: peerColor } : stroke;
+  // The arrowhead follows the line. A closed marker without a colour of its own paints in React Flow's default, which is
+  // how a coloured link kept a theme-coloured arrow at its target.
+  const arrow = typeof style.stroke === "string" ? style.stroke : undefined;
   const marker = {
     type: MarkerType.ArrowClosed,
     width: 18,
     height: 18,
-    ...(peerColor ? { color: peerColor } : {}),
+    ...(arrow === undefined ? {} : { color: arrow }),
   };
-  // A link's own paint (ADR-0051 §1: one stroke, `sides.top`) rides React Flow's
-  // edge style — but only when the link was actually styled. A peer's colour is
-  // presence, not document state, so it wins while it lasts.
-  const style = edge.style
-    ? {
-        ...linkStroke(resolveSurfaceStyle(edge.style, "link"), swatchColour),
-        ...(peerColor ? { stroke: peerColor } : {}),
-      }
-    : peerColor
-      ? { stroke: peerColor, strokeWidth: 2 }
-      : {};
 
   return {
     id: edge.id,

@@ -91,6 +91,15 @@ export function StyleTab({ targets, canEdit, workspace = null, typeName = null }
   // background, a text scale. A selection that mixes kinds has no common kind, and
   // nothing is offered: a row that cannot reach every member is a row that lies.
   const isLink = draft.kind === "edge";
+  /**
+   * A swatch the palette no longer holds.
+   *
+   * A colour is stored by id, so renaming or deleting one in Settings leaves whatever wore it pointing at nothing. The
+   * painter falls back to the theme's role, which is honest but silent: the surface changes colour and no one is told
+   * why. Saying it where the colour is chosen is the shortest path from "my link turned blue" to the cause.
+   */
+  const swatchMissing =
+    current.swatch !== undefined && !palette.some((entry) => entry.id === current.swatch);
   const hasShape = draft.kind !== null && !isLink;
   const hasText = draft.kind !== null && !isLink;
   const kind = draft.kind;
@@ -275,6 +284,12 @@ export function StyleTab({ targets, canEdit, workspace = null, typeName = null }
             ))}
           </div>
         </div>
+        {swatchMissing ? (
+          <p className="style-tab__note" data-testid="style-swatch-missing">
+            That colour is no longer in the palette. Pick another, or Default to go back to the
+            theme.
+          </p>
+        ) : null}
         {/* The ink row is gone: it repainted a role the theme already resolves,
             so choosing "Canvas" or "Hairline" on a card changed nothing a reader
             could see. A colour someone can name is the palette, not a token. */}

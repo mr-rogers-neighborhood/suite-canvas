@@ -53,16 +53,14 @@ export function AboveLinkLayer({
           const path = linkRoutePath(link, edges);
           // Isolate (ADR-0052 §7) recedes everything but the chosen link.
           const dimmed = isolatedEdgeId !== null && isolatedEdgeId !== link.edge.id;
-          // The same paint the edge layer gives a link below the cards, so raising
-          // one never changes how it looks (ADR-0051 §1) — and none when the link
-          // was never styled, so this layer's own CSS keeps painting it.
-          const paint = link.edge.style
-            ? linkStroke(
-                resolveSurfaceStyle(link.edge.style, "link"),
-                // The same swatch the edge layer resolves, so raising a link never changes its colour.
-                swatchOf(link.edge.style, surfacePaint)?.colour ?? null,
-              )
-            : undefined;
+          // The same paint the edge layer gives a link below the cards, so raising one never changes how it looks
+          // (ADR-0051 §1) — including a link that was never styled, which paints the theme's colour in both layers rather
+          // than the theme's in one and React Flow's default in the other.
+          const paint = linkStroke(
+            resolveSurfaceStyle(link.edge.style, "link"),
+            // The same swatch the edge layer resolves, so raising a link never changes its colour.
+            swatchOf(link.edge.style, surfacePaint)?.colour ?? null,
+          );
           return (
             <g
               key={link.edge.id}
@@ -78,7 +76,7 @@ export function AboveLinkLayer({
                 data-edge-id={link.edge.id}
                 data-selected={selected ? "true" : undefined}
                 d={path}
-                {...(paint ? { style: paint } : {})}
+                style={paint}
                 markerEnd="url(#section-link-arrow)"
               />
               {/* biome-ignore lint/a11y/noStaticElementInteractions: the hit path is the pointer affordance for an edge the edge menu already describes. */}

@@ -116,19 +116,26 @@ test("focuses the section and marks its row when the row is clicked", async ({ p
   await expect.poll(async () => viewport.getAttribute("style")).not.toBe(before);
 });
 
-test("collapses and expands the rail with the [ key", async ({ page }) => {
+test("collapses and expands the rail with the \\ key, and leaves [ to the stack", async ({
+  page,
+}) => {
   await page.goto(workspaceUrl("toggle"));
   await expect(cards(page)).toHaveCount(2);
 
   await createSection(page, 1, "Toggle", 1);
   await expect(page.getByTestId("outline-panel")).toBeVisible();
 
+  // The rail moved to `\\` because the bracket pair belongs to the placement stack: a key that flipped the
+  // outline while a hand of cards was open was the stack's key doing two things at once.
   await page.keyboard.press("BracketLeft");
+  await expect(page.getByTestId("outline-panel")).toBeVisible();
+
+  await page.keyboard.press("Backslash");
   await expect(page.getByTestId("outline-panel")).toHaveCount(0);
   await expect(page.getByTestId("outline-tab")).toBeVisible();
   await expect(page.getByTestId("outline-tab")).toContainText("1");
 
-  await page.keyboard.press("BracketLeft");
+  await page.keyboard.press("Backslash");
   await expect(page.getByTestId("outline-panel")).toBeVisible();
   await expect(page.getByTestId("outline-tab")).toHaveCount(0);
 });

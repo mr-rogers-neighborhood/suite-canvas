@@ -1,1313 +1,301 @@
 ## [Unreleased]
 
-### Changed
-
-- The pin on a card, the media picker's rows and the media placeholders draw the theme's icons instead of emoji. They
-  are the card's own ink, take the accent only through `aria-pressed`, and the picker's rows are a list of kinds rather
-  than a row of stickers. A new media card's type carries `lucide:image` as its icon, so its type chip matches.
+## [0.1.0-alpha.2] - 2026-11-01
 
 ### Added
 
-- Reading a book is quieter about its own machinery: a mention of a card shows the card's name, and a passage's
-  mention shows its words, both without focusing the card first.
+- In-book search: the whole spine is read once and searched, so a passage you remember is a query rather than a guess
+  at a chapter. A hit carries its chapter and which time it appears, so two hits in one chapter land differently, and
+  **ctrl-f** opens the field instead of the browser's find.
+
+- A book lists the cards it made, and the cards that point back at it: promotion writes a source property, so the book
+  answers both questions from inside itself without listing a card twice.
+
+- A book's highlights copy out as Markdown: chapters in reading order, each passage quoted, its kind and note beneath.
+
+- The library shows **Continue reading** with how far through each book you are, on every tab.
+
+- An area highlight: a drag marks the rectangle you cover, and the box is drawn over the words themselves, so it follows
+  a passage through a text-size or width change instead of staying where it was first dragged.
+
+- A highlight can carry a **note** and **tags** without being promoted, and the pin holds one colour so a run of
+  passages marks as you drag.
+
+- A selection box says what it picks up: cards, links or sections, with card-to-card links now reachable at all,
+  because React Flow's box selects nodes and never edges.
+
+- Reading a book is quieter about its own machinery: a mention of a card shows the card's name, and a passage's mention
+  shows its words, both without focusing the card first.
+
 - The reader has its own appearance: **text size**, **width** and a **page** (the app's, sepia, or dim). They are
   device preferences beside the canvas knobs in the appearance panel, and they sink into a book and nowhere else.
-- A book remembers how far down the chapter you were as well as which chapter; the contents list marks the one you
-  are in, and a rule under the header is your place in the whole book.
+
+- A book remembers how far down the chapter you were as well as which chapter; the contents list marks the one you are
+  in, and a rule under the header is your place in the whole book.
+
 - The reader turns pages with the keyboard: left/right, space/shift-space, home/end. The space bar stays with a live
   selection.
+
 - A highlight's menu can **copy with its source**: the passage, then the author and the book.
+
 - The Highlights panel filters by kind and by "not a card yet".
-
-### Changed
-
-- One highlight makes **one** card. The mapping decides what that card says, not how many cards appear: the
-  `own-card` destination is gone, so a press can no longer make an unpredictable number of cards. `SCHEMA_VERSION`
-  moves to 6 and a stored `own-card` part reads back as part of the passage.
-- A highlight's colour is chosen from a menu row called **Kind**, not **Type**: a kind is what a highlight is, a type
-  is what a card is, and the library already had a Types button.
-
-### Added
 
 - An annotation card wears its passage: a strip above the body with the highlight's kind colour down the left, the
   words, the book it came from, **Reopen** and **Keep it**. The body underneath stays editable, because a comment on a
   passage belongs in the card that came from it.
 
+- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
+  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
+  type's own text properties.
+
+- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
+  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
+
+- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
+  internal structure without turning into a patchwork.
+
+- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
+  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
+
+- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
+  mention chip. All four reach the same drop, so where a highlight lands is decided once.
+
+- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
+  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
+  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
+
+- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
+  The raised surface carries the same rows, so there is one action list rather than two.
+
+- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
+
+- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
+  promoting one onto the board and a press opening the passage.
+
+- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
+  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
+  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have not
+  arrived shows an empty tile rather than a broken picture.
+
+- A book can be uploaded: **New media → Book** on the canvas, or `/media` in a card body. The picker is now the one
+  place a media kind is chosen and it serves two targets, so at a caret it inserts and on the canvas it makes a card at
+  the point you pressed. The card is made after the file is chosen, so a cancelled dialog leaves nothing behind.
+
+- A book block draws a cover: the title, author and cover picture the package declares, and **Read**. Reading happens
+  large, in focus mode, where selecting a sentence is a selection rather than a fight with the editor.
+
+- A highlight can be carried out of the book onto the board: a press that travels picks it up, the book steps aside,
+  and a release over the canvas makes the card there. A release anywhere else creates nothing.
+
+- A promoted card now opens with its passage: the quote as a blockquote, then a paragraph naming the source with a
+  mention, so the backlink is the graph's own reference.
+
+- A field can be marked read-only. `setProperty` refuses a change from a reader with a named reason, and the one way
+  around it is the flag the code that fills the field passes. The flag travels in a share and does not hide a value.
+
+- Reading a book on the canvas: an `.epub` dropped onto a board becomes a card, and the reader draws it a chapter at a
+  time in the app's own type, with the book's contents in the header. No EPUB dependency: the ZIP reader the vault
+  importer already had now lives in `archive/zip.ts` and both use it, and the container, package, spine and contents
+  are read on top of it.
+
+- Highlights: select a sentence, press a colour, and the passage is marked. The mark is stored as the words themselves,
+  so it survives a resize, a theme change and the same book at another width. Four styles to start, shared across every
+  medium, and a style may name a template.
+
+- Pressing a highlight makes an ordinary card that knows where it came from: a read-only `Highlight` property points at
+  the passage, the title comes from the first sentence, and the library's new **Annotations** tab is every card that
+  came from a mark. A comment on a highlight is the next block in that card's body, because the card is a normal card.
+
+- `application/epub+zip` joins the attachment allowlist on both sides, with the extension its download name uses.
+
+- A media block this build has no renderer for now says so instead of drawing a broken image.
+
+- Read and Edit are two states of the layer. It opens to the data: the presentation fills the window, the context is
+  one sentence, and a cell is a value. Edit brings the kinds, the presentation, the grouping, the column sorts, the
+  context drawer and the row actions back. A new view always opens in edit.
+
+- A view can be deleted, duplicated and reordered from its rail, with `D` and `Backspace` from the keyboard and an Undo
+  in the footer. `deleteView` had existed with no caller since the layer landed.
+
+- A collection can be drawn as a board: the cards where they sit, with the unplaced ones named underneath.
+
+- Grouping by any field, beside section, type and tag, with a count per group; pressing a group or a chart bar narrows
+  this reader's surface to it.
+
+- Sorting from a column header, and a peek on any card name in the surface, so reading a view does not need a round
+  trip to the board.
+
+- New view of this card, or of these cards, in the canvas menu, which opens a draft whose pins are the selection, plus
+  `View: open` and `View: project` in the palette.
+
+- A designed first run: three one-press starters that open a draft rather than a record.
+
+- A handbook inside the app: a float in the corner of the board that lists the articles matching what is on screen,
+  counts the things they document, and points a line at the element an article is about. It ships behind a development
+  flag while the surface is rough; a production build keeps the floating explain panel, so `explain` always has
+  somewhere to send its answer. Resting on a row outlines its subject; opening the article keeps the outline, and a
+  subject that is not on this board is opened only on a press.
+
+- `explain` now has somewhere to send its answer. The gathered context renders inside the handbook, a single selected
+  thing jumps to its article, several leave the list filtered, and **Point at something** turns the next click into a
+  target, including a region of the shell.
+
+- The articles are Markdown in `handbook/`, one per user-facing element and system, rendered by
+  `scripts/sync-handbook.mjs` into the app and into the docs site from the same source. The generator refuses an
+  article naming an unknown region of the interface, and a documented region with no article.
+
+- The docs site has two entrances, developer documentation and the user handbook, and is built on Fumadocs rather than
+  Starlight.
+
+- Feedback is part of the handbook: the same form the launcher uses files a message against the article it was opened
+  from, with the article's title attached.
+
 ### Changed
+
+- A highlight's row is one row. The book's panel and the library's Annotations tab had each grown their own and
+  drifted; both now offer open, expand, place and remove from the same component, and the two stylesheets are one.
+
+- The bars that end a gesture share one component, and the app's buttons are written down in one place: a bordered
+  action, an inline row action, and a chip, so a new control joins one of the three instead of inventing a fourth.
+
+- This section collapses the 64 `[Unreleased]` blocks that had accumulated since the last release: they were 75 unique
+  entries, repeated up to 32 times.
+
+- The pin on a card, the media picker's rows and the media placeholders draw the theme's icons instead of emoji. They
+  are the card's own ink, take the accent only through `aria-pressed`, and the picker's rows are a list of kinds rather
+  than a row of stickers. A new media card's type carries `lucide:image` as its icon, so its type chip matches.
+
+- One highlight makes **one** card. The mapping decides what that card says, not how many cards appear: the `own-card`
+  destination is gone, so a press can no longer make an unpredictable number of cards. `SCHEMA_VERSION` moves to 6 and
+  a stored `own-card` part reads back as part of the passage.
+
+- A highlight's colour is chosen from a menu row called **Kind**, not **Type**: a kind is what a highlight is, a type
+  is what a card is, and the library already had a Types button.
 
 - **Place** puts the card in your hand instead of picking a place for you. The surface steps aside, one press on the
   board puts the card down, and placing several highlights in a row fills one stack. A highlight whose card is already
   on a board opens that card.
+
 - A highlight's type is called a **kind** throughout the interface. A kind is what a highlight is; a type is what a
   card is, and the library already had a Types button.
+
 - The kinds editor belongs to the shell rather than to the library: it scrolls its own body under a fixed header and
   footer, and Escape closes it without closing the drawer it was opened from.
+
 - Library and outline rows carry a **Place** button beside the drag, and say where their card is: the title when it is
   on this board, `in the inbox` when it is not, **Not a card yet** before it is anything.
 
+- Placing a highlight that already became a card opens that card instead of making a second one, which used to
+  overwrite the record's card and orphan the first. Making another is now an explicit choice.
+
+- `insertMediaFiles` split into `prepareMediaFile` and an insert, because two targets now need the same upload: the
+  permission check, the local copy and the relay attempt live in one place.
+
+- `WorkspaceDocument` gained `bodyNodes`, the reader's pair to `setBodyNodes`, so a surface can draw a block out of a
+  body without mounting an editor.
+
+- The annotation model is written medium-neutral from the first day: the anchor is a `quote`, `page` or `time` union
+  and a medium registers itself, so a PDF page and a span of video are a module each rather than a schema change. Fake
+  PDF and video media in a test guard that.
+
+- The projection's container copier carries plain JSON values. It dropped them silently, so a share lost every payload
+  stored as an object.
+
+- Views and the handbook are shut in every build, not only in production. `views/availability.ts` and
+  `handbook/availability.ts` are constants now, and the projection float, the two canvas rows that made a view and the
+  library's Views tab gained the guard they were missing. Nothing is deleted: saved views and view cards in an existing
+  document still open, the handbook's articles still ship to the docs site, and `explain` answers in the floating panel
+  again.
+
+- Picking is a projection. `Pick cards` casts the view over the board and leaves the layer; a press on a card pins it
+  and a second press unpins it; the float carries Done and Cancel. The separate picking bar is gone, so building a
+  context and reading one look like the same thing.
+
+- The projection is a float: draggable, remembered per workspace, and it settles around the dock instead of sitting
+  behind it. `views.projection-bar` is now `views.projection-float`.
+
+- The line chart is a line: a path, dots and an axis, rather than a list of numbers.
+
+- The layer has a stylesheet and one chip and one segmented control, over the same tokens the dock and the handbook
+  use, and `IconGlyph` icons instead of `◈ ▦ ▸ ×`.
+
+- The library no longer copies a view's query into its own filter state, and is no longer filtered by a projection;
+  opening a view opens the layer on it, and the library's filters are the reader's own.
+
+- A lens is no longer a kind. `kind` is `collection` or `render`, projecting is a verb any view can take, and a view
+  written before the change reads as a collection with its old payload supplying the projection's defaults.
+
+- Editing a saved view is live: field-level setters replace the whole-record write, so concurrent edits to different
+  facets converge. `Done` leaves, `Discard my edits` restores the record you opened, and a new view stays a local draft
+  until `Create`.
+
+- A view's context is a query *and* the cards you pinned by hand, so it can be built from filters, from a selection, or
+  from both, and the read-out says which is which.
+
+- The views controls are an icon in the board's own control row rather than a labelled dropdown, and the bar sits after
+  the outline toggle and before search.
+
+- The six heading commands are one accessible menu in the toolbar and one row in the `/` menu. Choosing a level sets it
+  rather than toggling it, and `/h3` still applies H3 without opening the menu.
+
+- Pins, the handbook and the projection share one drag gesture and one list of shell obstacles.
+
+- The views surfaces share one development flag (`views/availability.ts`), worded like the handbook's door.
+
 ### Fixed
+
+- A link's colour is one control again. The shared Style tab hid its swatch row for a link, so the inspector had grown
+  a second colour picker with the light value baked in; the row is shared, labelled **Colour**, and **Default** clears
+  back to the theme's link colour.
+
+- A link paints its own stroke in every case: a swatch the palette no longer holds falls back to the accent and says so
+  where the colour is chosen, an unstyled link no longer falls through to React Flow's grey, the arrowhead follows the
+  line, and a link to a section wears its swatch instead of the theme's blue.
+
+- The marquee's toggles filter cards while the box is drawn rather than after it, so a card switched off never lights
+  up under the cursor and drops on release.
+
+- **Return to book** and **Place more annotations** do different things: the reading position, and the passage list.
+  They ran the same call, so the choice the bar exists to offer was a choice of wording.
+
+- An area highlight's rectangle no longer drifts when the text size changes, a menu's swatches follow dark mode, and an
+  expanded highlight row wraps instead of overflowing its panel.
 
 - A highlight that crossed a bold word, a link or a paragraph break was not painted at all, and nothing said so:
   `Range.surroundContents` refuses a range that partly covers an element and the painter swallowed the refusal. Marks
   are now painted per text node, and anything still unplaceable is counted under the header.
-- Two paragraphs were zero characters apart in the text a quote is searched in, so a highlight taken across a
-  paragraph break could never be found again. The chapter's flat text separates blocks with one space and collapses
+
+- Two paragraphs were zero characters apart in the text a quote is searched in, so a highlight taken across a paragraph
+  break could never be found again. The chapter's flat text separates blocks with one space and collapses
   whitespace-only nodes.
+
 - A painted mark had no keyboard path at all, although a comment claimed one. It is focusable now, opens with Enter or
   Space, and its menu opens with the menu key.
+
 - The Highlights panel said "N on the board" while counting cards that were waiting in the inbox.
+
 - A highlight's submenu said **Type** for what its own dialog had started calling a kind.
+
 - Pressing **Place** created the card in the inbox. The promotion was given a board and no point, so it wrote no
   placement: the board showed nothing, and a second press "opened" a card nobody could see.
+
 - Dragging a highlight out of the library or the book's Highlights panel made nothing. Both rows rolled their own
   gesture that never armed the carry, so the drag was still a text selection and the release depended on which
   `pointerup` listener ran first. There is one dropper now, and every carry ends through it.
+
 - A cancelled drag placed the highlight at the top-left corner of the canvas: `pointercancel` carries no coordinates,
   and the release was treated as a drop at the origin.
 
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
 - A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
+  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session. It is
+  three states now, and a pending book retries.
 
-## [Unreleased]
+- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the drop
+  lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing focus
+  surface lets the pointer through to the board underneath.
 
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
-  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
-  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
-  not arrived shows an empty tile rather than a broken picture.
-
-### Fixed
-
-- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
-  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
-  focus surface lets the pointer through to the board underneath.
 - The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
   selection and the drag then dragged it across the window.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A book can be uploaded: **New media → Book** on the canvas, or `/media` in a card body. The picker is now the one
-  place a media kind is chosen and it serves two targets, so at a caret it inserts and on the canvas it makes a card
-  at the point you pressed. The card is made after the file is chosen, so a cancelled dialog leaves nothing behind.
-- A book block draws a cover: the title, author and cover picture the package declares, and **Read**. Reading
-  happens large, in focus mode, where selecting a sentence is a selection rather than a fight with the editor.
-- A highlight can be carried out of the book onto the board: a press that travels picks it up, the book steps aside,
-  and a release over the canvas makes the card there. A release anywhere else creates nothing.
-- A promoted card now opens with its passage: the quote as a blockquote, then a paragraph naming the source with a
-  mention, so the backlink is the graph's own reference.
-- A field can be marked read-only. `setProperty` refuses a change from a reader with a named reason, and the one way
-  around it is the flag the code that fills the field passes. The flag travels in a share and does not hide a value.
-
-### Changed
-
-- `insertMediaFiles` split into `prepareMediaFile` and an insert, because two targets now need the same upload: the
-  permission check, the local copy and the relay attempt live in one place.
-- `WorkspaceDocument` gained `bodyNodes`, the reader's pair to `setBodyNodes`, so a surface can draw a block out of a
-  body without mounting an editor.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
-  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
-  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
-  not arrived shows an empty tile rather than a broken picture.
-
-### Fixed
-
-- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
-  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
-  focus surface lets the pointer through to the board underneath.
-- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
-  selection and the drag then dragged it across the window.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- Reading a book on the canvas: an `.epub` dropped onto a board becomes a card, and the reader draws it a
-  chapter at a time in the app's own type, with the book's contents in the header. No EPUB dependency: the ZIP
-  reader the vault importer already had now lives in `archive/zip.ts` and both use it, and the container,
-  package, spine and contents are read on top of it.
-- Highlights: select a sentence, press a colour, and the passage is marked. The mark is stored as the words
-  themselves, so it survives a resize, a theme change and the same book at another width. Four styles to start,
-  shared across every medium, and a style may name a template.
-- Pressing a highlight makes an ordinary card that knows where it came from: a read-only `Highlight` property
-  points at the passage, the title comes from the first sentence, and the library's new **Annotations** tab is
-  every card that came from a mark. A comment on a highlight is the next block in that card's body, because the
-  card is a normal card.
-- `application/epub+zip` joins the attachment allowlist on both sides, with the extension its download name uses.
-- A media block this build has no renderer for now says so instead of drawing a broken image.
-
-### Changed
-
-- The annotation model is written medium-neutral from the first day: the anchor is a `quote`, `page` or `time`
-  union and a medium registers itself, so a PDF page and a span of video are a module each rather than a schema
-  change. Fake PDF and video media in a test guard that.
-- The projection's container copier carries plain JSON values. It dropped them silently, so a share lost every
-  payload stored as an object.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
-  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
-  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
-  not arrived shows an empty tile rather than a broken picture.
-
-### Fixed
-
-- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
-  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
-  focus surface lets the pointer through to the board underneath.
-- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
-  selection and the drag then dragged it across the window.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A book can be uploaded: **New media → Book** on the canvas, or `/media` in a card body. The picker is now the one
-  place a media kind is chosen and it serves two targets, so at a caret it inserts and on the canvas it makes a card
-  at the point you pressed. The card is made after the file is chosen, so a cancelled dialog leaves nothing behind.
-- A book block draws a cover: the title, author and cover picture the package declares, and **Read**. Reading
-  happens large, in focus mode, where selecting a sentence is a selection rather than a fight with the editor.
-- A highlight can be carried out of the book onto the board: a press that travels picks it up, the book steps aside,
-  and a release over the canvas makes the card there. A release anywhere else creates nothing.
-- A promoted card now opens with its passage: the quote as a blockquote, then a paragraph naming the source with a
-  mention, so the backlink is the graph's own reference.
-- A field can be marked read-only. `setProperty` refuses a change from a reader with a named reason, and the one way
-  around it is the flag the code that fills the field passes. The flag travels in a share and does not hide a value.
-
-### Changed
-
-- `insertMediaFiles` split into `prepareMediaFile` and an insert, because two targets now need the same upload: the
-  permission check, the local copy and the relay attempt live in one place.
-- `WorkspaceDocument` gained `bodyNodes`, the reader's pair to `setBodyNodes`, so a surface can draw a block out of a
-  body without mounting an editor.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
-  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
-  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
-  not arrived shows an empty tile rather than a broken picture.
-
-### Fixed
-
-- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
-  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
-  focus surface lets the pointer through to the board underneath.
-- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
-  selection and the drag then dragged it across the window.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Changed
-
-- Views and the handbook are shut in every build, not only in production. `views/availability.ts` and
-  `handbook/availability.ts` are constants now, and the projection float, the two canvas rows that made a
-  view and the library's Views tab gained the guard they were missing. Nothing is deleted: saved views and
-  view cards in an existing document still open, the handbook's articles still ship to the docs site, and
-  `explain` answers in the floating panel again.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
-  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
-  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
-  not arrived shows an empty tile rather than a broken picture.
-
-### Fixed
-
-- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
-  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
-  focus surface lets the pointer through to the board underneath.
-- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
-  selection and the drag then dragged it across the window.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A book can be uploaded: **New media → Book** on the canvas, or `/media` in a card body. The picker is now the one
-  place a media kind is chosen and it serves two targets, so at a caret it inserts and on the canvas it makes a card
-  at the point you pressed. The card is made after the file is chosen, so a cancelled dialog leaves nothing behind.
-- A book block draws a cover: the title, author and cover picture the package declares, and **Read**. Reading
-  happens large, in focus mode, where selecting a sentence is a selection rather than a fight with the editor.
-- A highlight can be carried out of the book onto the board: a press that travels picks it up, the book steps aside,
-  and a release over the canvas makes the card there. A release anywhere else creates nothing.
-- A promoted card now opens with its passage: the quote as a blockquote, then a paragraph naming the source with a
-  mention, so the backlink is the graph's own reference.
-- A field can be marked read-only. `setProperty` refuses a change from a reader with a named reason, and the one way
-  around it is the flag the code that fills the field passes. The flag travels in a share and does not hide a value.
-
-### Changed
-
-- `insertMediaFiles` split into `prepareMediaFile` and an insert, because two targets now need the same upload: the
-  permission check, the local copy and the relay attempt live in one place.
-- `WorkspaceDocument` gained `bodyNodes`, the reader's pair to `setBodyNodes`, so a surface can draw a block out of a
-  body without mounting an editor.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
-  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
-  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
-  not arrived shows an empty tile rather than a broken picture.
-
-### Fixed
-
-- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
-  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
-  focus surface lets the pointer through to the board underneath.
-- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
-  selection and the drag then dragged it across the window.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- Reading a book on the canvas: an `.epub` dropped onto a board becomes a card, and the reader draws it a
-  chapter at a time in the app's own type, with the book's contents in the header. No EPUB dependency: the ZIP
-  reader the vault importer already had now lives in `archive/zip.ts` and both use it, and the container,
-  package, spine and contents are read on top of it.
-- Highlights: select a sentence, press a colour, and the passage is marked. The mark is stored as the words
-  themselves, so it survives a resize, a theme change and the same book at another width. Four styles to start,
-  shared across every medium, and a style may name a template.
-- Pressing a highlight makes an ordinary card that knows where it came from: a read-only `Highlight` property
-  points at the passage, the title comes from the first sentence, and the library's new **Annotations** tab is
-  every card that came from a mark. A comment on a highlight is the next block in that card's body, because the
-  card is a normal card.
-- `application/epub+zip` joins the attachment allowlist on both sides, with the extension its download name uses.
-- A media block this build has no renderer for now says so instead of drawing a broken image.
-
-### Changed
-
-- The annotation model is written medium-neutral from the first day: the anchor is a `quote`, `page` or `time`
-  union and a medium registers itself, so a PDF page and a span of video are a module each rather than a schema
-  change. Fake PDF and video media in a test guard that.
-- The projection's container copier carries plain JSON values. It dropped them silently, so a share lost every
-  payload stored as an object.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
-  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
-  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
-  not arrived shows an empty tile rather than a broken picture.
-
-### Fixed
-
-- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
-  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
-  focus surface lets the pointer through to the board underneath.
-- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
-  selection and the drag then dragged it across the window.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A book can be uploaded: **New media → Book** on the canvas, or `/media` in a card body. The picker is now the one
-  place a media kind is chosen and it serves two targets, so at a caret it inserts and on the canvas it makes a card
-  at the point you pressed. The card is made after the file is chosen, so a cancelled dialog leaves nothing behind.
-- A book block draws a cover: the title, author and cover picture the package declares, and **Read**. Reading
-  happens large, in focus mode, where selecting a sentence is a selection rather than a fight with the editor.
-- A highlight can be carried out of the book onto the board: a press that travels picks it up, the book steps aside,
-  and a release over the canvas makes the card there. A release anywhere else creates nothing.
-- A promoted card now opens with its passage: the quote as a blockquote, then a paragraph naming the source with a
-  mention, so the backlink is the graph's own reference.
-- A field can be marked read-only. `setProperty` refuses a change from a reader with a named reason, and the one way
-  around it is the flag the code that fills the field passes. The flag travels in a share and does not hide a value.
-
-### Changed
-
-- `insertMediaFiles` split into `prepareMediaFile` and an insert, because two targets now need the same upload: the
-  permission check, the local copy and the relay attempt live in one place.
-- `WorkspaceDocument` gained `bodyNodes`, the reader's pair to `setBodyNodes`, so a surface can draw a block out of a
-  body without mounting an editor.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A book card on the canvas draws the book: the cover fills the card the way a picture fills an image card, with the
-  title, author and chapter count beneath and **Read** under those. The cover is extracted once per session and
-  published, so a board of forty cards does not open forty archives before its first paint; a book whose bytes have
-  not arrived shows an empty tile rather than a broken picture.
-
-### Fixed
-
-- Dragging a highlight out of a book reaches the board. The carry is released with the gesture whether or not the
-  drop lands on the canvas, so a reader cannot end up holding something with no way to put it down, and the concealing
-  focus surface lets the pointer through to the board underneath.
-- The press that starts a highlight drag no longer selects the shell: the default press began the browser's own text
-  selection and the drag then dragged it across the window.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- A highlight can be broken into parts. Press one and it is raised: the chapter blurs, the passage sits alone, and a
-  range you select can be marked as the card's **title**, as a **property** (created on the promoted type when it is
-  missing), or as a **card of its own**. That last one is how a paragraph becomes several notes.
-- A right-click on a highlight opens its menu: type, break it apart, place it or open the card it became, copy, remove.
-  The raised surface carries the same rows, so there is one action list rather than two.
-- A book's **Highlights** panel, beside its contents: the marks you have made, with the ones that became cards marked.
-- The library's Annotations tab lists **highlights** rather than only their cards, grouped by book, with a drag
-  promoting one onto the board and a press opening the passage.
-
-### Changed
-
-- Placing a highlight that already became a card opens that card instead of making a second one, which used to
-  overwrite the record's card and orphan the first. Making another is now an explicit choice.
-
-### Fixed
-
-- A book's cover no longer falls back to an empty tile until a refresh. The cover cache had two states, so "not read
-  yet" and "read, no cover" were the same answer, and a first paint that raced an upload gave up for the session.
-  It is three states now, and a pending book retries.
-
-## [Unreleased]
-
-### Added
-
-- Annotation types are editable: a colour, a name, the card type a highlight of that kind produces, and the ordered
-  slots it fills. **Types** sits in the library's Annotations tab, and choosing a card type seeds its slots from that
-  type's own text properties.
-- The raise surface follows the type: one row per slot, empty until words are assigned, filled by selecting them in the
-  passage. `Add a part` still maps words the type did not expect, and a part outside the mapping is kept and shown.
-- The passage keeps the highlight's colour and its parts are drawn **dotted** in the same colour, so one mark shows its
-  internal structure without turning into a patchwork.
-- A highlight can be mentioned: `@` offers your highlights beside your cards, the chip names the passage in its colour,
-  and pressing it opens where the passage came from. A deleted highlight's chip says it is gone.
-- Four starting points for one carry: the passage, the book's Highlights panel, the library's Annotations row, and a
-  mention chip. All four reach the same drop, so where a highlight lands is decided once.
-
-## [Unreleased]
-
-### Added
-
-- Read and Edit are two states of the layer. It opens to the data: the presentation fills the window, the
-  context is one sentence, and a cell is a value. Edit brings the kinds, the presentation, the grouping, the
-  column sorts, the context drawer and the row actions back. A new view always opens in edit.
-- A view can be deleted, duplicated and reordered from its rail, with `D` and `Backspace` from the keyboard
-  and an Undo in the footer. `deleteView` had existed with no caller since the layer landed.
-- A collection can be drawn as a board: the cards where they sit, with the unplaced ones named underneath.
-- Grouping by any field, beside section, type and tag, with a count per group; pressing a group or a chart
-  bar narrows this reader's surface to it.
-- Sorting from a column header, and a peek on any card name in the surface, so reading a view does not need a
-  round trip to the board.
-- New view of this card, or of these cards, in the canvas menu, which opens a draft whose pins are the
-  selection, plus `View: open` and `View: project` in the palette.
-- A designed first run: three one-press starters that open a draft rather than a record.
-- A handbook inside the app: a float in the corner of the board that lists the articles matching what is on
-  screen, counts the things they document, and points a line at the element an article is about. It ships
-  behind a development flag while the surface is rough; a production build keeps the floating explain panel,
-  so `explain` always has somewhere to send its answer. Resting on a row outlines its subject; opening the
-  article keeps the outline, and a subject that is not on this board is opened only on a press.
-- `explain` now has somewhere to send its answer. The gathered context renders inside the handbook, a single
-  selected thing jumps to its article, several leave the list filtered, and **Point at something** turns the
-  next click into a target, including a region of the shell.
-- The articles are Markdown in `handbook/`, one per user-facing element and system, rendered by
-  `scripts/sync-handbook.mjs` into the app and into the docs site from the same source. The generator refuses
-  an article naming an unknown region of the interface, and a documented region with no article.
-- The docs site has two entrances, developer documentation and the user handbook, and is built on Fumadocs
-  rather than Starlight.
-- Feedback is part of the handbook: the same form the launcher uses files a message against the article it
-  was opened from, with the article's title attached.
-
-### Changed
-
-- Picking is a projection. `Pick cards` casts the view over the board and leaves the layer; a press on a card
-  pins it and a second press unpins it; the float carries Done and Cancel. The separate picking bar is gone,
-  so building a context and reading one look like the same thing.
-- The projection is a float: draggable, remembered per workspace, and it settles around the dock instead of
-  sitting behind it. `views.projection-bar` is now `views.projection-float`.
-- The line chart is a line: a path, dots and an axis, rather than a list of numbers.
-- The layer has a stylesheet and one chip and one segmented control, over the same tokens the dock and the
-  handbook use, and `IconGlyph` icons instead of `◈ ▦ ▸ ×`.
-- The library no longer copies a view's query into its own filter state, and is no longer filtered by a
-  projection; opening a view opens the layer on it, and the library's filters are the reader's own.
-- A lens is no longer a kind. `kind` is `collection` or `render`, projecting is a verb any view can take, and
-  a view written before the change reads as a collection with its old payload supplying the projection's
-  defaults.
-- Editing a saved view is live: field-level setters replace the whole-record write, so concurrent edits to
-  different facets converge. `Done` leaves, `Discard my edits` restores the record you opened, and a new view
-  stays a local draft until `Create`.
-- A view's context is a query *and* the cards you pinned by hand, so it can be built from filters, from a
-  selection, or from both, and the read-out says which is which.
-- The views controls are an icon in the board's own control row rather than a labelled dropdown, and the bar
-  sits after the outline toggle and before search.
-- The six heading commands are one accessible menu in the toolbar and one row in the `/` menu. Choosing a
-  level sets it rather than toggling it, and `/h3` still applies H3 without opening the menu.
-- Pins, the handbook and the projection share one drag gesture and one list of shell obstacles.
-- The views surfaces share one development flag (`views/availability.ts`), worded like the handbook's door.
 
 ## [0.1.0-alpha.1] - 2026-10-29
 

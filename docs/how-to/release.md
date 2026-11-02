@@ -1,17 +1,17 @@
 # Release and roll back
 
 A release is a tag, an image built from it on the host that serves it, the image id that identifies
-it, a smoke test against a host, and a rollback path. This page is written against `0.1.0-alpha.1`; every
+it, a smoke test against a host, and a rollback path. This page is written against `0.1.0-alpha.2`; every
 release edits the tag and the id recorded below.
 
 ## What a release is
 
 | Thing | Value |
 | --- | --- |
-| Version | `0.1.0-alpha.1` in `package.json` and the newest `CHANGELOG.md` heading |
-| Git tag | `v0.1.0-alpha.1` on the release commit |
-| Image | `suite:v0.1.0-alpha.1`, built on the host that runs it and also tagged `suite:local` |
-| Identity | the image id from `docker image inspect --format '{{.Id}}' suite:v0.1.0-alpha.1` |
+| Version | `0.1.0-alpha.2` in `package.json` and the newest `CHANGELOG.md` heading |
+| Git tag | `v0.1.0-alpha.2` on the release commit |
+| Image | `suite:v0.1.0-alpha.2`, built on the host that runs it and also tagged `suite:local` |
+| Identity | the image id from `docker image inspect --format '{{.Id}}' suite:v0.1.0-alpha.2` |
 | Change record | the matching `CHANGELOG.md` section |
 | Evidence | the `pnpm verify` run and the security scan output, quoted in the release notes |
 
@@ -24,12 +24,12 @@ The lead creates the tag after integration. A workstream does not push one.
 
 ## Cut one
 
-1. `package.json` and the newest `CHANGELOG.md` heading both say `0.1.0-alpha.1`.
+1. `package.json` and the newest `CHANGELOG.md` heading both say `0.1.0-alpha.2`.
 2. `node scripts/docs-check.mjs` and `node scripts/generate-limits.mjs --check` are clean.
 3. `pnpm verify` is green on the commit being tagged, and a full `pnpm e2e` passed on that same commit,
    in that order, with nothing already listening on `:5173` or `:1235`. A tag is the milestone where
    the full suite runs; the commands are in [test-and-verify.md](test-and-verify.md).
-4. `git tag -a v0.1.0-alpha.1 -m "Suite 0.1.0-alpha.1"`.
+4. `git tag -a v0.1.0-alpha.1 -m "Suite 0.1.0-alpha.2"`.
 5. `git push origin v0.1.0-alpha.1`.
 
 The release is built directly on the host that serves it, tagged there, and rolled back to by tag.
@@ -43,8 +43,8 @@ The build argument is the tag, and the two `-t` names are what the host later ro
 ```sh
 git checkout v0.1.0-alpha.1
 docker build --target runtime --build-arg SUITE_VERSION=v0.1.0-alpha.1 \
-  -t suite:v0.1.0-alpha.1 -t suite:local .
-docker image inspect --format '{{.Id}}' suite:v0.1.0-alpha.1
+  -t suite:v0.1.0-alpha.2 -t suite:local .
+docker image inspect --format '{{.Id}}' suite:v0.1.0-alpha.2
 ```
 
 Record the image id in the release notes. A host-built image has no `RepoDigests`, so the id is the
@@ -60,7 +60,7 @@ project can currently make.
 Against the host that will serve it, before announcing anything:
 
 ```sh
-sed -i -E 's|^#?[[:space:]]*SUITE_IMAGE=.*|SUITE_IMAGE=suite:v0.1.0-alpha.1|' .env
+sed -i -E 's|^#?[[:space:]]*SUITE_IMAGE=.*|SUITE_IMAGE=suite:v0.1.0-alpha.2|' .env
 docker compose up -d --no-build app                   # the new tag; Caddy keeps running
 docker compose ps                                     # app healthy, caddy up
 curl -fsS https://$SUITE_DOMAIN/health                # {"ok":true}
@@ -146,8 +146,8 @@ tag is what names the previous image.
 2. Point `app` at it and recreate that service only:
 
    ```sh
-   deploy/deploy.sh --rollback suite:rollback-v0.1.0-alpha.1
-   # by hand: SUITE_IMAGE=suite:rollback-v0.1.0-alpha.1 docker compose up -d --no-build app
+   deploy/deploy.sh --rollback suite:rollback-v0.1.0-alpha.2
+   # by hand: SUITE_IMAGE=suite:rollback-v0.1.0-alpha.2 docker compose up -d --no-build app
    ```
 
 3. Confirm `/health` answers and `/api/admin/status` reports the expected `version`.

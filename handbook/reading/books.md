@@ -142,6 +142,13 @@ title: pressing one opens its card, which is where the book was being read.
 It is this device's memory, like the reading position itself. A collaborator opening the same book card starts at the
 beginning.
 
+## Marking a run of passages
+
+The pin in the header holds one colour. Pick it once and every passage you select from then on is marked in that
+colour as you select it, with no palette in between: a page of marks becomes a run of drags rather than a run of
+choices. The button wears the colour it is holding, and pressing it again lets go, which puts the palette back for a
+passage at a time.
+
 ## Marking an area
 
 The dashed-square button in the header turns a drag into a rectangle instead of a run of words: what you cover is

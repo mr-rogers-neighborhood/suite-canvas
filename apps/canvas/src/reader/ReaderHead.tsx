@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { IconGlyph } from "../icons/IconGlyph";
 
 /**
@@ -25,6 +25,8 @@ export interface ReaderHeadProps {
   readonly onExpand: (() => void) | undefined;
   /** Written from the scroll rather than from state, so reading does not re-render the chapter. */
   readonly progressRef: RefObject<HTMLSpanElement | null>;
+  /** The marking controls, which the reader owns: a held colour is state the header only draws. */
+  readonly marks: ReactNode;
 }
 
 export type ReaderPanel = "search" | "contents" | "highlights" | "cards";
@@ -72,6 +74,7 @@ export function ReaderHead({
   canGoForward,
   onExpand,
   progressRef,
+  marks,
 }: ReaderHeadProps) {
   return (
     <header className="reader-head">
@@ -100,6 +103,7 @@ export function ReaderHead({
       >
         <IconGlyph icon="lucide:square-dashed" size={14} />
       </button>
+      {marks}
       <span className="reader-title" title={title}>
         {title}
       </span>

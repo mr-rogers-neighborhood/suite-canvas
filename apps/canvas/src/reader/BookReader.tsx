@@ -7,6 +7,7 @@ import { toast } from "../feedback/toast";
 import { IconGlyph } from "../icons/IconGlyph";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { ArmedColour } from "./ArmedColour";
 import type { DragRect } from "./areaHighlight";
 import { BookBacklinks } from "./BookBacklinks";
 import { BookHighlights } from "./BookHighlights";
@@ -87,6 +88,8 @@ export function BookReader({
    */
   const [markupPath, setMarkupPath] = useState<string | null>(null);
   const [panel, setPanel] = useState<ReaderPanel | "none">("none");
+  /** A colour held for every passage, so a run of them marks without the palette in between. */
+  const [armedStyleId, setArmedStyleId] = useState<string | null>(null);
   /** Marking areas rather than runs of words: see `ReaderChapter`'s `areaMode`. */
   const [areaMode, setAreaMode] = useState(false);
   /** The rectangle being drawn, in viewport coordinates, drawn by the reader rather than by the chapter. */
@@ -589,6 +592,9 @@ export function BookReader({
         }}
         onExpand={onExpand}
         progressRef={progressRef}
+        marks={
+          <ArmedColour styles={highlights.styles} armed={armedStyleId} onArm={setArmedStyleId} />
+        }
       />
 
       {panel === "cards" ? (
@@ -704,6 +710,15 @@ export function BookReader({
                     ANNOTATION_QUOTE_MAX_LENGTH,
                   )} characters — mark a sentence or a paragraph instead.`,
                 );
+                return;
+              }
+              // A held colour marks the passage straight away: the whole point is that a run of them needs no palette.
+              if (armedStyleId !== null) {
+                highlights.add({
+                  styleId: armedStyleId,
+                  anchor: next.anchor,
+                  excerpt: next.anchor.quote,
+                });
                 return;
               }
               setSelection(next);

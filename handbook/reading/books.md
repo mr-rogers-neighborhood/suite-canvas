@@ -133,6 +133,15 @@ The keyboard works the way a book does: **right** and **space** for the next cha
 the one before, **home** and **end** for the top and bottom of this chapter. Text you have selected keeps the space bar
 for itself.
 
+## Picking it up again
+
+The rule under the reader's header is how far through the book you are, and that number is remembered with your place.
+So the library's **Continue reading** strip lists the books you were last in, newest first, with that bar beside each
+title: pressing one opens its card, which is where the book was being read.
+
+It is this device's memory, like the reading position itself. A collaborator opening the same book card starts at the
+beginning.
+
 ## Finding a passage by its words
 
 The search button in the header reads the whole book once and searches all of it, so a passage you remember but

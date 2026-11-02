@@ -1294,6 +1294,66 @@ body {
   user-select: none;
 }
 
+/* The books being read, above the rows: the one place in the library that answers "where was I". */
+.library-continue {
+  flex: none;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.library-continue-title {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.library-continue-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.library-continue-row:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.library-continue-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The bar is the whole reason the row exists: a title says which book, the bar says how much of it is behind. */
+.library-continue-bar {
+  flex: none;
+  width: 56px;
+  height: 3px;
+  margin-left: auto;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  overflow: hidden;
+}
+
+.library-continue-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--brand);
+}
+
 /*
  * A row being dragged out of the drawer takes the drawer with it.
  *

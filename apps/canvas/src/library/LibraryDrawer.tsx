@@ -20,6 +20,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useViewsStore } from "../store/viewsStore";
 import { viewsEnabled } from "../views/availability";
+import { ContinueReading } from "./ContinueReading";
 import { LibraryAnnotationList } from "./LibraryAnnotationList";
 import { LibraryFacets } from "./LibraryFacets";
 import { LibraryHeader } from "./LibraryHeader";
@@ -594,6 +595,12 @@ export function LibraryDrawer({
         onEmptyTrash={onEmptyTrash}
         onClose={onClose}
       />
+
+      {/* Books are the one kind of row with a place in them, so the ones being read get the top of the list: a
+          reading position is the only thing in this drawer that says "where I was". */}
+      {tab === "media" || tab === "annotations" ? null : (
+        <ContinueReading onOpenCard={onOpenCard} />
+      )}
 
       {/* The selection bar replaces the search row while a selection exists: what a
           reader picks rows for is acting on them together. */}

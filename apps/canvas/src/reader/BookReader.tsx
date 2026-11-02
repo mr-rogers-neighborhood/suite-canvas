@@ -331,16 +331,15 @@ export function BookReader({
       body.scrollHeight <= body.clientHeight
         ? 0
         : Math.min(1, body.scrollTop / (body.scrollHeight - body.clientHeight));
+    // How far through the whole book: the chapters behind the reader, plus how far into this one they are.
+    const through = chapterCount === 0 ? 0 : Math.min(1, (chapterIndex + scrolled) / chapterCount);
     const bar = progressRef.current;
-    if (bar !== null) {
-      const through = chapterCount === 0 ? 0 : (chapterIndex + scrolled) / chapterCount;
-      bar.style.width = `${String(Math.round(Math.min(1, through) * 100))}%`;
-    }
+    if (bar !== null) bar.style.width = `${String(Math.round(through * 100))}%`;
     if (chapterPath === null) return;
     if (rememberTimer.current !== null) window.clearTimeout(rememberTimer.current);
     rememberTimer.current = window.setTimeout(() => {
       rememberTimer.current = null;
-      remember(attachmentId, chapterPath, body.scrollTop);
+      remember(attachmentId, chapterPath, body.scrollTop, through);
     }, 250);
   }, [attachmentId, chapterCount, chapterIndex, chapterPath, remember]);
 

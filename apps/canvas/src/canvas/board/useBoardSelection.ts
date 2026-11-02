@@ -2,7 +2,7 @@ import type { Edge, Node } from "@xyflow/react";
 import { useOnSelectionChange, useStore } from "@xyflow/react";
 import { useCallback, useEffect, useRef } from "react";
 import { useUiStore } from "../../store/useUiStore";
-import { segmentCrossesRect } from "../links/linkGeometry";
+import { linksInBox } from "../links/linkGeometry";
 import { DRAG_THROTTLE_MS, leavesSection } from "./boardSupport";
 import type { useBoardNodes } from "./useBoardNodes";
 import type { useBoardProjection } from "./useBoardProjection";
@@ -169,14 +169,6 @@ export function useBoardSelection(
     [boardSections],
   );
 
-  const sectionLinksInBox = useCallback(
-    (rect: { x: number; y: number; width: number; height: number }) =>
-      projectedLinks.sections
-        .filter((link) => segmentCrossesRect(link.anchors.source, link.anchors.target, rect))
-        .map((link) => link.edge.id),
-    [projectedLinks],
-  );
-
   // biome-ignore lint/correctness/useExhaustiveDependencies: gesture refs are stable, so listing them would only add noise.
   const endMarquee = useCallback(() => {
     const box = marqueeBox.current;
@@ -185,7 +177,12 @@ export function useBoardSelection(
     // The toggles decide what the box was *for*: a box drawn to catch links must not take the cards underneath, and one
     // drawn for cards must not collect the arrow it crossed. Filtered here rather than only while drawing, because
     // React Flow reports every card it touched whatever the reader meant.
-    const boxedLinks = box && selects.links ? sectionLinksInBox(box) : [];
+    // One rule for both kinds of link: a card link is a React Flow edge and a section link is canvas geometry, and
+    // React Flow's box never selects an edge, so the card ones are found here rather than by the pane.
+    const boxedLinks =
+      box && selects.links
+        ? linksInBox([...projectedLinks.flow, ...projectedLinks.sections], box)
+        : [];
     // The scope is enforced here as well as while the box is drawn. `selectable`
     // only stops a card React Flow has not picked up yet, and whether it lands
     // before the first box frame depends on gesture timing; the commit cannot be
@@ -234,7 +231,7 @@ export function useBoardSelection(
     applyBoardNodes,
     liveSelectedIds,
     releaseMarqueeScope,
-    sectionLinksInBox,
+    projectedLinks,
     sectionsInBox,
     sectionMembershipMap,
     setSelectedEdgeIds,

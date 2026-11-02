@@ -60,6 +60,14 @@ export function useBoardRefs(ui: ReturnType<typeof useBoardUi>, boardOrder: read
    */
   const marqueeScope = useRef<{ sectionId: string } | null>(null);
   /**
+   * Whether this box may take cards at all, read while the nodes are built.
+   *
+   * React Flow paints its own selection for the length of the drag, so a filter applied only at commit shows a card
+   * lighting up under a box that is not allowed to have it. A card that is not `selectable` is never boxed in the first
+   * place, which is the one thing React Flow honours frame by frame.
+   */
+  const marqueeTakesCards = useRef(true);
+  /**
    * The box React Flow is drawing, in flow coordinates. React Flow clears its
    * own rectangle on pointerup, so this is the only copy left when the gesture
    * closes — and a link the box crossed is only knowable from the box.
@@ -117,6 +125,7 @@ export function useBoardRefs(ui: ReturnType<typeof useBoardUi>, boardOrder: read
     pointerActive,
     marqueeActive,
     marqueeScope,
+    marqueeTakesCards,
     marqueeBox,
     marqueePress,
     localEase,

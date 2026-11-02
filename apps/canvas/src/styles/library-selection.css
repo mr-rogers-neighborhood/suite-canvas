@@ -356,7 +356,16 @@
   flex: 1 1 auto;
 }
 
+/* The state mark, drawn rather than typed: a tick and a cross are icons in the app's own set, like the rows' glyphs. */
 .select-mode-tick {
-  width: 9px;
+  display: flex;
+  align-items: center;
+  width: 12px;
   color: var(--accent);
+}
+
+/* The last subject still on: a box has to pick something up, so this row says so instead of taking the press. */
+.select-mode-row:disabled {
+  opacity: 0.45;
+  cursor: default;
 }

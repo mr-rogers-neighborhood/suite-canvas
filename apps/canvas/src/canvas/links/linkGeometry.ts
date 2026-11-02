@@ -212,6 +212,30 @@ export function rectContains(rect: LinkRect, point: LinkAnchor): boolean {
  * catches. The drawn path bends a little, but the anchors are what a reader aims
  * at: a box drawn over the line's ends or across its span both count.
  */
+/**
+ * The links a selection box covers.
+ *
+ * One rule for every link, because a link between two cards and a link to a section are the same question here: does the
+ * segment between its anchors cross the rectangle. They are drawn by different layers — a card link is a React Flow edge,
+ * a section link is canvas geometry — and React Flow's box selects nodes and never edges, so without this a box could
+ * only ever catch the section ones.
+ *
+ * The segment is the straight line between the endpoints. A curved route can bow outside the box that crosses its chord,
+ * which is the same approximation the section links have always used: the box is a coarse gesture and the line it is
+ * nearest to is the one a reader meant.
+ */
+export function linksInBox(
+  links: readonly {
+    readonly edge: { readonly id: string };
+    readonly anchors: { readonly source: LinkAnchor; readonly target: LinkAnchor };
+  }[],
+  rect: LinkRect,
+): string[] {
+  return links
+    .filter((link) => segmentCrossesRect(link.anchors.source, link.anchors.target, rect))
+    .map((link) => link.edge.id);
+}
+
 export function segmentCrossesRect(from: LinkAnchor, to: LinkAnchor, rect: LinkRect): boolean {
   if (rectContains(rect, from) || rectContains(rect, to)) return true;
   const left = rect.x;

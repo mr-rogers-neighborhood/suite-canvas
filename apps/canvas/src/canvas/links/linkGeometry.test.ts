@@ -8,6 +8,7 @@ import {
   endpointRect,
   type LinkScene,
   linkAnchors,
+  linksInBox,
   nearestSideAnchor,
   rectContains,
   segmentCrossesRect,
@@ -331,5 +332,42 @@ describe("anchors on a rounded card", () => {
     for (const radius of [0, 12, 28]) {
       expect(anchorOnRect(rect, { x: 0.5, y: 0 }, radius)).toEqual({ x: 260, y: 100 });
     }
+  });
+});
+
+/**
+ * What a selection box catches.
+ *
+ * A link between two cards is a React Flow edge and a link to a section is canvas geometry, but a box asks one question of
+ * both: does the line between the ends cross me. React Flow's own box only ever selects nodes, which is why the reader's
+ * "Links" option appeared to do nothing for the links they actually draw.
+ */
+describe("linksInBox", () => {
+  const BOX = { x: 0, y: 0, width: 100, height: 100 };
+  const link = (id: string, from: { x: number; y: number }, to: { x: number; y: number }) => ({
+    edge: { id },
+    anchors: { source: from, target: to },
+  });
+
+  it("should catch a link that crosses the box", () => {
+    expect(linksInBox([link("a", { x: -50, y: 50 }, { x: 150, y: 50 })], BOX)).toEqual(["a"]);
+  });
+
+  it("should catch a link with one end inside the box", () => {
+    expect(linksInBox([link("a", { x: 10, y: 10 }, { x: 400, y: 400 })], BOX)).toEqual(["a"]);
+  });
+
+  it("should leave a link the box only passes near", () => {
+    // Below the box and running past it: near is not crossed.
+    expect(linksInBox([link("a", { x: -50, y: 200 }, { x: 200, y: 200 })], BOX)).toEqual([]);
+  });
+
+  it("should report card links and section links the same way", () => {
+    const both = [
+      link("card-link", { x: -10, y: 20 }, { x: 120, y: 20 }),
+      link("section-link", { x: 50, y: -10 }, { x: 50, y: 200 }),
+      link("elsewhere", { x: 500, y: 500 }, { x: 600, y: 600 }),
+    ];
+    expect(linksInBox(both, BOX)).toEqual(["card-link", "section-link"]);
   });
 });

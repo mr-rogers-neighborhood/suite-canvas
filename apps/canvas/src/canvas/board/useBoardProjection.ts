@@ -4,7 +4,7 @@ import { useCallback, useMemo } from "react";
 import { type CardMeta, cardMeta } from "../../cards/cardMeta";
 import { resolveCardType, typesById } from "../../cards/cardTypes";
 import { portalTargetId } from "../../cards/portal";
-import { type LinkScene, linkAnchors } from "../links/linkGeometry";
+import { type LinkAnchor, type LinkScene, linkAnchors } from "../links/linkGeometry";
 import type { SectionLink } from "../links/SectionLinkLayer";
 import { paintSurface } from "../surfaceContext";
 import type { useBoardUi } from "./useBoardUi";
@@ -14,6 +14,13 @@ export interface FlowLink {
   edge: GraphEdge;
   source: string;
   target: string;
+  /**
+   * The two ends in flow coordinates, which React Flow itself does not need but every box test does.
+   *
+   * A selection box can only ask "did this box cross that line" of points, and a link between two cards is a flow edge
+   * whose geometry was being computed and then thrown away. Keeping it is what lets one rule cover both kinds of link.
+   */
+  anchors: { source: LinkAnchor; target: LinkAnchor };
   offLens: boolean;
 }
 
@@ -184,7 +191,7 @@ export function useBoardProjection(ui: ReturnType<typeof useBoardUi>) {
       const source = nodeIdForEndpoint(endpoints.source);
       const target = nodeIdForEndpoint(endpoints.target);
       if (edge.layer === "above") above.push({ edge, anchors, offLens });
-      if (source && target) flow.push({ edge, source, target, offLens });
+      if (source && target) flow.push({ edge, source, target, anchors, offLens });
       else sections.push({ edge, anchors, offLens });
     }
     return { flow, sections, above };

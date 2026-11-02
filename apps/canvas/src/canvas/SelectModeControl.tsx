@@ -1,11 +1,17 @@
 import { useState } from "react";
+import { IconGlyph } from "../icons/IconGlyph";
 import { useUiStore } from "../store/useUiStore";
 
-/** The three things a selection box can pick up, in the order they are offered. */
+/**
+ * The three things a selection box can pick up, in the order they are offered.
+ *
+ * Drawn from the app's own icon set rather than from unicode glyphs: a widget in the controls beside `IconGlyph` buttons is
+ * read as a different kind of control when its marks come from a different typeface.
+ */
 const SUBJECTS = [
-  { key: "cards", label: "Cards", glyph: "\u25a1" },
-  { key: "links", label: "Links", glyph: "\u2194" },
-  { key: "sections", label: "Sections", glyph: "\u25ad" },
+  { key: "cards", label: "Cards", icon: "lucide:square" },
+  { key: "links", label: "Links", icon: "lucide:arrow-left-right" },
+  { key: "sections", label: "Sections", icon: "lucide:frame" },
 ] as const;
 
 /**
@@ -45,33 +51,35 @@ export function SelectModeControl() {
         title={`Boxing picks up ${summary}`}
         onClick={() => setOpen((current) => !current)}
       >
-        <span aria-hidden="true" className="select-mode-glyph">
-          {"\u2b1a"}
-        </span>
+        <IconGlyph icon="lucide:box-select" size={13} />
         <span aria-hidden="true" className="select-mode-count">
           {chosen.length}
         </span>
       </button>
       {open ? (
         <fieldset className="select-mode-menu" aria-label="What a selection box picks up">
-          {SUBJECTS.map((subject) => (
-            <button
-              key={subject.key}
-              type="button"
-              className="select-mode-row"
-              data-testid={`select-mode-${subject.key}`}
-              aria-pressed={selects[subject.key]}
-              onClick={() => toggle(subject.key)}
-            >
-              <span aria-hidden="true" className="select-mode-glyph">
-                {subject.glyph}
-              </span>
-              <span className="select-mode-label">{subject.label}</span>
-              <span aria-hidden="true" className="select-mode-tick">
-                {selects[subject.key] ? "\u2713" : ""}
-              </span>
-            </button>
-          ))}
+          {SUBJECTS.map((subject) => {
+            // A box has to pick something up: the last one on is the one that cannot be turned off.
+            const last = selects[subject.key] && chosen.length === 1;
+            return (
+              <button
+                key={subject.key}
+                type="button"
+                className="select-mode-row"
+                data-testid={`select-mode-${subject.key}`}
+                aria-pressed={selects[subject.key]}
+                disabled={last}
+                title={last ? "A selection box has to pick something up" : undefined}
+                onClick={() => toggle(subject.key)}
+              >
+                <IconGlyph icon={subject.icon} size={12} />
+                <span className="select-mode-label">{subject.label}</span>
+                <span aria-hidden="true" className="select-mode-tick">
+                  <IconGlyph icon={selects[subject.key] ? "lucide:check" : "lucide:x"} size={11} />
+                </span>
+              </button>
+            );
+          })}
         </fieldset>
       ) : null}
     </div>

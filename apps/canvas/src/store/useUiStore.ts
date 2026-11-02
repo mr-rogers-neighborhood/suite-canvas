@@ -684,10 +684,19 @@ export const useUiStore = create<UiState>((set, get) => ({
   emptyMediaTrash: () => set({ trashedMediaIds: [] }),
   setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
   setSelectedEdgeIds: (selectedEdgeIds) => set({ selectedEdgeIds }),
+  /**
+   * What a selection box picks up.
+   *
+   * The last subject cannot be switched off: a box that picks up nothing is a box that does nothing, and a reader who
+   * reached that state by pressing three times has no reason to think the fourth press is what repairs it. The control
+   * disables the row as well, so this is the rule rather than the only guard.
+   */
   toggleMarqueeSelect: (subject) =>
-    set((state) => ({
-      marqueeSelects: { ...state.marqueeSelects, [subject]: !state.marqueeSelects[subject] },
-    })),
+    set((state) => {
+      const next = { ...state.marqueeSelects, [subject]: !state.marqueeSelects[subject] };
+      if (!next.cards && !next.links && !next.sections) return state;
+      return { marqueeSelects: next };
+    }),
   setLibraryDrag: (libraryDrag) => set({ libraryDrag }),
   startLinkEndMove: (linkEndMove) => set({ linkEndMove }),
   cancelLinkEndMove: () => set({ linkEndMove: null }),

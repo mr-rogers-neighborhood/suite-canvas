@@ -110,6 +110,7 @@ export function BoardSurface({
     lastDragSent,
     marqueeActive,
     marqueeScope,
+    marqueeTakesCards,
     marqueeBox,
     marqueePress,
     localEase,
@@ -491,12 +492,17 @@ export function BoardSurface({
         const press = marqueePress.current;
         const inside = press ? sectionsAt(press, boardSections)[0] : undefined;
         marqueeScope.current = inside ? { sectionId: inside.id } : null;
-        // Applied here rather than on the first box frame: by then React Flow
-        // has already committed a selection, and a card caught by that frame
-        // stays caught. Flag writes only, so the live box is untouched; the
-        // commit filters again in case a frame slipped through.
-        if (inside) applyBoardNodes([...liveSelectedIds()], true);
+        // The reader's toggles are read here, once, into the flag the node builder consults: React Flow only boxes
+        // `selectable` cards, so a subject switched off must be off before the first box frame rather than filtered out
+        // after the last one. That is the difference between "the option does nothing" and "the option is the rule".
+        const takes = useUiStore.getState().marqueeSelects.cards;
+        const narrowed = marqueeTakesCards.current !== takes;
+        marqueeTakesCards.current = takes;
         marqueeActive.current = true;
+        // Applied here rather than on the first box frame: by then React Flow has already committed a selection, and a
+        // card caught by that frame stays caught. Flag writes only, so the live box is untouched; the commit filters
+        // again in case a frame slipped through.
+        if (inside || narrowed) applyBoardNodes([...liveSelectedIds()], true);
       }}
       onSelectionEnd={() => {
         // React Flow's final selection is authoritative; `endMarquee` releases

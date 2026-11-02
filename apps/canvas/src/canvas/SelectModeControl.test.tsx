@@ -48,12 +48,19 @@ describe("the select-mode control", () => {
     });
   });
 
+  /**
+   * Sections and nothing else, which is the case the toggles exist for.
+   *
+   * The order matters and is the reader's: turn the new subject on, then the old ones off. Turning the last one off first
+   * would leave a box that picks up nothing, which is refused — so "everything off, then the one you want on" is the
+   * gesture this rule deliberately does not support.
+   */
   it("should let a reader ask for sections and nothing else", () => {
     render(<SelectModeControl />);
     fireEvent.click(screen.getByTestId("select-mode-toggle"));
+    fireEvent.click(screen.getByTestId("select-mode-sections"));
     fireEvent.click(screen.getByTestId("select-mode-cards"));
     fireEvent.click(screen.getByTestId("select-mode-links"));
-    fireEvent.click(screen.getByTestId("select-mode-sections"));
 
     expect(useUiStore.getState().marqueeSelects).toEqual({
       cards: false,
@@ -64,6 +71,20 @@ describe("the select-mode control", () => {
       "title",
       "Boxing picks up sections",
     );
+  });
+
+  it("should refuse to leave a box that picks up nothing", () => {
+    render(<SelectModeControl />);
+    fireEvent.click(screen.getByTestId("select-mode-toggle"));
+    // Cards and links are on and sections is off, so links is the last one standing once cards goes.
+    fireEvent.click(screen.getByTestId("select-mode-cards"));
+
+    const links = screen.getByTestId("select-mode-links");
+    expect(links).toBeDisabled();
+    expect(links).toHaveAttribute("title", "A selection box has to pick something up");
+
+    fireEvent.click(links);
+    expect(useUiStore.getState().marqueeSelects.links).toBe(true);
   });
 
   it("should draw nothing for a viewer, who boxes nothing", () => {

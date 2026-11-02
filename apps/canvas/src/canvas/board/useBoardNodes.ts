@@ -62,6 +62,7 @@ export function useBoardNodes(
     pointerActive,
     marqueeActive,
     marqueeScope,
+    marqueeTakesCards,
     localEase,
     localEaseFrame,
     peerTargets,
@@ -269,7 +270,12 @@ export function useBoardNodes(
           // every rebuild would otherwise hand React Flow a node that is
           // selectable again and the scope would leak mid-gesture.
           const scope = marqueeScope.current;
-          const selectable = !scope || sectionMembershipMap.get(card.id) === scope.sectionId;
+          // Two reasons a card cannot be boxed, and both belong on the node: the section scope, and the reader having
+          // switched cards out of what a box picks up. Outside a gesture everything is selectable, because a press on a
+          // card is not a box.
+          const inScope = !scope || sectionMembershipMap.get(card.id) === scope.sectionId;
+          const boxable = !marqueeActive.current || marqueeTakesCards.current;
+          const selectable = inScope && boxable;
 
           const isDisplaced = refs.previewDisplacedCards.current.has(card.id);
           const baseClass = existing?.className?.replace("is-reflow-displaced", "").trim();
@@ -318,6 +324,7 @@ export function useBoardNodes(
       sectionMembershipMap,
       collapsedCards,
       collapsedSections,
+      marqueeTakesCards,
     ],
   );
 

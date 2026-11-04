@@ -211,7 +211,7 @@ export async function createFixtures(
 }
 
 /**
- * Downloads the stored snapshot as the `.suite` envelope the app already reads,
+ * Downloads the stored snapshot as the `.canvas` envelope the app already reads,
  * so an operator can reproduce a bug locally with the workspace it came from.
  *
  * Images are gathered from the same walker the app's export uses, so an image
@@ -259,7 +259,7 @@ export function exportWorkspace(
   response.writeHead(200, {
     ...CORS_HEADERS,
     "content-type": "application/json; charset=utf-8",
-    "content-disposition": `attachment; filename="suite-${stem}.suite"`,
+    "content-disposition": `attachment; filename="suite-${stem}.canvas"`,
     "content-length": String(Buffer.byteLength(json)),
   });
   response.end(json);

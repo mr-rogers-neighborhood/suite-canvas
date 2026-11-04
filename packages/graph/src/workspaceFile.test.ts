@@ -4,6 +4,10 @@ import { WorkspaceDocument } from "./loro/WorkspaceDocument.js";
 import {
   createWorkspaceFile,
   damagedAttachmentWarning,
+  isLegacyWorkspaceFileKind,
+  LEGACY_WORKSPACE_FILE_KIND,
+  migrateWorkspaceFile,
+  needsWorkspaceFileMigration,
   parseWorkspaceFile,
   readWorkspaceFile,
   WORKSPACE_FILE_KIND,
@@ -245,3 +249,77 @@ function writeTitledBody(
     attrs.set("name", `${id}.png`);
   });
 }
+
+describe("the .canvas rename", () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);
+  const attachments = {
+    "0123456789abcdef0123456789abcdef": {
+      mime: "image/png",
+      name: "pixel.png",
+      width: 1,
+      height: 1,
+      bytes: png,
+    },
+  };
+
+  it("should write the new envelope kind and version", () => {
+    const { file } = createWorkspaceFile("ws-1", workspace());
+    expect(file.kind).toBe("suite.canvas");
+    expect(file.version).toBe(3);
+  });
+
+  it("should read a legacy suite.workspace file", () => {
+    const { file } = createWorkspaceFile("ws-1", workspace());
+    const parsed = parseWorkspaceFile({ ...file, kind: LEGACY_WORKSPACE_FILE_KIND, version: 2 });
+    expect(parsed.file.kind).toBe(LEGACY_WORKSPACE_FILE_KIND);
+    expect(parsed.workspace.listCards().map((card) => card.id)).toEqual(["c1"]);
+  });
+
+  it("should know which files owe a rewrite", () => {
+    const { file } = createWorkspaceFile("ws-1", workspace());
+    expect(needsWorkspaceFileMigration(file)).toBe(false);
+    expect(needsWorkspaceFileMigration({ kind: LEGACY_WORKSPACE_FILE_KIND, version: 2 })).toBe(
+      true,
+    );
+    // An older version is rewritten even when the kind is current.
+    expect(needsWorkspaceFileMigration({ kind: WORKSPACE_FILE_KIND, version: 2 })).toBe(true);
+  });
+
+  it("should migrate a legacy file without touching the snapshot", () => {
+    const { file } = createWorkspaceFile(
+      "ws-1",
+      workspace(),
+      "2026-10-22T00:00:00.000Z",
+      attachments,
+    );
+    const parsed = parseWorkspaceFile({ ...file, kind: LEGACY_WORKSPACE_FILE_KIND, version: 2 });
+    const migrated = migrateWorkspaceFile(parsed);
+
+    expect(migrated.file.kind).toBe(WORKSPACE_FILE_KIND);
+    expect(migrated.file.version).toBe(WORKSPACE_FILE_VERSION);
+    // The payload is the same bytes, not a re-export that mints a new version.
+    expect(migrated.file.document).toBe(file.document);
+    expect(migrated.file.attachments).toEqual(file.attachments);
+    expect(migrated.file.exportedAt).toBe("2026-10-22T00:00:00.000Z");
+    expect(migrated.wasLegacyKind).toBe(true);
+    expect(migrated.from).toEqual({ kind: LEGACY_WORKSPACE_FILE_KIND, version: 2 });
+  });
+
+  it("should produce a file that no longer owes a rewrite and still opens", () => {
+    const { file, json } = createWorkspaceFile("ws-1", workspace(), undefined, attachments);
+    const migrated = migrateWorkspaceFile(readWorkspaceFile(json));
+    const reread = readWorkspaceFile(migrated.json);
+
+    expect(needsWorkspaceFileMigration(reread.file)).toBe(false);
+    expect(reread.workspace.listCards().map((card) => card.id)).toEqual(["c1"]);
+    expect(reread.attachments[0]?.id).toBe("0123456789abcdef0123456789abcdef");
+    expect(Array.from(reread.attachments[0]?.bytes ?? [])).toEqual(Array.from(png));
+    expect(file.kind).toBe(WORKSPACE_FILE_KIND);
+  });
+
+  it("should name the legacy kind", () => {
+    expect(isLegacyWorkspaceFileKind(LEGACY_WORKSPACE_FILE_KIND)).toBe(true);
+    expect(isLegacyWorkspaceFileKind(WORKSPACE_FILE_KIND)).toBe(false);
+    expect(isLegacyWorkspaceFileKind("suite.bundle")).toBe(false);
+  });
+});

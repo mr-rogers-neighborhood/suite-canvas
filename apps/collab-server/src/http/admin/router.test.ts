@@ -1051,7 +1051,7 @@ describe("admin mutations", () => {
     ).toBe(400);
   });
 
-  it("exports a stored workspace as a .suite envelope and 404s an unknown one", async () => {
+  it("exports a stored workspace as a .canvas envelope and 404s an unknown one", async () => {
     seedWorkspace("ws-a", 2);
     await startServer();
 
@@ -1060,11 +1060,11 @@ describe("admin mutations", () => {
     expect(response.headers.get("content-type")).toContain("application/json");
     const disposition = response.headers.get("content-disposition") ?? "";
     expect(disposition).toContain("attachment");
-    expect(disposition).toContain(".suite");
+    expect(disposition).toContain(".canvas");
 
     const body = (await response.json()) as unknown;
     const parsed = parseWorkspaceFile(body);
-    expect(parsed.file).toMatchObject({ workspaceId: "ws-a", kind: "suite.workspace" });
+    expect(parsed.file).toMatchObject({ workspaceId: "ws-a", kind: "suite.canvas" });
     expect(parsed.file.manifest.cards).toBe(2);
     expect(parsed.workspace.listCards()).toHaveLength(2);
 

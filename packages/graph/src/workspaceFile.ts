@@ -5,14 +5,31 @@ import { documentAttachments } from "./cardAttachments.js";
 import { SCHEMA_VERSION, WorkspaceDocument } from "./loro/WorkspaceDocument.js";
 
 /**
- * The envelope a `.suite` backup uses. The document itself is opaque to readers.
+ * The envelope a `.canvas` file uses. The document itself is opaque to readers.
  *
- * Version 2 added `attachments`. The file is this product's only backup, so an
- * image that lives beside the document has to travel inside it; a v1 file has
- * no `attachments` key and still imports (the key defaults to `{}`).
+ * History:
+ *
+ * - **v1** was a `.suite` file with a snapshot and a manifest.
+ * - **v2** added `attachments`. The file is this product's only backup, so an
+ *   image that lives beside the document has to travel inside it; a v1 file has
+ *   no `attachments` key and still imports (the key defaults to `{}`).
+ * - **v3** renamed the envelope to `suite.canvas` and the extension to `.canvas`,
+ *   because `.suite` now means a bundle of files from several apps. The payload
+ *   did not change: a v2 file and a v3 file carry the same snapshot, manifest and
+ *   attachments, so migration rewrites the envelope and preserves the snapshot
+ *   bytes exactly.
+ *
+ * Both kinds are accepted on read. The legacy reader is cheap, and it is what
+ * lets a `.suite` a user has kept since before the rename open without a wizard.
  */
-export const WORKSPACE_FILE_KIND = "suite.workspace";
-export const WORKSPACE_FILE_VERSION = 2;
+export const WORKSPACE_FILE_KIND = "suite.canvas";
+/** What a `.suite` canvas file called itself before v3. Read, never written. */
+export const LEGACY_WORKSPACE_FILE_KIND = "suite.workspace";
+export const WORKSPACE_FILE_VERSION = 3;
+/** Extension a `.canvas` file carries, without the dot. */
+export const WORKSPACE_FILE_EXTENSION = "canvas";
+/** The extension `.suite` reserved for a bundle, and the one legacy files use. */
+export const BUNDLE_FILE_EXTENSION = "suite";
 
 export const workspaceFileManifestSchema = z.object({
   boards: z.number().int().nonnegative(),
@@ -37,7 +54,9 @@ export const workspaceFileAttachmentSchema = z.object({
 });
 
 export const workspaceFileSchema = z.object({
-  kind: z.literal(WORKSPACE_FILE_KIND),
+  // A v3 writer emits `suite.canvas`; a v1 or v2 file says `suite.workspace`.
+  // Accepting both here is what makes the rename a rename rather than a break.
+  kind: z.union([z.literal(WORKSPACE_FILE_KIND), z.literal(LEGACY_WORKSPACE_FILE_KIND)]),
   version: z.number().int().positive(),
   schemaVersion: z.number().int().positive(),
   exportedAt: z.string().min(1),
@@ -314,6 +333,60 @@ export function parseWorkspaceFile(input: unknown): ParsedWorkspaceFile {
 /** Throwing form of `tryReadWorkspaceFile`. */
 export function readWorkspaceFile(text: string): ParsedWorkspaceFile {
   return unwrapFile(tryReadWorkspaceFile(text));
+}
+
+/** Whether this envelope was written before the `.canvas` rename. */
+export function isLegacyWorkspaceFileKind(kind: string): boolean {
+  return kind === LEGACY_WORKSPACE_FILE_KIND;
+}
+
+/**
+ * Whether opening this file should also rewrite it in the current envelope.
+ *
+ * True for the legacy kind and true for an older version of either kind. The
+ * caller decides *where* the rewrite goes; this only decides whether one is owed.
+ */
+export function needsWorkspaceFileMigration(
+  file: Pick<WorkspaceFile, "kind" | "version">,
+): boolean {
+  return file.kind !== WORKSPACE_FILE_KIND || file.version < WORKSPACE_FILE_VERSION;
+}
+
+/** A parsed file re-expressed in the current envelope. */
+export interface WorkspaceFileMigration {
+  /** The envelope in the current shape, ready to serialize. */
+  readonly file: WorkspaceFile;
+  readonly json: string;
+  /** What the file called itself, for the one message a reader sees. */
+  readonly from: { readonly kind: string; readonly version: number };
+  readonly wasLegacyKind: boolean;
+}
+
+/**
+ * Rewrite a parsed file in the current envelope.
+ *
+ * The snapshot is copied verbatim rather than re-exported. Re-exporting would
+ * mint a new version vector and change bytes the user never touched; migration is
+ * a rename, and a rename must not touch the document. `exportedAt` is preserved
+ * for the same reason — the payload is from then, whatever the envelope says.
+ */
+export function migrateWorkspaceFile(
+  parsed: ParsedWorkspaceFile,
+  exportedAt?: string,
+): WorkspaceFileMigration {
+  const source = parsed.file;
+  const file: WorkspaceFile = {
+    ...source,
+    kind: WORKSPACE_FILE_KIND,
+    version: WORKSPACE_FILE_VERSION,
+    exportedAt: exportedAt ?? source.exportedAt,
+  };
+  return {
+    file,
+    json: JSON.stringify(file, null, 2),
+    from: { kind: source.kind, version: source.version },
+    wasLegacyKind: source.kind === LEGACY_WORKSPACE_FILE_KIND,
+  };
 }
 
 function unwrapFile(result: Result<ParsedWorkspaceFile, WorkspaceFileError>): ParsedWorkspaceFile {

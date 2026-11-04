@@ -277,7 +277,7 @@ function cardProperties(card: Card, typesById: Map<string, CardType>): PortableP
 
 /**
  * A readable projection of the workspace: JSON for tools, Markdown for people.
- * It is export-only; the exact `.suite` backup is the only import path.
+ * It is export-only; the exact `.canvas` backup is the only import path.
  */
 export function exportPortable(
   workspace: WorkspaceDocument,

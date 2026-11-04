@@ -22,7 +22,7 @@ import { workspaceTemplateSchema } from "./workspaceTemplate.js";
 
 /**
  * The schemas a document from somewhere else passes through before this build
- * touches it: a `.suite` backup, a template row from the template API, a view
+ * touches it: a `.canvas` backup, a template row from the template API, a view
  * that arrived inside a share link, and the records the CRDT carries when a
  * peer's operation lands.
  *

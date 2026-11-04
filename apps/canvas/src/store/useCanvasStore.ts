@@ -2,13 +2,14 @@ import { WorkspaceDocument } from "@suite/graph";
 import { EphemeralStore, LoroDoc } from "loro-crdt";
 import { CursorEphemeralStore } from "loro-prosemirror";
 import { create } from "zustand";
-import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
 import { type LoroConnectionStatus, LoroProvider, type ProviderAuth } from "../collab/loroProvider";
 import { TAB_ID } from "../collab/tabId";
 import { markBoot, measureBoot } from "../dev/bootTiming";
+import { hostKind } from "../host/bridge";
 import { collabWsUrl } from "../session/endpoints";
 import { isStandalone } from "../session/mode";
 import { getSession } from "../session/session";
+import { createWorkspacePersistence } from "../storage/workspacePersistence";
 
 export type ConnectionStatus = LoroConnectionStatus;
 
@@ -40,9 +41,15 @@ const presence = new EphemeralStore(30_000);
 const cursors = new CursorEphemeralStore(TAB_ID, 30_000);
 
 // Keyed by room, not workspace: a viewer of a board projection must not load
-// whatever this browser cached for the owner's workspace.
-const persistence =
-  ROOM_ID && typeof indexedDB !== "undefined" ? new LoroIndexeddbPersistence(ROOM_ID, doc) : null;
+// whatever this browser cached for the owner's workspace. The host decides which
+// adapter backs the local copy; nothing here knows whether it is IndexedDB or a
+// file owned by the main process.
+const persistence = createWorkspacePersistence({
+  host: hostKind(),
+  roomId: ROOM_ID,
+  doc,
+  indexedDb: typeof indexedDB !== "undefined",
+});
 
 markBoot("store:created");
 

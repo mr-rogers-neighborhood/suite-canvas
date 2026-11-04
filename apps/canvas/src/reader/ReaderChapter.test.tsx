@@ -260,6 +260,18 @@ describe("painting a chapter", () => {
     expect(screen.queryByTestId("reader-unplaced")).toBeNull();
   });
 
+  it("should attribute author and style tooltip on painted highlight", () => {
+    const { container } = draw("<p>The first sentence of the book.</p>", [
+      annotation("first sentence", {
+        author: { name: "Carol", color: "#ec4899" },
+      }),
+    ]);
+    const mark = container.querySelector("mark.reader-highlight");
+    expect(mark?.getAttribute("title")).toContain("Important · by Carol");
+    expect(mark?.getAttribute("data-author")).toBe("Carol");
+    expect(mark?.getAttribute("data-author-color")).toBe("#ec4899");
+  });
+
   /**
    * An area highlight's rectangle.
    *

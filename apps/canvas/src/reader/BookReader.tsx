@@ -13,6 +13,7 @@ import { BookBacklinks } from "./BookBacklinks";
 import { BookHighlights } from "./BookHighlights";
 import { BookSearchPanel } from "./BookSearchPanel";
 import { useBookPosition, useBookStore } from "./bookStore";
+import { fallbackContents, indexOfChapter as indexOf } from "./bookSupport";
 import { ChapterNotice } from "./ChapterNotice";
 import { imageMime, imagePaths, resolveImages } from "./chapterAssets";
 import { copyHighlights } from "./copyHighlights";
@@ -30,6 +31,7 @@ import {
 import { ReaderHead, type ReaderPanel } from "./ReaderHead";
 import { useBookBytes } from "./useBookBytes";
 import { useBookSearch } from "./useBookSearch";
+import { useCoReading } from "./useCoReading";
 import { useHighlights } from "./useHighlights";
 import "../styles/reader.css";
 
@@ -300,6 +302,20 @@ export function BookReader({
   const chapterIndex =
     opened === null || chapterPath === null ? 0 : Math.max(0, indexOf(opened, chapterPath));
 
+  const { coReaders, followPeerId, handleToggleFollow, clearFollow, publishReadingPosition } =
+    useCoReading({
+      attachmentId,
+      sourceCardId,
+      chapterPath,
+      chapterIndex,
+      chapterCount,
+      pendingOffset,
+      book: opened,
+      bodyRef,
+      setChapterPath,
+      setPendingOffset,
+    });
+
   /**
    * Where the reader is, written without a render.
    *
@@ -324,11 +340,13 @@ export function BookReader({
     rememberTimer.current = window.setTimeout(() => {
       rememberTimer.current = null;
       remember(attachmentId, chapterPath, body.scrollTop, through);
+      publishReadingPosition(chapterPath, body.scrollTop, through);
     }, 250);
-  }, [attachmentId, chapterCount, chapterIndex, chapterPath, remember]);
+  }, [attachmentId, chapterCount, chapterIndex, chapterPath, publishReadingPosition, remember]);
 
   const pick = useCallback(
     (path: string) => {
+      clearFollow();
       setChapterPath(path);
       setPanel("none");
       // A new chapter starts at its top: carrying the offset over would drop the reader mid-page somewhere they have
@@ -336,10 +354,11 @@ export function BookReader({
       setPendingOffset(0);
       remember(attachmentId, path, 0);
     },
-    [attachmentId, remember],
+    [attachmentId, remember, clearFollow],
   );
 
   const turn = (step: number) => {
+    clearFollow();
     const next = opened?.chapters[chapterIndex + step];
     if (next !== undefined) pick(next);
   };
@@ -595,6 +614,9 @@ export function BookReader({
         marks={
           <ArmedColour styles={highlights.styles} armed={armedStyleId} onArm={setArmedStyleId} />
         }
+        peers={coReaders}
+        followTargetId={followPeerId}
+        onToggleFollow={handleToggleFollow}
       />
 
       {panel === "cards" ? (
@@ -855,20 +877,4 @@ export function BookReader({
       ) : null}
     </div>
   );
-}
-
-function indexOf(book: OpenedBook, path: string): number {
-  return book.chapters.indexOf(path);
-}
-
-/** Chapters, when a book has no usable contents page: one entry per spine document. */
-function fallbackContents(
-  book: OpenedBook,
-): { label: string; path: string | null; fragment: null; depth: number }[] {
-  return book.chapters.map((path, index) => ({
-    label: `Chapter ${String(index + 1)}`,
-    path,
-    fragment: null,
-    depth: 0,
-  }));
 }

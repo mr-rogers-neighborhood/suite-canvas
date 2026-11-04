@@ -2,6 +2,7 @@ import { WorkspaceDocument } from "@suite/graph";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { usePlaceStackStore } from "../canvas/placeStack";
+import { usePresenceStore } from "../collab/usePresenceStore";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { BookReader } from "./BookReader";
@@ -459,5 +460,54 @@ describe("where the reader is", () => {
     expect(screen.queryByTestId("reader-area-drag")).toBeNull();
     // No words could be measured, so nothing was marked: an empty rectangle is not a highlight.
     expect(screen.queryByTestId("highlight-palette")).toBeNull();
+  });
+
+  it("should show collaborator presence avatars and follow peer reading position", async () => {
+    const attachmentId = "a".repeat(32);
+    usePresenceStore.setState({
+      peers: {
+        "peer-1": {
+          clientId: "peer-1",
+          board: "board-1",
+          user: { name: "Dana", color: "#8b5cf6" },
+          pointer: null,
+          focus: null,
+          dragging: null,
+          selection: null,
+          selectionBox: null,
+          connector: null,
+          resizing: null,
+          sectionDrag: null,
+          sectionResize: null,
+          reconnect: null,
+          connect: null,
+          labelDrag: null,
+          bookReading: {
+            cardId: bookCardId,
+            attachmentId,
+            chapterPath: "OEBPS/text/chapter2.xhtml",
+            progress: 0.5,
+            offset: 200,
+          },
+        },
+      },
+    });
+
+    render(<BookReader attachmentId={attachmentId} name="book" sourceCardId={bookCardId} />);
+    await waitFor(() => expect(screen.getByTestId("reader-peers")).toBeInTheDocument());
+
+    const peerAvatar = screen.getByTestId("reader-peer-avatar");
+    expect(peerAvatar).toHaveTextContent("D");
+    expect(peerAvatar.getAttribute("title")).toContain("Click to follow Dana");
+
+    // Click to follow Dana
+    fireEvent.click(peerAvatar);
+    await waitFor(() => expect(screen.getByTestId("reader-following-badge")).toBeInTheDocument());
+    expect(screen.getByTestId("reader-following-badge")).toHaveTextContent("Following Dana");
+
+    // Turning chapter automatically followed Dana's chapter
+    await waitFor(() =>
+      expect(screen.getByTestId("reader-where").textContent).toMatch(/^Chapter 2/),
+    );
   });
 });

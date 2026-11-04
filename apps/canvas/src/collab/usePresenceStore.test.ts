@@ -77,4 +77,25 @@ describe("usePresenceStore.bind", () => {
     window.dispatchEvent(new Event("beforeunload"));
     expect(store.get("tab-unload")).toBeUndefined();
   });
+
+  it("should publish book reading presence", () => {
+    const store = new EphemeralStore(60_000);
+    usePresenceStore.getState().bind(store, "tab-book");
+    usePresenceStore.getState().setBookReading({
+      cardId: "card-1",
+      attachmentId: "att-1",
+      chapterPath: "chapter1.xhtml",
+      progress: 0.25,
+      offset: 120,
+    });
+
+    const state = store.get("tab-book") as Record<string, unknown>;
+    expect(state[AWARENESS_FIELDS.bookReading]).toEqual({
+      cardId: "card-1",
+      attachmentId: "att-1",
+      chapterPath: "chapter1.xhtml",
+      progress: 0.25,
+      offset: 120,
+    });
+  });
 });

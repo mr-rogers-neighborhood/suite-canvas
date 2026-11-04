@@ -266,6 +266,28 @@ describe("a highlight", () => {
     reopened.doc.import(bytes);
     expect(reopened.getAnnotation(made.id)?.anchor).toEqual(QUOTE);
   });
+
+  it("should preserve author attribution across exports", () => {
+    const { workspace, book } = fixture();
+    const made = workspace.addAnnotation({
+      sourceCardId: book.id,
+      styleId: "style-yellow",
+      anchor: QUOTE,
+      author: { name: "Alice", color: "#3b82f6" },
+    });
+    expect(workspace.getAnnotation(made.id)?.author).toEqual({
+      name: "Alice",
+      color: "#3b82f6",
+    });
+
+    const bytes = workspace.doc.export({ mode: "update" });
+    const reopened = new WorkspaceDocument();
+    reopened.doc.import(bytes);
+    expect(reopened.getAnnotation(made.id)?.author).toEqual({
+      name: "Alice",
+      color: "#3b82f6",
+    });
+  });
 });
 
 describe("the palette", () => {

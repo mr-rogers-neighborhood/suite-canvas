@@ -124,6 +124,9 @@ export function annotationsMethods(ctx: DocContext) {
         ? {}
         : { cardId: readString(fields, "cardId") }),
       ...(readString(fields, "note") === undefined ? {} : { note: readString(fields, "note") }),
+      ...(readAuthor(fields.get("author")) === undefined
+        ? {}
+        : { author: readAuthor(fields.get("author")) }),
       ...(readTags(fields.get("tagIds")) === undefined
         ? {}
         : { tagIds: readTags(fields.get("tagIds")) }),
@@ -135,6 +138,16 @@ export function annotationsMethods(ctx: DocContext) {
     // A hand-edited or corrupt record is skipped rather than thrown on: one bad highlight must not cost a
     // reader their book.
     return parsed.success ? parsed.data : undefined;
+  };
+
+  /** The collaborator who made the highlight, when recorded. */
+  const readAuthor = (value: unknown): Annotation["author"] | undefined => {
+    const record = recordOf(value);
+    if (record === null) return undefined;
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    if (name.length === 0) return undefined;
+    const color = typeof record.color === "string" ? record.color : undefined;
+    return { name, ...(color === undefined ? {} : { color }) };
   };
 
   /** A highlight's tags, from either representation, keeping only ids that are strings. */
@@ -194,6 +207,7 @@ export function annotationsMethods(ctx: DocContext) {
         anchor: input.anchor,
         ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
         ...(input.note === undefined ? {} : { note: input.note }),
+        ...(input.author === undefined ? {} : { author: input.author }),
         ...(input.tagIds === undefined ? {} : { tagIds: input.tagIds }),
         ...(input.parts === undefined ? {} : { parts: input.parts }),
         createdAt: input.createdAt ?? Date.now(),
@@ -205,6 +219,7 @@ export function annotationsMethods(ctx: DocContext) {
       fields.set("createdAt", annotation.createdAt);
       if (annotation.excerpt !== undefined) fields.set("excerpt", annotation.excerpt);
       if (annotation.note !== undefined) fields.set("note", annotation.note);
+      if (annotation.author !== undefined) fields.set("author", annotation.author);
       if (annotation.tagIds !== undefined && annotation.tagIds.length > 0)
         fields.set("tagIds", annotation.tagIds);
       if (annotation.parts !== undefined) fields.set("parts", annotation.parts);

@@ -30,6 +30,10 @@ export function HighlightDropLayer() {
       const boardId = useUiStore.getState().activeBoardId;
       if (workspace === null || boardId === null) return;
       const under = document.elementFromPoint(at.x, at.y);
+      // A release inside the reader itself puts the highlight back; dragging it out onto the
+      // canvas board is what promotes and places the card.
+      const insideReader = under?.closest(".book-canvas-reader, .book-focus, .reader");
+      if (insideReader !== null && insideReader !== undefined) return;
       const overCanvas = under?.closest(
         '[data-testid="canvas-board"], .react-flow, .react-flow__pane, [data-board-id]',
       );

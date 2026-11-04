@@ -2,6 +2,7 @@ import type { Card } from "@suite/graph";
 import { useEffect } from "react";
 import { MEDIA_NODE_NAME } from "../editor/mediaNode";
 import { IconGlyph } from "../icons/IconGlyph";
+import { BookReader } from "../reader/BookReader";
 import { bookEntryOf, loadBook, retryBook, useBookMeta } from "../reader/bookMeta";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
@@ -19,6 +20,8 @@ import { useUiStore } from "../store/useUiStore";
 export function BookCardFace({ card }: { card: Card }) {
   const workspace = useCanvasStore((state) => state.workspace);
   const openCardFocus = useUiStore((state) => state.openCardFocus);
+  const isCanvasReader = useUiStore((state) => Boolean(state.canvasReaderCardIds[card.id]));
+  const toggleCanvasReader = useUiStore((state) => state.toggleCanvasReader);
   const file = workspace === null ? null : bookBlockOf(workspace, card.id);
   const attachmentId = file?.id ?? "";
 
@@ -35,6 +38,49 @@ export function BookCardFace({ card }: { card: Card }) {
   const ready = entry?.status === "ready" ? entry : null;
   const title = ready?.meta.title ?? file?.name ?? "Untitled book";
   const author = ready?.meta.creator ?? "Book";
+
+  if (isCanvasReader && attachmentId.length > 0) {
+    return (
+      <div className="book-canvas-reader nodrag nopan" data-testid="book-canvas-reader">
+        <div className="book-canvas-reader-bar shrink-0">
+          <button
+            type="button"
+            className="views-icon-button nodrag nopan flex items-center gap-1 text-xs"
+            data-testid="book-card-toggle-cover"
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleCanvasReader(card.id);
+            }}
+            title="Show cover"
+          >
+            <IconGlyph icon="lucide:arrow-left" size={12} />
+            <span>Cover</span>
+          </button>
+          <span className="truncate font-medium text-[var(--ink)] text-xs px-2">{title}</span>
+          <button
+            type="button"
+            className="views-icon-button nodrag nopan"
+            data-testid="book-card-expand-focus"
+            onClick={(event) => {
+              event.stopPropagation();
+              openCardFocus(card.id);
+            }}
+            title="Read in focus mode"
+          >
+            <IconGlyph icon="lucide:maximize-2" size={13} />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-hidden nodrag nopan">
+          <BookReader
+            attachmentId={attachmentId}
+            name={title}
+            sourceCardId={card.id}
+            onExpand={() => openCardFocus(card.id)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="book-card" data-testid="book-card-face">
@@ -68,18 +114,34 @@ export function BookCardFace({ card }: { card: Card }) {
             : ` · ${String(ready.meta.chapters)} ${ready.meta.chapters === 1 ? "chapter" : "chapters"}`}
         </span>
       </div>
-      <button
-        type="button"
-        // A node is a drag surface: without this the press would start a drag of the card instead of opening the book.
-        className="book-card-read nodrag nopan"
-        data-testid="book-card-read"
-        onClick={(event) => {
-          event.stopPropagation();
-          openCardFocus(card.id);
-        }}
-      >
-        Read
-      </button>
+      <div className="book-card-actions">
+        <button
+          type="button"
+          className="book-card-read-canvas nodrag nopan"
+          data-testid="book-card-read-canvas"
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleCanvasReader(card.id);
+          }}
+          title="Read on canvas"
+        >
+          <IconGlyph icon="lucide:book-open" size={12} />
+          <span>Read</span>
+        </button>
+        <button
+          type="button"
+          // A node is a drag surface: without this the press would start a drag of the card instead of opening the book.
+          className="book-card-read nodrag nopan"
+          data-testid="book-card-read"
+          onClick={(event) => {
+            event.stopPropagation();
+            openCardFocus(card.id);
+          }}
+          title="Read large in focus mode"
+        >
+          Focus
+        </button>
+      </div>
     </div>
   );
 }

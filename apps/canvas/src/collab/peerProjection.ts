@@ -2,6 +2,7 @@ import type { CanvasMode } from "../canvas/links/linkGesture";
 import type { CanvasPurpose } from "../canvas/purpose";
 import {
   AWARENESS_FIELDS,
+  type BookReadingState,
   type ConnectorState,
   type ConnectState,
   type DraggingState,
@@ -109,6 +110,7 @@ export function toPeerPresence(clientId: string, state: Record<string, unknown>)
     libraryDrag: (state[AWARENESS_FIELDS.libraryDrag] as LibraryDragState | undefined) ?? null,
     purpose: (state[AWARENESS_FIELDS.purpose] as CanvasPurpose | undefined) ?? null,
     gesture: (state[AWARENESS_FIELDS.gesture] as CanvasMode | undefined) ?? null,
+    bookReading: (state[AWARENESS_FIELDS.bookReading] as BookReadingState | undefined) ?? null,
     gestureBeat: readBeat(state[AWARENESS_FIELDS.gestureBeat]),
   };
 }

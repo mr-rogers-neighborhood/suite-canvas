@@ -1,5 +1,5 @@
 import type { ContainerID } from "loro-crdt";
-import type { AnnotationAnchor, AnnotationPart } from "../annotations.js";
+import type { AnnotationAnchor, AnnotationAuthor, AnnotationPart } from "../annotations.js";
 import {
   type Board,
   type Card,
@@ -213,6 +213,8 @@ export interface CreateAnnotationInput {
   tagIds?: string[];
   /** The ranges this highlight was broken into, if the reader broke it. */
   parts?: AnnotationPart[];
+  /** The collaborator who made the highlight. */
+  author?: AnnotationAuthor;
   createdAt?: number;
 }
 

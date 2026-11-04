@@ -32,6 +32,10 @@ export interface ReaderUiSlice {
    * is the reader's own state. A request rather than a selection, spent on arrival, so nothing has to be un-set.
    */
   bookPanelRequest: "contents" | "highlights" | null;
+  /** Book cards that are toggled open as on-canvas readers. */
+  canvasReaderCardIds: Record<string, boolean>;
+  /** Peer id currently followed in collaborative reading, if any. */
+  followPeerId: string | null;
   openAnnotationKinds: () => void;
   closeAnnotationKinds: () => void;
   /** Ask the book reader to open one highlight. The caller opens the book's card; the reader raises the passage. */
@@ -39,6 +43,9 @@ export interface ReaderUiSlice {
   clearFocusedAnnotation: () => void;
   requestBookPanel: (panel: "contents" | "highlights") => void;
   clearBookPanelRequest: () => void;
+  toggleCanvasReader: (cardId: string) => void;
+  setCanvasReader: (cardId: string, open: boolean) => void;
+  setFollowPeerId: (peerId: string | null) => void;
 }
 
 /** The fields this slice starts with. */
@@ -47,9 +54,16 @@ export const readerUiInitial = {
   annotationKindsOpen: false,
   focusedAnnotationId: null,
   bookPanelRequest: null,
+  canvasReaderCardIds: {},
+  followPeerId: null,
 } satisfies Pick<
   ReaderUiSlice,
-  "cardFocusId" | "annotationKindsOpen" | "focusedAnnotationId" | "bookPanelRequest"
+  | "cardFocusId"
+  | "annotationKindsOpen"
+  | "focusedAnnotationId"
+  | "bookPanelRequest"
+  | "canvasReaderCardIds"
+  | "followPeerId"
 >;
 
 /**
@@ -60,7 +74,7 @@ export const readerUiInitial = {
  * simpler one would win by being imported first.
  */
 export function readerUiActions(
-  set: (patch: Partial<ReaderUiSlice>) => void,
+  set: (patch: Partial<ReaderUiSlice> | ((state: ReaderUiSlice) => Partial<ReaderUiSlice>)) => void,
 ): Pick<
   ReaderUiSlice,
   | "openAnnotationKinds"
@@ -69,6 +83,9 @@ export function readerUiActions(
   | "clearFocusedAnnotation"
   | "requestBookPanel"
   | "clearBookPanelRequest"
+  | "toggleCanvasReader"
+  | "setCanvasReader"
+  | "setFollowPeerId"
 > {
   return {
     openAnnotationKinds: () => set({ annotationKindsOpen: true }),
@@ -77,5 +94,20 @@ export function readerUiActions(
     clearFocusedAnnotation: () => set({ focusedAnnotationId: null }),
     requestBookPanel: (bookPanelRequest) => set({ bookPanelRequest }),
     clearBookPanelRequest: () => set({ bookPanelRequest: null }),
+    toggleCanvasReader: (cardId) =>
+      set((state) => ({
+        canvasReaderCardIds: {
+          ...state.canvasReaderCardIds,
+          [cardId]: !state.canvasReaderCardIds[cardId],
+        },
+      })),
+    setCanvasReader: (cardId, open) =>
+      set((state) => ({
+        canvasReaderCardIds: {
+          ...state.canvasReaderCardIds,
+          [cardId]: open,
+        },
+      })),
+    setFollowPeerId: (followPeerId) => set({ followPeerId }),
   };
 }

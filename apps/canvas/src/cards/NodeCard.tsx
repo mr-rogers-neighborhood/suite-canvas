@@ -9,13 +9,14 @@ import { paintSurface, useSurfacePaint } from "../canvas/surfaceContext";
 import { isShapedSurface, shapeInset } from "../canvas/surfacePaint";
 import type { PresenceUser } from "../collab/presence";
 import { countRender } from "../dev/perf";
-import { ContextMenu, type ContextMenuItem } from "../dialogs/ContextMenu";
+import { ContextMenu } from "../dialogs/ContextMenu";
 import { IconGlyph } from "../icons/IconGlyph";
 import { PeerNameTag } from "../presence/PeerNameTag";
 import { PresenceAvatars } from "../presence/PresenceAvatars";
 import { isBookCard } from "../reader/isBookCard";
 import type { InteractionMode } from "../store/interactionMode";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { useUiStore } from "../store/useUiStore";
 import { AnnotationCardFace, annotationOfCard } from "./AnnotationCardFace";
 import { BookCardFace } from "./BookCardFace";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
@@ -32,7 +33,14 @@ export interface ConnectorPeerState {
   position: { x: number; y: number } | null;
 }
 
-export type EditingField = "title" | "body";
+import {
+  buildNodeCardClass,
+  buildNodeCardMenuItems,
+  buildPresenceStyle,
+  type EditingField,
+} from "./nodeCardSupport";
+
+export type { EditingField };
 
 export interface NodeCardProps {
   card: Card;
@@ -312,6 +320,11 @@ export function NodeCard({
   draftActive = false,
 }: NodeCardProps) {
   const nodeWorkspace = useCanvasStore((state) => state.workspace);
+  const isBook = isBookCard(nodeWorkspace, card.id);
+  const isCanvasReader = useUiStore(
+    (state) => isBook && Boolean(state.canvasReaderCardIds[card.id]),
+  );
+  const toggleCanvasReader = useUiStore((state) => state.toggleCanvasReader);
   // One decision, in one file: `cardIcon` walks style, then the card's own icon, then
   // the type's, and a type with no icon keeps the glyph it has always had.
   const resolved = card ? resolveCardIcon(card, type.icon) : null;
@@ -382,15 +395,7 @@ export function NodeCard({
 
   // Peer presence takes visual priority over local selection so collaborators
   // always see where everyone else is: dragging > editing > selecting.
-  const presenceStyle: CSSProperties = draggingPeer
-    ? { borderColor: draggingPeer.color, boxShadow: `0 0 0 3px ${draggingPeer.color}55` }
-    : focusedBy
-      ? { borderColor: focusedBy.color, boxShadow: `0 0 0 2px ${focusedBy.color}33` }
-      : resizingPeer
-        ? { borderColor: resizingPeer.color, boxShadow: `0 0 0 2px ${resizingPeer.color}44` }
-        : selectingPeer
-          ? { boxShadow: `0 0 0 2px ${selectingPeer.color}66` }
-          : {};
+  const presenceStyle = buildPresenceStyle(draggingPeer, focusedBy, resizingPeer, selectingPeer);
 
   /**
    * The card's paint: its type's style, then its own over that, then the contrast
@@ -430,73 +435,45 @@ export function NodeCard({
   const { heightStyle, bodyClass } = cardSizing(
     {
       hasPassage: passage !== null,
-      height,
+      height: height ?? (isCanvasReader ? 520 : null),
       collapsed,
       bodyText: nodeWorkspace?.cardText(card.id) ?? "",
     },
-    DEFAULT_CARD_HEIGHT,
+    isCanvasReader ? 520 : DEFAULT_CARD_HEIGHT,
   );
 
-  const cardClass = [
-    "node-card relative flex flex-col rounded-md border border-[var(--hairline)]",
-    painted ? "is-painted" : "",
-    selected && !draggingPeer && !focusedBy
-      ? shape
-        ? "is-selected border-transparent"
-        : "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-500/30"
-      : "",
-    // A dimmed card keeps its hover and selection affordances but recedes, so
-    // the lens result reads first without losing the spatial context around it.
-    dim && !selected ? "is-off-lens" : "",
-    // Selection paints its own ring; the lens outline steps aside rather than fighting it.
-    onLens && !selected ? "is-on-lens" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const cardClass = buildNodeCardClass({
+    painted,
+    selected,
+    draggingPeer,
+    focusedBy,
+    shape,
+    dim,
+    onLens,
+  });
 
-  const menuItems: ContextMenuItem[] = [
-    { label: "Card info", onSelect: () => onOpenInfo?.() },
-    ...(onSetType && typeTargets.length > 1
-      ? [
-          {
-            label: "Change type",
-            items: typeTargets.map((entry) => ({
-              label: entry.name,
-              onSelect: () => onSetType(entry.id),
-            })),
-          },
-        ]
-      : []),
-    ...(hasMeta && onToggleMeta
-      ? [
-          {
-            label: `${metaExpanded ? "Hide" : "Show"} details`,
-            onSelect: onToggleMeta,
-          },
-        ]
-      : []),
-    ...(onDuplicate ? [{ label: "Duplicate", onSelect: () => onDuplicate() }] : []),
-    ...(onMoveToBoard && moveTargets.length > 0
-      ? [
-          {
-            label: "Move to board",
-            items: moveTargets.map((board) => ({
-              label: board.name,
-              onSelect: () => onMoveToBoard(board.id),
-            })),
-          },
-        ]
-      : []),
-    ...(onFocusCard ? [{ label: "Open in focus", onSelect: () => onFocusCard() }] : []),
-    ...(editContent
-      ? [
-          { label: "Edit title", onSelect: () => onStartEditing?.("title") },
-          { label: "Edit body", onSelect: () => onStartEditing?.("body") },
-        ]
-      : []),
-    ...(editLayout ? [{ label: "Remove from board", onSelect: () => onRemoveFromBoard?.() }] : []),
-    ...(canTrash ? [{ label: "Delete card", danger: true, onSelect: () => onTrash?.() }] : []),
-  ];
+  const menuItems = buildNodeCardMenuItems({
+    onOpenInfo,
+    isBook,
+    isCanvasReader,
+    toggleCanvasReader,
+    cardId: card.id,
+    onSetType,
+    typeTargets,
+    hasMeta,
+    metaExpanded,
+    onToggleMeta,
+    onDuplicate,
+    onMoveToBoard,
+    moveTargets,
+    onFocusCard,
+    editContent,
+    editLayout,
+    canTrash,
+    onStartEditing,
+    onRemoveFromBoard,
+    onTrash,
+  });
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the card is a canvas node; keyboard open is handled by Enter on the selected node.
@@ -524,7 +501,7 @@ export function NodeCard({
         {
           ...presenceStyle,
           ...paintStyle(paint),
-          width: width ?? DEFAULT_CARD_WIDTH,
+          width: width ?? (isCanvasReader ? 480 : DEFAULT_CARD_WIDTH),
           // `auto` when the passage decides, and React Flow measures what it decided.
           ...heightStyle,
           // Where the silhouette is not the box, the chrome inside it has to be pulled
@@ -772,9 +749,9 @@ export function NodeCard({
           {/* biome-ignore lint/a11y/noStaticElementInteractions: the nested ProseMirror editor owns keyboard interaction */}
           {/* biome-ignore lint/a11y/useKeyWithClickEvents: the title overlay and the Inspector's Edit action are the keyboard path into this editor */}
           <div
-            className={`card-body-scroll min-h-0 ${bodyClass} overflow-auto ${
-              editing === "body" ? "nodrag" : ""
-            }`}
+            className={`card-body-scroll min-h-0 ${bodyClass} ${
+              isCanvasReader ? "h-full overflow-hidden nodrag nopan" : "overflow-auto"
+            } ${editing === "body" ? "nodrag" : ""}`}
             data-testid="card-body"
             onClick={(event) => {
               if (!editContent || editing === "body") return;

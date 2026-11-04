@@ -539,9 +539,40 @@
   color: var(--ink-muted);
 }
 
+.book-card-actions {
+  display: flex;
+  gap: 4px;
+  margin: 0 2px 2px;
+}
+
+.book-card-read-canvas {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-contrast, #ffffff);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.book-card-read-canvas:hover {
+  opacity: 0.9;
+}
+
+.book-card-read-canvas:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .book-card-read {
   flex: none;
-  margin: 0 2px 2px;
+  margin: 0;
   padding: 3px 10px;
   border: 1px solid var(--ink);
   border-radius: 6px;
@@ -559,6 +590,24 @@
 .book-card-read:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.book-canvas-reader {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+}
+
+.book-canvas-reader-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 11px;
+  color: var(--ink-muted);
 }
 
 /*

@@ -1,5 +1,14 @@
 import type { ReactNode, RefObject } from "react";
+import type { PresenceUser } from "../collab/presence";
 import { IconGlyph } from "../icons/IconGlyph";
+
+export interface PeerReader {
+  clientId: string;
+  user: PresenceUser;
+  chapterPath?: string | undefined;
+  progress?: number | undefined;
+  offset?: number | undefined;
+}
 
 /**
  * The reader's header: the book, where the reader is in it, and the doors out of the chapter.
@@ -27,6 +36,12 @@ export interface ReaderHeadProps {
   readonly progressRef: RefObject<HTMLSpanElement | null>;
   /** The marking controls, which the reader owns: a held colour is state the header only draws. */
   readonly marks: ReactNode;
+  /** Collaborators currently reading this book. */
+  readonly peers?: readonly PeerReader[] | undefined;
+  /** Which peer this reader is currently following, if any. */
+  readonly followTargetId?: string | null | undefined;
+  /** Toggle following a peer's chapter and position. */
+  readonly onToggleFollow?: ((clientId: string) => void) | undefined;
 }
 
 export type ReaderPanel = "search" | "contents" | "highlights" | "cards";
@@ -75,7 +90,12 @@ export function ReaderHead({
   onExpand,
   progressRef,
   marks,
+  peers = [],
+  followTargetId = null,
+  onToggleFollow,
 }: ReaderHeadProps) {
+  const followedPeer = peers.find((p) => p.clientId === followTargetId);
+
   return (
     <header className="reader-head">
       {READER_PANELS.map((entry) => (
@@ -111,6 +131,57 @@ export function ReaderHead({
       <span className="reader-meta" data-testid="reader-where">
         {`Chapter ${String(chapterNumber)} of ${String(chapterCount)}`}
       </span>
+
+      {peers.length > 0 ? (
+        <div className="flex items-center gap-1 px-1" data-testid="reader-peers">
+          {peers.map((peer) => {
+            const isFollowed = peer.clientId === followTargetId;
+            return (
+              <button
+                key={peer.clientId}
+                type="button"
+                className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white transition-transform ${
+                  isFollowed
+                    ? "ring-2 ring-[var(--accent)] ring-offset-1 scale-110"
+                    : "hover:scale-105"
+                }`}
+                style={{ backgroundColor: peer.user.color }}
+                title={
+                  isFollowed
+                    ? `Following ${peer.user.name}. Click to stop following.`
+                    : `Click to follow ${peer.user.name}`
+                }
+                data-testid="reader-peer-avatar"
+                data-followed={isFollowed ? "true" : undefined}
+                onClick={() => onToggleFollow?.(peer.clientId)}
+              >
+                {peer.user.name.charAt(0).toUpperCase()}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {followedPeer ? (
+        <span
+          className="flex items-center gap-1 rounded bg-[var(--accent)] px-1.5 py-0.5 text-[10px] font-medium text-white"
+          data-testid="reader-following-badge"
+        >
+          <span>Following {followedPeer.user.name}</span>
+          <button
+            type="button"
+            className="hover:opacity-80 leading-none cursor-pointer"
+            aria-label="Stop following"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFollow?.(followedPeer.clientId);
+            }}
+          >
+            ×
+          </button>
+        </span>
+      ) : null}
+
       <span className="ml-auto flex items-center gap-1">
         <button
           type="button"
@@ -147,6 +218,20 @@ export function ReaderHead({
       </span>
       <span className="reader-progress" aria-hidden="true">
         <span className="reader-progress-bar" ref={progressRef} data-testid="reader-progress" />
+        {peers.map((peer) =>
+          typeof peer.progress === "number" ? (
+            <span
+              key={peer.clientId}
+              className="absolute top-0 bottom-0 w-1 -ml-0.5 rounded-full pointer-events-none"
+              style={{
+                left: `${Math.round(peer.progress * 100)}%`,
+                backgroundColor: peer.user.color,
+              }}
+              title={`${peer.user.name} (${Math.round(peer.progress * 100)}%)`}
+              data-testid="reader-peer-marker"
+            />
+          ) : null,
+        )}
       </span>
     </header>
   );

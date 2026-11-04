@@ -57,7 +57,7 @@ export interface ReaderChapterProps {
    */
   locator: string;
   annotations: readonly Annotation[];
-  styles: readonly { id: string; color: string }[];
+  styles: readonly { id: string; color: string; name?: string | undefined }[];
   onSelect: (selection: PendingSelection) => void;
   /** A press on a painted highlight: it is raised, and the raised surface holds every verb. */
   onActivate: (annotationId: string) => void;
@@ -363,13 +363,19 @@ function paintHighlights(
   chapter: {
     locator: string;
     annotations: readonly Annotation[];
-    styles: readonly { id: string; color: string }[];
+    styles: readonly { id: string; color: string; name?: string | undefined }[];
   },
 ): PaintReport {
   unwrapMarks(root);
 
   const index = chapterTextIndex(root);
-  const marks: { segment: Range; color: string; id: string }[] = [];
+  const marks: {
+    segment: Range;
+    color: string;
+    id: string;
+    annotation: Annotation;
+    styleName?: string | undefined;
+  }[] = [];
   let painted = 0;
   let unplaced = 0;
 
@@ -390,7 +396,9 @@ function paintHighlights(
     }
     const style = chapter.styles.find((entry) => entry.id === annotation.styleId);
     const color = style?.color ?? "var(--accent)";
-    for (const segment of segments) marks.push({ segment, color, id: annotation.id });
+    for (const segment of segments) {
+      marks.push({ segment, color, id: annotation.id, annotation, styleName: style?.name });
+    }
     painted += 1;
   }
 
@@ -409,6 +417,22 @@ function paintHighlights(
     // cannot open.
     wrapper.tabIndex = 0;
     wrapper.setAttribute("role", "button");
+
+    const styleName = item.styleName ?? "Highlight";
+    const authorName = item.annotation.author?.name;
+    const authorText = authorName ? `by ${authorName}` : "";
+    const dateText = item.annotation.createdAt
+      ? new Date(item.annotation.createdAt).toLocaleDateString()
+      : "";
+    const tooltipParts = [styleName, authorText, dateText].filter(Boolean);
+    wrapper.title = tooltipParts.join(" · ");
+    if (authorName) {
+      wrapper.dataset.author = authorName;
+      if (item.annotation.author?.color) {
+        wrapper.dataset.authorColor = item.annotation.author.color;
+      }
+    }
+
     try {
       item.segment.surroundContents(wrapper);
     } catch {

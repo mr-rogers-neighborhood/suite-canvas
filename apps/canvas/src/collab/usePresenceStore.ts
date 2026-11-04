@@ -12,6 +12,7 @@ import {
 } from "./peerProjection";
 import {
   AWARENESS_FIELDS,
+  type BookReadingState,
   type ConnectorState,
   type ConnectState,
   type DraggingState,
@@ -55,6 +56,8 @@ interface PresenceState {
   setPurpose: (purpose: CanvasPurpose | null) => void;
   /** The gesture axis, so a peer's cursor can say what their next click does. */
   setGesture: (gesture: CanvasMode | null) => void;
+  /** Where in a book this peer is reading, for collaborative awareness and follow mode. */
+  setBookReading: (reading: BookReadingState | null) => void;
 }
 
 /**
@@ -285,6 +288,7 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     // the ordinary publish so a mode click does not start a keep-alive.
     setPurpose: (purpose) => publish(AWARENESS_FIELDS.purpose, purpose),
     setGesture: (gesture) => publish(AWARENESS_FIELDS.gesture, gesture),
+    setBookReading: (reading) => publish(AWARENESS_FIELDS.bookReading, reading),
   };
 });
 

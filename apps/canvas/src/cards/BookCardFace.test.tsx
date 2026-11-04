@@ -114,4 +114,22 @@ describe("the book card on the canvas", () => {
     expect(document.querySelector(".book-card-cover")).toBeNull();
     expect(document.querySelector(".book-card-placeholder")).not.toBeNull();
   });
+
+  it("should toggle between cover and on-canvas reader", async () => {
+    const { card } = seed();
+    render(<BookCardFace card={card} />);
+
+    const readCanvas = screen.getByTestId("book-card-read-canvas");
+    expect(readCanvas.className).toContain("nodrag");
+    fireEvent.click(readCanvas);
+
+    expect(useUiStore.getState().canvasReaderCardIds[card.id]).toBe(true);
+    expect(screen.getByTestId("book-canvas-reader")).toBeInTheDocument();
+
+    const coverBtn = screen.getByTestId("book-card-toggle-cover");
+    fireEvent.click(coverBtn);
+    expect(useUiStore.getState().canvasReaderCardIds[card.id]).toBe(false);
+    expect(screen.queryByTestId("book-canvas-reader")).toBeNull();
+    expect(screen.getByTestId("book-card-face")).toBeInTheDocument();
+  });
 });

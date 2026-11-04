@@ -150,6 +150,15 @@ export interface ConnectState {
   target?: ConnectorSelection;
 }
 
+/** Where in a book a peer is reading right now, for collaborative reading and follow mode. */
+export interface BookReadingState {
+  cardId: string;
+  attachmentId: string;
+  chapterPath: string;
+  progress: number;
+  offset?: number;
+}
+
 export const AWARENESS_FIELDS = {
   board: "board",
   user: "user",
@@ -166,6 +175,7 @@ export const AWARENESS_FIELDS = {
   connect: "connect",
   labelDrag: "labelDrag",
   libraryDrag: "libraryDrag",
+  bookReading: "bookReading",
   /**
    * What the canvas is *for*, so a peer's cursor can say "recording a tour" and not
    * only "here" (ADR-0064).
@@ -218,6 +228,8 @@ export interface PeerPresence {
   purpose?: CanvasPurpose | null;
   /** The peer's gesture axis: what their next click does (ADR-0064). */
   gesture?: CanvasMode | null;
+  /** Where in a book a peer is reading right now. */
+  bookReading?: BookReadingState | null;
   /** Sender's liveness counter for an in-flight gesture; see `gestureBeat`. */
   gestureBeat?: number;
 }

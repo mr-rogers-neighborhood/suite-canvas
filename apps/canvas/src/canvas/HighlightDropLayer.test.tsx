@@ -94,4 +94,20 @@ describe("dropping a highlight", () => {
     expect(workspace.listCards().length).toBe(1);
     expect(workspace.getAnnotation(annotation.id)?.cardId).toBeUndefined();
   });
+
+  it("should create nothing when the release is inside the reader itself", async () => {
+    const { workspace, annotation } = seed();
+    const reader = document.createElement("div");
+    reader.className = "book-canvas-reader";
+    document.body.append(reader);
+
+    render(<HighlightDropLayer />);
+
+    document.elementFromPoint = () => reader;
+    dragTo(annotation.id, { x: 50, y: 50 });
+
+    await waitFor(() => expect(useHighlightDrag.getState().carried).toBeNull());
+    expect(workspace.listCards().length).toBe(1);
+    expect(workspace.getAnnotation(annotation.id)?.cardId).toBeUndefined();
+  });
 });

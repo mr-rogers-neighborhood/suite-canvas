@@ -112,6 +112,14 @@ export const annotationPartSchema = z.object({
   target: annotationPartTargetSchema,
 });
 
+/** The user who created the highlight, for attribution in collaborative reading. */
+export const annotationAuthorSchema = z.object({
+  name: z.string().min(1).max(100),
+  color: z.string().max(40).optional(),
+});
+
+export type AnnotationAuthor = z.infer<typeof annotationAuthorSchema>;
+
 /**
  * One highlight.
  *
@@ -141,6 +149,8 @@ export const annotationSchema = z
      * Additive: absent is a highlight nobody has written on, which is most of them.
      */
     note: z.string().max(ANNOTATION_MAX_NOTE_LENGTH).optional(),
+    /** The collaborator who made the highlight, when attribution is known. */
+    author: annotationAuthorSchema.optional(),
     /**
      * The workspace's tags, so a mark can join a collection the reader already keeps.
      *

@@ -1,6 +1,7 @@
 import type { Annotation, AnnotationStyle, WorkspaceDocument } from "@suite/graph";
 import { ANNOTATION_QUOTE_MAX_LENGTH } from "@suite/graph";
 import { useCallback, useEffect, useState } from "react";
+import { usePresenceStore } from "../collab/usePresenceStore";
 import { useCanvasStore } from "../store/useCanvasStore";
 
 /**
@@ -16,6 +17,7 @@ export interface Highlights {
     styleId: string;
     anchor: Annotation["anchor"];
     excerpt?: string;
+    author?: Annotation["author"];
   }) => Annotation | null;
   readonly remove: (id: string) => void;
   readonly restyle: (id: string, styleId: string) => void;
@@ -25,6 +27,7 @@ export interface Highlights {
 
 export function useHighlights(sourceCardId: string): Highlights {
   const workspace = useCanvasStore((state) => state.workspace);
+  const localUser = usePresenceStore((state) => state.localUser);
   const [annotations, setAnnotations] = useState<readonly Annotation[]>([]);
   const [styles, setStyles] = useState<readonly AnnotationStyle[]>([]);
 
@@ -45,7 +48,12 @@ export function useHighlights(sourceCardId: string): Highlights {
   }, [workspace, read]);
 
   const add = useCallback(
-    (input: { styleId: string; anchor: Annotation["anchor"]; excerpt?: string }) => {
+    (input: {
+      styleId: string;
+      anchor: Annotation["anchor"];
+      excerpt?: string;
+      author?: Annotation["author"];
+    }) => {
       if (workspace === null) return null;
       // A selection longer than a highlight may be is refused here rather than thrown out of a click handler: a schema
       // parse that throws inside `onClick` is a press that does nothing and says nothing.
@@ -55,12 +63,15 @@ export function useHighlights(sourceCardId: string): Highlights {
       ) {
         return null;
       }
+      const author =
+        input.author ?? (localUser ? { name: localUser.name, color: localUser.color } : undefined);
       try {
         return workspace.addAnnotation({
           sourceCardId,
           styleId: input.styleId,
           anchor: input.anchor,
           ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
+          ...(author === undefined ? {} : { author }),
         });
       } catch {
         // The schema is the authority and the guard above is only the case we can name in advance. Anything else it
@@ -68,7 +79,7 @@ export function useHighlights(sourceCardId: string): Highlights {
         return null;
       }
     },
-    [workspace, sourceCardId],
+    [workspace, sourceCardId, localUser],
   );
 
   const remove = useCallback(

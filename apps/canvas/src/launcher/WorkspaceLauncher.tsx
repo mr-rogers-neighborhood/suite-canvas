@@ -440,7 +440,7 @@ export function WorkspaceLauncher() {
             <input
               ref={fileInput}
               type="file"
-              accept=".suite,.json,application/json"
+              accept=".canvas,.suite,.json,application/json"
               className="hidden"
               data-testid="launcher-file"
               onChange={(event) => {
@@ -617,7 +617,7 @@ export function WorkspaceLauncher() {
 
           {recents.length === 0 ? (
             <p className="mt-4 rounded-xl border border-dashed border-[var(--hairline)] px-4 py-8 text-center text-[13px] text-[var(--ink-muted)]">
-              Nothing here yet. Start a new workspace or open a <code>.suite</code> file.
+              Nothing here yet. Start a new workspace or open a <code>.canvas</code> file.
             </p>
           ) : (
             <>

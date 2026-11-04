@@ -36,7 +36,8 @@ That is a decision, not an omission. There is no service worker, no web manifest
 
 ## Launcher and workspace names
 
-The app starts at `/` on a workspace launcher: recent workspaces from `localStorage`, a blank workspace (`?fresh=1`), and `.suite` import. `localStorage` holds recents, never document truth.
+The app starts at `/` on a workspace launcher: recent workspaces from `localStorage`, a blank workspace (`?fresh=1`), and `.canvas` import (a legacy `.suite` canvas file reads through the
+same decoder). `localStorage` holds recents, never document truth.
 
 The workspace name lives in `meta.name`, so it syncs and travels in an export. `workspaceName()` falls back to the first board's name and then "Untitled workspace". `renameWorkspace` refuses empty, overlong or control-character names.
 

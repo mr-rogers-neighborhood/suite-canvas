@@ -47,7 +47,8 @@ type, and a document is the whole workspace document. A placement is never a del
 board". Trash is never a delete: "delete forever" belongs to purging.
 
 A board is not a canvas, and a workspace is not a file. The canvas is the surface that renders a board, and
-a file is a `.suite` backup on disk.
+a file is a `.canvas` backup on disk. A `.suite` file is a bundle of several apps' files, and a `.suite`
+canvas file from before the rename still opens.
 
 Capitalisation follows the code: workspace, board, card, section and field are lower case in prose unless
 they start a sentence. Type names are capitalised when they name a user-defined type ("the Book type"), and

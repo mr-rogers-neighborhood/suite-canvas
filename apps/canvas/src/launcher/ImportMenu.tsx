@@ -7,7 +7,7 @@ import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
  * They are one menu rather than three buttons because they answer one question —
  * "bring something into *this* workspace" — and only the reader's source differs: a
  * folder from a directory picker, a zip a Files app can hand over but not unpack, or
- * a `.suite` backup. Two of them set the row as the target and open a picker; a
+ * a `.canvas` backup. Two of them set the row as the target and open a picker; a
  * backup replaces the workspace instead, which is why its press is its own callback.
  */
 export function ImportMenu({
@@ -108,7 +108,7 @@ export function ImportMenu({
               onOpenBackup();
             }}
           >
-            Open a .suite backup…
+            Open a .canvas backup…
           </button>
         </span>
       ) : null}

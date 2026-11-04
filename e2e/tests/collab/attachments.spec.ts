@@ -16,7 +16,7 @@ import { cardByTitle, cards, createNote } from "../fixtures/support";
 test.use({ storageState: ACCOUNT_STATE });
 
 /**
- * The attachment round trip, which is the product's trust path: a `.suite`
+ * The attachment round trip, which is the product's trust path: a `.canvas`
  * export is the user's only backup, so an image that survives as a node but
  * loses its bytes is the exact failure these tests exist to catch.
  *
@@ -254,7 +254,7 @@ test("a pasted image survives export, a storage wipe and import", async ({
   await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(0);
 
   const backup = await exportBackup(page);
-  expect(backup.filename).toMatch(/\.suite$/u);
+  expect(backup.filename).toMatch(/\.canvas$/u);
   expect(backup.file.kind).toBe("suite.workspace");
   expect(backup.file.version).toBeGreaterThanOrEqual(2);
   const embedded = backup.file.attachments[nodeId];
@@ -451,7 +451,7 @@ test("an image whose bytes are gone is named in the warning and the export still
   });
 
   const backup = await exportBackup(page);
-  expect(backup.filename).toMatch(/\.suite$/u);
+  expect(backup.filename).toMatch(/\.canvas$/u);
   // The document still exported; the bytes could not.
   expect(Object.keys(backup.file.attachments)).toEqual([]);
   expect(backup.file.manifest.cards).toBe(3);
@@ -488,7 +488,7 @@ test("the size warning is reachable at the threshold", async ({ page }) => {
   expect(stubbed).toBe(true);
 
   const backup = await exportBackup(page);
-  expect(backup.filename).toMatch(/\.suite$/u);
+  expect(backup.filename).toMatch(/\.canvas$/u);
 
   const notice = page.getByTestId("workspace-export-notice");
   await expect(notice).toBeVisible();

@@ -316,12 +316,14 @@ settled, rather than a code path that builds cards by hand.
 
 ## Files, backups and merge
 
-`packages/graph/src/workspaceFile.ts` wraps a document in the `.suite` envelope (`suite.workspace`, version
-2, which added attachments). `packages/graph/src/portable.ts` exports a document as plain JSON
+`packages/graph/src/workspaceFile.ts` wraps a document in the `.canvas` envelope (`suite.canvas`, version
+3). Version 2 added attachments; version 3 renamed the kind from `suite.workspace` and moved the file to
+`.canvas`, because `.suite` now means a bundle. The decoder accepts all three, and
+`migrateWorkspaceFile` rewrites an older envelope without touching the snapshot bytes. `packages/graph/src/portable.ts` exports a document as plain JSON
 (`suite.portable`, version 1) for interchange, and `merge.ts` merges a portable export into a document.
 
 `SCHEMA_VERSION` is 6. It is the version of the document shape the code expects, not the version of the
-`.suite` envelope, which carries its own number.
+`.canvas` envelope, which carries its own number.
 
 ## Where the schema lives
 

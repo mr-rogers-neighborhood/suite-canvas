@@ -37,14 +37,14 @@ offline, syncs when you want it, and exports to a file you own.
   without a network.
 - **Share and collaborate** A share link grants one board, one card or a
   whole workspace, as editor or viewer.
-- **Nothing is trapped.** Export a workspace as a single `.suite` file, and keep the recovery key
+- **Nothing is trapped.** Export a workspace as a single `.canvas` file, and keep the recovery key
   beside it.
 - **Yours to run.** The whole thing is one compose file, a relay and a static app, with no vendor in
   the path.
 
 ## Try it
 
-The hosted app is <https://app.suite.run>. Pick a template on the launcher, or open a `.suite` file
+The hosted app is <https://app.suite.run>. Pick a template on the launcher, or open a `.canvas` file
 somebody sent you. Nothing needs installing, and the canvas works signed out.
 
 ## Run it locally

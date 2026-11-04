@@ -182,7 +182,7 @@ ids in share rows, creation, last-use and revocation timestamps, the organizatio
 workspace, and the IP addresses seen by the server or its proxy. The last-used timestamp is coarse, at most
 one write a minute, and says a link was opened, not by whom.
 
-Backups are unencrypted. All six SQLite stores and `.suite` exports contain the same plaintext documents,
+Backups are unencrypted. All six SQLite stores and `.canvas` exports contain the same plaintext documents,
 every uploaded image, and the licence and quota bookkeeping. Suite does not encrypt them.
 
 ## Sharing risks
@@ -259,7 +259,7 @@ because a session with no `org` has no tenant to be licensed under.
 Forget this browser clears the cached document, the recent-workspace entry and any local editor state on
 that browser only. It does not end the session; sign out in the app for that.
 
-An exported `.suite` file opens without an account. An exported `.suitekey` file from an earlier release is
+An exported `.canvas` file opens without an account. An exported `.suitekey` file from an earlier release is
 not read any more, and no support path restores it.
 
 Operator-side, `admin delete` removes a workspace's documents, projected share rooms, share rows, draft
@@ -321,7 +321,7 @@ a mitigation can be read as an answer to a named adversary rather than as a feat
 
 | Asset | Where it lives now | Blast radius if it is read |
 | --- | --- | --- |
-| Document content | plaintext Loro snapshots in `documents.sqlite`, `.suite` exports, backups | Everything the workspace ever held. There is no encryption to break, only access to control. |
+| Document content | plaintext Loro snapshots in `documents.sqlite`, `.canvas` exports, backups | Everything the workspace ever held. There is no encryption to break, only access to control. |
 | Attachment bytes | `attachments.sqlite` on the relay | The same, for images: pasted screenshots, scans, photos. |
 | Account identity | Postgres: users, sessions, organizations, members, invitations | Who works with whom, and every address an account signed up with. |
 | Share tokens | SHA-256 hashes in `shares.sqlite` | A working link, which is a working credential, until it is revoked or expires. |
@@ -381,7 +381,7 @@ Two things are true at once, and the difference matters to anyone filing an eras
 
 ### Workspaces
 
-A workspace export: the app writes a `.suite` file from the live document, and an operator can export
+A workspace export: the app writes a `.canvas` file from the live document, and an operator can export
 the same workspace through `GET /api/admin/workspaces/:id/export`. The file opens without an account and
 contains the document; it does not contain account rows or the relay's share records.
 
@@ -414,7 +414,7 @@ An account can take its data and close itself. Both actions are control-plane ro
 | `notes` | what the file does not contain, in the file itself |
 
 Document bytes are referenced, never copied. `document.exportedHere` is `false` and
-`document.exportPath` names the operator export route, because a `.suite` file already exports one
+`document.exportPath` names the operator export route, because a `.canvas` file already exports one
 workspace and this service holds no document store. `notes.documents` says the same thing to a reader
 who never saw this page.
 

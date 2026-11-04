@@ -81,7 +81,7 @@ test("exports a workspace and imports it as a new workspace", { tag: "@smoke" },
 });
 
 test("refuses a backup from a newer Suite", { tag: "@smoke" }, async ({ page }, testInfo) => {
-  const path = testInfo.outputPath("future.suite");
+  const path = testInfo.outputPath("future.canvas");
   await writeFile(
     path,
     JSON.stringify({
@@ -112,7 +112,7 @@ test("lists and exports a recent workspace from the launcher", { tag: "@smoke" }
   const downloadPromise = page.waitForEvent("download");
   await entry.locator('[data-testid^="launcher-export-"]').click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/\.suite$/);
+  expect(download.suggestedFilename()).toMatch(/\.canvas$/);
 });
 
 test("exports portable JSON and Markdown from the workspace", { tag: "@smoke" }, async ({

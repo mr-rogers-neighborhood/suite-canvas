@@ -4,6 +4,7 @@ import {
   documentAttachments,
   exportPortable,
   readWorkspaceFile,
+  WORKSPACE_FILE_EXTENSION,
   WorkspaceDocument,
 } from "@suite/graph";
 
@@ -315,7 +316,7 @@ export async function downloadWorkspaceBackup(
     ...(options.compact ? { compact: true } : {}),
   });
   if (prepared.warnings.length > 0) options.onWarning?.(prepared.warnings.join(" "));
-  downloadText(`${fileStem(title)}.suite`, prepared.json);
+  downloadText(`${fileStem(title)}.${WORKSPACE_FILE_EXTENSION}`, prepared.json);
   return prepared;
 }
 
@@ -381,8 +382,10 @@ async function persistWithIndexedDb(workspaceId: string, doc: LoroDoc): Promise<
 }
 
 /**
- * Import a `.suite` backup into a brand-new workspace id. The current document
- * is never touched, so import can never merge two histories.
+ * Import a `.canvas` backup into a brand-new workspace id. A legacy `.suite`
+ * canvas file reads through the same envelope decoder, so the reader accepts
+ * both without a second code path. The current document is never touched, so
+ * import can never merge two histories.
  */
 export async function importWorkspaceFile(
   file: File,

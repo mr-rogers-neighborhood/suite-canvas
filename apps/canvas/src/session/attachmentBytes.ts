@@ -12,7 +12,7 @@ export interface AttachmentBytes {
  * Where an export can find an attachment's bytes.
  *
  * Attachment bytes live beside the document: a paste with no relay keeps them
- * in this browser's IndexedDB, an upload keeps them on the relay. A `.suite`
+ * in this browser's IndexedDB, an upload keeps them on the relay. A `.canvas`
  * export is the only backup, so it has to gather from both. The seam exists so
  * a unit test needs neither IndexedDB nor a server.
  */

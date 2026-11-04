@@ -1,4 +1,4 @@
-# Suite
+# Suite Canvas
 
 **A canvas for thinking in connections.** Cards, boards and writing live in one document that works
 offline, syncs when you want it, and exports to a file you own.

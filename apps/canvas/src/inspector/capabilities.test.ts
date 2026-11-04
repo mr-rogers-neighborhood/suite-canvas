@@ -19,8 +19,10 @@ describe("inspector capabilities", () => {
     expect(hasTab(["section"], "style")).toBe(false);
   });
 
-  it("gives a link no inspector tabs of its own", () => {
-    expect(tabsFor(["edge"])).toEqual([]);
+  it("gives a link Details and Style, and a connector none", () => {
+    // A link has no body, so no Content tab; what it joins and what it says are Details, how it is
+    // drawn is Style.
+    expect(tabsFor(["edge"]).map((tab) => tab.id)).toEqual(["details", "style"]);
     expect(tabsFor(["connector"])).toEqual([]);
   });
 

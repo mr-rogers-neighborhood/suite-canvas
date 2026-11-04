@@ -49,12 +49,34 @@ A section is a labelled region on one board, stored in `sections`:
 | `z` | order among overlapping sections; cards always paint above all of them |
 | `connectors` | link attachment points, same 0..1 fractions a card uses |
 | `tags` | freeform labels for querying, never a membership rule |
+| `shrinkToFit` | whether the frame is elastic to what it holds; absent means yes |
 
 Sections never own cards. Membership is computed from geometry on every read: `sectionMembership` in
 `packages/graph/src/sections.ts` takes each placement's anchor (its top-left corner plus
 `CARD_ANCHOR_INSET`, 8 flow units) and returns the smallest section whose rect contains it, with the
 higher `z` and then the id breaking ties. Two clients therefore agree about a card that straddles a
 border without exchanging anything.
+
+**A section is fitted to what it holds, and a nested section counts.** A frame's box comes from its
+members: the cards whose anchor resolves to it, and any section geometrically inside it. Nesting is
+therefore a layout relationship, not a separate record: the inner frame is laid out first and the parent
+then grows around the child's *new* box, exactly as it would around a card. `planSectionFit` in
+`packages/graph/src/propagator/sectionFitPlan.ts` is the rule for a section gesture, and
+`computeSectionResizes` in `reflowPlan.ts` applies the same membership while a card drag is being
+resolved, smallest frame first. `shrinkToFit: false` keeps a frame fixed: it still grows to hold what
+moved, and never shrinks back.
+
+Whether a frame is still a member turns on the gesture, not only on geometry: a child that was
+*resized* stays a member even when it now sticks out, so the parent grows to hold it, while a child
+that was *dragged* keeps its membership only while it still overlaps the frame. Dragging a section out
+therefore drops it and the frame refits without it, instead of the frame following it across the
+board.
+
+**A section's header pill has a slot, and slots stack.** The pill is anchored to its frame's corner, and a
+section nested in another usually shares that corner, so without a rule the child's pill covered the
+parent's and one of the two could not be pressed. `headerSlots` in `canvas/sections/headerSlots.ts` places
+frames largest-first and drops a colliding pill one header height at a time, measured in the flow units the
+current scale gives a constant-size pill. It is pure, so two clients resolve the same board the same way.
 
 A section is not a React Flow node, so it cannot be selected, dragged or deleted through React Flow's
 machinery. `sections/SectionLayer.tsx` draws the fill, border, header chip, member count and resize
@@ -193,7 +215,7 @@ that layer is a dialog. The board's own layer is the armed link thread
 (`board/useBoardLinks.ts`).
 
 With the stack empty, the ladder climbs from the most specific thing on the board to the plainest:
-section edit → selected section → container inspector → card focus → card edit → focus target → a portal
+section edit → selected frames → card focus → card edit → focus target → a portal
 back → the selection → `mode` → `purpose` → the hand. The two mode rungs reset a choice rather than clear
 a surface, so pressing Escape with nothing left to close always ends with the reader placing on an
 exploration, whatever they had armed an hour ago; one more press drops a stack that is still in hand,
@@ -203,7 +225,9 @@ which is the last thing there is to put down.
 
 `mode` says what a link gesture does, and `purpose` says what the canvas is *for*. Purpose is
 deliberately small: `explore` is the resting state and needs no button, and `explain` is the only value a
-reader chooses from the canvas itself.
+reader chooses, from the navigation row beside the outline. It used to be the floor of the canvas pill; a
+purpose is a mode of the document surface rather than a tool for the canvas, so it belongs with undo, the
+outline and version history.
 
 `explain` gathers the selection into a read-only context, which is drawn inside the
 [handbook](./ui.md) when the build has one and as a panel over the board when it does not: the gathered entities sit above the articles
@@ -240,9 +264,18 @@ viewport instead of only clearing the selection.
 
 The zoom range is `ZOOM_MIN` 0.05 to `ZOOM_MAX` 4, clamped by `clampZoom` in `canvas/zoomRange.ts`. A
 presented tour is left unclamped, because a step may need a scale outside the editing band. Zoom bands
-change what a card paints: `zoomBand` switches at 0.35 and 0.75, the board root carries
+change what a surface paints: `zoomBand` switches at 0.35 and 0.75, the board root carries
 `data-zoom-band`, and the rules live in `apps/canvas/src/styles/paint.css`. A card never measures
 itself to decide how much detail to draw.
+
+**A label counter-scales to a floor and then stops.** Link chips and a section's title pill are drawn at
+`1/zoom` so they stay the same size on the screen, which is what makes a name readable at any distance.
+Past `LABEL_SCALE_FLOOR` (0.5, from `labelScale` in the same module) they shrink with the board instead:
+before that, every frame and every link kept its full screen size however far out the reader went, and a
+board read as a shape was a field of pills with the lines hidden underneath them. In the `far` band the
+link chip is not drawn at all; the line, its arrow, its selection outline and the label in the document
+stay, and the chip returns at `mid`. Connectors, grips and resize handles keep `1/zoom`, because they
+are controls and a control that shrinks out of reach is not one.
 
 Focus requests move the camera over `FOCUS_DURATION_MS` (300 ms), never past `FOCUS_MAX_ZOOM` (1.2), and
 wait up to `FOCUS_POLL_TIMEOUT_MS` (1500 ms) for React Flow to register a card that has just been placed.

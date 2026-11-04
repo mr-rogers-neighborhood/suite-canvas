@@ -23,6 +23,8 @@ export type InspectorSectionId =
   | "contents"
   | "links"
   | "placement"
+  | "ends"
+  | "route"
   | "style";
 
 export interface InspectorSection {
@@ -33,10 +35,10 @@ export interface InspectorSection {
 }
 
 export const INSPECTOR_TABS: readonly InspectorTab[] = [
-  { id: "details", title: "Details", kinds: ["card", "portal", "section"] },
+  { id: "details", title: "Details", kinds: ["card", "portal", "section", "edge"] },
   { id: "content", title: "Content", kinds: ["card", "portal", "section"] },
-  // A link is read in its own inspector, which is a list of rows rather than tabs.
-  { id: "style", title: "Style", kinds: ["card", "portal"] },
+  // A link has no body, so it has no Content tab; it has a route instead, which is part of Style.
+  { id: "style", title: "Style", kinds: ["card", "portal", "edge"] },
 ];
 
 export const INSPECTOR_SECTIONS: readonly InspectorSection[] = [
@@ -48,6 +50,9 @@ export const INSPECTOR_SECTIONS: readonly InspectorSection[] = [
   { id: "contents", tab: "content", title: "Contents", kinds: ["card", "portal", "section"] },
   { id: "links", tab: "details", title: "Links", kinds: ["card", "portal", "section"] },
   { id: "placement", tab: "details", title: "Placement", kinds: ["card", "portal"] },
+  // A link's details are what it joins and what it says; everything about how it is drawn is Style.
+  { id: "ends", tab: "details", title: "Ends", kinds: ["edge"] },
+  { id: "route", tab: "style", title: "Route", kinds: ["edge"] },
   { id: "style", tab: "style", title: "Style", kinds: ["card", "portal"] },
 ];
 

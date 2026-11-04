@@ -1,5 +1,5 @@
-import type { MemberBox, Rect } from "@suite/graph";
-import { sectionFitRect, sectionMovePlan, unionRect } from "@suite/graph";
+import type { Rect } from "@suite/graph";
+import { planSectionFit, sectionLineage, sectionMovePlan, unionRect } from "@suite/graph";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { InteractionMode } from "../../store/interactionMode";
 import { useUiStore } from "../../store/useUiStore";
@@ -76,15 +76,41 @@ export function useBoardSections(
     const gestures: { sectionId: string; position: { x: number; y: number } }[] = [];
     if (localSectionDrag) gestures.push(localSectionDrag);
     for (const peer of Object.values(peers)) {
-      if (peer.sectionDrag) gestures.push(peer.sectionDrag);
+      const drag = peer.sectionDrag;
+      if (!drag) continue;
+      gestures.push({ sectionId: drag.sectionId, position: drag.position });
+      // A group drag names every frame it carries, and they all moved by one translation: the primary's
+      // position is the delta, so each other frame's gesture is its own stored corner plus that.
+      if (!drag.sectionIds || drag.sectionIds.length < 2) continue;
+      const primary = boardSections.find((section) => section.id === drag.sectionId);
+      if (!primary) continue;
+      const dx = drag.position.x - primary.x;
+      const dy = drag.position.y - primary.y;
+      for (const id of drag.sectionIds) {
+        if (id === drag.sectionId) continue;
+        const section = boardSections.find((entry) => entry.id === id);
+        if (!section) continue;
+        gestures.push({ sectionId: id, position: { x: section.x + dx, y: section.y + dy } });
+      }
     }
     return gestures;
-  }, [localSectionDrag, peers]);
+  }, [boardSections, localSectionDrag, peers]);
 
-  const sectionOffsetsMap = useMemo(
-    () => sectionOffsets(boardSections, sectionGestures),
-    [boardSections, sectionGestures],
-  );
+  // A card drag carrying a selected frame: the frame and every frame inside it paint at the pointer.
+  // Read from the store rather than passed down, because the drag is React Flow's and this hook runs
+  // above the surface that sees it.
+  const dragFollow = useUiStore((state) => state.dragFollow);
+  const sectionOffsetsMap = useMemo(() => {
+    const offsets = sectionOffsets(boardSections, sectionGestures);
+    if (dragFollow === null) return offsets;
+    for (const rootId of dragFollow.sectionIds) {
+      if (!boardSections.some((section) => section.id === rootId)) continue;
+      for (const section of sectionLineage(rootId, boardSections)) {
+        offsets.set(section.id, { dx: dragFollow.dx, dy: dragFollow.dy });
+      }
+    }
+    return offsets;
+  }, [boardSections, sectionGestures, dragFollow]);
 
   const sectionResizes = useMemo(() => {
     const map = new Map<string, Rect>();
@@ -102,10 +128,13 @@ export function useBoardSections(
     return map;
   }, [peers, localSectionResize]);
 
-  const cardOffsetsMap = useMemo(
-    () => cardSectionOffsets(sectionMembershipMap, sectionOffsetsMap),
-    [sectionMembershipMap, sectionOffsetsMap],
-  );
+  const cardOffsetsMap = useMemo(() => {
+    const offsets = cardSectionOffsets(sectionMembershipMap, sectionOffsetsMap);
+    // A card React Flow is already dragging is at the pointer by its own means; shifting it by the
+    // frame's offset as well would move it twice as far as the rest of the group.
+    for (const id of dragFollow?.carrying ?? []) offsets.delete(id);
+    return offsets;
+  }, [sectionMembershipMap, sectionOffsetsMap, dragFollow]);
 
   /**
    * A section is off the lens when none of its member cards is on it. Sections
@@ -125,18 +154,23 @@ export function useBoardSections(
   }, [lens, sectionMembershipMap]);
 
   const handleSelectSection = useCallback(
-    (sectionId: string | null) => {
+    (sectionId: string | null, additive = false) => {
       const outcome = sectionPressUnder(useUiStore.getState().interactionMode, sectionId);
       if (outcome === "ignore") return;
+      // A modifier is membership: a frame joins or leaves the set and nothing else happens, so a
+      // drag does not start and the panel does not move between frames while the reader builds one.
+      if (additive) {
+        if (sectionId !== null) useUiStore.getState().toggleSection(sectionId);
+        return;
+      }
       if (outcome === "clear") {
         selectSection(null);
         return;
       }
       store.getState().unselectNodesAndEdges();
       selectSection(sectionId);
-      // A panel is what the reading mode adds; the press still selects in quiet, because a
-      // selected section is what the next edit acts on.
-      if (outcome === "select-quietly") useUiStore.getState().closeContainerInspector();
+      // Quiet mode still selects, because a selected frame is what the next edit acts on; whether the
+      // drawer opens is `interactionMode`'s answer, and the host reads it like it does for a link.
     },
     [selectSection, store],
   );
@@ -151,6 +185,27 @@ export function useBoardSections(
     [setSectionDragPresence],
   );
 
+  /**
+   * Card sizes as React Flow has measured them, for the fit plan.
+   *
+   * The stored placement wins because it is the document's record; a card React Flow has not
+   * measured yet falls back to the type default, so it contributes a box rather than a zero and
+   * a section does not collapse around it mid-measure.
+   */
+  const cardSizesOnBoard = useCallback(() => {
+    const sizes = new Map<string, { width: number; height: number }>();
+    const lookup = store.getState().nodeLookup;
+    for (const placement of boardPlacementList) {
+      if (placement.boardId !== activeBoardId) continue;
+      const node = lookup.get(placement.cardId);
+      sizes.set(placement.cardId, {
+        width: placement.width ?? node?.measured?.width ?? node?.width ?? DEFAULT_CARD_WIDTH,
+        height: placement.height ?? node?.measured?.height ?? node?.height ?? DEFAULT_CARD_HEIGHT,
+      });
+    }
+    return sizes;
+  }, [activeBoardId, boardPlacementList, store]);
+
   const handleSectionDrag = useCallback(
     (sectionId: string, position: { x: number; y: number }) => {
       setLocalSectionDrag({ sectionId, position });
@@ -163,30 +218,70 @@ export function useBoardSections(
     (sectionId: string, position: { x: number; y: number }) => {
       if (!canEditLayout) return;
       const root = boardSections.find((section) => section.id === sectionId);
-      if (root) {
+      if (root && activeBoardId) {
         const dx = position.x - root.x;
         const dy = position.y - root.y;
         if (dx !== 0 || dy !== 0) {
           const plan = sectionMovePlan(sectionId, boardSections, boardPlacementList);
+          const movedSections = plan.sections.map((section) => ({
+            id: section.id,
+            x: section.x + dx,
+            y: section.y + dy,
+          }));
+          const movedPlacements = plan.placements.map((placement) => ({
+            boardId: placement.boardId,
+            cardId: placement.cardId,
+            x: placement.x + dx,
+            y: placement.y + dy,
+          }));
           workspace.moveSectionsBatch({
-            sections: plan.sections.map((section) => ({
-              id: section.id,
-              x: section.x + dx,
-              y: section.y + dy,
-            })),
-            placements: plan.placements.map((placement) => ({
-              boardId: placement.boardId,
-              cardId: placement.cardId,
-              x: placement.x + dx,
-              y: placement.y + dy,
-            })),
+            sections: movedSections,
+            placements: movedPlacements,
           });
+          // Dragging a section out of the frame that held it is also a change to that frame: it
+          // counted the child as a member and has to stop. The moved geometry is passed in
+          // because the document has not observed the batch above yet.
+          const sectionOverrides = new Map<string, Rect>();
+          for (const moved of movedSections) {
+            const before = boardSections.find((entry) => entry.id === moved.id);
+            if (!before) continue;
+            sectionOverrides.set(moved.id, {
+              x: moved.x,
+              y: moved.y,
+              width: before.width,
+              height: before.height,
+            });
+          }
+          const fit = planSectionFit({
+            boardId: activeBoardId,
+            sections: boardSections,
+            placements: boardPlacementList,
+            cardSizes: cardSizesOnBoard(),
+            sectionOverrides,
+            // The batch above already landed these rects; the plan only has to fit around them.
+            overridesAreWritten: true,
+            placementOverrides: new Map(
+              movedPlacements.map((placement) => [
+                placement.cardId,
+                { x: placement.x, y: placement.y },
+              ]),
+            ),
+          });
+          if (fit) workspace.applyLayoutPlan(fit);
         }
       }
       setLocalSectionDrag(null);
       setSectionDragPresence(null);
     },
-    [boardSections, boardPlacementList, workspace, setSectionDragPresence, canEditLayout],
+    [
+      boardSections,
+      boardPlacementList,
+      workspace,
+      setSectionDragPresence,
+      canEditLayout,
+      activeBoardId,
+      cardSizesOnBoard,
+    ],
   );
 
   const handleSectionResize = useCallback(
@@ -208,11 +303,31 @@ export function useBoardSections(
   const handleSectionResizeEnd = useCallback(
     (sectionId: string, rect: Rect) => {
       if (!canEditLayout) return;
-      workspace.updateSectionGeometry(sectionId, rect);
+      // The frames this one sits in grow around it: a child section is a member of its parent, so
+      // resizing it is the same act as resizing a card and the parent's elastic rule applies. Both
+      // writes go through one plan, which is one undo step, and the resized rect travels as an
+      // override so the plan keeps the size the reader chose instead of fitting it back to tight.
+      const plan = planSectionFit({
+        boardId: activeBoardId ?? "",
+        sections: boardSections,
+        placements: boardPlacementList,
+        cardSizes: cardSizesOnBoard(),
+        sectionOverrides: new Map([[sectionId, rect]]),
+      });
+      if (plan) workspace.applyLayoutPlan(plan);
+      else workspace.updateSectionGeometry(sectionId, rect);
       setLocalSectionResize(null);
       setSectionResizePresence(null);
     },
-    [workspace, setSectionResizePresence, canEditLayout],
+    [
+      workspace,
+      setSectionResizePresence,
+      canEditLayout,
+      activeBoardId,
+      boardSections,
+      boardPlacementList,
+      cardSizesOnBoard,
+    ],
   );
 
   const handleSectionRename = useCallback(
@@ -262,45 +377,27 @@ export function useBoardSections(
     [activeBoardId, store, workspace, selectSection, setEditingSection, canCreateContent],
   );
 
+  /**
+   * Fits a section to what is inside it: its cards, and any section nested in it.
+   *
+   * The plan is the same one a gesture uses, so a nested frame counts as a member here too. An
+   * empty section is the one case a toggle should collapse rather than leave alone, which is why
+   * it is named: a refit that follows a drag must never move a section the reader emptied on
+   * purpose.
+   */
   const shrinkSectionToFit = useCallback(
     (sectionId: string) => {
-      if (!canEditLayout) return;
-      const section = boardSections.find((s) => s.id === sectionId);
-      if (!section) return;
-
-      const memberBoxes: MemberBox[] = [];
-      const lookup = store.getState().nodeLookup;
-
-      for (const [cardId, sId] of sectionMembershipMap.entries()) {
-        if (sId !== sectionId) continue;
-        const placement = boardPlacementList.find((p) => p.cardId === cardId);
-        if (!placement) continue;
-
-        const node = lookup.get(cardId);
-        const width = placement.width ?? node?.measured?.width ?? node?.width ?? DEFAULT_CARD_WIDTH;
-        const height =
-          placement.height ?? node?.measured?.height ?? node?.height ?? DEFAULT_CARD_HEIGHT;
-
-        memberBoxes.push({
-          cardId,
-          x: placement.x,
-          y: placement.y,
-          width,
-          height,
-        });
-      }
-
-      const newRect = sectionFitRect(section, memberBoxes, 24);
-      if (
-        newRect.x !== section.x ||
-        newRect.y !== section.y ||
-        newRect.width !== section.width ||
-        newRect.height !== section.height
-      ) {
-        workspace.updateSectionGeometry(sectionId, newRect);
-      }
+      if (!canEditLayout || !activeBoardId) return;
+      const plan = planSectionFit({
+        boardId: activeBoardId,
+        sections: boardSections,
+        placements: boardPlacementList,
+        cardSizes: cardSizesOnBoard(),
+        collapseEmpty: new Set([sectionId]),
+      });
+      if (plan) workspace.applyLayoutPlan(plan);
     },
-    [boardSections, boardPlacementList, sectionMembershipMap, canEditLayout, store, workspace],
+    [activeBoardId, boardSections, boardPlacementList, canEditLayout, cardSizesOnBoard, workspace],
   );
 
   const toggleSectionShrinkToFit = useCallback(

@@ -17,7 +17,7 @@ function renderTree(over: { sections?: Section[]; open?: boolean; canCreate?: bo
       sections={over.sections ?? []}
       membership={new Map()}
       peers={[]}
-      selectedSectionId={null}
+      selectedSectionIds={new Set()}
       open={over.open ?? true}
       onToggle={noop}
       onSelect={noop}
@@ -64,7 +64,7 @@ describe("an outline with sections", () => {
         sections={[section]}
         membership={new Map()}
         peers={[]}
-        selectedSectionId={null}
+        selectedSectionIds={new Set()}
         open
         onToggle={noop}
         onSelect={onSelect}
@@ -74,6 +74,6 @@ describe("an outline with sections", () => {
 
     expect(screen.queryByTestId("outline-empty")).toBeNull();
     fireEvent.click(screen.getByTestId("outline-row"));
-    expect(onSelect).toHaveBeenCalledWith("act-one");
+    expect(onSelect).toHaveBeenCalledWith("act-one", false);
   });
 });

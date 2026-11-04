@@ -11,7 +11,7 @@ function resetUiState() {
     inspectorNodeId: null,
     selectedNodeIds: [],
     selectedEdgeIds: [],
-    selectedSectionId: null,
+    selectedSectionIds: [],
     editingSectionId: null,
     selectedConnector: null,
     purpose: "explore",
@@ -150,7 +150,7 @@ describe("useUiStore", () => {
 
   it("should select every card on the board and drop the other selections", () => {
     useUiStore.setState({
-      selectedSectionId: "section-a",
+      selectedSectionIds: ["section-a"],
       editingSectionId: "section-a",
       selectedEdgeIds: ["edge-a"],
       selectedConnector: { nodeId: "card-a", connectorId: "connector-a" },
@@ -160,7 +160,7 @@ describe("useUiStore", () => {
 
     const state = useUiStore.getState();
     expect(state.selectedNodeIds).toEqual(["card-a", "card-b"]);
-    expect(state.selectedSectionId).toBeNull();
+    expect(state.selectedSectionIds).toEqual([]);
     expect(state.editingSectionId).toBeNull();
     expect(state.selectedEdgeIds).toEqual([]);
     expect(state.selectedConnector).toBeNull();
@@ -456,5 +456,30 @@ describe("useUiStore folds", () => {
 
     expect(useUiStore.getState().collapsedSections).toEqual({ "section-1": true });
     expect(useUiStore.getState().collapsedCards).toEqual({});
+  });
+
+  /**
+   * Frames nest, so a set is the only way to hold an outer frame and the one inside it. A modifier
+   * press is membership and nothing else: it must not clear the cards the same selection holds.
+   */
+  it("adds and removes one frame without disturbing anything else", () => {
+    useUiStore.setState({ selectedNodeIds: ["card-a"], selectedSectionIds: ["outer"] });
+
+    useUiStore.getState().toggleSection("inner");
+    expect(useUiStore.getState().selectedSectionIds).toEqual(["outer", "inner"]);
+    expect(useUiStore.getState().selectedNodeIds).toEqual(["card-a"]);
+
+    useUiStore.getState().toggleSection("outer");
+    expect(useUiStore.getState().selectedSectionIds).toEqual(["inner"]);
+  });
+
+  it("replaces the frames a box caught, deduped and in the order given", () => {
+    useUiStore.setState({ selectedNodeIds: ["card-a"] });
+    useUiStore.getState().selectSections(["outer", "inner", "outer"]);
+
+    const state = useUiStore.getState();
+    expect(state.selectedSectionIds).toEqual(["outer", "inner"]);
+    // The box owns the frames; the cards it caught are the host's business, not this action's.
+    expect(state.selectedNodeIds).toEqual(["card-a"]);
   });
 });

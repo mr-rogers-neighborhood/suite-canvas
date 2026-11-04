@@ -164,27 +164,22 @@ describe("the value palette", () => {
     }
   });
 
-  it("paints the purpose segment from the palette rather than from per-mode colours", () => {
-    // The rule lives in the pill's own block, where the container is the one owner: a
-    // value is painted in one place, so a segment cannot disagree with the palette.
-    const shared = [...global.matchAll(/\.react-flow__controls \.purpose-control\s*\{[^}]*}/g)].map(
-      (match) => match[0],
-    );
-    expect(shared.length).toBeGreaterThanOrEqual(1);
-    const block = shared.join("\n");
+  it("paints the purpose from the palette rather than from per-value colours", () => {
+    // The rule lives in the purpose stylesheet: the navigation row owns the button's frame
+    // now, so a value is painted in one place and cannot disagree with the palette.
+    const painted = [
+      ...purpose.matchAll(/\.purpose-control\[data-purpose=[^\]]+\]\s*\{[^}]*}/g),
+    ].map((match) => match[0]);
+    expect(painted.length).toBeGreaterThanOrEqual(1);
+    const block = painted.join("\n");
     expect(block).toContain("background: var(--value-fill)");
     expect(block).toContain("color: var(--value-ink)");
 
-    // And the segment may not own a border again: that is what produced the seams.
-    for (const segment of [".purpose-control {"]) {
-      const at = segment.startsWith(".purpose")
-        ? purpose.indexOf(segment)
-        : global.indexOf(segment);
-      const source = segment.startsWith(".purpose") ? purpose : global;
-      const own = source.slice(at, source.indexOf("}", at));
-      expect(own, segment).not.toContain("border:");
-      expect(own, segment).not.toContain("box-shadow:");
-      expect(own, segment).not.toContain("position: absolute");
+    // And it may not own a frame or a position again: a border or an absolute offset here
+    // is how the pill's two-owner seams started.
+    for (const rule of painted) {
+      expect(rule).not.toContain("border:");
+      expect(rule).not.toContain("position: absolute");
     }
   });
 });

@@ -1,6 +1,6 @@
 import type { Connector, Rect, Section } from "@suite/graph";
 import { useReactFlow, useViewport, ViewportPortal } from "@xyflow/react";
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PeerPresence } from "../../collab/presence";
 import { IconGlyph } from "../../icons/IconGlyph";
 import {
@@ -15,6 +15,8 @@ import { sectionIcon } from "../entityIcon";
 import { stepLink, stepShape, useLinkThreadStore } from "../links/linkThread";
 import { revealConnectors } from "../NodeConnectors";
 import { useLinkDraftStore } from "../useNodeConnectorWiring";
+import { labelScale } from "../zoomRange";
+import { headerSlots } from "./headerSlots";
 import type { SectionOffset } from "./sectionLayout";
 import { SECTION_FILL, SECTION_STROKE } from "./sectionPalette";
 
@@ -64,9 +66,10 @@ export interface SectionLayerProps {
   offsets: Map<string, SectionOffset>;
   resizes: Map<string, Rect>;
   peers: PeerPresence[];
-  selectedSectionId: string | null;
+  /** Every frame in the selection: each one paints as selected. */
+  selectedSectionIds: ReadonlySet<string>;
   editingSectionId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, additive?: boolean) => void;
   onStartRename: (id: string) => void;
   onCommitRename: (id: string, title: string) => void;
   onCancelRename: () => void;
@@ -123,7 +126,7 @@ export function SectionLayer({
   offsets,
   resizes,
   peers,
-  selectedSectionId,
+  selectedSectionIds,
   editingSectionId,
   onSelect,
   onStartRename,
@@ -151,6 +154,10 @@ export function SectionLayer({
   const { screenToFlowPosition } = useReactFlow();
   const { zoom } = useViewport();
   const inverseZoom = 1 / (zoom || 1);
+  // A title is reading matter, so it counter-scales only to the floor and then shrinks with the
+  // board; the connectors, grips and handles keep `inverseZoom`, because a control that shrinks out
+  // of reach is not a control.
+  const titleScale = labelScale(zoom);
   const cleanup = useRef<(() => void) | null>(null);
   const titleInput = useRef<HTMLInputElement | null>(null);
   const [draft, setDraft] = useState("");
@@ -197,8 +204,12 @@ export function SectionLayer({
   const peerSelection = useMemo(() => {
     const map = new Map<string, string>();
     for (const peer of peers) {
-      const sectionId = peer.selection?.sectionId;
-      if (sectionId && !map.has(sectionId)) map.set(sectionId, peer.user.color);
+      const selected = peer.selection?.sectionIds ?? [];
+      // A peer older than the set still names one frame; it is the same fact, so it reads the same.
+      const ids = selected.length > 0 ? selected : [peer.selection?.sectionId];
+      for (const sectionId of ids) {
+        if (sectionId && !map.has(sectionId)) map.set(sectionId, peer.user.color);
+      }
     }
     return map;
   }, [peers]);
@@ -222,26 +233,44 @@ export function SectionLayer({
     [],
   );
 
-  const rectFor = (section: Section): Rect => {
-    const resizing = resizes.get(section.id);
-    if (resizing) return resizing;
-    const offset = offsets.get(section.id);
-    return {
-      x: section.x + (offset?.dx ?? 0),
-      y: section.y + (offset?.dy ?? 0),
-      width: section.width,
-      height: section.height,
-    };
-  };
+  const rectFor = useCallback(
+    (section: Section): Rect => {
+      const resizing = resizes.get(section.id);
+      if (resizing) return resizing;
+      const offset = offsets.get(section.id);
+      return {
+        x: section.x + (offset?.dx ?? 0),
+        y: section.y + (offset?.dy ?? 0),
+        width: section.width,
+        height: section.height,
+      };
+    },
+    [resizes, offsets],
+  );
 
   /** The rect a folded section is painted with: its own width, header height. */
   const FOLDED_SECTION_HEIGHT = 34;
 
-  const paintRect = (section: Section): Rect => {
-    const rect = rectFor(section);
-    if (collapsedSections[section.id] !== true) return rect;
-    return { ...rect, height: Math.min(rect.height, FOLDED_SECTION_HEIGHT) };
-  };
+  const paintRect = useCallback(
+    (section: Section): Rect => {
+      const rect = rectFor(section);
+      if (collapsedSections[section.id] !== true) return rect;
+      return { ...rect, height: Math.min(rect.height, FOLDED_SECTION_HEIGHT) };
+    },
+    [rectFor, collapsedSections],
+  );
+
+  // Pills stack when their frames share a corner, which is the usual shape of a nested section:
+  // without it the child's header covers the parent's and one of the two cannot be pressed. Slots
+  // are read from the *painted* frames, so a pill follows the section it belongs to in a drag.
+  const slots = useMemo(
+    () =>
+      headerSlots(
+        sections.map((section) => ({ id: section.id, ...paintRect(section) })),
+        zoom,
+      ),
+    [sections, paintRect, zoom],
+  );
 
   const startWindowGesture = (
     move: (event: PointerEvent) => void,
@@ -272,7 +301,10 @@ export function SectionLayer({
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
-    onSelect(section.id);
+    onSelect(section.id, event.metaKey || event.ctrlKey);
+    // A modifier is building a set, not moving one thing: Shift already belongs to the marquee, so
+    // Cmd/Ctrl is the membership key here, matching how a card is added to a selection.
+    if (event.metaKey || event.ctrlKey) return;
     if (readOnly || editingSectionId === section.id) return;
 
     const start = screenToFlowPosition({ x: event.clientX, y: event.clientY });
@@ -470,7 +502,7 @@ export function SectionLayer({
           {sections.map((section) => {
             const rect = paintRect(section);
             const color = section.color ?? "slate";
-            const selected = selectedSectionId === section.id;
+            const selected = selectedSectionIds.has(section.id);
             const peerColor = peerSelection.get(section.id);
             const paint = sectionPaint(section);
             const painted = Object.keys(paint).length > 0;
@@ -510,7 +542,7 @@ export function SectionLayer({
                 }
                 onPointerDown={(event) => {
                   event.stopPropagation();
-                  onSelect(section.id);
+                  onSelect(section.id, event.metaKey || event.ctrlKey);
                 }}
                 onPointerEnter={() => setHoveredSectionId(section.id)}
                 onPointerLeave={() =>
@@ -533,7 +565,7 @@ export function SectionLayer({
               // The same predicate the node faces use, so section dots cannot
               // follow a different reveal rule than a card's.
               revealConnectors({
-                selected: section.id === selectedSectionId,
+                selected: selectedSectionIds.has(section.id),
                 chaining,
                 draftActive,
                 armed,
@@ -656,7 +688,7 @@ export function SectionLayer({
           {sections.map((section) => {
             const rect = paintRect(section);
             const color = section.color ?? "slate";
-            const selected = selectedSectionId === section.id;
+            const selected = selectedSectionIds.has(section.id);
             const peer = peerGesture.get(section.id);
             const count = members.get(section.id) ?? 0;
             const paint = sectionPaint(section);
@@ -671,9 +703,9 @@ export function SectionLayer({
                 }`}
                 style={
                   {
-                    left: rect.x + 8,
-                    top: rect.y + 6,
-                    transform: `scale(${inverseZoom})`,
+                    left: slots.get(section.id)?.x ?? rect.x + 8,
+                    top: slots.get(section.id)?.y ?? rect.y + 6,
+                    transform: `scale(${titleScale})`,
                     borderColor: selected ? STROKE[color] : undefined,
                     ...(peer ? { transition: "left 60ms linear, top 60ms linear" } : {}),
                     // The pill follows the section's ink so the title stays
@@ -809,7 +841,7 @@ export function SectionLayer({
             .filter(
               (section) =>
                 !readOnly &&
-                section.id === selectedSectionId &&
+                selectedSectionIds.has(section.id) &&
                 collapsedSections[section.id] !== true,
             )
             .flatMap((section) => {

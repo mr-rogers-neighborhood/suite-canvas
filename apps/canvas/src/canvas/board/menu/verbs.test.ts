@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ContextMenuItem } from "../../../dialogs/ContextMenu";
-import { buildEntityMenu, menuRowsFor, resolveMenuTarget } from "./entityMenu";
 import type { BoardMenuContext } from "./types";
+import { buildVerbMenu, ENTITY_VERBS, resolveMenuTarget, verbLabel, verbsFor } from "./verbs";
 
 /**
  * One menu for every entity.
@@ -51,7 +51,7 @@ const byLabel = (items: ContextMenuItem[], label: string) =>
 
 describe("the entity menu", () => {
   it("offers one Appearance entry for the whole selection", () => {
-    const items = buildEntityMenu(makeContext({ selectedNodeIds: ["card-a", "card-b", "card-c"] }));
+    const items = buildVerbMenu(makeContext({ selectedNodeIds: ["card-a", "card-b", "card-c"] }));
 
     const appearance = byLabel(items, "Appearance\u2026");
     expect(appearance).toBeDefined();
@@ -60,7 +60,7 @@ describe("the entity menu", () => {
 
   it("opens the panel on every selected card, at the press", () => {
     const openAppearance = vi.fn();
-    const items = buildEntityMenu(
+    const items = buildVerbMenu(
       makeContext({ openAppearance, selectedNodeIds: ["card-a", "card-b", "card-c"] }),
     );
 
@@ -75,7 +75,7 @@ describe("the entity menu", () => {
   });
 
   it("is absent for a reader who cannot edit layout", () => {
-    const items = buildEntityMenu(
+    const items = buildVerbMenu(
       makeContext({ canEditLayout: false, selectedNodeIds: ["card-a", "card-b"] }),
     );
 
@@ -84,7 +84,7 @@ describe("the entity menu", () => {
 
   it("colors every selected card from the one palette row", () => {
     const setSwatches = vi.fn();
-    const items = buildEntityMenu(
+    const items = buildVerbMenu(
       makeContext({
         setSwatches,
         selectedNodeIds: ["card-a", "card-b"],
@@ -93,14 +93,14 @@ describe("the entity menu", () => {
     );
 
     byLabel(items, "Colour")
-      ?.items?.find((item) => item.label === "Green")
+      ?.swatches?.find((item) => item.label === "Green")
       ?.onSelect?.();
 
     expect(setSwatches).toHaveBeenCalledWith(["card-a", "card-b"], "green");
   });
 
   it("gives a section the shared colour row and none of the card verbs", () => {
-    const items = buildEntityMenu(
+    const items = buildVerbMenu(
       makeContext({ menu: { kind: "section", sectionId: "section-1", x: 0, y: 0 } }),
     );
 
@@ -114,26 +114,29 @@ describe("the entity menu", () => {
   });
 
   it("gives a link its own verbs and the shared appearance rows", () => {
-    const items = buildEntityMenu(
+    const items = buildVerbMenu(
       makeContext({
         menu: { kind: "edge", edgeId: "edge-1", x: 0, y: 0 },
         workspace: { getEdge: () => ({ id: "edge-1", path: "bezier" }) },
       }),
     );
 
+    // Edit first, then how it looks, then how it runs, then what removes it.
     expect(labels(items)).toEqual([
+      "Cut",
+      "Copy",
       "Colour",
       "Appearance\u2026",
       "Add description\u2026",
+      "Path",
       "Reverse direction",
       "Make bidirectional",
-      "Path",
       "Delete link",
     ]);
   });
 
   it("offers a canvas press only the things a canvas can make", () => {
-    const items = buildEntityMenu(makeContext({ menu: { kind: "canvas", x: 0, y: 0 } }));
+    const items = buildVerbMenu(makeContext({ menu: { kind: "canvas", x: 0, y: 0 } }));
 
     // Media is one door on every workspace; a view needs the schema capability as well, so it is
     // absent here and present in the test below.
@@ -148,18 +151,24 @@ describe("the entity menu", () => {
 
   it("intersects when it is asked for several kinds at once", () => {
     // A card and a section both answer for a colour, a connector and a delete.
-    expect(menuRowsFor(["card", "section"]).map((row) => row.id)).toEqual([
+    expect(verbsFor(["card", "section"]).map((row) => row.id)).toEqual([
+      "cut",
+      "copy",
+      "paste",
       "colour",
       "add-connector",
       "delete",
     ]);
     // A card and a link share the appearance rows and nothing else structural.
-    expect(menuRowsFor(["card", "edge"]).map((row) => row.id)).toEqual([
+    expect(verbsFor(["card", "edge"]).map((row) => row.id)).toEqual([
+      "cut",
+      "copy",
+      "paste",
       "colour",
       "appearance",
       "delete",
     ]);
-    expect(menuRowsFor([])).toEqual([]);
+    expect(verbsFor([])).toEqual([]);
   });
 
   it("resolves a multi-selection only when the press landed inside it", () => {
@@ -177,7 +186,7 @@ describe("the entity menu", () => {
 
   it("offers shrink to fit with checkbox on a section right click", () => {
     const toggleSectionShrinkToFit = vi.fn();
-    const items = buildEntityMenu(
+    const items = buildVerbMenu(
       makeContext({
         toggleSectionShrinkToFit,
         menu: { kind: "section", sectionId: "sec-1", x: 10, y: 10 },
@@ -193,7 +202,7 @@ describe("the entity menu", () => {
 
 describe("the create group", () => {
   const canvasMenu = (overrides: Record<string, unknown> = {}) =>
-    buildEntityMenu(
+    buildVerbMenu(
       makeContext({
         menu: { kind: "canvas", x: 0, y: 0, flowPosition: { x: 80, y: 40 } },
         ...overrides,
@@ -229,5 +238,34 @@ describe("the create group", () => {
 
   it("should offer nothing that makes content to a session that cannot", () => {
     expect(labels(canvasMenu({ canCreateContent: false }))).toEqual([]);
+  });
+
+  /**
+   * The palette and the panel buttons read a verb's words rather than writing them again: a label that
+   * counts (`Duplicate 4 cards`) is the same string in the menu and in the palette, or the two drift.
+   */
+  it("names a verb from its own first item, so a surface that is not a menu can offer it", () => {
+    const ctx = makeContext({ selectedNodeIds: ["card-a", "card-b"] });
+    const target = { kind: "card" as const, ids: ["card-a", "card-b"], anchor: "card-a" };
+    const duplicate = ENTITY_VERBS.find((verb) => verb.id === "duplicate");
+    expect(duplicate).toBeDefined();
+    if (!duplicate) return;
+
+    expect(verbLabel(ctx, target, duplicate)).toBe("Duplicate 2 cards");
+  });
+
+  it("gives the verbs a key runs the shortcut the palette prints", () => {
+    const shortcuts = Object.fromEntries(
+      ENTITY_VERBS.filter((verb) => verb.shortcut !== undefined).map((verb) => [
+        verb.id,
+        verb.shortcut,
+      ]),
+    );
+    expect(shortcuts).toMatchObject({
+      cut: "\u2318X",
+      copy: "\u2318C",
+      paste: "\u2318V",
+      delete: "\u232b",
+    });
   });
 });

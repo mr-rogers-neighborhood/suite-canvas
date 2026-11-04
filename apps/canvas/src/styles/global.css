@@ -519,7 +519,8 @@ body {
 }
 
 /*
- * The viewport pill: zoom, fit, the link mode and the purpose — one column, one owner.
+ * The viewport pill: zoom, fit, the link mode and what a box picks up — one column, one
+ * owner.
  *
  * It used to be two owners. React Flow drew a container with a top-only radius, and this
  * stylesheet drew two more boxes underneath it with their own borders and (for the
@@ -532,9 +533,12 @@ body {
  * column. Our segments are its children, so they inherit the geometry instead of
  * imitating it. `--xy-controls-*` is the honest way to theme React Flow: its own rules
  * keep working and simply read our values, so there is no fight to win.
+ *
+ * The purpose is not here any more: it moved to the navigation row, because a purpose is
+ * a mode of the document surface rather than a tool for the canvas. The pill's floor is
+ * the zoom-to-selection segment.
  */
 .react-flow__panel.react-flow__controls.bottom {
-  /* The pill reaches the floor: the purpose segment is its bottom edge. */
   bottom: 5px;
   margin: 0 0 0 15px;
 }
@@ -557,16 +561,15 @@ body {
   --xy-controls-button-border-color: var(--hairline);
 }
 
-/* One segment geometry for React Flow's buttons and the purpose control. The border
-   belongs to the container, so a segment is exactly 26px and fills the column's width. */
-.react-flow__controls-button,
-.react-flow__controls .purpose-control {
+/* One segment geometry for React Flow's buttons and ours. The border belongs to the
+   container, so a segment is exactly 26px and fills the column's width. */
+.react-flow__controls-button {
   box-sizing: border-box;
   width: 26px;
   height: 26px;
   margin: 0;
   padding: 0;
-  /* One separator per segment, the same for all five. Without it the last two read as
+  /* One separator per segment, the same for all of them. Without it the last two read as
      one tall segment, which is exactly how the two-owner version looked. */
   border: 0;
   border-bottom: 1px solid var(--hairline);
@@ -582,29 +585,13 @@ body {
   border-bottom: 0;
 }
 
-.react-flow__controls .purpose-control {
-  /* Painted by its value (ADR-0064 fifth amendment); the container paints the chrome. */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--value-fill);
-  color: var(--value-ink);
-  cursor: pointer;
-}
-
 .react-flow__controls-button svg {
   fill: var(--ink);
 }
 
-/* React Flow's own buttons hover like the segmented controls elsewhere: ink at 8%.
-   A painted segment below keeps its value on hover instead — the pointer tints, it never
-   repaints, which is the rule the mode controls follow everywhere (ADR-0064). */
+/* React Flow's own buttons hover like the segmented controls elsewhere: ink at 8%. */
 .react-flow__controls-button:hover {
   background: color-mix(in srgb, var(--ink) 8%, var(--surface));
-}
-
-.react-flow__controls .purpose-control:hover {
-  background: color-mix(in srgb, var(--value-hue) 10%, var(--value-fill));
 }
 
 /*
@@ -801,7 +788,13 @@ body {
 }
 
 /* Links */
+/*
+ * A selected link is drawn in the accent, the same as a selected section link and the same ring a
+ * selected card wears. The width bump alone was invisible on a link whose own paint was already
+ * close to the accent, which is why a marquee over links looked like it had picked nothing.
+ */
 .react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--accent);
   stroke-width: 2.5;
 }
 
@@ -1863,13 +1856,58 @@ html[data-inspector-linking] .card-inspector {
   pointer-events: auto;
 }
 
+/*
+ * The group outline: one box around everything selected, drawn by the board because React Flow's own
+ * only knows nodes and a section is not one. It never takes a press.
+ */
+.selection-outline {
+  position: absolute;
+  z-index: 4;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.selection-outline__label {
+  position: absolute;
+  /* Inside the box, on the inset a section header uses: above the corner is where that header is. */
+  left: 6px;
+  top: 4px;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: var(--surface);
+  color: var(--ink-muted);
+  font-size: 10px;
+  line-height: 1.6;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
+}
+
+/* React Flow's group rect knows nodes only, so it is hidden rather than removed: it still owns the
+   keyboard affordance on the group. */
+.react-flow__nodesselection-rect {
+  display: none;
+}
+
+/*
+ * A selected frame reads like a selected card: the accent ring is the selection, and the frame's
+ * own colour stays in the border underneath it so a red section is still red when it is picked.
+ * The ring is a shadow because the border colour arrives inline from the section's palette, and an
+ * inline style beats any rule here.
+ */
 .section-region.is-selected {
   border-style: solid;
   border-width: 1.5px;
+  box-shadow: 0 0 0 1.5px var(--accent);
 }
 
 .section-header {
   position: absolute;
+  /* The slot names the pill's corner, not its centre: the pill is counter-scaled, so a centred
+     origin would slide it away from the point the dodge chose as the zoom changed. */
+  transform-origin: left top;
   display: flex;
   height: 24px;
   align-items: center;

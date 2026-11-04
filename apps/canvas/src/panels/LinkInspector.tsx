@@ -1,6 +1,8 @@
 import type { GraphEdge } from "@suite/graph";
 import { useEffect, useState } from "react";
 import { isolatedEdgeId, setIsolatedEdge, useIsolatedEdgeId } from "../canvas/routeIsolation";
+import { type InspectorTabId, tabLabel, tabsFor } from "../inspector/capabilities";
+import { EntityPanel } from "../inspector/EntityPanel";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { StyleTab } from "../styles/surface/StyleTab";
 import { describeDot, type LinkEndView, type LinkInspectorModel } from "./useLinkInspectorModel";
@@ -61,6 +63,13 @@ export function LinkInspector({
 }: LinkInspectorProps) {
   const { canEdit, canManageStructure } = model;
   const edgeId = model.edge.id;
+  // A link is a subject like any other, so it gets the same strip: what it joins and what it says are
+  // Details, everything about how it is drawn is Style.
+  const [tab, setTab] = useState<InspectorTabId>("details");
+  const tabs = tabsFor(["edge"]).map((entry) => ({
+    id: entry.id,
+    label: tabLabel(entry.id, "edge"),
+  }));
   const workspace = useCanvasStore((state) => state.workspace);
   const isolating = useIsolatedEdgeId() === edgeId;
 
@@ -117,289 +126,313 @@ export function LinkInspector({
   })();
 
   return (
-    <aside
-      className="card-inspector link-inspector"
-      data-testid="link-inspector"
-      data-handbook-region="card-inspector"
-      aria-label="Link info"
+    <EntityPanel
+      kind="edge"
+      testId="link-inspector"
+      ariaLabel="Link info"
+      className="link-inspector"
+      title={
+        <>
+          {model.source.title} {"\u2192"} {model.target.title}
+        </>
+      }
+      subtitle={model.bidirectional ? "Link \u00b7 two-way" : "Link"}
+      onClose={onClose}
+      closeTestId="link-close"
+      tabs={tabs}
+      activeTab={tab}
+      onTab={setTab}
+      tabIdPrefix="link"
+      tabsTestId="link-panel-tabs"
+      tabTestId={(id) => `link-tab-${id}`}
     >
-      <header className="flex items-start gap-2 border-b border-[var(--hairline)] px-3 py-2.5">
-        <div className="min-w-0 flex-1">
-          <p
-            className="truncate text-[13px] font-semibold text-[var(--ink)]"
-            data-testid="link-title"
-          >
-            {model.source.title} {"\u2192"} {model.target.title}
-          </p>
-          <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
-            Link{model.bidirectional ? " \u00b7 two-way" : ""}
-          </p>
-        </div>
-        <button
-          type="button"
-          aria-label="Close"
-          data-testid="link-close"
-          className="rounded px-1.5 py-0.5 text-[13px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-          onClick={onClose}
-        >
-          {"\u00d7"}
-        </button>
-      </header>
-
       <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5">
         {/* The two ends: what they are, which dot holds the link, and a way there. */}
-        {(["source", "target"] as const).map((end) => {
-          const view = model[end];
-          const moving = movingEnd === end;
-          return (
-            <section key={end} className="mb-3" data-testid={`link-end-${end}`}>
+        {tab === "details"
+          ? (["source", "target"] as const).map((end) => {
+              const view = model[end];
+              const moving = movingEnd === end;
+              return (
+                <section key={end} className="mb-3" data-testid={`link-end-${end}`}>
+                  <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                    {end === "source" ? "From" : "To"}
+                  </h3>
+                  <div className="mt-1 flex items-start gap-1.5">
+                    <span aria-hidden="true" className="leading-5 text-[var(--ink-muted)]">
+                      {view.glyph}
+                    </span>
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 text-left"
+                      title={view.title}
+                      data-testid={`link-end-${end}-open`}
+                      onClick={() => onNavigateEnd(view)}
+                    >
+                      <span className="block truncate text-[12px] text-[var(--ink)]">
+                        {view.title}
+                      </span>
+                      <span className="block truncate text-[11px] text-[var(--ink-muted)]">
+                        {describeDot(view)}
+                      </span>
+                    </button>
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        className="shrink-0 rounded px-1 text-[10px] leading-5 text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                        data-testid={`link-end-${end}-move`}
+                        title="Move this end to another connector"
+                        aria-pressed={moving}
+                        onClick={() => (moving ? onCancelMoveEnd() : onMoveEnd(end))}
+                      >
+                        {moving ? "Cancel" : "Move"}
+                      </button>
+                    ) : null}
+                  </div>
+                  {moving ? (
+                    <p
+                      className="mt-1 text-[11px] text-[var(--ink-muted)]"
+                      data-testid="link-move-hint"
+                    >
+                      Click a connector on the canvas to attach this end there.
+                    </p>
+                  ) : null}
+                </section>
+              );
+            })
+          : null}
+
+        {tab === "style" ? (
+          <>
+            <section className="mt-3">
               <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-                {end === "source" ? "From" : "To"}
+                Style
               </h3>
-              <div className="mt-1 flex items-start gap-1.5">
-                <span aria-hidden="true" className="leading-5 text-[var(--ink-muted)]">
-                  {view.glyph}
-                </span>
+              <div className="mt-1 flex flex-wrap gap-1" data-testid="link-paths">
+                {PATHS.map((entry) => (
+                  <button
+                    key={entry.value}
+                    type="button"
+                    className="library-action"
+                    aria-pressed={model.mode === entry.value}
+                    disabled={!canEdit}
+                    data-testid={`link-path-${entry.value}`}
+                    onClick={() => onSetPath(entry.value)}
+                  >
+                    {entry.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {/* The route itself: the bends a reader drew, and the layer the link
+            paints on (ADR-0052 §1, §3, §4). */}
+            <section className="mt-3" data-testid="link-route">
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                Route
+              </h3>
+              <div className="mt-1 flex flex-wrap gap-1.5">
                 <button
                   type="button"
-                  className="min-w-0 flex-1 text-left"
-                  title={view.title}
-                  data-testid={`link-end-${end}-open`}
-                  onClick={() => onNavigateEnd(view)}
+                  className="library-action"
+                  data-testid="link-add-bend"
+                  disabled={!canEdit || model.bends.length >= MAX_BENDS}
+                  onClick={addBend}
                 >
-                  <span className="block truncate text-[12px] text-[var(--ink)]">{view.title}</span>
-                  <span className="block truncate text-[11px] text-[var(--ink-muted)]">
-                    {describeDot(view)}
-                  </span>
+                  Add bend
                 </button>
-                {canEdit ? (
-                  <button
-                    type="button"
-                    className="shrink-0 rounded px-1 text-[10px] leading-5 text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-                    data-testid={`link-end-${end}-move`}
-                    title="Move this end to another connector"
-                    aria-pressed={moving}
-                    onClick={() => (moving ? onCancelMoveEnd() : onMoveEnd(end))}
-                  >
-                    {moving ? "Cancel" : "Move"}
-                  </button>
-                ) : null}
-              </div>
-              {moving ? (
-                <p
-                  className="mt-1 text-[11px] text-[var(--ink-muted)]"
-                  data-testid="link-move-hint"
+                <button
+                  type="button"
+                  className="library-action"
+                  data-testid="link-clear-bends"
+                  disabled={!canEdit || model.bends.length === 0}
+                  onClick={() => writeRoute([], model.layer)}
                 >
-                  Click a connector on the canvas to attach this end there.
-                </p>
-              ) : null}
+                  Clear bends
+                </button>
+              </div>
+              <p className="mt-1 text-[11px] text-[var(--ink-muted)]" data-testid="link-bend-hint">
+                {bendHint}
+              </p>
+              <ul className="mt-1" data-testid="link-bends" data-count={model.bends.length}>
+                {model.bends.map((bend, index) => (
+                  <li
+                    // The point is the identity: two bends are never the same point.
+                    key={`${bend.x}:${bend.y}`}
+                    className="flex items-center gap-1 text-[11px] text-[var(--ink)]"
+                    data-testid={`link-bend-${index}`}
+                  >
+                    <span aria-hidden="true" className="text-[var(--ink-muted)]">
+                      {"•"}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">
+                      Bend {index + 1} · {Math.round(bend.x)}, {Math.round(bend.y)}
+                    </span>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded px-1 text-[10px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                      data-testid={`link-bend-remove-${index}`}
+                      aria-label={`Remove bend ${index + 1}`}
+                      disabled={!canEdit}
+                      onClick={() => removeBend(index)}
+                    >
+                      {"×"}
+                    </button>
+                  </li>
+                ))}
+                {model.bends.length === 0 ? (
+                  <li
+                    className="text-[11px] text-[var(--ink-muted)]"
+                    data-testid="link-bends-empty"
+                  >
+                    No bends yet.
+                  </li>
+                ) : null}
+              </ul>
+
+              <h3 className="mt-3 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                Layer
+              </h3>
+              <div className="mt-1 flex flex-wrap gap-1.5" data-testid="link-layers">
+                {(["below", "above"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className="library-action"
+                    aria-pressed={model.layer === value}
+                    disabled={!canEdit}
+                    data-testid={`link-layer-${value}`}
+                    onClick={() => writeRoute(model.bends, value)}
+                  >
+                    {value === "below" ? "Below cards" : "Above cards"}
+                  </button>
+                ))}
+              </div>
+
+              <h3 className="mt-3 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                Isolate
+              </h3>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  className="library-action"
+                  aria-pressed={isolating}
+                  data-testid="link-isolate"
+                  onClick={() => setIsolatedEdge(isolating ? null : edgeId)}
+                >
+                  {isolating ? "Isolating this link" : "Isolate this link"}
+                </button>
+              </div>
+              <p
+                className="mt-1 text-[11px] text-[var(--ink-muted)]"
+                data-testid="link-isolate-hint"
+              >
+                Dims everything but this link, so one route can be read on a busy board.
+              </p>
             </section>
-          );
-        })}
+          </>
+        ) : null}
 
-        <section className="mt-3">
-          <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">Style</h3>
-          <div className="mt-1 flex flex-wrap gap-1" data-testid="link-paths">
-            {PATHS.map((entry) => (
-              <button
-                key={entry.value}
-                type="button"
-                className="library-action"
-                aria-pressed={model.mode === entry.value}
+        {tab === "details" ? (
+          <>
+            <section className="mt-3">
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                Direction
+              </h3>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  className="library-action"
+                  aria-pressed={model.bidirectional}
+                  disabled={!canEdit}
+                  data-testid="link-bidirectional"
+                  onClick={() => onSetBidirectional(!model.bidirectional)}
+                >
+                  {model.bidirectional ? "Two-way" : "One-way"}
+                </button>
+                <button
+                  type="button"
+                  className="library-action"
+                  disabled={!canEdit}
+                  data-testid="link-reverse"
+                  onClick={onReverse}
+                >
+                  Reverse
+                </button>
+              </div>
+            </section>
+
+            <section className="mt-3">
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                Description
+              </h3>
+              <DescriptionField
+                value={model.description}
                 disabled={!canEdit}
-                data-testid={`link-path-${entry.value}`}
-                onClick={() => onSetPath(entry.value)}
+                onCommit={onSetDescription}
+              />
+              {/* The label's home along the line. The canvas gesture writes the same
+              value, so the two can never disagree. */}
+              <label
+                className="mt-2 block text-[11px] text-[var(--ink-muted)]"
+                htmlFor="link-offset"
               >
-                {entry.label}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* The route itself: the bends a reader drew, and the layer the link
-            paints on (ADR-0052 §1, §3, §4). */}
-        <section className="mt-3" data-testid="link-route">
-          <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">Route</h3>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              className="library-action"
-              data-testid="link-add-bend"
-              disabled={!canEdit || model.bends.length >= MAX_BENDS}
-              onClick={addBend}
-            >
-              Add bend
-            </button>
-            <button
-              type="button"
-              className="library-action"
-              data-testid="link-clear-bends"
-              disabled={!canEdit || model.bends.length === 0}
-              onClick={() => writeRoute([], model.layer)}
-            >
-              Clear bends
-            </button>
-          </div>
-          <p className="mt-1 text-[11px] text-[var(--ink-muted)]" data-testid="link-bend-hint">
-            {bendHint}
-          </p>
-          <ul className="mt-1" data-testid="link-bends" data-count={model.bends.length}>
-            {model.bends.map((bend, index) => (
-              <li
-                // The point is the identity: two bends are never the same point.
-                key={`${bend.x}:${bend.y}`}
-                className="flex items-center gap-1 text-[11px] text-[var(--ink)]"
-                data-testid={`link-bend-${index}`}
-              >
-                <span aria-hidden="true" className="text-[var(--ink-muted)]">
-                  {"•"}
-                </span>
-                <span className="min-w-0 flex-1 truncate">
-                  Bend {index + 1} · {Math.round(bend.x)}, {Math.round(bend.y)}
-                </span>
+                Position along the line
+              </label>
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <input
+                  id="link-offset"
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={model.labelOffset}
+                  disabled={!canEdit || model.description.length === 0}
+                  data-testid="link-offset"
+                  className="min-w-0 flex-1"
+                  onChange={(event) => onSetLabelOffset(Number(event.target.value))}
+                />
                 <button
                   type="button"
                   className="shrink-0 rounded px-1 text-[10px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-                  data-testid={`link-bend-remove-${index}`}
-                  aria-label={`Remove bend ${index + 1}`}
+                  data-testid="link-offset-reset"
                   disabled={!canEdit}
-                  onClick={() => removeBend(index)}
+                  onClick={() => onSetLabelOffset(null)}
                 >
-                  {"×"}
+                  Reset
                 </button>
-              </li>
-            ))}
-            {model.bends.length === 0 ? (
-              <li className="text-[11px] text-[var(--ink-muted)]" data-testid="link-bends-empty">
-                No bends yet.
-              </li>
-            ) : null}
-          </ul>
+              </div>
+            </section>
+          </>
+        ) : null}
 
-          <h3 className="mt-3 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-            Layer
-          </h3>
-          <div className="mt-1 flex flex-wrap gap-1.5" data-testid="link-layers">
-            {(["below", "above"] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                className="library-action"
-                aria-pressed={model.layer === value}
-                disabled={!canEdit}
-                data-testid={`link-layer-${value}`}
-                onClick={() => writeRoute(model.bends, value)}
-              >
-                {value === "below" ? "Below cards" : "Above cards"}
-              </button>
-            ))}
-          </div>
-
-          <h3 className="mt-3 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-            Isolate
-          </h3>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              className="library-action"
-              aria-pressed={isolating}
-              data-testid="link-isolate"
-              onClick={() => setIsolatedEdge(isolating ? null : edgeId)}
-            >
-              {isolating ? "Isolating this link" : "Isolate this link"}
-            </button>
-          </div>
-          <p className="mt-1 text-[11px] text-[var(--ink-muted)]" data-testid="link-isolate-hint">
-            Dims everything but this link, so one route can be read on a busy board.
-          </p>
-        </section>
-
-        <section className="mt-3">
-          <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-            Direction
-          </h3>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              className="library-action"
-              aria-pressed={model.bidirectional}
-              disabled={!canEdit}
-              data-testid="link-bidirectional"
-              onClick={() => onSetBidirectional(!model.bidirectional)}
-            >
-              {model.bidirectional ? "Two-way" : "One-way"}
-            </button>
-            <button
-              type="button"
-              className="library-action"
-              disabled={!canEdit}
-              data-testid="link-reverse"
-              onClick={onReverse}
-            >
-              Reverse
-            </button>
-          </div>
-        </section>
-
-        <section className="mt-3">
-          <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-            Description
-          </h3>
-          <DescriptionField
-            value={model.description}
-            disabled={!canEdit}
-            onCommit={onSetDescription}
-          />
-          {/* The label's home along the line. The canvas gesture writes the same
-              value, so the two can never disagree. */}
-          <label className="mt-2 block text-[11px] text-[var(--ink-muted)]" htmlFor="link-offset">
-            Position along the line
-          </label>
-          <div className="mt-0.5 flex items-center gap-1.5">
-            <input
-              id="link-offset"
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={model.labelOffset}
-              disabled={!canEdit || model.description.length === 0}
-              data-testid="link-offset"
-              className="min-w-0 flex-1"
-              onChange={(event) => onSetLabelOffset(Number(event.target.value))}
-            />
-            <button
-              type="button"
-              className="shrink-0 rounded px-1 text-[10px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-              data-testid="link-offset-reset"
-              disabled={!canEdit}
-              onClick={() => onSetLabelOffset(null)}
-            >
-              Reset
-            </button>
-          </div>
-        </section>
-
-        {/* One stroke, one editor: the same Style tab every other surface has
+        {tab === "style" ? (
+          <>
+            {/* One stroke, one editor: the same Style tab every other surface has
             (ADR-0051), showing the line controls a link can actually use. */}
-        <section className="mt-3 border-t border-[var(--hairline)] pt-2">
-          <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">Style</h3>
-          <StyleTab targets={[{ kind: "edge", id: edgeId }]} canEdit={canEdit} />
-        </section>
+            <section className="mt-3 border-t border-[var(--hairline)] pt-2">
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                Style
+              </h3>
+              <StyleTab targets={[{ kind: "edge", id: edgeId }]} canEdit={canEdit} />
+            </section>
+          </>
+        ) : null}
 
-        <section className="mt-3">
-          <button
-            type="button"
-            className="w-full rounded px-1.5 py-1 text-left text-[12px] text-red-600 hover:bg-red-500/10 disabled:opacity-40 dark:text-red-400"
-            data-testid="link-delete"
-            disabled={!canManageStructure}
-            onClick={onDelete}
-          >
-            Delete link
-          </button>
-        </section>
+        {tab === "details" ? (
+          <section className="mt-3">
+            <button
+              type="button"
+              className="w-full rounded px-1.5 py-1 text-left text-[12px] text-red-600 hover:bg-red-500/10 disabled:opacity-40 dark:text-red-400"
+              data-testid="link-delete"
+              disabled={!canManageStructure}
+              onClick={onDelete}
+            >
+              Delete link
+            </button>
+          </section>
+        ) : null}
       </div>
-    </aside>
+    </EntityPanel>
   );
 }
 

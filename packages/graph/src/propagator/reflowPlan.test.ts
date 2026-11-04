@@ -484,6 +484,77 @@ describe("proposeReflowPlan Integration", () => {
     expect(secUpdate?.width).toBe(478);
   });
 
+  it("holds the frame around a nested section to that section's box, not just its cards", () => {
+    const boardId = "nested-section-board";
+    // The inner frame does not shrink, so its box is larger than the one card inside it: a parent
+    // fitted to the card alone would clip it, which is exactly the nesting report.
+    const inner: Section = {
+      id: "sec-inner",
+      boardId,
+      title: "Inner",
+      x: 100,
+      y: 100,
+      width: 400,
+      height: 300,
+      z: 1,
+      shrinkToFit: false,
+      tags: [],
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+    const outer: Section = {
+      id: "sec-outer",
+      boardId,
+      title: "Outer",
+      x: 0,
+      y: 0,
+      width: 700,
+      height: 700,
+      z: 0,
+      tags: [],
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+
+    const placements: Placement[] = [
+      {
+        // The inner frame's only card, well inside its box.
+        cardId: "card-nested",
+        boardId,
+        x: 150,
+        y: 150,
+        width: 100,
+        height: 100,
+        z: 1,
+        createdAt: 1000,
+      },
+    ];
+
+    // A card dragged into the outer frame but outside the inner one: the outer has to hold the
+    // inner frame's whole box, not only the card it happens to contain.
+    const plan = proposeReflowPlan({
+      boardId,
+      targetCardId: "card-outside",
+      targetPosition: { x: 560, y: 150 },
+      targetSize: { width: 100, height: 100 },
+      placements,
+      sections: [outer, inner],
+      gap: 24,
+      sectionPadding: 24,
+    });
+
+    expect(plan).not.toBeNull();
+    if (!plan) return;
+
+    const outerWrite = plan.sections?.find((entry) => entry.sectionId === "sec-outer");
+    expect(outerWrite).toBeDefined();
+    // Tight around the inner frame (24 padding, 40 above), which is wider than the card inside it.
+    expect(outerWrite?.x).toBe(100 - 24);
+    expect(outerWrite?.y).toBe(100 - 40);
+    expect((outerWrite?.x ?? 0) + (outerWrite?.width ?? 0)).toBeGreaterThanOrEqual(500 + 24);
+    expect((outerWrite?.y ?? 0) + (outerWrite?.height ?? 0)).toBeGreaterThanOrEqual(400 + 24);
+  });
+
   it("shrinks and expands in all 4 directions with detach threshold", () => {
     const boardId = "shrink-omni-board";
     const section: Section = {

@@ -6,6 +6,7 @@ import type { AccountPhase } from "../auth/useAccountStore";
 import { BoardOutlineHost } from "../canvas/BoardOutline";
 import { CanvasBoard } from "../canvas/CanvasBoard";
 import { PinnedCards } from "../canvas/PinnedCards";
+import { PurposeControl } from "../canvas/PurposeControl";
 import type { SurfacePalette } from "../canvas/rules";
 import { SurfacePaintProvider } from "../canvas/surfaceContext";
 import { CardFocusHost } from "../cards/CardFocusHost";
@@ -563,48 +564,57 @@ export function WorkspaceShellView({
               ) : null}
               {/*
                 The document's own controls sit beside the board name: undo and
-                redo, the history drawer, and the outline. They were spread across
-                a corner stack and the bottom dock, which put one group of
-                controls in four places.
+                redo, the history drawer, the outline, and the purpose the canvas
+                is for. They were spread across a corner stack and the bottom
+                dock, which put one group of controls in four places.
+
+                Explain is outside the edit gate: a reader who may not write still
+                gathers a selection to read it, and the pill that used to carry it
+                is only drawn over a board.
               */}
-              {workspaceSurface && !readOnly ? (
+              {workspaceSurface ? (
                 <span className="flex shrink-0 items-center gap-0.5" data-testid="board-nav">
-                  <UndoRedo />
-                  <InteractionModeToggle />
-                  <button
-                    type="button"
-                    data-testid="history-toggle"
-                    data-handbook-region="history-toggle"
-                    aria-label="Version history"
-                    aria-pressed={historyOpen}
-                    title="Version history"
-                    className="board-nav-button"
-                    onClick={toggleHistory}
-                  >
-                    <span aria-hidden="true" className="text-[13px] leading-none">
-                      {"\u25f4"}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="outline-control"
-                    data-handbook-region="outline-control"
-                    aria-label="Board outline"
-                    aria-pressed={outlineOpen}
-                    title="Board outline ([)"
-                    className="board-nav-button"
-                    onClick={toggleOutline}
-                  >
-                    <span aria-hidden="true" className="text-[13px] leading-none">
-                      {"\u2630"}
-                    </span>
-                  </button>
+                  {!readOnly ? (
+                    <>
+                      <UndoRedo />
+                      <InteractionModeToggle />
+                      <button
+                        type="button"
+                        data-testid="history-toggle"
+                        data-handbook-region="history-toggle"
+                        aria-label="Version history"
+                        aria-pressed={historyOpen}
+                        title="Version history"
+                        className="board-nav-button"
+                        onClick={toggleHistory}
+                      >
+                        <span aria-hidden="true" className="text-[13px] leading-none">
+                          {"\u25f4"}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="outline-control"
+                        data-handbook-region="outline-control"
+                        aria-label="Board outline"
+                        aria-pressed={outlineOpen}
+                        title="Board outline ([)"
+                        className="board-nav-button"
+                        onClick={toggleOutline}
+                      >
+                        <span aria-hidden="true" className="text-[13px] leading-none">
+                          {"\u2630"}
+                        </span>
+                      </button>
+                    </>
+                  ) : null}
+                  <PurposeControl />
                   {/*
-                    Saved views: one icon in the row, after the outline and before search. It is a
+                    Saved views: one icon in the row, after explain and before search. It is a
                     development-only door while the surfaces around it settle, which is one flag
                     (`views/availability.ts`) read here and by the editor.
                   */}
-                  {viewsEnabled ? <ViewsBar canManage={canManageSchema} /> : null}
+                  {!readOnly && viewsEnabled ? <ViewsBar canManage={canManageSchema} /> : null}
                 </span>
               ) : null}
             </>

@@ -1,12 +1,15 @@
 import type { Section, Tag, Target, WorkspaceDocument } from "@suite/graph";
 import { sectionColors } from "@suite/graph";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { SECTION_STROKE } from "../canvas/sections/sectionPalette";
 import { TagPicker } from "../cards/TagPicker";
+import { ColourStrip } from "../inspector/ColourStrip";
 import type { InspectorTabId } from "../inspector/capabilities";
 import { tabLabel, tabsFor } from "../inspector/capabilities";
+import { EntityPanel } from "../inspector/EntityPanel";
 import { IconField } from "../inspector/IconField";
-import { InspectorTabs, inspectorPanelIds } from "../inspector/InspectorTabs";
+import { inspectorPanelIds } from "../inspector/InspectorTabs";
+import { type InspectorRow, rowsFor } from "../inspector/rows";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -119,181 +122,21 @@ export function ContainerPanel({
     addTag(tag.id);
   };
 
-  return (
-    <aside
-      className="card-inspector container-inspector"
-      data-testid="container-inspector"
-      data-handbook-region="card-inspector"
-      data-kind={model.kind}
-      aria-label={portal ? "Portal info" : "Section info"}
-    >
-      <header className="flex items-start gap-2 border-b border-[var(--hairline)] px-3 py-2.5">
-        <div className="min-w-0 flex-1">
-          <p
-            className="truncate text-[13px] font-semibold text-[var(--ink)]"
-            title={model.title}
-            data-testid="container-title"
-          >
-            {model.title}
-          </p>
-          <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
-            {portal ? "Portal" : "Section"}
-            {portal && model.board ? " · opens this board" : ""}
-            {!portal
-              ? ` · ${model.members.length} card${model.members.length === 1 ? "" : "s"}`
-              : ""}
-          </p>
-        </div>
-        <button
-          type="button"
-          aria-label="Close"
-          data-testid="container-close"
-          className="rounded px-1.5 py-0.5 text-[13px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-          onClick={onClose}
-        >
-          {"\u00d7"}
-        </button>
-      </header>
-
-      <InspectorTabs
-        tabs={tabs}
-        active={tab}
-        ariaLabel="Container sections"
-        testId="container-panel-tabs"
-        tabTestId={(id) => `container-tab-${id}`}
-        idPrefix={PANEL_ID_PREFIX}
-        className="card-panel-tabs px-3 pb-1"
-        onSelect={setTab}
-      />
-
-      {tab === "style" ? (
-        <div
-          className="min-h-0 flex-1 overflow-auto px-3 py-2.5"
-          role="tabpanel"
-          id={tabIds.style.panel}
-          aria-labelledby={tabIds.style.tab}
-          data-testid="container-style"
-        >
-          <StyleTab
-            targets={[{ kind: "card", id: model.id }]}
-            canEdit={canEdit && !model.orphan}
-            workspace={workspace}
-          />
-        </div>
-      ) : tab === "content" ? (
-        <div
-          className="min-h-0 flex-1 overflow-auto px-3 py-2.5"
-          role="tabpanel"
-          id={tabIds.content.panel}
-          aria-labelledby={tabIds.content.tab}
-          data-testid="container-content"
-        >
-          {portal && model.board ? (
-            <section className="mt-3" data-testid="container-contents">
-              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-                {`Contents${contentsCount > 0 ? ` (${contentsCount})` : ""}`}
-              </h3>
-              {model.contents.length === 0 ? (
-                <p
-                  className="mt-1 text-[12px] text-[var(--ink-muted)]"
-                  data-testid="container-contents-empty"
-                >
-                  This board has no cards and no sections yet.
-                </p>
-              ) : (
-                <ul className="mt-1 space-y-1.5">
-                  {model.contents.map((group) => (
-                    <li
-                      key={group.sectionId ?? "loose"}
-                      data-testid="container-contents-section"
-                      data-section-id={group.sectionId ?? ""}
-                    >
-                      <p className="flex items-baseline gap-1.5">
-                        {group.color ? (
-                          <span
-                            aria-hidden="true"
-                            className="inline-block h-2 w-2 flex-none rounded-full"
-                            style={{ background: SECTION_STROKE[group.color] }}
-                          />
-                        ) : null}
-                        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ink)]">
-                          {group.title}
-                        </span>
-                        <span
-                          className="text-[11px] text-[var(--ink-muted)]"
-                          data-testid="container-contents-count"
-                        >
-                          {`${group.cards.length} card${group.cards.length === 1 ? "" : "s"}`}
-                        </span>
-                      </p>
-                      {group.cards.length === 0 ? (
-                        <p className="mt-0.5 pl-3.5 text-[11px] text-[var(--ink-muted)]">
-                          No cards yet
-                        </p>
-                      ) : (
-                        <ul className="mt-0.5 space-y-0.5 pl-3.5">
-                          {group.cards.map((card) => (
-                            <li key={card.id}>
-                              <button
-                                type="button"
-                                data-testid="container-contents-card"
-                                title={card.title}
-                                className="w-full truncate rounded px-1 py-0.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
-                                onClick={() => onNavigate?.({ kind: "card", id: card.id })}
-                              >
-                                {card.title}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          ) : null}
-
-          {!portal ? (
-            <section>
-              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-                {`Contents (${model.members.length})`}
-              </h3>
-              {model.members.length === 0 ? (
-                <p
-                  className="mt-1 text-[12px] text-[var(--ink-muted)]"
-                  data-testid="container-contents-empty"
-                >
-                  This section is empty.
-                </p>
-              ) : (
-                <ul className="mt-1 space-y-0.5" data-testid="container-members">
-                  {model.members.map((member) => (
-                    <li key={member.id}>
-                      <button
-                        type="button"
-                        data-testid="container-member-row"
-                        title={member.title}
-                        className="w-full truncate rounded px-1 py-0.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
-                        onClick={() => onNavigate?.({ kind: "card", id: member.id })}
-                      >
-                        {member.title}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          ) : null}
-        </div>
-      ) : (
-        <div
-          className="min-h-0 flex-1 overflow-auto px-3 py-2.5"
-          role="tabpanel"
-          id={tabIds.details.panel}
-          aria-labelledby={tabIds.details.tab}
-          data-testid="container-details"
-        >
+  /**
+   * The container's rows, one table for both kinds.
+   *
+   * A section and a portal share most of this: a title, an icon, what links to them, and a colour (the
+   * portal's is its card's, so that one is Style). What differs is each row's `kinds`, which is the same
+   * rule the capability table applies to tabs, and it is why this panel no longer has a `tab ===` branch
+   * for every body.
+   */
+  const containerRows: InspectorRow<null>[] = [
+    {
+      id: "details",
+      tab: "details",
+      kinds: [kinds[0]],
+      render: () => (
+        <>
           <div className="flex flex-wrap gap-1.5" data-testid="container-actions" hidden={!details}>
             {portal && model.board && onOpenBoard ? (
               <button
@@ -397,21 +240,20 @@ export function ContainerPanel({
               <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
                 Colour
               </h3>
-              <div className="mt-1 flex flex-wrap gap-1.5" data-testid="container-colors">
-                {sectionColors.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    aria-label={`Colour ${color}`}
-                    aria-pressed={model.color === color}
-                    disabled={!canEdit}
-                    data-testid={`container-color-${color}`}
-                    className="h-5 w-5 rounded-full border border-[var(--hairline)] disabled:opacity-40"
-                    style={{ background: SECTION_STROKE[color] }}
-                    onClick={() => onSetColor(model.color === color ? null : color)}
-                  />
-                ))}
-              </div>
+              <ColourStrip
+                label="Section colour"
+                className="mt-1"
+                testId="container-colors"
+                disabled={!canEdit}
+                options={sectionColors.map((color) => ({
+                  label: `Colour ${color}`,
+                  light: SECTION_STROKE[color],
+                  dark: SECTION_STROKE[color],
+                  selected: model.color === color,
+                  testId: `container-color-${color}`,
+                  onPick: () => onSetColor(model.color === color ? null : color),
+                }))}
+              />
             </section>
           ) : null}
 
@@ -467,7 +309,7 @@ export function ContainerPanel({
           ) : null}
 
           {/* A board that is gone has no record to link to, so the list would be
-            a permanent "nothing here". */}
+                      a permanent "nothing here". */}
           {details && !(portal && model.orphan) ? (
             <section className="mt-3">
               <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
@@ -532,8 +374,167 @@ export function ContainerPanel({
               />
             </section>
           ) : null}
-        </div>
-      )}
-    </aside>
+        </>
+      ),
+    },
+    {
+      id: "contents",
+      tab: "content",
+      kinds: [kinds[0]],
+      render: () => (
+        <>
+          {portal && model.board ? (
+            <section className="mt-3" data-testid="container-contents">
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                {`Contents${contentsCount > 0 ? ` (${contentsCount})` : ""}`}
+              </h3>
+              {model.contents.length === 0 ? (
+                <p
+                  className="mt-1 text-[12px] text-[var(--ink-muted)]"
+                  data-testid="container-contents-empty"
+                >
+                  This board has no cards and no sections yet.
+                </p>
+              ) : (
+                <ul className="mt-1 space-y-1.5">
+                  {model.contents.map((group) => (
+                    <li
+                      key={group.sectionId ?? "loose"}
+                      data-testid="container-contents-section"
+                      data-section-id={group.sectionId ?? ""}
+                    >
+                      <p className="flex items-baseline gap-1.5">
+                        {group.color ? (
+                          <span
+                            aria-hidden="true"
+                            className="inline-block h-2 w-2 flex-none rounded-full"
+                            style={{ background: SECTION_STROKE[group.color] }}
+                          />
+                        ) : null}
+                        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ink)]">
+                          {group.title}
+                        </span>
+                        <span
+                          className="text-[11px] text-[var(--ink-muted)]"
+                          data-testid="container-contents-count"
+                        >
+                          {`${group.cards.length} card${group.cards.length === 1 ? "" : "s"}`}
+                        </span>
+                      </p>
+                      {group.cards.length === 0 ? (
+                        <p className="mt-0.5 pl-3.5 text-[11px] text-[var(--ink-muted)]">
+                          No cards yet
+                        </p>
+                      ) : (
+                        <ul className="mt-0.5 space-y-0.5 pl-3.5">
+                          {group.cards.map((card) => (
+                            <li key={card.id}>
+                              <button
+                                type="button"
+                                data-testid="container-contents-card"
+                                title={card.title}
+                                className="w-full truncate rounded px-1 py-0.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+                                onClick={() => onNavigate?.({ kind: "card", id: card.id })}
+                              >
+                                {card.title}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
+
+          {!portal ? (
+            <section>
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                {`Contents (${model.members.length})`}
+              </h3>
+              {model.members.length === 0 ? (
+                <p
+                  className="mt-1 text-[12px] text-[var(--ink-muted)]"
+                  data-testid="container-contents-empty"
+                >
+                  This section is empty.
+                </p>
+              ) : (
+                <ul className="mt-1 space-y-0.5" data-testid="container-members">
+                  {model.members.map((member) => (
+                    <li key={member.id}>
+                      <button
+                        type="button"
+                        data-testid="container-member-row"
+                        title={member.title}
+                        className="w-full truncate rounded px-1 py-0.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+                        onClick={() => onNavigate?.({ kind: "card", id: member.id })}
+                      >
+                        {member.title}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
+        </>
+      ),
+    },
+    {
+      id: "style",
+      tab: "style",
+      kinds: [kinds[0]],
+      render: () => (
+        <>
+          <StyleTab
+            targets={[{ kind: "card", id: model.id }]}
+            canEdit={canEdit && !model.orphan}
+            workspace={workspace}
+          />
+        </>
+      ),
+    },
+  ];
+
+  return (
+    <EntityPanel
+      kind={model.kind}
+      testId="container-inspector"
+      ariaLabel={portal ? "Portal info" : "Section info"}
+      className="container-inspector"
+      title={<span data-testid="container-title">{model.title}</span>}
+      subtitle={
+        <>
+          {portal ? "Portal" : "Section"}
+          {portal && model.board ? " \u00b7 opens this board" : ""}
+          {!portal
+            ? ` \u00b7 ${model.members.length} card${model.members.length === 1 ? "" : "s"}`
+            : ""}
+        </>
+      }
+      onClose={onClose}
+      closeTestId="container-close"
+      tabs={tabs}
+      activeTab={tab}
+      onTab={setTab}
+      tabIdPrefix={PANEL_ID_PREFIX}
+      tabsTestId="container-panel-tabs"
+      tabTestId={(id) => `container-tab-${id}`}
+    >
+      <div
+        className="min-h-0 flex-1 overflow-auto px-3 py-2.5"
+        role="tabpanel"
+        id={tabIds[tab].panel}
+        aria-labelledby={tabIds[tab].tab}
+        data-testid={`container-${tab}`}
+      >
+        {rowsFor(containerRows, tab, [kinds[0]]).map((row) => (
+          <Fragment key={row.id}>{row.render(null)}</Fragment>
+        ))}
+      </div>
+    </EntityPanel>
   );
 }

@@ -1,13 +1,6 @@
 import { type LayoutPlan, proposeReflowPlan, type Rect, sectionsAt } from "@suite/graph";
 import type { Node, NodeChange, NodePositionChange } from "@xyflow/react";
-import {
-  Background,
-  ConnectionMode,
-  ControlButton,
-  Controls,
-  ReactFlow,
-  SelectionMode,
-} from "@xyflow/react";
+import { Background, ConnectionMode, ReactFlow, SelectionMode, useStore } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useRef, useState } from "react";
 import { portalTargetId } from "../../cards/portal";
@@ -17,16 +10,13 @@ import { edgeTypes } from "../EdgeDescription";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../interactions/multiSelect";
 import { AboveLinkLayer } from "../links/AboveLinkLayer";
 import { useLinkThreadStore } from "../links/linkThread";
-import { ModeControl } from "../links/ModeControl";
 import { SectionLinkLayer } from "../links/SectionLinkLayer";
 import { LocalDragEase, prefersReducedMotion } from "../localEasing";
 import { COLLAPSED_CARD_HEIGHT } from "../nodeData";
 import { PeerLibraryDragLayer } from "../PeerLibraryDragLayer";
-import { PurposeControl } from "../PurposeControl";
 import { pickCard } from "../pickCard";
 import { PeerReconnectLayer } from "../presence/PeerReconnectLayer";
 import { PresenceLayer } from "../presence/PresenceLayer";
-import { SelectModeControl } from "../SelectModeControl";
 import { SnapGuideLayer } from "../SnapGuideLayer";
 import { SectionLayer } from "../sections/SectionLayer";
 import { type SnapGuide, type SnapRect, snapRect } from "../snapping";
@@ -41,6 +31,8 @@ import {
   sameRectMap,
   useArrowMovement,
 } from "./boardSupport";
+import { CanvasControls } from "./CanvasControls";
+import { SelectionOutline } from "./SelectionOutline";
 import type { useBoardCamera } from "./useBoardCamera";
 import type { useBoardCommands } from "./useBoardCommands";
 import type { useBoardLinks } from "./useBoardLinks";
@@ -50,7 +42,9 @@ import type { useBoardRefs } from "./useBoardRefs";
 import type { useBoardSections } from "./useBoardSections";
 import type { useBoardSelection } from "./useBoardSelection";
 import type { useBoardUi } from "./useBoardUi";
+import { useDragFollow } from "./useDragFollow";
 import { usePaneDoubleClick } from "./usePaneDoubleClick";
+import { useSelectionExtent } from "./useSelectionExtent";
 
 type BoardSurfaceProps = {
   ui: ReturnType<typeof useBoardUi>;
@@ -85,13 +79,14 @@ export function BoardSurface({
     activeBoardId,
     peers,
     setDragging,
-    selectedSectionId,
+    selectedSectionIds,
     presenting,
     editingSectionId,
     setEditingSection,
     selectedEdgeIds,
     setSelectedEdgeIds,
     setSelectedConnector,
+    setSectionDragPresence,
     openContextMenu,
     canEditContent,
     canEditLayout,
@@ -176,6 +171,7 @@ export function BoardSurface({
   const snapOthers = useRef<SnapRect[]>([]);
   /** The last position the snapper chose, so the drop commits exactly what was drawn. */
   const lastSnapped = useRef<{ id: string; x: number; y: number } | null>(null);
+
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const snapGuideKey = useRef("");
 
@@ -446,6 +442,27 @@ export function BoardSurface({
     ],
   );
 
+  // The camera scale, for the outline's constant-width edge and its label.
+  const zoom = useStore((state) => state.transform[2]);
+
+  const dragFollow = useDragFollow({
+    sections: boardSections,
+    selectedSectionIds,
+    draggedNodeIds,
+    setSectionDragPresence,
+  });
+
+  const extent = useSelectionExtent({
+    lookup: ui.store.getState().nodeLookup,
+    sections: boardSections,
+    offsets: sectionOffsetsMap,
+    resizes: sectionResizes,
+    selectedNodeIds,
+    selectedSectionIds,
+    selectedEdgeIds,
+    links: [...projectedLinks.flow, ...projectedLinks.sections, ...projectedLinks.above],
+  });
+
   return (
     <ReactFlow
       nodes={nodes}
@@ -563,6 +580,8 @@ export function BoardSurface({
         const ids = dragged.length > 0 ? dragged.map((entry) => entry.id) : [node.id];
         draggedNodeIds.current = ids;
         locallyDraggingIds.current = new Set(ids);
+        // The frame the reader boxed with these cards travels too.
+        dragFollow.begin(node);
         snapOthers.current = ids.length === 1 ? boxes(new Set(ids)) : [];
         lastSnapped.current = null;
         // The rendered delta is eased from here to drop. Reduced motion keeps
@@ -615,6 +634,7 @@ export function BoardSurface({
           position: node.position,
           nodeIds: draggedNodeIds.current,
         });
+        dragFollow.follow(node);
       }}
       onNodeDragStop={(_, node, dragged) => {
         if (!canEditLayout) return;
@@ -657,6 +677,7 @@ export function BoardSurface({
                 position: { x: entry.position.x + delta.x, y: entry.position.y + delta.y },
               }));
         lastDragEndedAt.current = performance.now();
+        dragFollow.end();
         draggedNodeIds.current = [];
         locallyDraggingIds.current = new Set();
         snapOthers.current = [];
@@ -679,7 +700,6 @@ export function BoardSurface({
         // for us — that is why selecting one used to be a trap.
         sectionLinkSelection.current = [];
         useUiStore.getState().setSelectedEdgeIds([]);
-        useUiStore.getState().closeContainerInspector();
       }}
       onNodeClick={(_event, node) => {
         // Picking is a projection being built: a press adds the card to the view being picked for, and
@@ -752,7 +772,7 @@ export function BoardSurface({
             : sectionResizes
         }
         peers={peers}
-        selectedSectionId={selectedSectionId}
+        selectedSectionIds={new Set(selectedSectionIds)}
         editingSectionId={editingSectionId}
         onSelect={handleSelectSection}
         onStartRename={setEditingSection}
@@ -860,25 +880,10 @@ export function BoardSurface({
         }}
         toFlow={(client) => screenToFlowPosition(client)}
       />
+      <SelectionOutline extent={extent} zoom={zoom} />
       <SnapGuideLayer guides={snapGuides} />
       <Background color="var(--rf-dot)" />
-      <Controls showInteractive={false}>
-        <ModeControl />
-        <SelectModeControl />
-        <PurposeControl />
-        {/* Zoom to what is selected, inside the pill React Flow already draws:
-            a readout and a grid switch in a second corner stack were a control
-            bar of their own. */}
-        <ControlButton
-          data-testid="zoom-to-selection"
-          aria-label="Zoom to selection"
-          title="Zoom to selection"
-          disabled={selectedNodeIds.length === 0}
-          onClick={zoomToSelection}
-        >
-          {"\u26f6"}
-        </ControlButton>
-      </Controls>
+      <CanvasControls selectedCount={selectedNodeIds.length} onZoomToSelection={zoomToSelection} />
       <PresenceLayer />
       <PeerReconnectLayer />
       <PeerLibraryDragLayer />

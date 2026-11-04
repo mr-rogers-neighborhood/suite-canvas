@@ -21,5 +21,5 @@ board it belongs to, because both are structural: a section is a band on a board
 door to another board.
 
 The dock floats over the bottom-left corner of the canvas and never covers the cards you are
-working on for longer than a press; the purpose control, the zoom pill and the gesture control sit
-in the same corner and stack above it.
+working on for longer than a press; the zoom pill, with the link and boxing controls inside it,
+sits in the same corner and stacks above it.

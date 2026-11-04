@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useUiStore } from "../../store/useUiStore";
 import { linksInBox } from "../links/linkGeometry";
 import { DRAG_THROTTLE_MS, leavesSection } from "./boardSupport";
+import { pickMarqueeSelection, type TouchedSection } from "./marqueePick";
 import type { useBoardNodes } from "./useBoardNodes";
 import type { useBoardProjection } from "./useBoardProjection";
 import type { useBoardRefs } from "./useBoardRefs";
@@ -51,8 +52,9 @@ export function useBoardSelection(
     selectedConnector,
     selectedEdgeIds,
     selectedNodeIds,
-    selectedSectionId,
     selectSection,
+    selectSections,
+    selectedSectionIds,
   } = ui;
   const { refs, projection, nodes } = input;
   const { sectionMembershipMap, boardSections, projectedLinks } = projection;
@@ -153,10 +155,11 @@ export function useBoardSelection(
    * Sections a box touches.
    *
    * Intersection rather than containment: a reader sweeping across a section means that section, and requiring the whole
-   * frame inside the box would make a large section unselectable by a box drawn inside it.
+   * frame inside the box would make a large section unselectable by a box drawn inside it. The area travels with the id,
+   * because nested frames mean the box usually touches more than one and the smallest is the one drawn inside.
    */
   const sectionsInBox = useCallback(
-    (rect: { x: number; y: number; width: number; height: number }) =>
+    (rect: { x: number; y: number; width: number; height: number }): TouchedSection[] =>
       boardSections
         .filter(
           (section) =>
@@ -165,7 +168,7 @@ export function useBoardSelection(
             section.y < rect.y + rect.height &&
             rect.y < section.y + section.height,
         )
-        .map((section) => section.id),
+        .map((section) => ({ id: section.id, area: section.width * section.height })),
     [boardSections],
   );
 
@@ -179,10 +182,9 @@ export function useBoardSelection(
     // React Flow reports every card it touched whatever the reader meant.
     // One rule for both kinds of link: a card link is a React Flow edge and a section link is canvas geometry, and
     // React Flow's box never selects an edge, so the card ones are found here rather than by the pane.
-    const boxedLinks =
-      box && selects.links
-        ? linksInBox([...projectedLinks.flow, ...projectedLinks.sections], box)
-        : [];
+    const boxedLinks = box
+      ? linksInBox([...projectedLinks.flow, ...projectedLinks.sections], box)
+      : [];
     // The scope is enforced here as well as while the box is drawn. `selectable`
     // only stops a card React Flow has not picked up yet, and whether it lands
     // before the first box frame depends on gesture timing; the commit cannot be
@@ -210,23 +212,37 @@ export function useBoardSelection(
     const inScope = scope
       ? live.filter((id) => sectionMembershipMap.get(id) === scope.sectionId)
       : live;
-    const ids = selects.cards ? inScope : [];
-    const sections = box && selects.sections ? sectionsInBox(box) : [];
+    const picked = pickMarqueeSelection(selects, {
+      cardIds: inScope,
+      linkIds: boxedLinks,
+      touchedSections: box ? sectionsInBox(box) : [],
+    });
+    // The store and the React Flow refs hold mutable arrays; one copy per gesture keeps the
+    // decision function free to promise that it never hands back an array it does not own.
+    const cardIds = [...picked.cardIds];
+    const linkIds = [...picked.linkIds];
     // Set before the store write, so the repaint it causes sees an unchanged key
     // and keeps the selection this pass painted.
-    paintedSelection.current = ids.join(",");
-    setSelectedNodeIds(ids);
-    applyBoardNodes(ids);
+    paintedSelection.current = cardIds.join(",");
+    setSelectedNodeIds(cardIds);
+    applyBoardNodes(cardIds);
     // The marquee owns the selection: a box that crosses a section link picks it
     // up, and a box that crosses none drops the ones picked before.
-    sectionLinkSelection.current = boxedLinks;
+    sectionLinkSelection.current = linkIds;
     const flowEdgeIds = store
       .getState()
       .edges.filter((edge) => edge.selected)
       .map((edge) => edge.id);
-    setSelectedEdgeIds([...new Set([...flowEdgeIds, ...boxedLinks])]);
-    // A section is selected by its own store field, so a box for sections is a different selection, not a wider one.
-    if (sections.length > 0) selectSection(sections[sections.length - 1] ?? null);
+    setSelectedEdgeIds([...new Set([...flowEdgeIds, ...linkIds])]);
+    // A section is selected by its own store field rather than widened into the card selection.
+    // The box adds the frames around what it caught; only a box that caught nothing else lets a
+    // frame take the panel, because then the frame is what the reader drew around.
+    if (picked.sectionAlone && picked.sectionIds.length > 0) {
+      selectSection(picked.sectionIds.at(-1) ?? null);
+      selectSections(picked.sectionIds);
+    } else {
+      selectSections(picked.sectionIds);
+    }
   }, [
     applyBoardNodes,
     liveSelectedIds,
@@ -237,6 +253,7 @@ export function useBoardSelection(
     setSelectedEdgeIds,
     setSelectedNodeIds,
     selectSection,
+    selectSections,
     store,
   ]);
 
@@ -310,18 +327,20 @@ export function useBoardSelection(
       ? { nodeId: selectedConnector.nodeId, connectorId: selectedConnector.connectorId }
       : undefined;
     const hasSelection =
-      selectedSectionId !== null ||
+      selectedSectionIds.length > 0 ||
       selectedNodeIds.length > 0 ||
       selectedEdgeIds.length > 0 ||
       connector !== undefined;
 
+    const primarySection = selectedSectionIds.at(-1);
     setPresenceSelection(
       hasSelection
         ? {
             nodeIds: selectedNodeIds,
             edgeIds: selectedEdgeIds,
             ...(connector ? { connector } : {}),
-            ...(selectedSectionId ? { sectionId: selectedSectionId } : {}),
+            ...(selectedSectionIds.length > 0 ? { sectionIds: [...selectedSectionIds] } : {}),
+            ...(primarySection === undefined ? {} : { sectionId: primarySection }),
           }
         : null,
     );
@@ -329,7 +348,7 @@ export function useBoardSelection(
     selectedConnector,
     selectedEdgeIds,
     selectedNodeIds,
-    selectedSectionId,
+    selectedSectionIds,
     setPresenceSelection,
   ]);
 

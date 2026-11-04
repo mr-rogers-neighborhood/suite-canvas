@@ -86,7 +86,7 @@ afterAll(() => {
     activeBoardId: null,
     selectedNodeIds: [],
     selectedEdgeIds: [],
-    selectedSectionId: null,
+    selectedSectionIds: [],
     contextMenu: null,
     ...FULL_CAPABILITIES,
   });
@@ -121,7 +121,7 @@ function mount({ selectedSectionId = null }: { selectedSectionId?: string | null
     activeBoardId: boardId,
     selectedNodeIds: [],
     selectedEdgeIds: [],
-    selectedSectionId,
+    selectedSectionIds: selectedSectionId === null ? [] : [selectedSectionId],
     contextMenu: null,
     ...FULL_CAPABILITIES,
   });

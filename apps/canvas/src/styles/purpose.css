@@ -1,35 +1,33 @@
 /*
- * The purpose control (ADR-0064). Two questions, one column: "what the canvas is for"
- * and "what the next click does" are separate controls but a single pill — zoom, fit,
- * link mode, purpose on the floor.
+ * The purpose control (ADR-0064), in the navigation row beside the outline.
  *
- * The pill has one owner now (`.react-flow__controls` in `global.css`): it draws the
- * border, the radius, the shadow and the clipping. This file says only how a *value* is
- * painted, which is why nothing here names a border width, a corner or a position.
+ * It used to be the floor of the canvas pill, and most of this file used to describe a
+ * segment: a border owned by the pill, its own bottom corners, a second shadow. The row's
+ * button owns those now (`.board-nav-button` in `global.css`), so what is left is only
+ * what is specific to a purpose: it is painted by its value, and a chosen one is engaged.
  *
  * The palette comes from `--value-*` in `global.css` (ADR-0064 fifth amendment):
  * `data-purpose` selects the value, and this file decides how that value is emphasised.
- * No hue is named here, so a theme can re-tune one without a component knowing, and
- * `run`'s inverted chip is the same pair the link tool uses for `thread` — which is what
- * makes holding shift look like the mode you get.
+ * No hue is named here, so a theme can re-tune one without a component knowing.
  */
 /*
- * The purpose segment — the pill's floor.
+ * A resting purpose (`explore`) paints nothing: it is the row's ordinary button, and the
+ * surface it sits on is the title bar's, not `--value-explore-fill`'s.
  *
- * It used to be an absolutely-positioned button with its own border, its own bottom
- * corners and a second shadow, sitting under React Flow's container and pretending to
- * continue it. The container is the pill now (see `global.css`), so this rule is only
- * what is specific to the purpose: it is painted by its value and it is the last
- * segment, so the container's radius already rounds it.
+ * The row's button is named as well as the control, because `.board-nav-button[aria-pressed]`
+ * is an equally specific rule for the pressed state: a value is painted by its value.
  */
-.purpose-control {
-  border-radius: 0;
+.board-nav-button.purpose-control[data-purpose="explain"],
+.board-nav-button.purpose-control[data-purpose="present"],
+.board-nav-button.purpose-control[data-purpose="record"] {
+  background: var(--value-fill);
+  color: var(--value-ink);
 }
 
 /*
- * The treatments are all fill-and-ink now, because the segment has no border of its own:
- * the palette already supplies both for every value, so the only thing left to say is
- * that these three are *engaged* rather than resting.
+ * The two state-ish purposes keep an inset ring: the palette already supplies fill and
+ * ink, so the only thing left to say is that they are *engaged* rather than resting.
+ * Explain needs no ring — it is a choice the reader made, and the fill says so.
  */
 .purpose-control[data-purpose="present"],
 .purpose-control[data-purpose="record"] {
@@ -40,17 +38,10 @@
  * Hover tints by the value's own hue rather than mixing ink in: a pointer is not a
  * change of state, so an engaged purpose must look the same with the pointer on it.
  */
-.purpose-control:hover {
+.board-nav-button.purpose-control[data-purpose="explain"]:hover,
+.board-nav-button.purpose-control[data-purpose="present"]:hover,
+.board-nav-button.purpose-control[data-purpose="record"]:hover {
   background: color-mix(in srgb, var(--value-hue) 10%, var(--value-fill));
-}
-
-/* A modifier is showing what the click would choose. Dashed, not filled: a preview is
-   not a state, so it must not look like one (ADR-0066). It is an inset outline rather
-   than a border, because the border belongs to the pill now — and a dashed border on a
-   borderless segment would draw nothing at all. */
-.purpose-control[data-preview] {
-  outline: 1px dashed var(--ink-muted);
-  outline-offset: -3px;
 }
 
 /*

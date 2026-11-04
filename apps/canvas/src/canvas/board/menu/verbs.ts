@@ -4,6 +4,7 @@ import type { ContextMenuItem } from "../../../dialogs/ContextMenu";
 import type { EntityKind } from "../../../entities/kind";
 import { viewsEnabled } from "../../../views/availability";
 import { selectionSummary } from "../../interactions/multiSelect";
+import { SECTION_STROKE } from "../../sections/sectionPalette";
 import type { BoardMenuContext } from "./types";
 
 /**
@@ -20,19 +21,30 @@ import type { BoardMenuContext } from "./types";
  * it is acting on; the table still owns the order and the grouping.
  */
 export type MenuGroup =
+  | "edit"
+  | "arrange"
   | "appearance"
+  | "contents"
   | "create"
-  | "structure"
-  | "layout"
   | "transfer"
   | "share"
   | "danger";
 
+/**
+ * Reading order: what you do to a thing, how it looks, where it sits, what it holds, what you make,
+ * where it moves, who sees it, and what removes it.
+ *
+ * Edit is first because Cut, Copy and Paste are the verbs a reader reaches for without looking, and
+ * colour follows because it is the quickest change on the list: everything about how a thing reads
+ * sits together, before the commands that move it. Creations belong to the canvas menu and so sit
+ * below anything that acts on a selected thing.
+ */
 const GROUP_ORDER: readonly MenuGroup[] = [
+  "edit",
   "appearance",
+  "arrange",
+  "contents",
   "create",
-  "structure",
-  "layout",
   "transfer",
   "share",
   "danger",
@@ -48,17 +60,27 @@ export interface MenuTarget {
   sectionId?: string | undefined;
 }
 
-export interface EntityMenuRow {
+/**
+ * One thing that can be done to something, described once.
+ *
+ * The table is the menu's, the palette's and the keyboard's: `render` produces the items a menu shows
+ * (labels that count, a submenu, an inline strip), `verbLabel` reads the words back for a surface that is
+ * not a menu, and `shortcut` is what the palette prints beside a verb a key also runs. A verb declares the
+ * kinds it serves, so "cannot be done to a link" is a missing verb rather than an `if` in three places.
+ */
+export interface EntityVerb {
   id: string;
   group: MenuGroup;
   /** The kinds this row can serve. It shows only when it serves the whole target. */
   kinds: readonly EntityKind[];
   render: (ctx: BoardMenuContext, target: MenuTarget) => ContextMenuItem[];
+  /** The keys that run it, for the palette to print. Absent for a verb with no binding. */
+  shortcut?: string;
 }
 
 const at = (ctx: BoardMenuContext) => ({ x: ctx.menu.x, y: ctx.menu.y });
 
-const colourRow: EntityMenuRow = {
+const colourRow: EntityVerb = {
   id: "colour",
   group: "appearance",
   kinds: ["card", "portal", "section", "edge"],
@@ -68,11 +90,14 @@ const colourRow: EntityMenuRow = {
     if (target.kind === "section") {
       const sectionId = target.ids[0];
       if (!sectionId) return [];
+      const current = ctx.workspace.getSection(sectionId)?.color;
       return [
         {
           label: "Colour",
-          items: sectionColors.map((color) => ({
+          swatches: sectionColors.map((color) => ({
             label: color.charAt(0).toUpperCase() + color.slice(1),
+            swatch: { light: SECTION_STROKE[color], dark: SECTION_STROKE[color] },
+            swatchSelected: current === color,
             onSelect: () => ctx.workspace.setSectionColor(sectionId, color),
           })),
         },
@@ -85,7 +110,7 @@ const colourRow: EntityMenuRow = {
       return [
         {
           label: "Colour",
-          items: swatches(ctx, style?.swatch, (swatch) =>
+          swatches: swatches(ctx, style?.swatch, (swatch) =>
             ctx.workspace.setEdgeStyle(edgeId, {
               ...(style ?? {}),
               ...(swatch === null ? { swatch: undefined } : { swatch }),
@@ -100,13 +125,13 @@ const colourRow: EntityMenuRow = {
     return [
       {
         label: "Colour",
-        items: swatches(ctx, style?.swatch, (swatch) => ctx.setSwatches(target.ids, swatch)),
+        swatches: swatches(ctx, style?.swatch, (swatch) => ctx.setSwatches(target.ids, swatch)),
       },
     ];
   },
 };
 
-const appearanceRow: EntityMenuRow = {
+const appearanceRow: EntityVerb = {
   id: "appearance",
   group: "appearance",
   kinds: ["card", "portal", "edge"],
@@ -132,7 +157,7 @@ const appearanceRow: EntityMenuRow = {
   },
 };
 
-const canvasRows: EntityMenuRow[] = [
+const canvasRows: EntityVerb[] = [
   {
     id: "new-view",
     group: "create",
@@ -177,7 +202,7 @@ const canvasRows: EntityMenuRow[] = [
   },
   {
     id: "new-card",
-    group: "structure",
+    group: "create",
     kinds: ["canvas"],
     render: (ctx) => {
       if (!ctx.canCreateContent) return [];
@@ -194,7 +219,7 @@ const canvasRows: EntityMenuRow[] = [
   },
   {
     id: "new-sketch",
-    group: "structure",
+    group: "create",
     kinds: ["canvas"],
     render: (ctx) => {
       if (!ctx.canCreateContent) return [];
@@ -204,7 +229,7 @@ const canvasRows: EntityMenuRow[] = [
   },
   {
     id: "new-section",
-    group: "structure",
+    group: "create",
     kinds: ["canvas"],
     render: (ctx) => {
       if (!ctx.canCreateContent) return [];
@@ -214,7 +239,7 @@ const canvasRows: EntityMenuRow[] = [
   },
   {
     id: "new-portal",
-    group: "structure",
+    group: "create",
     kinds: ["canvas"],
     render: (ctx) => {
       if (!ctx.canCreateContent) return [];
@@ -237,9 +262,9 @@ const canvasRows: EntityMenuRow[] = [
   },
 ];
 
-const openPortalRow: EntityMenuRow = {
+const openPortalRow: EntityVerb = {
   id: "open-portal",
-  group: "structure",
+  group: "contents",
   kinds: ["portal"],
   render: (ctx, target) => {
     const nodeId = target.anchor;
@@ -249,9 +274,50 @@ const openPortalRow: EntityMenuRow = {
   },
 };
 
-const duplicateRow: EntityMenuRow = {
+/**
+ * Cut, Copy and Paste.
+ *
+ * The canvas suppresses the native menu, so these three had no way in at all: a reader who expected
+ * the browser's menu found nothing where the verbs should be. They sit first in the menu because that
+ * is where a reader looks for them, and they are the same verbs the keyboard runs.
+ */
+const clipboardRows: EntityVerb[] = [
+  {
+    id: "cut",
+    group: "edit",
+    kinds: ["card", "portal", "section", "edge"],
+    shortcut: "\u2318X",
+    render: (ctx, target) => {
+      if (!ctx.canEditLayout || target.ids.length === 0) return [];
+      return [{ label: "Cut", onSelect: () => ctx.cutSelection() }];
+    },
+  },
+  {
+    id: "copy",
+    group: "edit",
+    kinds: ["card", "portal", "section", "edge"],
+    shortcut: "\u2318C",
+    render: (ctx, target) => {
+      if (target.ids.length === 0) return [];
+      return [{ label: "Copy", onSelect: () => ctx.copySelection() }];
+    },
+  },
+  {
+    id: "paste",
+    group: "edit",
+    kinds: ["canvas", "card", "portal", "section", "edge"],
+    shortcut: "\u2318V",
+    render: (ctx) => {
+      if (!ctx.canCreateContent || !ctx.clipboardReady) return [];
+      const point = ctx.menu.flowPosition ?? { x: 0, y: 0 };
+      return [{ label: "Paste", onSelect: () => ctx.pasteAt(point) }];
+    },
+  },
+];
+
+const duplicateRow: EntityVerb = {
   id: "duplicate",
-  group: "structure",
+  group: "edit",
   kinds: ["card", "portal"],
   render: (ctx, target) => {
     if (!ctx.canCreateContent) return [];
@@ -265,9 +331,9 @@ const duplicateRow: EntityMenuRow = {
   },
 };
 
-const sectionFromRow: EntityMenuRow = {
+const sectionFromRow: EntityVerb = {
   id: "section-from",
-  group: "structure",
+  group: "arrange",
   kinds: ["card", "portal"],
   render: (ctx, target) => {
     if (!ctx.canCreateContent) return [];
@@ -286,9 +352,9 @@ const sectionFromRow: EntityMenuRow = {
   },
 };
 
-const connectorRow: EntityMenuRow = {
+const connectorRow: EntityVerb = {
   id: "add-connector",
-  group: "structure",
+  group: "arrange",
   kinds: ["card", "portal", "section"],
   render: (ctx, target) => {
     if (!ctx.canManageStructure) return [];
@@ -306,9 +372,9 @@ const connectorRow: EntityMenuRow = {
   },
 };
 
-const arrangeRow: EntityMenuRow = {
+const arrangeRow: EntityVerb = {
   id: "arrange",
-  group: "layout",
+  group: "arrange",
   kinds: ["card", "portal"],
   render: (ctx, target) => {
     const { multiple } = selectionSummary(target.ids);
@@ -340,9 +406,9 @@ const arrangeRow: EntityMenuRow = {
   },
 };
 
-const positionRow: EntityMenuRow = {
+const positionRow: EntityVerb = {
   id: "position",
-  group: "layout",
+  group: "arrange",
   kinds: ["card", "portal"],
   render: (ctx, target) => {
     if (!ctx.canEditLayout) return [];
@@ -365,7 +431,7 @@ const positionRow: EntityMenuRow = {
   },
 };
 
-const moveBoardRow: EntityMenuRow = {
+const moveBoardRow: EntityVerb = {
   id: "move-board",
   group: "transfer",
   kinds: ["card", "portal"],
@@ -385,7 +451,7 @@ const moveBoardRow: EntityMenuRow = {
   },
 };
 
-const alsoPlaceBoardRow: EntityMenuRow = {
+const alsoPlaceBoardRow: EntityVerb = {
   id: "also-place-board",
   group: "transfer",
   kinds: ["card", "portal"],
@@ -407,7 +473,7 @@ const alsoPlaceBoardRow: EntityMenuRow = {
   },
 };
 
-const removeRow: EntityMenuRow = {
+const removeRow: EntityVerb = {
   id: "remove",
   group: "transfer",
   kinds: ["card", "portal"],
@@ -432,10 +498,10 @@ const removeRow: EntityMenuRow = {
   },
 };
 
-const sectionRows: EntityMenuRow[] = [
+const sectionRows: EntityVerb[] = [
   {
     id: "rename-section",
-    group: "structure",
+    group: "edit",
     kinds: ["section"],
     render: (ctx, target) => {
       const sectionId = target.ids[0];
@@ -445,7 +511,7 @@ const sectionRows: EntityMenuRow[] = [
   },
   {
     id: "select-members",
-    group: "structure",
+    group: "contents",
     kinds: ["section"],
     render: (ctx, target) => {
       const sectionId = target.ids[0];
@@ -467,7 +533,7 @@ const sectionRows: EntityMenuRow[] = [
   },
   {
     id: "shrink-section-to-fit",
-    group: "layout",
+    group: "arrange",
     kinds: ["section"],
     render: (ctx, target) => {
       const sectionId = target.ids[0];
@@ -485,10 +551,10 @@ const sectionRows: EntityMenuRow[] = [
   },
 ];
 
-const edgeRows: EntityMenuRow[] = [
+const edgeRows: EntityVerb[] = [
   {
     id: "edge-description",
-    group: "structure",
+    group: "appearance",
     kinds: ["edge"],
     render: (ctx, target) => {
       const edgeId = target.ids[0];
@@ -513,7 +579,7 @@ const edgeRows: EntityMenuRow[] = [
   },
   {
     id: "edge-direction",
-    group: "structure",
+    group: "arrange",
     kinds: ["edge"],
     render: (ctx, target) => {
       const edgeId = target.ids[0];
@@ -531,7 +597,7 @@ const edgeRows: EntityMenuRow[] = [
   },
   {
     id: "edge-path",
-    group: "layout",
+    group: "appearance",
     kinds: ["edge"],
     render: (ctx, target) => {
       const edgeId = target.ids[0];
@@ -561,10 +627,10 @@ const edgeRows: EntityMenuRow[] = [
   },
 ];
 
-const connectorRows: EntityMenuRow[] = [
+const connectorRows: EntityVerb[] = [
   {
     id: "reposition-connector",
-    group: "structure",
+    group: "arrange",
     kinds: ["connector"],
     render: (ctx, target) => {
       if (!ctx.canManageStructure) return [];
@@ -591,7 +657,7 @@ const connectorRows: EntityMenuRow[] = [
   },
 ];
 
-const shareRow: EntityMenuRow = {
+const shareRow: EntityVerb = {
   id: "share",
   group: "share",
   kinds: ["card", "portal"],
@@ -609,9 +675,10 @@ const shareRow: EntityMenuRow = {
   },
 };
 
-const deleteRow: EntityMenuRow = {
+const deleteRow: EntityVerb = {
   id: "delete",
   group: "danger",
+  shortcut: "\u232b",
   kinds: ["card", "portal", "section", "edge", "connector"],
   render: (ctx, target) => {
     if (target.kind === "section") {
@@ -683,7 +750,8 @@ const deleteRow: EntityMenuRow = {
   },
 };
 
-export const ENTITY_MENU_ROWS: readonly EntityMenuRow[] = [
+export const ENTITY_VERBS: readonly EntityVerb[] = [
+  ...clipboardRows,
   colourRow,
   appearanceRow,
   ...canvasRows,
@@ -704,16 +772,31 @@ export const ENTITY_MENU_ROWS: readonly EntityMenuRow[] = [
 ];
 
 /**
+ * What a verb says it does, for a surface that is not the menu.
+ *
+ * The label already depends on the target — `Duplicate 4 cards` is one row, not four — so it is read from
+ * the row's own first item rather than written a second time beside it. A verb that renders nothing for a
+ * target has no label, which is how a surface knows not to offer it.
+ */
+export function verbLabel(
+  ctx: BoardMenuContext,
+  target: MenuTarget,
+  verb: EntityVerb,
+): string | null {
+  return verb.render(ctx, target)[0]?.label ?? null;
+}
+
+/**
  * The rows that serve *every* kind asked for, in group order.
  *
  * A multi-selection intersects rather than unions: offering to delete four cards and a
  * link would be offering something that cannot be done to both.
  */
-export function menuRowsFor(kinds: readonly EntityKind[]): EntityMenuRow[] {
+export function verbsFor(kinds: readonly EntityKind[]): EntityVerb[] {
   const wanted = new Set(kinds);
   if (wanted.size === 0) return [];
   const order = (group: MenuGroup) => GROUP_ORDER.indexOf(group);
-  return ENTITY_MENU_ROWS.filter((row) => [...wanted].every((kind) => row.kinds.includes(kind)))
+  return ENTITY_VERBS.filter((row) => [...wanted].every((kind) => row.kinds.includes(kind)))
     .map((row, index) => ({ row, index }))
     .sort((a, b) => order(a.row.group) - order(b.row.group) || a.index - b.index)
     .map((entry) => entry.row);
@@ -754,11 +837,11 @@ export function resolveMenuTarget(ctx: BoardMenuContext): MenuTarget | null {
 }
 
 /** The whole menu for whatever was right-clicked. */
-export function buildEntityMenu(ctx: BoardMenuContext): ContextMenuItem[] {
+export function buildVerbMenu(ctx: BoardMenuContext): ContextMenuItem[] {
   const target = resolveMenuTarget(ctx);
   if (!target) return [];
   const items: ContextMenuItem[] = [];
-  for (const row of menuRowsFor([target.kind])) {
+  for (const row of verbsFor([target.kind])) {
     items.push(...row.render(ctx, target));
   }
   return items;

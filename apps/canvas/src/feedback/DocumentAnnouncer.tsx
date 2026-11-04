@@ -95,9 +95,7 @@ export function useBoardAnnouncements(): void {
 export function useSelectionAnnouncements(): void {
   const count = useUiStore(
     (state) =>
-      state.selectedNodeIds.length +
-      state.selectedEdgeIds.length +
-      (state.selectedSectionId === null ? 0 : 1),
+      state.selectedNodeIds.length + state.selectedEdgeIds.length + state.selectedSectionIds.length,
   );
   const previous = useRef<number | null>(null);
 

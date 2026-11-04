@@ -8,7 +8,7 @@ targets:
 ---
 
 The board is an infinite surface. Drag on empty space to pan; scroll or pinch to zoom; the zoom
-control and "fit" sit in the corner beside the purpose control.
+control and "fit" sit in the corner of the canvas.
 
 A press does different things depending on what it lands on and which modifier is held. On a card
 it selects and opens the focus; on empty space it clears the selection and starts a marquee. With

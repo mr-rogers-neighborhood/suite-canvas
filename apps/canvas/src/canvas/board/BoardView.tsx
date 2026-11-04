@@ -87,6 +87,10 @@ export function BoardView() {
     nudgeSelected: commands.nudgeSelected,
     trashSelected: commands.trashSelected,
     unplaceSelected: commands.unplaceSelected,
+    copySelection: commands.copySelection,
+    cutSelection: commands.cutSelection,
+    pasteAt: commands.pasteAt,
+    runVerb: commands.runVerb,
     createSectionAt,
     enterPortal,
   });

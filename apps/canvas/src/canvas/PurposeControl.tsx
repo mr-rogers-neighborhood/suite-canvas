@@ -14,6 +14,11 @@ import { RESTING_PURPOSE } from "./purpose";
  * A tour and a presentation are states the canvas is *in* rather than choices, so this
  * control neither offers nor shows them: the tour's own widget is their control, and a
  * second one here would be a second way out of a state whose exit is already on screen.
+ *
+ * It sits in the navigation row beside the outline, not in the canvas pill: a purpose is
+ * a mode of the document surface, which is what that row is, and the pill's floor is a
+ * segment the reader reaches for while working rather than before it. The value palette
+ * (`--value-*` off `data-purpose`) is what carries the look across the move.
  */
 export function PurposeControl() {
   const purpose = useUiStore((state) => state.purpose);
@@ -38,16 +43,12 @@ export function PurposeControl() {
   return (
     <button
       type="button"
-      className="purpose-control"
+      className="board-nav-button purpose-control"
       aria-pressed={explaining || purpose === "present" || purpose === "record"}
       aria-label={label}
       title={label}
       data-testid="purpose-toggle"
       data-purpose={purpose}
-      // The canvas claims pointerdown for panning and selection and prevents the
-      // default, which suppresses the click a nested control would otherwise get.
-      onPointerDown={(event) => event.stopPropagation()}
-      onPointerUp={(event) => event.stopPropagation()}
       onClick={() => {
         // Present and record have no way in from here — only a tour can put the reader in
         // one — so a click on them is the exit and nothing else.
@@ -55,7 +56,7 @@ export function PurposeControl() {
         else setPurpose(explaining ? RESTING_PURPOSE : "explain");
       }}
     >
-      <span aria-hidden="true">
+      <span aria-hidden="true" className="text-[13px] leading-none">
         {purpose === "present" ? "\u25a3" : purpose === "record" ? "\u25cf" : "\u25c8"}
       </span>
     </button>

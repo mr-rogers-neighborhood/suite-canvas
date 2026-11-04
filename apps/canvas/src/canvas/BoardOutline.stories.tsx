@@ -79,7 +79,7 @@ const meta = {
     sections,
     membership,
     peers: [peer],
-    selectedSectionId: "research",
+    selectedSectionIds: new Set(["research"]),
     open: true,
     onToggle: () => {},
     onSelect: () => {},

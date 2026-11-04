@@ -17,10 +17,12 @@ export interface OutlineTreeProps {
   /** Card id to the section that contains it, on this board. */
   membership: Map<string, string>;
   peers: PeerPresence[];
-  selectedSectionId: string | null;
+  /** Every frame in the selection: a row shows as active when it is one of them. */
+  selectedSectionIds: ReadonlySet<string>;
   open: boolean;
   onToggle: () => void;
-  onSelect: (sectionId: string) => void;
+  /** `additive` is the modifier press: membership, without travelling to the section. */
+  onSelect: (sectionId: string, additive?: boolean) => void;
   onContextMenu: (event: ReactMouseEvent, sectionId: string) => void;
   /** Whether this session may make a section, which the empty rail offers. */
   /** The peek a row opens on rest or on keyboard focus (ADR-0055). */
@@ -32,7 +34,7 @@ export function OutlineTree({
   sections,
   membership,
   peers,
-  selectedSectionId,
+  selectedSectionIds,
   open,
   onToggle,
   onSelect,
@@ -69,7 +71,7 @@ export function OutlineTree({
           <div className="board-outline__rows">
             {rows.map((row) => {
               const { section, depth, count } = row;
-              const active = selectedSectionId === section.id;
+              const active = selectedSectionIds.has(section.id);
               const title = section.title.trim() || "Untitled section";
               const rowPeers = peersBySection.get(section.id) ?? [];
               return (
@@ -83,7 +85,9 @@ export function OutlineTree({
                   aria-current={active ? "true" : undefined}
                   title={title}
                   style={{ paddingLeft: 8 + depth * 12 }}
-                  onClick={() => onSelect(section.id)}
+                  onClick={(event) =>
+                    onSelect(section.id, event.metaKey || event.ctrlKey || event.shiftKey)
+                  }
                   onContextMenu={(event) => onContextMenu(event, section.id)}
                   // A rest names the section; a click still selects it, because a
                   // focus that followed a press is suppressed in `usePeek`.
@@ -165,8 +169,9 @@ export function BoardOutlineHost() {
   const activeBoardId = useUiStore((state) => state.activeBoardId);
   const outlineOpen = useUiStore((state) => state.outlineOpen);
   const toggleOutline = useUiStore((state) => state.toggleOutline);
-  const selectedSectionId = useUiStore((state) => state.selectedSectionId);
+  const selectedSectionIds = useUiStore((state) => state.selectedSectionIds);
   const selectSection = useUiStore((state) => state.selectSection);
+  const toggleSection = useUiStore((state) => state.toggleSection);
   const focusSection = useUiStore((state) => state.focusSection);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const peers = useBoardPeers(activeBoardId);
@@ -210,12 +215,18 @@ export function BoardOutlineHost() {
   }, [toggleOutline]);
 
   const handleSelect = useCallback(
-    (sectionId: string) => {
+    (sectionId: string, additive = false) => {
       if (!activeBoardId) return;
+      // A modifier builds a set and stays put: travelling to a frame while adding it would move the
+      // camera away from the one the reader was looking at.
+      if (additive) {
+        toggleSection(sectionId);
+        return;
+      }
       selectSection(sectionId);
       focusSection(sectionId, activeBoardId);
     },
-    [activeBoardId, selectSection, focusSection],
+    [activeBoardId, selectSection, toggleSection, focusSection],
   );
 
   const handleContextMenu = useCallback(
@@ -239,7 +250,7 @@ export function BoardOutlineHost() {
       sections={sections}
       membership={membership}
       peers={peers}
-      selectedSectionId={selectedSectionId}
+      selectedSectionIds={new Set(selectedSectionIds)}
       open={outlineOpen}
       onToggle={toggleOutline}
       onSelect={handleSelect}

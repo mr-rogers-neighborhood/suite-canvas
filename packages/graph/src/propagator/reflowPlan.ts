@@ -9,7 +9,7 @@
 import type { LayoutPlan, LayoutPlanPlacement, LayoutPlanSection } from "../layoutPlan.js";
 import { MIN_LAYOUT_SECTION_HEIGHT, MIN_LAYOUT_SECTION_WIDTH } from "../layoutPlan.js";
 import type { Placement, Section } from "../schema.js";
-import type { Rect } from "../sections.js";
+import { type Rect, rectContainsRect } from "../sections.js";
 import { type Propagator, settle } from "./engine.js";
 import { createInterval, intervalExact } from "./interval.js";
 import { pinConstraint, separationConstraint } from "./spatialPropagators.js";
@@ -447,7 +447,25 @@ function computeSectionResizes(
   const sectionsToWrite: LayoutPlanSection[] = [];
   const DETACH_MARGIN = DEFAULT_SECTION_DETACH_MARGIN;
 
-  for (const section of boardSections) {
+  /**
+   * Each frame's box as this pass has settled it, and the order to settle them in.
+   *
+   * A nested section is a member of the frame around it, like a card: a card belongs to the
+   * smallest frame holding it, so the outer frame would otherwise see none of the inner one's
+   * cards and fit itself to whatever was left. Smallest first, because a parent's box has to be
+   * built around the child's *new* box rather than the one it had before the drag.
+   */
+  const settled = new Map<string, Rect>(
+    boardSections.map((section) => [
+      section.id,
+      { x: section.x, y: section.y, width: section.width, height: section.height },
+    ]),
+  );
+  const ordered = [...boardSections].sort(
+    (a, b) => a.width * a.height - b.width * b.height || a.id.localeCompare(b.id),
+  );
+
+  for (const section of ordered) {
     const origPlacement = placements.find((p) => p.cardId === targetCardId);
     const origBox = origPlacement ? boxOf(origPlacement, cardSizes) : undefined;
     const wasMember = origBox
@@ -489,12 +507,22 @@ function computeSectionResizes(
       return anchorInside || overlapsSection;
     });
 
+    // The frames nested in this one, at the box this pass has given them: the reason a nested
+    // section behaves like a card for its parent.
+    const nestedBoxes: MemberBox[] = boardSections
+      .filter((other) => other.id !== section.id && rectContainsRect(section, other))
+      .flatMap((other) => {
+        const rect = settled.get(other.id);
+        return rect ? [rect] : [];
+      });
+
     const relevantBoxes = [
       ...memberBoxes.map((mb) => {
         const updated = updatedBoxes.find((ub) => ub.cardId === mb.cardId);
         return updated ?? mb;
       }),
       ...(includeTarget ? [targetBox] : []),
+      ...nestedBoxes,
     ];
 
     if (relevantBoxes.length === 0) {
@@ -549,6 +577,10 @@ function computeSectionResizes(
     ) {
       continue;
     }
+
+    // Recorded whether or not it is a write: a parent may be building around a child whose own
+    // box did not change, and it must use the settled box either way.
+    settled.set(section.id, { x: newX, y: newY, width: newWidth, height: newHeight });
 
     if (
       Math.abs(newX - section.x) > 0.5 ||

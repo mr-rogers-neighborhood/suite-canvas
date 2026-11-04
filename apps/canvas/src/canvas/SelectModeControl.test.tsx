@@ -8,32 +8,35 @@ import { SelectModeControl } from "./SelectModeControl";
  *
  * A marquee used to box every card it touched and sweep up any section link it crossed. A box over a busy board usually
  * wants one of those, so this is three toggles rather than a mode to cycle: they combine, and a cycle cannot show two at
- * once.
+ * once. All three start on.
  */
+const allOn = { cards: true, links: true, sections: true };
+
 beforeEach(() => {
-  useUiStore.setState({
-    canEditLayout: true,
-    marqueeSelects: { cards: true, links: true, sections: false },
-  });
+  useUiStore.setState({ canEditLayout: true, marqueeSelects: allOn });
 });
+
+const rows = () =>
+  screen
+    .getAllByTestId(/^select-mode-(cards|sections|links)$/)
+    .map((row) => row.dataset.testid ?? "");
 
 describe("the select-mode control", () => {
   it("should say what a box picks up while it is closed", () => {
     render(<SelectModeControl />);
     expect(screen.getByTestId("select-mode-toggle")).toHaveAttribute(
       "title",
-      "Boxing picks up cards and links",
+      "Boxing picks up everything",
     );
   });
 
-  it("should open to one toggle per thing, showing what is in force", () => {
+  it("should open to one toggle per thing, in the order they are offered", () => {
     render(<SelectModeControl />);
     fireEvent.click(screen.getByTestId("select-mode-toggle"));
 
-    expect(screen.getByTestId("select-mode-cards")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByTestId("select-mode-links")).toHaveAttribute("aria-pressed", "true");
-    // A section is not a card, so it starts off.
-    expect(screen.getByTestId("select-mode-sections")).toHaveAttribute("aria-pressed", "false");
+    expect(rows()).toEqual(["select-mode-cards", "select-mode-sections", "select-mode-links"]);
+    for (const row of rows())
+      expect(screen.getByTestId(row)).toHaveAttribute("aria-pressed", "true");
   });
 
   it("should toggle one thing without touching the others", () => {
@@ -44,21 +47,13 @@ describe("the select-mode control", () => {
     expect(useUiStore.getState().marqueeSelects).toEqual({
       cards: false,
       links: true,
-      sections: false,
+      sections: true,
     });
   });
 
-  /**
-   * Sections and nothing else, which is the case the toggles exist for.
-   *
-   * The order matters and is the reader's: turn the new subject on, then the old ones off. Turning the last one off first
-   * would leave a box that picks up nothing, which is refused — so "everything off, then the one you want on" is the
-   * gesture this rule deliberately does not support.
-   */
   it("should let a reader ask for sections and nothing else", () => {
     render(<SelectModeControl />);
     fireEvent.click(screen.getByTestId("select-mode-toggle"));
-    fireEvent.click(screen.getByTestId("select-mode-sections"));
     fireEvent.click(screen.getByTestId("select-mode-cards"));
     fireEvent.click(screen.getByTestId("select-mode-links"));
 
@@ -73,18 +68,56 @@ describe("the select-mode control", () => {
     );
   });
 
-  it("should refuse to leave a box that picks up nothing", () => {
+  /**
+   * The last subject on cannot be switched off, and a dead row would be a worse answer than a
+   * useful one: pressing it closes the menu and leaves the subject on.
+   */
+  it("should close the menu on the last subject rather than leave a box that picks up nothing", () => {
     render(<SelectModeControl />);
     fireEvent.click(screen.getByTestId("select-mode-toggle"));
-    // Cards and links are on and sections is off, so links is the last one standing once cards goes.
     fireEvent.click(screen.getByTestId("select-mode-cards"));
+    fireEvent.click(screen.getByTestId("select-mode-links"));
 
-    const links = screen.getByTestId("select-mode-links");
-    expect(links).toBeDisabled();
-    expect(links).toHaveAttribute("title", "A selection box has to pick something up");
+    const sections = screen.getByTestId("select-mode-sections");
+    expect(sections).not.toBeDisabled();
+    expect(sections).toHaveAttribute(
+      "title",
+      "Sections is the only thing a box picks up. Pressing this closes the menu",
+    );
 
-    fireEvent.click(links);
-    expect(useUiStore.getState().marqueeSelects.links).toBe(true);
+    fireEvent.click(sections);
+    expect(useUiStore.getState().marqueeSelects).toEqual({
+      cards: false,
+      links: false,
+      sections: true,
+    });
+    expect(screen.queryByTestId("select-mode-menu")).toBeNull();
+  });
+
+  /**
+   * The pill that holds the toggle clips to its own radius, so the menu has to leave the DOM
+   * tree it is anchored in. Asserted on the parent, because a `position: absolute` child of that
+   * pill is a menu nobody can see — which is what shipped.
+   */
+  it("should draw its menu outside the control that owns it", () => {
+    const { container } = render(<SelectModeControl />);
+    fireEvent.click(screen.getByTestId("select-mode-toggle"));
+
+    const menu = screen.getByTestId("select-mode-menu");
+    expect(container.contains(menu)).toBe(false);
+    expect(menu.parentElement).toBe(document.body);
+  });
+
+  it("should close on Escape and on a press outside it", () => {
+    render(<SelectModeControl />);
+
+    fireEvent.click(screen.getByTestId("select-mode-toggle"));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("select-mode-menu")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("select-mode-toggle"));
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByTestId("select-mode-menu")).toBeNull();
   });
 
   it("should draw nothing for a viewer, who boxes nothing", () => {

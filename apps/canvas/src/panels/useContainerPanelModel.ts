@@ -229,24 +229,44 @@ export function containerLinks(
 }
 
 /**
- * Resolves the open container target into a panel model. Null when the target no
- * longer exists (a section deleted in another tab, a portal trashed), which is
- * the host's signal to close the drawer rather than paint a ghost.
+ * Resolves the selection into a container model: the frame picked last, or a portal card that the
+ * inspector was opened on.
+ *
+ * There is no second selection channel any more. A frame is a thing the reader selects, and a portal is
+ * a card whose kind says it has no body, so the panel follows the selection the way every other panel
+ * does. Null means "this is not a container", which is the host's signal to render the card or link
+ * panel instead.
  */
 export function useContainerPanelModel(): ContainerPanelModel | null {
-  const target = useUiStore((state) => state.containerInspector);
+  const selectedSectionIds = useUiStore((state) => state.selectedSectionIds);
+  const inspectorNodeId = useUiStore((state) => state.inspectorNodeId);
+  const target = useMemo<{ kind: "portal" | "section"; id: string } | null>(() => {
+    const sectionId = selectedSectionIds.at(-1);
+    if (sectionId !== undefined) return { kind: "section", id: sectionId };
+    return null;
+  }, [selectedSectionIds]);
   const readOnly = useUiStore((state) => state.readOnly);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const workspace = useCanvasStore((state) => state.workspace);
   const snapshot = useWorkspaceSnapshot();
 
+  // A portal is inspected as a card: the host opens `inspectorNodeId`, and the kind decides which body
+  // describes it. Resolved here so the model stays one answer for both containers.
+  const portalTarget = useMemo<{ kind: "portal"; id: string } | null>(() => {
+    if (target !== null || inspectorNodeId === null) return null;
+    const card = snapshot.cards.find((entry) => entry.id === inspectorNodeId && !entry.deletedAt);
+    if (!card || portalTargetId(card) === null) return null;
+    return { kind: "portal", id: card.id };
+  }, [target, inspectorNodeId, snapshot.cards]);
+
   return useMemo(() => {
-    if (!target) return null;
+    const subject = target ?? portalTarget;
+    if (!subject) return null;
     const { edges, boards, sections, placements, cards, types } = snapshot;
     const displayTitle = (cardId: string) => workspace.displayTitle(cardId);
 
-    if (target.kind === "portal") {
-      const card = cards.find((entry) => entry.id === target.id && !entry.deletedAt);
+    if (subject.kind === "portal") {
+      const card = cards.find((entry) => entry.id === subject.id && !entry.deletedAt);
       if (!card) return null;
       const board = portalBoard(card, boards);
       const placement = placements.find((entry) => entry.cardId === card.id);
@@ -277,7 +297,7 @@ export function useContainerPanelModel(): ContainerPanelModel | null {
       };
     }
 
-    const section = sections.find((entry) => entry.id === target.id);
+    const section = sections.find((entry) => entry.id === subject.id);
     if (!section) return null;
     // Membership is geometric, so only this board's sections and placements may
     // take part: another board's cards share the coordinate space but not the map.
@@ -305,5 +325,5 @@ export function useContainerPanelModel(): ContainerPanelModel | null {
       canEditLayout,
       orphan: false,
     };
-  }, [target, snapshot, workspace, readOnly, canEditLayout]);
+  }, [target, portalTarget, snapshot, workspace, readOnly, canEditLayout]);
 }

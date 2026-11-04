@@ -41,7 +41,16 @@ export interface SelectionState {
   nodeIds: string[];
   edgeIds?: string[];
   connector?: ConnectorSelection;
+  /** The one frame this peer selected, for a reader older than `sectionIds`. */
   sectionId?: string;
+  /**
+   * Every frame this peer selected, innermost last.
+   *
+   * Frames nest, so a selection can hold an outer frame and the frame inside it at once. `sectionId`
+   * stays as the single-frame field so a client that predates the set still sees a frame instead of
+   * nothing.
+   */
+  sectionIds?: string[];
 }
 
 /** A connector a peer is dragging along a card perimeter. */
@@ -76,10 +85,17 @@ export interface SelectionBoxState {
   height: number;
 }
 
-/** A section a peer is dragging, with its live top-left in flow units. */
+/**
+ * A section a peer is dragging, with its live top-left in flow units.
+ *
+ * `sectionIds` carries the whole set when a card drag is moving several frames at once: `sectionId` and
+ * `position` describe the outermost one, so a reader on an older client still paints a frame instead of
+ * nothing.
+ */
 export interface SectionDragState {
   sectionId: string;
   position: PointerState;
+  sectionIds?: string[];
 }
 
 /** A section a peer is resizing, in flow units. */

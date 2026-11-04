@@ -34,12 +34,10 @@ export function CardInspectorHost() {
   const container = useContainerPanelModel();
   const workspace = useCanvasStore((state) => state.workspace);
   const activeBoardId = useUiStore((state) => state.activeBoardId);
-  const closeContainerInspector = useUiStore((state) => state.closeContainerInspector);
   const requestPortalOpen = useUiStore((state) => state.requestPortalOpen);
   const focusCard = useUiStore((state) => state.focusCard);
   const focusSection = useUiStore((state) => state.focusSection);
 
-  const containerTarget = useUiStore((state) => state.containerInspector);
   const link = useLinkInspectorModel();
   const selectedEdgeIds = useUiStore((state) => state.selectedEdgeIds);
   // Quiet is the mode that says "no drawer". A link keeps its selection there — a selected
@@ -83,11 +81,6 @@ export function CardInspectorHost() {
     root.setAttribute("data-inspector-linking", "true");
     return () => root.removeAttribute("data-inspector-linking");
   }, [linking]);
-
-  const containerMissing = containerTarget !== null && container === null;
-  useEffect(() => {
-    if (containerMissing) closeContainerInspector();
-  }, [containerMissing, closeContainerInspector]);
 
   useEffect(() => {
     if (inspectorNodeId && !model) closeInspector();
@@ -136,12 +129,14 @@ export function CardInspectorHost() {
     );
   }
 
-  // Containers next: they share the drawer, and only one of the three can be open.
-  if (container) {
+  // Containers next: they share the drawer, and only one of the three can be open. A frame's panel
+  // follows the selection, so quiet mode is the only thing that keeps it shut — the same rule a link
+  // answers to, and the reason there is no second "is the container panel open" flag.
+  if (container && interactionMode === "inspect") {
     return (
       <ContainerPanel
         model={container}
-        onClose={closeContainerInspector}
+        onClose={() => useUiStore.getState().closeInspector()}
         onOpenBoard={(cardId, boardId) => requestPortalOpen(cardId, boardId)}
         onLocate={() => {
           if (container.kind === "portal") {
@@ -183,8 +178,8 @@ export function CardInspectorHost() {
         onRemove={() => {
           if (!canEditLayout || !activeBoardId) return;
           workspace.unplaceCard(activeBoardId, container.id);
-          // Nothing is drawn where the panel was pointing, so the drawer goes too.
-          closeContainerInspector();
+          // Nothing is drawn where the panel was pointing, so the drawer goes with it.
+          useUiStore.getState().closeInspector();
         }}
       />
     );

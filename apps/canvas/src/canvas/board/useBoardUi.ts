@@ -35,9 +35,13 @@ export function useBoardUi() {
 
   const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
   const selectedConnector = useUiStore((state) => state.selectedConnector);
-  const selectedSectionId = useUiStore((state) => state.selectedSectionId);
+  const selectedSectionIds = useUiStore((state) => state.selectedSectionIds);
+  // The frame a single-section verb acts on: the one picked last, which is what a panel describes.
+  const selectedSectionId = selectedSectionIds.at(-1) ?? null;
   const presenting = useUiStore((state) => Boolean(state.tour?.presenting));
   const selectSection = useUiStore((state) => state.selectSection);
+  const selectSections = useUiStore((state) => state.selectSections);
+  const toggleSection = useUiStore((state) => state.toggleSection);
   const editingSectionId = useUiStore((state) => state.editingSectionId);
   const setEditingSection = useUiStore((state) => state.setEditingSection);
   const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
@@ -108,8 +112,11 @@ export function useBoardUi() {
     selectedNodeIds,
     selectedConnector,
     selectedSectionId,
+    selectedSectionIds,
     presenting,
     selectSection,
+    selectSections,
+    toggleSection,
     editingSectionId,
     setEditingSection,
     setSelectedNodeIds,

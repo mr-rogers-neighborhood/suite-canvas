@@ -35,6 +35,12 @@ interface KeyCommands {
   enterPortal: (nodeId: string, targetBoardId: string) => void;
   trashSelected: () => void;
   unplaceSelected: () => void;
+  copySelection: () => void;
+  cutSelection: () => void;
+  /** Where the paste should land: the pointer, or the middle of the pane. */
+  pasteAt: (point: { x: number; y: number }) => void;
+  /** Runs a clipboard or delete verb by the id the verb table gives it. */
+  runVerb: (id: "delete" | "cut" | "copy" | "paste") => void;
 }
 
 /** Everything one key press reads, resolved at press time. */
@@ -90,13 +96,9 @@ function escapeRung(ctx: KeyContext): boolean {
     state.setEditingSection(null);
     return true;
   }
-  if (state.selectedSectionId) {
+  if (state.selectedSectionIds.length > 0) {
+    // One rung for the set: Escape peels the frames a reader boxed, not one per press.
     state.selectSection(null);
-    state.closeContainerInspector();
-    return true;
-  }
-  if (state.containerInspector) {
-    state.closeContainerInspector();
     return true;
   }
   // Focus is a mode of its own: Escape leaves it (and stops its editing) before
@@ -220,21 +222,52 @@ function removeKey(ctx: KeyContext): boolean {
     state.setSelectedEdgeIds([]);
     return true;
   }
-  if (state.selectedSectionId) {
+  // Cards come before the section frame they sit in. A box can select both at once, and the
+  // cards are what the reader was aiming at: a press on a section already takes the panel and
+  // drops the cards, so this order only ever changes a mixed selection, where unlacing cards
+  // is the recoverable act and deleting the section that holds them is not.
+  if (state.selectedNodeIds.length > 0) {
+    if (!commands.canManageTrash && !commands.canEditLayout) return true;
+    event.preventDefault();
+    // Shift is the explicit trash gesture and stays owner-only. A share editor's
+    // Delete unplaces, which is the only destructive act it owns.
+    if (event.shiftKey && commands.canManageTrash) commands.trashSelected();
+    else if (commands.canEditLayout) commands.unplaceSelected();
+    return true;
+  }
+  if (state.selectedSectionIds.length > 0) {
     // Sections are workspace structure: an editor may change them, not delete them.
     if (!commands.canManageStructure) return true;
     event.preventDefault();
-    commands.workspace.deleteSection(state.selectedSectionId);
+    // Repeated because a nested frame in the set goes with the one holding it; deleting an id that
+    // has already gone is a no-op rather than an error.
+    for (const sectionId of state.selectedSectionIds) commands.workspace.deleteSection(sectionId);
     state.selectSection(null);
     return true;
   }
-  if (state.selectedNodeIds.length === 0) return true;
-  if (!commands.canManageTrash && !commands.canEditLayout) return true;
+  return true;
+}
+
+/**
+ * Cut, Copy and Paste, on the keys a reader already has in their fingers.
+ *
+ * The board suppresses the browser's own menu and the document has no clipboard format, so these were
+ * missing entirely: Cmd/Ctrl+C on a selected card did nothing at all. A text field keeps its own keys,
+ * which is why the handler is behind the same `typing` guard as the rest.
+ */
+function clipboardKey(ctx: KeyContext): boolean {
+  const { event, typing, commands } = ctx;
+  if (typing) return false;
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return false;
+  const key = event.key.toLowerCase();
+  if (key !== "c" && key !== "x" && key !== "v") return false;
   event.preventDefault();
-  // Shift is the explicit trash gesture and stays owner-only. A share editor's
-  // Delete unplaces, which is the only destructive act it owns.
-  if (event.shiftKey && commands.canManageTrash) commands.trashSelected();
-  else if (commands.canEditLayout) commands.unplaceSelected();
+  if (key === "v") {
+    commands.runVerb("paste");
+    return true;
+  }
+  if (!commands.canEditLayout) return true;
+  commands.runVerb(key === "x" ? "cut" : "copy");
   return true;
 }
 
@@ -273,6 +306,10 @@ export function useBoardKeyboard(
     enterPortal: (nodeId: string, targetBoardId: string) => void;
     trashSelected: () => void;
     unplaceSelected: () => void;
+    copySelection: () => void;
+    cutSelection: () => void;
+    pasteAt: (point: { x: number; y: number }) => void;
+    runVerb: (id: "delete" | "cut" | "copy" | "paste") => void;
   },
 ) {
   const {
@@ -298,6 +335,10 @@ export function useBoardKeyboard(
     enterPortal,
     trashSelected,
     unplaceSelected,
+    copySelection,
+    cutSelection,
+    pasteAt,
+    runVerb,
   } = input;
 
   useEffect(() => {
@@ -318,6 +359,10 @@ export function useBoardKeyboard(
       enterPortal,
       trashSelected,
       unplaceSelected,
+      copySelection,
+      cutSelection,
+      pasteAt,
+      runVerb,
     };
 
     // Order is the contract: capture runs before the Escape ladder, and a chord
@@ -337,6 +382,7 @@ export function useBoardKeyboard(
       };
       if (captureCard(ctx)) return;
       if (escapeRung(ctx)) return;
+      if (clipboardKey(ctx)) return;
       if (modifierChord(ctx)) return;
       if (removeKey(ctx)) return;
       openKey(ctx);
@@ -375,7 +421,8 @@ export function useBoardKeyboard(
         return;
       }
       const state = useUiStore.getState();
-      if (state.selectedNodeIds.length === 0) return;
+      // A frame on its own is still something the arrows move; a board with nothing selected is not.
+      if (state.selectedNodeIds.length === 0 && state.selectedSectionIds.length === 0) return;
       const delta = nudgeDelta(event.key, event.shiftKey);
       if (!delta) return;
       event.preventDefault();
@@ -407,6 +454,10 @@ export function useBoardKeyboard(
     enterPortal,
     trashSelected,
     unplaceSelected,
+    copySelection,
+    cutSelection,
+    pasteAt,
+    runVerb,
     cardsById,
     boardCardIds,
   ]);

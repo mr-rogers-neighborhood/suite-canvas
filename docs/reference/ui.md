@@ -17,9 +17,9 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Surface | Component | What it owns |
 | --- | --- | --- |
 | Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, sync and storage status, **Share** (`ShareAction.tsx`, its own control beside the status pill), the workspace menu, the account slot, the theme toggle |
-| Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history and outline buttons in `app/WorkspaceShellView.tsx` | Home, the open boards with their peer counts, undo, redo, version history and the outline, in one row |
+| Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history, outline and explain buttons in `app/WorkspaceShellView.tsx` and `canvas/PurposeControl.tsx` | Home, the open boards with their peer counts, undo, redo, version history, the outline and the purpose (explain), in one row. Explain sits outside the edit gate: a reader who may not write still gathers a selection to read it |
 | Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface, plus the plan wall and the retry for whoever just paid |
-| Views | `apps/canvas/src/chrome/ViewsBar.tsx` | One icon in the nav row, after the outline, opening the views layer on the projected view. **Shut** (see below) |
+| Views | `apps/canvas/src/chrome/ViewsBar.tsx` | One icon in the nav row, after explain, opening the views layer on the projected view. **Shut** (see below) |
 | Views layer | `apps/canvas/src/views/ViewsLayer.tsx` | The full-window mode: the rail of saved views with row actions, the presentation in read or edit mode, the context drawer and the pick |
 | Views surface | `apps/canvas/src/views/ViewSurface.tsx` | One view drawn: a table, grid, list or board, or a graph or chart, with grouping, drill-down and in-place cells |
 | Projection float | `apps/canvas/src/canvas/ProjectionFloat.tsx` | The view cast over this reader's board: draggable, remembered, and the bar the pick runs through |
@@ -227,6 +227,35 @@ Peers show on tabs as small avatars, aggregated per board, so "where is everyone
 
 One inspector exists. `CardPanel` renders in two variants, `inspector` (docked beside the canvas) and `embedded` (inside a card focus), and both read the same card model, so a property can be fixed without going to the canvas (ADR-0050).
 
+**One drawer shell, one answer to "what is selected".** `entities/subject.ts` resolves the selection once
+(`selectionSubject`): the kinds present, the most specific of them, the ids behind each and the counts.
+The menu, the verbs and the inspector read that and stop re-deriving it, which is what let a card get a
+tabbed panel while a link got a list of rows. `inspector/EntityPanel.tsx` is the drawer's shell (one
+title line, one subtitle line, the actions a kind offers and one close), so the container and link panels
+no longer each carry their own copy of it; what differs between them is a prop.
+
+The shell also draws the tab strip when a panel has one: the panel says which tabs its subject is
+entitled to (`tabsFor`) and which is active, and `inspector/EntityPanel.tsx` renders the same markup for
+every kind. A card panel keeps its own strip, because its tab set depends on the card's model (a tutorial's
+Content reads "Steps") and its active tab follows the card's editing state, which a shell cannot know. The
+card panel's *body* is a row table all the same: `inspector/rows.tsx` declares its seven rows and
+`rowsFor` keeps the rows the active tab and the subject's kinds allow, so the panel has no `tab ===` branches
+left.
+
+A link is a subject like the rest: it has Details (what it joins, its direction, its description) and
+Style (path, bends, layer, stroke), which is why `inspector/capabilities.ts` now lists `edge`.
+
+A section and a portal reach the shell through the selection, not through a second channel:
+`useContainerPanelModel` reads the frame picked last, or the inspected node when its card is a portal,
+and there is no `containerInspector` flag in the store. `inspect` mode opens the panel for whatever is
+selected and `quiet` keeps it shut, which is the same rule a link already answered to.
+
+Two frames can be selected at once (`selectedSectionIds`), because frames nest: a Cmd/Ctrl press on a
+frame's header or on an outline row adds or removes it from the set without moving the panel, and a
+selection box takes every frame it crosses. `selectionBounds` and `SelectionOutline` draw the box the
+group covers (cards, frames and a selected link's anchors), because React Flow's own group rect only
+knows nodes; the same bounds are what zoom-to-selection frames.
+
 Every kind that can carry an icon shows the same row: `apps/canvas/src/inspector/IconField.tsx`, one picker
 with a button that names the current icon and a Clear that returns the entity to what it inherits. What the
 value means is `resolvedIcon`'s job (see [canvas.md](canvas.md#icons)); the row only decides how choosing
@@ -407,12 +436,24 @@ and stop, and `[` and `]` flip it; both read the store, so the library's Place c
 without knowing they exist. The book's own outline carries a checkbox per row, a **Place N** bar, and a disclosure that
 shows a row's whole passage and what each part is for.
 
-**A selection box picks up what the reader says it does.** `marqueeSelects` holds three toggles (cards, links,
-sections) offered from `SelectModeControl` in the canvas controls. Cards are honoured while the box is drawn, not only at
-commit: React Flow only boxes `selectable` nodes, so the toggle is read into that flag when the gesture starts, or a card
-switched off still lights up under the box and drops on release. Links go through `linksInBox`, which covers the
-React Flow edges as well as the canvas-drawn section lines, because React Flow's own box selects nodes and never edges. The
-last subject on cannot be switched off: a box that picks up nothing is a box that does nothing.
+**A selection box picks up what the reader says it does.** `marqueeSelects` holds three toggles (cards, sections,
+links, in that order and all on) offered from `SelectModeControl` in the canvas controls. The menu is a portal: the
+pill that holds the button clips to its own radius, so a child positioned inside it is a menu nobody can see. Cards are
+honoured while the box is drawn, not only at commit: React Flow only boxes `selectable` nodes, so the toggle is read
+into that flag when the gesture starts, or a card switched off still lights up under the box and drops on release. Links
+go through `linksInBox`, which covers the React Flow edges as well as the canvas-drawn section lines, because React
+Flow's own box selects nodes and never edges.
+
+The commit is `pickMarqueeSelection` in `canvas/board/marqueePick.ts`, and a section is **additive**: a box that catches
+cards or links also selects every frame it touched, innermost last. A box over a populated section nearly always catches
+its cards, so a rule that traded one for the other would make the sections toggle look dead; the frame is drawn around
+what the reader picked rather than in place of it. `sectionAlone` decides the panel: a box that caught only frames lets
+the innermost one own the inspector through `selectSection`, and one that also caught cards goes through
+`selectSections`, which sets the set and leaves the cards alone. `removeKey` acts on cards before the frames, so Delete
+on a mixed selection unplaces what the reader boxed instead of deleting the section with them.
+
+The last subject on cannot be switched off, and its row does not go dead either: pressing it closes the menu and leaves
+the subject on.
 
 **The palette sits where the words are.** A selection reports its own bounding rect and the reader converts it into its
 own box, rather than pinning the palette to the bottom edge where a reader has to go looking for it. The x is clamped so
@@ -479,9 +520,28 @@ An unknown code is returned as itself, which keeps a log line greppable and leav
 
 ## Selection
 
-Selection is UI state with several readers: the canvas paints it, the inspector opens on it, and the commands that act on "this" resolve against it. `selectedNodeIds`, `selectedEdgeIds`, `selectedSectionId` and `containerInspector` in `useUiStore` are the whole of it.
+Selection is UI state with several readers: the canvas paints it, the inspector opens on it, and the commands that act on "this" resolve against it. `selectedNodeIds`, `selectedEdgeIds` and `selectedSectionIds` in `useUiStore` are the whole of it; `entities/subject.ts` resolves those three into the one subject every surface reads.
 
 A modifier click belongs to multi-select and must not open the inspector; the card's click handler returns early for shift, meta and ctrl, and the drag handler decides ownership on pointer down so pan and drag never both claim the same gesture.
+
+`inspector/ColourStrip.tsx` is the one colour row: the menu's inline strip and the container panel's
+section colours both render through it, and it paints the value for the theme in force.
+
+A card, a link and a section are drawn by three different layers (a node, an edge and a `ViewportPortal`
+div), so nothing in the code makes them share a look, and the accent is what keeps them one selection:
+a selected card wears a ring, a selected link is stroked in `--accent` (both the React Flow edge and the
+canvas-drawn section link) and a selected frame wears an accent ring while its border keeps the section's
+own colour. `styles/selectionPaint.test.ts` pins all three, because the card ring was never copied and a
+marquee over links and sections looked like it had picked nothing.
+
+A drag of a mixed selection moves all of it. React Flow drags nodes, so `selectionDragPlan` in
+`canvas/board/selectionDrag.ts` derives the rest from the frame: the section, the sections nested in it and
+the cards inside it travel by the same delta, minus any card React Flow is already carrying. The commit is
+one `moveSectionsBatch`, and while the drag is live the frame follows through `useUiStore.dragFollow`. That
+field exists because the drag is React Flow's and the section offsets are resolved above the surface that
+sees it. A frame that also has to grow to hold a card that landed outside it is merged by id
+(`mergeSectionWrites`), so one drop never writes a section twice. A group move translates rigidly: the
+single-card collision reflow belongs to a gesture that grabbed one card.
 
 While a link is being drawn, the inspector fades. The preview passes under the panel and the destination is usually the thing the panel covers, so `linkingInProgress` exists for that one layout decision and nothing about the draft is written to the document.
 
@@ -513,7 +573,20 @@ Marquee and drag boxes ride the same ephemeral channels as the pointer. They are
 
 Every overlay portals into `document.body`. A `position: fixed` menu rendered inside the canvas would be positioned against that transformed ancestor instead of the window, which puts it off screen; portalling is the reason a menu opens where the pointer is.
 
-The board's right-click menu is one table too: `apps/canvas/src/canvas/board/menu/entityMenu.ts` holds rows, each declaring the kinds it serves, and a press resolves what it landed on and keeps the rows that serve it, drawn in group order (appearance, structure, layout, transfer, share, then anything destructive). A card, a portal, a section, a link and a connector therefore share a shape and differ only in which rows exist for them; a press inside a multi-selection resolves to the whole selection, which is why a verb can count (`Duplicate 4 cards`). `board/useBoardMenu.ts` builds the context and nothing else.
+Cut, Copy and Paste keep what they copy: a pasted link gets its label, path, style, bends and offset
+written after `addEdge`, and a pasted section keeps its icon, tags and elasticity, because a copy of a
+frame is a frame and not a rectangle.
+
+The board's right-click menu is one table too: `apps/canvas/src/canvas/board/menu/verbs.ts` holds verbs, each declaring the kinds it serves, and a press resolves what it landed on and keeps the verbs that serve it, drawn in group order. The table is named for what it is because three surfaces read it: the menu adapter (`menu/buildMenu.ts`), `verbLabel` for a surface that is not a menu, and the ids the keyboard runs through `useBoardCommands.runVerb`. A verb's `shortcut` is what the palette prints, so the key and the printed shortcut cannot disagree. A card, a portal, a section, a link and a connector therefore share a shape and differ only in which rows exist for them; a press inside a multi-selection resolves to the whole selection, which is why a verb can count (`Duplicate 4 cards`). `board/useBoardMenu.ts` builds the context and nothing else.
+
+The groups read as one order: **Edit** (Cut, Copy, Paste, Duplicate, Rename, Delete), **Appearance**
+(the colour row, Appearance…), **Arrange** (position, align, layer, shrink to fit, direction),
+**Contents** (open a portal, select members), **Create** (the canvas press), **Move** (another board),
+**Share**, and the destructive row last. Cut, Copy and Paste exist because the canvas suppresses the
+native menu, so the browser's own verbs were simply missing; the clipboard is this tab's
+(`entities/clipboard.ts`), a section travels with the cards inside it, and a link travels only when both
+of its ends are copied. Colour is a row of dots laid out in the menu rather than a submenu: the palette
+is the verb a reader reaches for most, and a submenu made it two presses and a hover to see it.
 
 `ContextMenu` clamps itself to the viewport and flips a submenu to the left of its parent when the menu was opened near the right edge. A submenu opens on hover, on focus and on click, and a click never toggles it shut, because the pointer already opened it. It also takes focus on its first item when it opens, for the reason in [Focus and keyboard](#focus-and-keyboard).
 
@@ -533,7 +606,7 @@ Storage is the one thing that warns without being asked, because a browser clear
 
 Style is document data, at two levels and no more. `apps/canvas/src/styles/surface/StyleTab.tsx` edits a card, a link or a type; a card wears its type's style and then its own, and everything else wears the theme. `apps/canvas/src/canvas/surfaceContext.ts` resolves the two levels and hands the result to `surfacePaintVars`, so a collaborator sees the same colours.
 
-The same editor is mounted in three places: the inspector, the type editor in `apps/canvas/src/panels/TypeSettingsDialog.tsx`, and `apps/canvas/src/app/AppearanceHost.tsx`, which opens where a reader right-clicks. The menu's `Colour` row in `apps/canvas/src/canvas/board/menu/entityMenu.ts` adds the palette quick-picks to the same menu, so one colour is one click and a selection of cards is restyled in one.
+The same editor is mounted in three places: the inspector, the type editor in `apps/canvas/src/panels/TypeSettingsDialog.tsx`, and `apps/canvas/src/app/AppearanceHost.tsx`, which opens where a reader right-clicks. The menu's colour verb in `apps/canvas/src/canvas/board/menu/verbs.ts` adds the palette quick-picks to the same menu through `inspector/ColourStrip.tsx`, so one colour is one click and a selection of cards is restyled in one.
 
 Colours come from the workspace palette: `PaletteEditor` in Settings edits it as one list, each swatch carrying a light and a dark value, and both travel in the document.
 

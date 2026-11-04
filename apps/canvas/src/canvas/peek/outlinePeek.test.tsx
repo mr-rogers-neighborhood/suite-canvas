@@ -38,7 +38,7 @@ function renderRail(peek: PeekController, onSelect = vi.fn()) {
       sections={[section]}
       membership={new Map()}
       peers={[]}
-      selectedSectionId={null}
+      selectedSectionIds={new Set()}
       open
       onToggle={() => {}}
       onSelect={onSelect}
@@ -114,7 +114,7 @@ describe("outline peek wiring", () => {
         sections={[section]}
         membership={new Map()}
         peers={[]}
-        selectedSectionId={null}
+        selectedSectionIds={new Set()}
         open
         onToggle={() => {}}
         onSelect={() => {}}

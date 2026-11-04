@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useSurfacePaint } from "../canvas/surfaceContext";
+import { ColourStrip } from "../inspector/ColourStrip";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { focusFirstMenuItem, menuKeyDown } from "./menuKeys";
 
@@ -10,6 +11,14 @@ export interface ContextMenuItem {
   danger?: boolean;
   /** Nested menu, e.g. the "Position" submenu. */
   items?: ContextMenuItem[];
+  /**
+   * A row of colour dots laid out in the menu itself, in place of a submenu.
+   *
+   * Colour is the verb a reader reaches for most often, and a submenu made it two presses and a hover
+   * to see what was on offer. The dots read as one row, so picking a colour is one press and the
+   * palette is visible before you commit to opening it.
+   */
+  swatches?: ContextMenuItem[];
   /** A colour dot beside the label, for the palette quick-picks. */
   swatch?: { light: string; dark: string } | undefined;
   /** Marks the swatch this surface already wears. */
@@ -113,6 +122,27 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
                   ))}
                 </div>
               ) : null}
+            </div>
+          ) : item.swatches !== undefined ? (
+            <div key={item.label} className="px-2 py-1.5">
+              <span className="mb-1 block text-[10px] uppercase tracking-wide text-[var(--ink-muted)]">
+                {item.label}
+              </span>
+              <ColourStrip
+                label={item.label}
+                testId="context-menu-swatches"
+                options={item.swatches.map((swatch) => ({
+                  label: swatch.label,
+                  light: swatch.swatch?.light ?? "transparent",
+                  dark: swatch.swatch?.dark ?? "transparent",
+                  selected: swatch.swatchSelected === true,
+                  testId: `context-menu-swatch-${swatch.label.toLowerCase().replace(/\s+/g, "-")}`,
+                  onPick: () => {
+                    swatch.onSelect?.();
+                    onClose();
+                  },
+                }))}
+              />
             </div>
           ) : item.checked !== undefined ? (
             <button

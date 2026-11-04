@@ -87,8 +87,12 @@ function draw(overrides: Partial<LinkInspectorModel> = {}) {
  * link had two of each. These tests ask the shared controls, which is the only place either value is edited now.
  */
 describe("a link's appearance in the panel", () => {
+  /** The stroke editor is the Style tab, the same one every other surface has. */
+  const openStyle = () => fireEvent.click(screen.getByTestId("link-tab-style"));
+
   it("should offer the palette, and write the colour the reader picks", () => {
     draw();
+    openStyle();
     const swatch = DEFAULT_PALETTE[2];
     if (swatch === undefined) throw new Error("no palette");
     fireEvent.click(screen.getByTestId(`style-swatch-${swatch.id}`));
@@ -99,6 +103,7 @@ describe("a link's appearance in the panel", () => {
   it("should clear the colour rather than store the word default", () => {
     workspace.setEdgeStyle(edge.id, { swatch: "rose" });
     draw({ edge: workspace.getEdge(edge.id) ?? edge });
+    openStyle();
     fireEvent.click(screen.getByTestId("style-swatch-default"));
 
     // "No swatch" is the theme's link colour, which is exactly what an unstyled link means.
@@ -108,6 +113,7 @@ describe("a link's appearance in the panel", () => {
   it("should change the line without losing the colour", () => {
     workspace.setEdgeStyle(edge.id, { swatch: "rose" });
     draw({ edge: workspace.getEdge(edge.id) ?? edge });
+    openStyle();
 
     fireEvent.click(screen.getByTestId("style-line-paint-dashed"));
     fireEvent.change(screen.getByTestId("style-line-width"), { target: { value: "3" } });
@@ -125,6 +131,7 @@ describe("a link's appearance in the panel", () => {
       sides: { top: { paint: "dotted", width: 2 } },
     });
     draw({ edge: workspace.getEdge(edge.id) ?? edge });
+    openStyle();
 
     expect(screen.getByTestId("style-swatch-rose")).toHaveAttribute("data-checked", "true");
     expect(screen.getByTestId("style-line-paint-dotted")).toHaveAttribute("data-checked", "true");
@@ -133,6 +140,7 @@ describe("a link's appearance in the panel", () => {
 
   it("should offer exactly one colour control, because a second one is how the two drift", () => {
     draw();
+    openStyle();
     expect(screen.getAllByTestId("style-swatches")).toHaveLength(1);
     expect(screen.queryByTestId("link-colours")).toBeNull();
     expect(screen.queryByTestId("link-line-styles")).toBeNull();

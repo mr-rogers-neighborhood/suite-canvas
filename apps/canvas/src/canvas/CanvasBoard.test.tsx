@@ -86,7 +86,7 @@ function mount(readOnly: boolean) {
     activeBoardId: boardId,
     selectedNodeIds: [cardId],
     selectedEdgeIds: [],
-    selectedSectionId: null,
+    selectedSectionIds: [],
     ...(readOnly ? NO_CAPABILITIES : FULL_CAPABILITIES),
   });
   return render(
@@ -158,7 +158,7 @@ describe("CanvasBoard board editor", () => {
       activeBoardId: boardId,
       selectedNodeIds: [cardId],
       selectedEdgeIds: [],
-      selectedSectionId: null,
+      selectedSectionIds: [],
       canEditContent: true,
       canEditLayout: true,
       canPublish: true,
@@ -223,7 +223,7 @@ describe("CanvasBoard share intent", () => {
       activeBoardId: boardId,
       selectedNodeIds,
       selectedEdgeIds: [],
-      selectedSectionId: null,
+      selectedSectionIds: [],
       shareRequest: null,
       ...FULL_CAPABILITIES,
       canManageLinks,
@@ -303,7 +303,7 @@ describe("CanvasBoard card organization", () => {
       activeBoardId: boardId,
       selectedNodeIds: [],
       selectedEdgeIds: [],
-      selectedSectionId: null,
+      selectedSectionIds: [],
       editingNodeId: null,
       // A menu left open by an earlier test would render into this mount.
       contextMenu: null,
@@ -453,7 +453,7 @@ describe("CanvasBoard selection during a press", () => {
       activeBoardId: boardId,
       selectedNodeIds: [],
       selectedEdgeIds: [],
-      selectedSectionId: null,
+      selectedSectionIds: [],
       contextMenu: null,
       ...FULL_CAPABILITIES,
     });

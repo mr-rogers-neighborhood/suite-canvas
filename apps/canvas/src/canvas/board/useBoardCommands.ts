@@ -9,6 +9,7 @@ import { useCallback } from "react";
 import { ensureViewType, VIEW_TYPE_ID } from "../../cards/viewCard";
 import { ensureWhiteboardType } from "../../cards/whiteboard";
 import { openMediaPickerOnBoard } from "../../editor/mediaPicker";
+import { clipboardFrom } from "../../entities/clipboard";
 import { useUiStore } from "../../store/useUiStore";
 import { useViewsStore } from "../../store/viewsStore";
 import { installBlueprintCard } from "../blueprints/blueprint";
@@ -24,6 +25,7 @@ import { COLLAPSED_CARD_HEIGHT } from "../nodeData";
 import { portalSizeForBounds } from "../PortalCard";
 import { boardBounds } from "../portalMiniature";
 import { sectionsExpandPlan } from "../sections/sectionLayout";
+import { dragDelta, mergeSectionWrites, selectionDragPlan } from "./selectionDrag";
 import type { useBoardProjection } from "./useBoardProjection";
 import type { useBoardUi } from "./useBoardUi";
 
@@ -76,6 +78,149 @@ export function useBoardCommands(
     state.stopEditing();
   }, [workspace, canManageTrash]);
 
+  /**
+   * Cut and Copy put the selection aside; Paste makes it again where the pointer is.
+   *
+   * The clipboard is this tab's (see `entities/clipboard`), and a link only travels when both of its
+   * ends do — a join to something that was not copied has nothing to attach to.
+   */
+  const copySelection = useCallback(() => {
+    const state = useUiStore.getState();
+    const entry = clipboardFrom({
+      cards: state.selectedNodeIds,
+      sections: state.selectedSectionIds,
+      edges: boardEdges,
+      placements: boardPlacementList,
+      sectionsById: new Map(boardSections.map((section) => [section.id, section])),
+    });
+    if (entry) state.setClipboard(entry);
+    return entry;
+  }, [boardEdges, boardPlacementList, boardSections]);
+
+  const cutSelection = useCallback(() => {
+    const state = useUiStore.getState();
+    if (!canEditLayout) return;
+    const entry = copySelection();
+    if (!entry) return;
+    // The same removals Delete performs, so a cut and a delete agree about what going away means.
+    for (const id of state.selectedEdgeIds) workspace.removeEdge(id);
+    for (const sectionId of state.selectedSectionIds) workspace.deleteSection(sectionId);
+    for (const id of state.selectedNodeIds) workspace.unplaceCard(activeBoardId ?? "", id);
+    state.setSelectedNodeIds([]);
+    state.setSelectedEdgeIds([]);
+    state.selectSection(null);
+    state.stopEditing();
+  }, [canEditLayout, copySelection, workspace, activeBoardId]);
+
+  /** A card's own connector layout, so a copied link can name the same dots. */
+  const sourceConnectors = useCallback(
+    (cardId: string) => snapshot.cards.find((card) => card.id === cardId)?.connectors,
+    [snapshot.cards],
+  );
+
+  /**
+   * Put the clipboard down with its top-left corner at `point`.
+   *
+   * One offset for the whole group, so a copied arrangement keeps its shape. Sections are re-created
+   * first: a duplicated card is placed by the document, and a card whose frame does not exist yet
+   * would land outside it. Links are re-made last, between the copies whose both ends were copied.
+   */
+  const pasteAt = useCallback(
+    (point: { x: number; y: number }) => {
+      const state = useUiStore.getState();
+      const entry = state.clipboard;
+      if (!entry || !canCreateContent || !activeBoardId) return;
+      const delta = { x: point.x - entry.origin.x, y: point.y - entry.origin.y };
+
+      const sectionIds = new Map<string, string>();
+      for (const sectionId of entry.sections) {
+        const source = boardSections.find((section) => section.id === sectionId);
+        if (!source) continue;
+        const copy = workspace.createSection({
+          boardId: activeBoardId,
+          title: source.title,
+          x: source.x + delta.x,
+          y: source.y + delta.y,
+          width: source.width,
+          height: source.height,
+          ...(source.color ? { color: source.color } : {}),
+        });
+        // A frame is more than a rectangle: the icon, the labels and whether it is elastic are all part
+        // of what the reader copied.
+        if (source.icon !== undefined) workspace.setSectionIcon(copy.id, source.icon);
+        if (source.tags.length > 0) workspace.setSectionTags(copy.id, [...source.tags]);
+        if (source.shrinkToFit === false) workspace.setSectionShrinkToFit(copy.id, false);
+        sectionIds.set(sectionId, copy.id);
+      }
+
+      const cardIds = new Map<string, string>();
+      for (const cardId of entry.cards) {
+        try {
+          const connectors = sourceConnectors(cardId);
+          const copy = workspace.duplicateCard(cardId, {
+            boardId: activeBoardId,
+            offset: delta,
+            ...(connectors ? { connectors } : {}),
+          });
+          cardIds.set(cardId, copy.id);
+        } catch {
+          // A card that was trashed or deleted elsewhere has nothing to copy; the rest still land.
+        }
+      }
+
+      for (const { edge } of entry.links) {
+        const source =
+          edge.sourceKind === "section" ? sectionIds.get(edge.source) : cardIds.get(edge.source);
+        const target =
+          edge.targetKind === "section" ? sectionIds.get(edge.target) : cardIds.get(edge.target);
+        if (!source || !target) continue;
+        workspace.addEdge({
+          boardId: activeBoardId,
+          source,
+          target,
+          ...(edge.sourceKind ? { sourceKind: edge.sourceKind } : {}),
+          ...(edge.targetKind ? { targetKind: edge.targetKind } : {}),
+          ...(edge.sourceConnector ? { sourceConnector: edge.sourceConnector } : {}),
+          ...(edge.targetConnector ? { targetConnector: edge.targetConnector } : {}),
+          ...(edge.kind ? { kind: edge.kind } : {}),
+        });
+      }
+
+      const pasted = [...cardIds.values()];
+      if (pasted.length > 0) state.setSelectedNodeIds(pasted);
+      const pastedSections = [...sectionIds.values()];
+      if (pastedSections.length > 0) state.selectSections(pastedSections);
+    },
+    [workspace, activeBoardId, canCreateContent, boardSections, sourceConnectors],
+  );
+
+  /**
+   * The verbs a key or a palette row runs, by the id the verb table gives them.
+   *
+   * The keyboard used to hold its own branches for these four; naming them here means the id in
+   * `menu/verbs.ts`, the id a palette row prints and the code a key runs are one identifier, and a verb
+   * that gains a key has one place to gain it.
+   */
+  const runVerb = useCallback(
+    (id: "delete" | "cut" | "copy" | "paste") => {
+      switch (id) {
+        case "delete":
+          unplaceSelected();
+          return;
+        case "cut":
+          cutSelection();
+          return;
+        case "copy":
+          copySelection();
+          return;
+        case "paste":
+          pasteAt(useUiStore.getState().contextMenu?.flowPosition ?? { x: 0, y: 0 });
+          return;
+      }
+    },
+    [unplaceSelected, cutSelection, copySelection, pasteAt],
+  );
+
   const changeLayer = useCallback(
     (nodeId: string, action: LayerAction) => {
       if (!canEditLayout || !activeBoardId) return;
@@ -113,9 +258,24 @@ export function useBoardCommands(
     (dragged: Node[], options?: { allowReflow?: boolean }) => {
       if (!canEditLayout || !activeBoardId || dragged.length === 0) return;
       const moves = dragMoves(dragged);
+      const selectedSectionIds = useUiStore.getState().selectedSectionIds;
+
+      // The frame the reader boxed travels with the cards. A group move is a rigid translation, so
+      // the single-card reflow below is skipped while a section is selected: reflow answers "where
+      // does this one card push its neighbours", and that is not the gesture being made.
+      const group =
+        selectedSectionIds.length === 0
+          ? null
+          : selectionDragPlan({
+              sections: boardSections,
+              placements: boardPlacementList,
+              selectedSectionIds,
+              draggedNodeIds: moves.map((move) => move.cardId),
+              delta: dragDelta(moves, boardPlacementList),
+            });
 
       // Single-card drag drops check for propagator-based collision reflow and section breathing
-      if (options?.allowReflow && dragged.length === 1) {
+      if (options?.allowReflow && dragged.length === 1 && group === null) {
         const target = dragged[0];
         if (target) {
           const isCollapsed = useUiStore.getState().collapsedCards[target.id] === true;
@@ -154,15 +314,20 @@ export function useBoardCommands(
         }
       }
 
-      const plan = sectionsExpandPlan(boardSections, dragRects(dragged));
-      if (plan.length > 0) {
+      const grown = sectionsExpandPlan(boardSections, dragRects(dragged));
+      if (grown.length > 0 || group !== null) {
         workspace.moveSectionsBatch({
-          sections: plan,
-          placements: moves.map((move) => ({ boardId: activeBoardId, ...move })),
+          // A frame can both travel and grow in one drop, so the two lists are merged by id rather
+          // than concatenated: two entries for one section would drop half the change.
+          sections: mergeSectionWrites(group?.sections ?? [], grown),
+          placements: [
+            ...moves.map((move) => ({ boardId: activeBoardId, ...move })),
+            ...(group?.placements ?? []),
+          ],
         });
         return;
       }
-      // No section needs to grow: `movePlacements` skips no-op moves and stays
+      // No section needs to grow or move: `movePlacements` skips no-op moves and stays
       // silent when the whole gesture ended where it started.
       workspace.movePlacements(activeBoardId, moves);
     },
@@ -189,10 +354,25 @@ export function useBoardCommands(
             ]
           : [];
       });
-      if (nodes.length === 0) return;
+      if (nodes.length === 0) {
+        // A frame on its own still moves: it is structure the reader selected, even though React Flow
+        // has no node for it.
+        if (state.selectedSectionIds.length === 0) return;
+        const alone = selectionDragPlan({
+          sections: boardSections,
+          placements: boardPlacementList,
+          selectedSectionIds: state.selectedSectionIds,
+          draggedNodeIds: [],
+          delta: { x: delta.dx, y: delta.dy },
+        });
+        if (alone.sections.length > 0) {
+          workspace.moveSectionsBatch({ sections: alone.sections, placements: alone.placements });
+        }
+        return;
+      }
       commitDrop(nodes);
     },
-    [activeBoardId, canEditLayout, commitDrop, store],
+    [activeBoardId, canEditLayout, commitDrop, store, boardSections, boardPlacementList, workspace],
   );
 
   const createNoteAt = useCallback(
@@ -465,6 +645,10 @@ export function useBoardCommands(
     createViewFromSelection,
     createMediaAt,
     duplicateCards,
+    copySelection,
+    cutSelection,
+    pasteAt,
+    runVerb,
     moveCardToBoard,
     alsoPlaceCardOnBoard,
     otherBoards,

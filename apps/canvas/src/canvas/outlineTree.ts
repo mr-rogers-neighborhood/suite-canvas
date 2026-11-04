@@ -75,6 +75,7 @@ export function outlinePeerIds(peers: PeerPresence[]): Map<string, PeerPresence[
   const bySection = new Map<string, PeerPresence[]>();
   for (const peer of peers) {
     const sectionIds = new Set<string>();
+    for (const id of peer.selection?.sectionIds ?? []) sectionIds.add(id);
     if (peer.selection?.sectionId) sectionIds.add(peer.selection.sectionId);
     if (peer.sectionDrag?.sectionId) sectionIds.add(peer.sectionDrag.sectionId);
     if (peer.sectionResize?.sectionId) sectionIds.add(peer.sectionResize.sectionId);

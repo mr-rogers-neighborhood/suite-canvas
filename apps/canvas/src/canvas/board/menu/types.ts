@@ -41,6 +41,12 @@ export interface BoardMenuContext {
   /** The media picker at the click: it asks which kind, then makes the card that holds it. */
   createMediaAt: (position: { x: number; y: number }) => void;
   duplicateCards: (ids: string[]) => void;
+  /** Put the selection aside, remove it, or make it again at the click. */
+  copySelection: () => void;
+  cutSelection: () => void;
+  pasteAt: (point: { x: number; y: number }) => void;
+  /** Whether anything is on the clipboard: Paste has nothing to offer until something is. */
+  clipboardReady: boolean;
   /** One colour across the cards a menu acts on. */
   setSwatches: (ids: readonly string[], swatch: string | null) => void;
   moveCardToBoard: (cardId: string, boardId: string) => void;

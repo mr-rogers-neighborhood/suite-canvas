@@ -2,12 +2,17 @@ import { create } from "zustand";
 import type { CanvasMode } from "../canvas/links/linkGesture";
 import type { CanvasPurpose } from "../canvas/purpose";
 import { useRecordRunStore } from "../canvas/recordRun";
+import type { ClipboardEntry } from "../entities/clipboard";
 import { getSession, type SessionCapabilities, sessionCapabilities } from "../session/session";
 import type { ShareScope } from "../session/shares";
 import { type InteractionMode, interactionModePatch, nextInteractionMode } from "./interactionMode";
+import { type MarqueeSlice, marqueeActions, marqueeInitial } from "./marqueeSlice";
 import { type ReaderUiSlice, readerUiActions, readerUiInitial } from "./readerUiSlice";
+import { type TourSlice, tourActions, tourInitial } from "./tourSlice";
 
 export type { InteractionMode } from "./interactionMode";
+export type { MarqueeSubject } from "./marqueeSlice";
+export type { TourState } from "./tourSlice";
 
 export interface ContextMenuState {
   x: number;
@@ -18,6 +23,18 @@ export interface ContextMenuState {
   edgeId?: string;
   sectionId?: string;
   flowPosition?: { x: number; y: number };
+}
+
+/**
+ * A section riding a card drag: which frame, how far it has moved, and which cards React Flow is
+ * already carrying so they are not shifted twice.
+ */
+export interface DragFollow {
+  /** Every selected frame: an outer frame and the one inside it both travel. */
+  sectionIds: readonly string[];
+  dx: number;
+  dy: number;
+  carrying: readonly string[];
 }
 
 export interface SelectedConnector {
@@ -91,30 +108,6 @@ function withRecent(boardRecency: string[], boardId: string): string[] {
  * time. `focus` is the full-canvas card surface, which owns the body editor the
  * same way the inspector's `panel` does.
  */
-/** What the container panel is looking at: a section, or a portal standing for a board. */
-export interface ContainerInspectorTarget {
-  kind: "section" | "portal";
-  id: string;
-}
-
-/**
- * A tour being read or authored (ADR-0058).
- *
- * The steps themselves are content on the tutorial card; this is only what one
- * reader is looking at — the same split as `containerInspector` or a selection.
- * `presenting` is what makes the overlay appear; `panelOpen` lets the author
- * keep the controls beside the spotlight while it does.
- */
-export interface TourState {
-  /** The tutorial card being played. */
-  tutorialId: string;
-  /** Index of the step showing; clamped by the panel, which knows the count. */
-  stepIndex: number;
-  presenting: boolean;
-  /** Whether the inspector keeps its controls on screen while presenting. */
-  panelOpen: boolean;
-}
-
 export type EditingSurface = "canvas" | "panel" | "focus";
 
 /** React Flow's viewport: world-to-screen translate plus zoom. */
@@ -178,7 +171,7 @@ const nextNavigationNonce = () => {
   return navigationNonce;
 };
 
-interface UiState extends SessionCapabilities, ReaderUiSlice {
+interface UiState extends SessionCapabilities, ReaderUiSlice, TourSlice, MarqueeSlice {
   /** Board currently on screen; null until the shell resolves one. */
   activeBoardId: string | null;
   /**
@@ -237,16 +230,23 @@ interface UiState extends SessionCapabilities, ReaderUiSlice {
   selectedNodeIds: string[];
   selectedEdgeIds: string[];
   /**
-   * What a selection box is allowed to pick up.
+   * A card drag that is carrying a selected section, in flow units.
    *
-   * A marquee used to box cards, and to sweep up a section link it crossed, with no way to say which of those the reader
-   * meant. Three toggles, because a box over a busy board often wants "just the links" or "just the sections", and
-   * because "any of them" is a combination rather than a mode to cycle through.
-   *
-   * A section is not a card: selecting one is a different thing to select, so it is off by default.
+   * A section is not a React Flow node, so the drag that carries it reports nothing about it; this
+   * is how the frame paints at the pointer instead of jumping when the drop lands. Transient by
+   * construction: written on every drag frame and cleared on release, never persisted and never
+   * synced — a peer sees the same movement through `setSectionDrag`.
    */
-  marqueeSelects: { cards: boolean; links: boolean; sections: boolean };
-  toggleMarqueeSelect: (subject: "cards" | "links" | "sections") => void;
+  dragFollow: DragFollow | null;
+  setDragFollow: (follow: DragFollow | null) => void;
+  /**
+   * What Cut and Copy put aside, for this tab only.
+   *
+   * Not the system clipboard: the canvas suppresses the native menu, so these verbs have to live here,
+   * and the document has no serialisation a browser clipboard could carry anyway.
+   */
+  clipboard: ClipboardEntry | null;
+  setClipboard: (entry: ClipboardEntry | null) => void;
   /**
    * A card being dragged out of the library, in *screen* units. The drawer owns
    * the gesture; the canvas owns the camera, so it converts this to flow space
@@ -264,16 +264,24 @@ interface UiState extends SessionCapabilities, ReaderUiSlice {
   linkEndMove: { edgeId: string; end: "source" | "target" } | null;
   startLinkEndMove: (move: { edgeId: string; end: "source" | "target" }) => void;
   cancelLinkEndMove: () => void;
-  /** Section selected on the active board, if any. */
-  selectedSectionId: string | null;
   /**
-   * The container whose panel is open: a section, or the portal card that stands
-   * for a board. Containers are read by their own panel — they have no fields, no
-   * types and no body, so the card inspector is the wrong surface for them.
+   * Sections selected on the active board, innermost last.
+   *
+   * A list rather than one id: frames nest, and a reader who wants the outer frame and the frame
+   * inside it to move together has to be able to hold both. Every verb that acts on "the" section
+   * reads `primarySectionId`, the most recently picked one, which is the one a panel describes.
    */
-  containerInspector: ContainerInspectorTarget | null;
-  /** The tour this reader is in, if any (ADR-0058). */
-  tour: TourState | null;
+  selectedSectionIds: string[];
+  /**
+   * Adds or removes one frame from the selection.
+   *
+   * A modifier press is membership and nothing else: it never opens a panel or clears the cards the
+   * same selection holds, because the reader is building a set rather than asking to look at one
+   * thing. `selectSection` remains the plain press.
+   */
+  toggleSection: (id: string) => void;
+  /** Replaces the frames in the selection without touching the cards or the panel. */
+  selectSections: (ids: readonly string[]) => void;
   /** Section whose title input is open for renaming. */
   editingSectionId: string | null;
   editingNodeId: string | null;
@@ -419,16 +427,6 @@ interface UiState extends SessionCapabilities, ReaderUiSlice {
   setSelectedNodeIds: (ids: string[]) => void;
   setSelectedEdgeIds: (ids: string[]) => void;
   selectSection: (id: string | null) => void;
-  openContainerInspector: (target: ContainerInspectorTarget) => void;
-  closeContainerInspector: () => void;
-  /** Opens a tutorial's panel without playing it. */
-  openTour: (tutorialId: string) => void;
-  /** Starts (or resumes) playback from a step. */
-  presentTour: (tutorialId: string, stepIndex?: number) => void;
-  setTourStep: (stepIndex: number) => void;
-  setTourPanelOpen: (open: boolean) => void;
-  /** Leaves the tour entirely: closes the panel and the overlay. */
-  closeTour: () => void;
   /**
    * A surface asked to step through a portal. The camera owns the doorway — it
    * needs the node's screen rect to fly from — so the panel only names the board
@@ -507,10 +505,11 @@ export const useUiStore = create<UiState>((set, get) => ({
   trashedMediaIds: [],
   selectedNodeIds: [],
   selectedEdgeIds: [],
-  marqueeSelects: { cards: true, links: true, sections: false },
-  selectedSectionId: null,
-  containerInspector: null,
-  tour: null,
+  ...marqueeInitial,
+  dragFollow: null,
+  clipboard: null,
+  selectedSectionIds: [],
+  ...tourInitial,
   portalOpenRequest: null,
   libraryDrag: null,
   linkEndMove: null,
@@ -566,7 +565,7 @@ export const useUiStore = create<UiState>((set, get) => ({
             editingNodeId: null,
             editingSurface: "canvas" as EditingSurface,
             editingSectionId: null,
-            selectedSectionId: null,
+            selectedSectionIds: [],
             selectedNodeIds: [],
             selectedEdgeIds: [],
             selectedConnector: null,
@@ -604,7 +603,7 @@ export const useUiStore = create<UiState>((set, get) => ({
         editingNodeId: null,
         editingSurface: "canvas" as EditingSurface,
         editingSectionId: null,
-        selectedSectionId: null,
+        selectedSectionIds: [],
         // A card selection is also board-scoped; entering a portal starts clean.
         selectedNodeIds: options.via === "portal" ? [] : state.selectedNodeIds,
         selectedEdgeIds: [],
@@ -628,7 +627,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       editingNodeId: null,
       editingSurface: "canvas" as EditingSurface,
       editingSectionId: null,
-      selectedSectionId: null,
+      selectedSectionIds: [],
       selectedNodeIds: [],
       selectedEdgeIds: [],
       selectedConnector: null,
@@ -684,33 +683,15 @@ export const useUiStore = create<UiState>((set, get) => ({
   emptyMediaTrash: () => set({ trashedMediaIds: [] }),
   setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
   setSelectedEdgeIds: (selectedEdgeIds) => set({ selectedEdgeIds }),
-  /**
-   * What a selection box picks up.
-   *
-   * The last subject cannot be switched off: a box that picks up nothing is a box that does nothing, and a reader who
-   * reached that state by pressing three times has no reason to think the fourth press is what repairs it. The control
-   * disables the row as well, so this is the rule rather than the only guard.
-   */
-  toggleMarqueeSelect: (subject) =>
-    set((state) => {
-      const next = { ...state.marqueeSelects, [subject]: !state.marqueeSelects[subject] };
-      if (!next.cards && !next.links && !next.sections) return state;
-      return { marqueeSelects: next };
-    }),
+  ...marqueeActions(set, get),
+  setDragFollow: (dragFollow) => set({ dragFollow }),
+  setClipboard: (clipboard) => set({ clipboard }),
   setLibraryDrag: (libraryDrag) => set({ libraryDrag }),
   startLinkEndMove: (linkEndMove) => set({ linkEndMove }),
   cancelLinkEndMove: () => set({ linkEndMove: null }),
   selectSection: (selectedSectionId) =>
     set({
-      selectedSectionId,
-      // Selecting a section opens its panel. Deselecting does not close the
-      // drawer by itself: a click on a portal card deselects the section on its
-      // way to opening the portal's own panel, and closing here would undo it a
-      // frame later. Closing is a pane click or Escape, which call
-      // `closeContainerInspector`.
-      ...(selectedSectionId
-        ? { containerInspector: { kind: "section", id: selectedSectionId } }
-        : {}),
+      selectedSectionIds: selectedSectionId === null ? [] : [selectedSectionId],
       ...(selectedSectionId
         ? {
             selectedNodeIds: [],
@@ -722,6 +703,15 @@ export const useUiStore = create<UiState>((set, get) => ({
           }
         : {}),
     }),
+  toggleSection: (id) =>
+    set((state) => {
+      return {
+        selectedSectionIds: state.selectedSectionIds.includes(id)
+          ? state.selectedSectionIds.filter((entry) => entry !== id)
+          : [...state.selectedSectionIds, id],
+      };
+    }),
+  selectSections: (ids) => set({ selectedSectionIds: [...new Set(ids)] }),
   setEditingSection: (editingSectionId) => set({ editingSectionId }),
   setSelectedConnector: (selectedConnector) => set({ selectedConnector }),
   startEditing: (editingNodeId, editingField = "body", editingSurface = "canvas") =>
@@ -736,7 +726,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   selectAllOnBoard: (ids) =>
     set({
       selectedNodeIds: ids,
-      selectedSectionId: null,
+      selectedSectionIds: [],
       editingSectionId: null,
       selectedEdgeIds: [],
       selectedConnector: null,
@@ -746,7 +736,6 @@ export const useUiStore = create<UiState>((set, get) => ({
     set((state) => ({
       inspectorNodeId,
       inspectorFieldId: fieldId,
-      containerInspector: null,
       // The inspector is the reading surface: opening it ends a focus session,
       // and the panel starts its own edit before accepting keys.
       cardFocusId: null,
@@ -756,54 +745,11 @@ export const useUiStore = create<UiState>((set, get) => ({
           ? { editingNodeId: null, editingSurface: "canvas" as EditingSurface }
           : {}),
       selectedNodeIds: [inspectorNodeId],
-      selectedSectionId: null,
+      selectedSectionIds: [],
       editingSectionId: null,
     })),
-  openContainerInspector: (containerInspector) =>
-    set({
-      containerInspector,
-      // A container panel and a card panel are the same drawer: one at a time.
-      inspectorNodeId: null,
-      inspectorFieldId: null,
-      cardFocusId: null,
-    }),
-  closeContainerInspector: () => set({ containerInspector: null }),
 
-  openTour: (tutorialId) =>
-    set((state) =>
-      state.tour?.tutorialId === tutorialId
-        ? { tour: { ...state.tour, panelOpen: true } }
-        : { tour: { tutorialId, stepIndex: 0, presenting: false, panelOpen: true } },
-    ),
-  presentTour: (tutorialId, stepIndex = 0) =>
-    set((state) => ({
-      // The tour writes the axis: a presentation is scoped to a tour, so starting
-      // one is the only way into `present` (ADR-0064 §11). The widget reads it and
-      // can leave it; it can never set it.
-      purpose: "present",
-      tour: {
-        tutorialId,
-        stepIndex:
-          state.tour?.tutorialId === tutorialId ? state.tour.stepIndex : Math.max(0, stepIndex),
-        presenting: true,
-        panelOpen: state.tour?.tutorialId === tutorialId ? state.tour.panelOpen : true,
-      },
-    })),
-  setTourStep: (stepIndex) =>
-    set((state) =>
-      state.tour ? { tour: { ...state.tour, stepIndex: Math.max(0, stepIndex) } } : state,
-    ),
-  setTourPanelOpen: (panelOpen) =>
-    set((state) => (state.tour ? { tour: { ...state.tour, panelOpen } } : state)),
-  // Closing the tour drops the purpose that required it: `present` without a
-  // tour is the one state `setPurpose` refuses to enter, so leaving it behind
-  // would be a state the user cannot reach intentionally and cannot leave by
-  // choosing it again.
-  closeTour: () =>
-    set((state) => ({
-      tour: null,
-      purpose: state.purpose === "present" ? "explore" : state.purpose,
-    })),
+  ...tourActions(set, get),
   requestPortalOpen: (cardId, boardId) =>
     set({ portalOpenRequest: { cardId, boardId, at: performance.now() } }),
   clearPortalOpenRequest: () => set({ portalOpenRequest: null }),
@@ -811,7 +757,6 @@ export const useUiStore = create<UiState>((set, get) => ({
     set((state) => ({
       inspectorNodeId: null,
       inspectorFieldId: null,
-      containerInspector: null,
       // Closing the inspector leaves focus mode with it, so Escape cannot strand
       // the canvas behind a surface the reader has already dismissed.
       cardFocusId: null,

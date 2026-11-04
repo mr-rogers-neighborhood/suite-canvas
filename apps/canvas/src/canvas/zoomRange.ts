@@ -24,6 +24,29 @@ export const ZOOM_MID_MIN = 0.35;
 export const ZOOM_NEAR_MIN = 0.75;
 
 /**
+ * How far a label may counter-scale before it stops.
+ *
+ * A label is drawn at `1/zoom` so it stays the same size on the screen, which is what makes a name
+ * readable at any distance. Past this floor that stops being helpful: every frame and every link
+ * keeps its full screen size however far out the reader goes, and the labels become a wall of pills
+ * over a map the reader is trying to read as a shape. Below the floor they shrink with the board
+ * instead, and `styles/paint.css` takes the link labels away entirely in the `far` band.
+ */
+export const LABEL_SCALE_FLOOR = 0.5;
+
+/**
+ * The counter-scale a label is painted at: `1/zoom`, bounded below by the floor.
+ *
+ * The bounds are on the *zoom*, so the returned factor is never larger than `1/LABEL_SCALE_FLOOR`.
+ * A failed measurement reads as 1, the way `zoomBand` treats it, so a label never disappears because
+ * a transform was missing.
+ */
+export function labelScale(zoom: number): number {
+  if (!Number.isFinite(zoom) || zoom <= 0) return 1;
+  return 1 / Math.max(zoom, LABEL_SCALE_FLOOR);
+}
+
+/**
  * The band a scale falls in. An unknown or non-finite scale reads as `near`, so
  * a surface never loses detail because a measurement failed.
  */

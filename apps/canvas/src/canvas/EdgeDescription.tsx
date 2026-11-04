@@ -33,6 +33,7 @@ import {
   shiftRoute,
 } from "./links/edgeRoute";
 import { useIsolatedEdgeId } from "./routeIsolation";
+import { labelScale } from "./zoomRange";
 
 /** Routing and label placement carried in `data`, so one component renders every style. */
 export interface EdgeDescriptionData {
@@ -445,7 +446,9 @@ export function EdgeWithDescription({
   // Our own drag wins; otherwise a peer's live position, then the stored one.
   const offset = live ?? dragger?.offset ?? labelOffsetOf(data);
   const anchor = pointOnPath(edgePath, offset) ?? route.mid;
-  const scale = 1 / (zoom || 1);
+  // Bounded: past `LABEL_SCALE_FLOOR` the chip shrinks with the board instead of keeping its full
+  // screen size, and the far band takes it away altogether (`styles/paint.css`).
+  const scale = labelScale(zoom);
   // The chip is centred on the path point; its halo (CSS) is what opens the gap
   // in the line, so the stroke reads as running into the label.
   const chipX = anchor.x;

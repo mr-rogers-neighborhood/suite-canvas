@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { clampZoom, ZOOM_MAX, ZOOM_MIN, zoomBand } from "./zoomRange";
+import {
+  clampZoom,
+  LABEL_SCALE_FLOOR,
+  labelScale,
+  ZOOM_MAX,
+  ZOOM_MIN,
+  zoomBand,
+} from "./zoomRange";
 
 describe("the camera range", () => {
   it("should reach from a map view to a close read", () => {
@@ -29,5 +36,22 @@ describe("content breakpoints", () => {
   it("should read an unmeasurable scale as the full band", () => {
     expect(zoomBand(Number.NaN)).toBe("near");
     expect(zoomBand(Number.POSITIVE_INFINITY)).toBe("near");
+  });
+
+  /**
+   * Past the floor a label shrinks with the board rather than staying full size on top of it, which
+   * is what turned a zoomed-out board into a pile of pills.
+   */
+  it("stops counter-scaling a label at the floor", () => {
+    expect(labelScale(1)).toBe(1);
+    expect(labelScale(2)).toBe(0.5);
+    expect(labelScale(LABEL_SCALE_FLOOR)).toBe(1 / LABEL_SCALE_FLOOR);
+    expect(labelScale(0.1)).toBe(1 / LABEL_SCALE_FLOOR);
+    expect(labelScale(LABEL_SCALE_FLOOR / 2)).toBe(1 / LABEL_SCALE_FLOOR);
+  });
+
+  it("reads a missing scale as 1 rather than as an unreadable label", () => {
+    expect(labelScale(0)).toBe(1);
+    expect(labelScale(Number.NaN)).toBe(1);
   });
 });

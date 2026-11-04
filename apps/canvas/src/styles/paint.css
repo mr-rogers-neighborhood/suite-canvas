@@ -510,6 +510,16 @@
   justify-content: center;
 }
 
+/*
+ * A link's label is detail too, and the whole point of the far band is a map rather than a page.
+ * The chip is a pill the size of a word whatever the scale, so a board read from far enough out is
+ * a field of pills with the links invisible underneath them. The line, its arrow, its selection
+ * outline and the label in the document all stay; the chip returns at mid, where it can be read.
+ */
+.board-surface[data-zoom-band="far"] .edge-description {
+  display: none;
+}
+
 /* The mid band used to clamp the body to three faded lines. A tall card then
    showed three lines and empty space below them, and the clamp fired while the
    text was still perfectly legible — so the band now draws the body in full and

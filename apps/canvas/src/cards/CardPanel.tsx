@@ -10,11 +10,12 @@ import {
 } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import { cardIcon as resolveCardIcon, setEntityIcon } from "../canvas/entityIcon";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
 import { IconField } from "../inspector/IconField";
 import { inspectorPanelIds } from "../inspector/InspectorTabs";
+import { type InspectorRow, rowsFor } from "../inspector/rows";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { StyleTab } from "../styles/surface/StyleTab";
 import { CardBodySurface } from "./CardBodySurface";
@@ -294,10 +295,6 @@ export function CardPanel({
     onStartEditing(field);
   };
 
-  const showDetails = !inspector || tab === "details";
-  const showContent = !inspector || tab === "content";
-  const showStyle = inspector && tab === "style";
-
   const bodySurface = (
     <CardBodySurface
       cardId={card.id}
@@ -314,6 +311,142 @@ export function CardPanel({
       onOpenCardPanel={onOpenCardPanel}
     />
   );
+
+  /**
+   * The card's inspector rows, in one table.
+   *
+   * The three `tab === "…"` branches this replaces each owned their own wrapper, their own padding and
+   * their own `role="tabpanel"`; the row table says what belongs to a tab and the panel draws the
+   * wrapper once. `rowsFor` keeps the intersection rule, so the same table would serve a mixed subject.
+   */
+  const inspectorRows: InspectorRow<null>[] = [
+    {
+      id: "icon",
+      tab: "details",
+      kinds: ["card"],
+      render: () => (
+        <IconField
+          value={resolveCardIcon(card, typesById.get(card.primaryTypeId)?.icon)}
+          canEdit={editLayout}
+          testId="card-icon"
+          inset
+          onChange={(icon) => {
+            const workspace = useCanvasStore.getState().workspace;
+            if (workspace) setEntityIcon(workspace, { kind: "card", id: card.id }, icon);
+          }}
+        />
+      ),
+    },
+    {
+      id: "identity",
+      tab: "details",
+      kinds: ["card"],
+      render: () => (
+        <CardTypeTagsSection
+          card={card}
+          types={types}
+          tags={tags}
+          cardTypeIds={cardTypeIds}
+          editContent={editContent}
+          manageSchema={manageSchema}
+          onSetType={onSetType}
+          onAddType={onAddType}
+          onRemoveType={onRemoveType}
+          onManageTypes={onManageTypes}
+          onAddTag={onAddTag}
+          onRemoveTag={onRemoveTag}
+          onCreateTag={onCreateTag}
+        />
+      ),
+    },
+    {
+      id: "properties",
+      tab: "details",
+      kinds: ["card"],
+      render: () => (
+        <CardPropertiesSection
+          card={card}
+          fields={fields}
+          types={types}
+          cards={cards}
+          boards={boards}
+          cardTypeIds={cardTypeIds}
+          cardIds={cardIds}
+          focusedField={focusedField}
+          focusedRow={focusedRow}
+          editContent={editContent}
+          manageSchema={manageSchema}
+          onSetProperty={onSetProperty}
+          onClearProperty={onClearProperty}
+          onManageTypes={onManageTypes}
+        />
+      ),
+    },
+    {
+      id: "links",
+      tab: "details",
+      kinds: ["card"],
+      render: () => (
+        <CardLinksSection
+          links={links}
+          onFocusLink={onFocusLink}
+          {...(inertLinks ? { availableCardIds: cardIds } : {})}
+        />
+      ),
+    },
+    {
+      id: "placement",
+      tab: "details",
+      kinds: ["card"],
+      render: () => (
+        <CardPlacementSection
+          where={where}
+          inspector={inspector}
+          editLayout={editLayout}
+          onFocusCard={onFocusCard}
+          onFocusSection={onFocusSection}
+          onRemoveFromBoard={onRemoveFromBoard}
+        />
+      ),
+    },
+    {
+      id: "content",
+      tab: "content",
+      kinds: ["card"],
+      render: () =>
+        sketch ? (
+          <SketchPanel
+            elements={sketch.elements}
+            onOpen={sketch.onOpen}
+            label={sketch.label ?? "Sketch"}
+          />
+        ) : (
+          <>
+            {tutorialCard ? (
+              <TutorialStepsPanel
+                cardId={card.id}
+                cardDoc={cardDoc}
+                contentId={contentId}
+                canEdit={editContent}
+              />
+            ) : null}
+            {bodySurface}
+          </>
+        ),
+    },
+    {
+      id: "style",
+      tab: "style",
+      kinds: ["card"],
+      render: () => (
+        <StyleTab
+          targets={[{ kind: "card", id: card.id }]}
+          canEdit={editLayout}
+          typeName={typesById.get(card.primaryTypeId)?.name ?? null}
+        />
+      ),
+    },
+  ];
 
   return (
     <div
@@ -349,126 +482,26 @@ export function CardPanel({
         />
       ) : null}
 
-      {showDetails ? (
-        // biome-ignore lint/a11y/useAriaPropsSupportedByRole: the role is set whenever the aria attributes are.
+      {inspector ? (
         <div
-          data-testid="card-panel-details"
-          role={inspector ? "tabpanel" : undefined}
-          id={inspector ? tabIds.details.panel : undefined}
-          aria-labelledby={inspector ? tabIds.details.tab : undefined}
-        >
-          {/* The same row a portal and a section have: what the card draws in its header. */}
-          <IconField
-            value={resolveCardIcon(card, typesById.get(card.primaryTypeId)?.icon)}
-            canEdit={editLayout}
-            testId="card-icon"
-            // The Details tab pads nothing; every row in it carries its own gutter.
-            inset
-            onChange={(icon) => {
-              const workspace = useCanvasStore.getState().workspace;
-              if (workspace) setEntityIcon(workspace, { kind: "card", id: card.id }, icon);
-            }}
-          />
-
-          <CardTypeTagsSection
-            card={card}
-            types={types}
-            tags={tags}
-            cardTypeIds={cardTypeIds}
-            editContent={editContent}
-            manageSchema={manageSchema}
-            onSetType={onSetType}
-            onAddType={onAddType}
-            onRemoveType={onRemoveType}
-            onManageTypes={onManageTypes}
-            onAddTag={onAddTag}
-            onRemoveTag={onRemoveTag}
-            onCreateTag={onCreateTag}
-          />
-
-          <CardPropertiesSection
-            card={card}
-            fields={fields}
-            types={types}
-            cards={cards}
-            boards={boards}
-            cardTypeIds={cardTypeIds}
-            cardIds={cardIds}
-            focusedField={focusedField}
-            focusedRow={focusedRow}
-            editContent={editContent}
-            manageSchema={manageSchema}
-            onSetProperty={onSetProperty}
-            onClearProperty={onClearProperty}
-            onManageTypes={onManageTypes}
-          />
-
-          <CardLinksSection
-            links={links}
-            onFocusLink={onFocusLink}
-            {...(inertLinks ? { availableCardIds: cardIds } : {})}
-          />
-
-          <CardPlacementSection
-            where={where}
-            inspector={inspector}
-            editLayout={editLayout}
-            onFocusCard={onFocusCard}
-            onFocusSection={onFocusSection}
-            onRemoveFromBoard={onRemoveFromBoard}
-          />
-        </div>
-      ) : null}
-
-      {showContent ? (
-        inspector ? (
-          <div
-            className="px-3 py-3"
-            data-testid="card-panel-content"
-            role="tabpanel"
-            id={tabIds.content.panel}
-            aria-labelledby={tabIds.content.tab}
-          >
-            {sketch ? (
-              <SketchPanel
-                elements={sketch.elements}
-                onOpen={sketch.onOpen}
-                label={sketch.label ?? "Sketch"}
-              />
-            ) : (
-              <>
-                {tutorialCard ? (
-                  <TutorialStepsPanel
-                    cardId={card.id}
-                    cardDoc={cardDoc}
-                    contentId={contentId}
-                    canEdit={editContent}
-                  />
-                ) : null}
-                {bodySurface}
-              </>
-            )}
-          </div>
-        ) : (
-          <Section title="Body">{bodySurface}</Section>
-        )
-      ) : null}
-
-      {showStyle ? (
-        <div
-          className="px-3 py-3"
-          data-testid="card-panel-style"
           role="tabpanel"
-          id={tabIds.style.panel}
-          aria-labelledby={tabIds.style.tab}
+          data-testid={`card-panel-${tab}`}
+          id={tabIds[tab].panel}
+          aria-labelledby={tabIds[tab].tab}
+          className={tab === "details" ? undefined : "px-3 py-3"}
         >
-          <StyleTab
-            targets={[{ kind: "card", id: card.id }]}
-            canEdit={editLayout}
-            typeName={typesById.get(card.primaryTypeId)?.name ?? null}
-          />
+          {rowsFor(inspectorRows, tab, ["card"]).map((row) => (
+            <Fragment key={row.id}>{row.render(null)}</Fragment>
+          ))}
         </div>
-      ) : null}
+      ) : (
+        <>
+          {rowsFor(inspectorRows, "details", ["card"]).map((row) => (
+            <Fragment key={row.id}>{row.render(null)}</Fragment>
+          ))}
+          <Section title="Body">{bodySurface}</Section>
+        </>
+      )}
     </div>
   );
 }

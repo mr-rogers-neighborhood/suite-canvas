@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { portalTargetId } from "../../cards/portal";
 import { useUiStore } from "../../store/useUiStore";
 import { prefersReducedMotion } from "../localEasing";
+import { unionOfRects } from "./selectionBounds";
 import type { useBoardProjection } from "./useBoardProjection";
 import type { useBoardUi } from "./useBoardUi";
 
@@ -206,14 +207,8 @@ export function useBoardCamera(
   const autoEntered = useRef(new Set<string>());
   /** The board the zoom-entry guards belong to. */
   const autoEnteredBoard = useRef<string | null>(null);
-  // The drawer describes something on the board you were looking at, so a board
-  // change — a portal doorway, a tab, a step back — leaves it behind.
-  const seenBoardId = useRef(activeBoardId);
-  useEffect(() => {
-    if (seenBoardId.current === activeBoardId) return;
-    seenBoardId.current = activeBoardId;
-    useUiStore.getState().closeContainerInspector();
-  }, [activeBoardId]);
+  // The drawer describes something on the board you were looking at, and the selection is board-scoped:
+  // a board change empties it in `setActiveBoardId`, which is why nothing has to close here.
 
   useEffect(() => {
     if (autoEnteredBoard.current === activeBoardId) return;
@@ -284,16 +279,61 @@ export function useBoardCamera(
    * control that asked once never frames a set the reader has since changed.
    * A reader who asked for reduced motion arrives instead of flying.
    */
+  /**
+   * Frame the selection, which is not only cards.
+   *
+   * `fitView` over node ids leaves a selected frame out of the picture, so the same bounds the group
+   * outline draws are what the camera frames: cards and sections together, and a link's ends when a
+   * link is all that is selected.
+   */
   const zoomToSelection = useCallback(() => {
-    const ids = useUiStore.getState().selectedNodeIds;
-    if (ids.length === 0) return;
-    void fitView({
-      nodes: ids.map((id) => ({ id })),
-      padding: SELECTION_PADDING,
-      duration: prefersReducedMotion() ? 0 : FOCUS_DURATION_MS,
-      maxZoom: FIT_MAX_ZOOM,
+    const state = useUiStore.getState();
+    const ids = state.selectedNodeIds;
+    const sectionIds = state.selectedSectionIds;
+    if (ids.length === 0 && sectionIds.length === 0) return;
+
+    if (sectionIds.length === 0) {
+      void fitView({
+        nodes: ids.map((id) => ({ id })),
+        padding: SELECTION_PADDING,
+        duration: prefersReducedMotion() ? 0 : FOCUS_DURATION_MS,
+        maxZoom: FIT_MAX_ZOOM,
+      });
+      return;
+    }
+
+    const lookup = store.getState().nodeLookup;
+    const sectionRects = sectionIds.flatMap((id) => {
+      const section = snapshot.sections.find((entry) => entry.id === id);
+      return section ? [section] : [];
     });
-  }, [fitView]);
+    const cardRects = ids.flatMap((id) => {
+      const node = lookup.get(id);
+      if (!node) return [];
+      return [
+        {
+          x: node.position.x,
+          y: node.position.y,
+          width: node.measured?.width ?? node.width ?? 0,
+          height: node.measured?.height ?? node.height ?? 0,
+        },
+      ];
+    });
+    const bounds = unionOfRects([...cardRects, ...sectionRects]);
+    if (!bounds) return;
+    const { width, height, minZoom } = store.getState();
+    const viewport = getViewportForBounds(
+      bounds,
+      width,
+      height,
+      minZoom,
+      FIT_MAX_ZOOM,
+      SELECTION_PADDING,
+    );
+    void setViewport(viewport, {
+      duration: prefersReducedMotion() ? 0 : FOCUS_DURATION_MS,
+    });
+  }, [fitView, setViewport, snapshot.sections, store]);
 
   return { enterPortal, nodeScreenRect, readCameraGesture, gestureStartZoom, zoomToSelection };
 }

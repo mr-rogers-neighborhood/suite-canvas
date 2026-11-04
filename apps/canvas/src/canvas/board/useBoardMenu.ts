@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 import type { ContextMenuItem } from "../../dialogs/ContextMenu";
+import { useUiStore } from "../../store/useUiStore";
 import { buildBoardMenu } from "./menu/buildMenu";
 import type { useBoardCommands } from "./useBoardCommands";
 import type { useBoardProjection } from "./useBoardProjection";
@@ -17,6 +18,7 @@ export function useBoardMenu(
   },
 ): ContextMenuItem[] {
   const { contextMenu, snapshot, workspace, store, mode, setMode } = ui;
+  const clipboardReady = useUiStore((state) => state.clipboard !== null);
 
   /**
    * Appearance edits the whole selection when the card that was right-clicked is part
@@ -69,6 +71,10 @@ export function useBoardMenu(
       createViewFromSelection: commands.createViewFromSelection,
       createMediaAt: commands.createMediaAt,
       duplicateCards: commands.duplicateCards,
+      copySelection: commands.copySelection,
+      cutSelection: commands.cutSelection,
+      pasteAt: commands.pasteAt,
+      clipboardReady: clipboardReady,
       setSwatches: commands.setSwatches,
       moveCardToBoard: commands.moveCardToBoard,
       alsoPlaceCardOnBoard: commands.alsoPlaceCardOnBoard,
@@ -91,6 +97,7 @@ export function useBoardMenu(
     return buildBoardMenu(ctx);
   }, [
     contextMenu,
+    clipboardReady,
     workspace,
     ui.activeBoardId,
     snapshot.boards,

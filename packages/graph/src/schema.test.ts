@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardTypeSchema, typePluralName } from "./schema.js";
+import { cardTypeSchema, sectionColorSchema, sectionColors, typePluralName } from "./schema.js";
 
 const base = {
   id: "character",
@@ -41,5 +41,21 @@ describe("cardTypeSchema", () => {
     expect(cardTypeSchema.parse({ ...base, pluralName: "Characters" }).pluralName).toBe(
       "Characters",
     );
+  });
+});
+
+describe("sectionColorSchema", () => {
+  it("accepts the six shipped palette ids", () => {
+    for (const color of sectionColors) expect(sectionColorSchema.parse(color)).toBe(color);
+  });
+
+  it("accepts a swatch the workspace palette added", () => {
+    // A section's colour is a palette id, and a palette is the workspace's to extend.
+    expect(sectionColorSchema.parse("swatch-1a2b3c4d")).toBe("swatch-1a2b3c4d");
+  });
+
+  it("refuses an empty or oversized id", () => {
+    expect(sectionColorSchema.safeParse("").success).toBe(false);
+    expect(sectionColorSchema.safeParse("c".repeat(65)).success).toBe(false);
   });
 });

@@ -1,5 +1,11 @@
 import type { PlacementSnapshot } from "../../merge.js";
-import { edgeKinds, edgePaths, type GraphEdge, type Section, sectionColors } from "../../schema.js";
+import {
+  edgeKinds,
+  edgePaths,
+  type GraphEdge,
+  type Section,
+  sectionColorSchema,
+} from "../../schema.js";
 
 import { DEFAULT_PUBLISH_LIMITS, type PublishLimits, utf8ByteLength } from "./limits.js";
 
@@ -45,7 +51,9 @@ export function sectionIssue(
   if (utf8ByteLength(section.title) > limits.maxSectionTitleLength) {
     return `Section ${section.id} has a title longer than ${limits.maxSectionTitleLength} bytes`;
   }
-  if (section.color !== undefined && !sectionColors.includes(section.color)) {
+  // A section's colour is a palette id, and a palette is the workspace's to extend, so the
+  // check is the field's own shape rather than membership of the six it ships with.
+  if (section.color !== undefined && !sectionColorSchema.safeParse(section.color).success) {
     return `Section ${section.id} has an unknown color`;
   }
   const max = limits.maxCoordinate;

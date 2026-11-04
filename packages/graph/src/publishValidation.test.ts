@@ -8,6 +8,7 @@ import {
   MAX_PUBLISH_COORDINATE,
   placementIssue,
   richTextBytes,
+  sectionIssue,
   validateRichTextTree,
 } from "./publishValidation.js";
 
@@ -480,6 +481,28 @@ describe("publish geometry and caps", () => {
 
     expect(plan.unsupported.map((entry) => entry.key)).toContain(`section:${section.id}`);
     expect(applyPublish(source, draft, plan)).toBe(0);
+  });
+
+  it("should publish a section coloured with a workspace swatch", () => {
+    const { source, baseline, draft, scope, section } = setup();
+    draft.setSectionColor(section.id, "swatch-1a2b3c4d");
+
+    const plan = planPublish(draft, baseline, source, scope);
+
+    expect(plan.unsupported).toEqual([]);
+    expect(applyPublish(source, draft, plan)).toBeGreaterThan(0);
+    expect(source.getSection(section.id)?.color).toBe("swatch-1a2b3c4d");
+  });
+
+  it("should reject a section colour that is not a swatch id", () => {
+    // The document write is unvalidated by design — the schema is the field's width, and the
+    // publish plan is where a value the schema cannot read is named. So the check is asked
+    // directly, with the one field it reads.
+    const { section } = setup();
+    const issue = sectionIssue({ ...section, color: "c".repeat(65) });
+
+    expect(issue).toMatch(/unknown color/);
+    expect(sectionIssue({ ...section, color: "swatch-1a2b3c4d" })).toBeNull();
   });
 
   it("should reject an edge label over the byte cap", () => {

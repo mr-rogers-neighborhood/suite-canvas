@@ -36,6 +36,11 @@ export const fieldKinds = [
    */
   "annotation",
 ] as const;
+/**
+ * The six colours a section starts with. They are the ids `DEFAULT_PALETTE` ships, so a
+ * section's colour is a palette id like a card's or a link's; these are the defaults rather
+ * than the vocabulary, which is why the field is a string and not this enum.
+ */
 export const sectionColors = ["slate", "blue", "green", "amber", "rose", "violet"] as const;
 /** What a link endpoint points at. Boards and sections are identities, not types. */
 export const edgeEndpointKinds = ["card", "board", "section"] as const;
@@ -43,7 +48,8 @@ export const edgeEndpointKinds = ["card", "board", "section"] as const;
 export const edgeKindSchema = z.enum(edgeKinds);
 export const edgePathSchema = z.enum(edgePaths);
 export const fieldKindSchema = z.enum(fieldKinds);
-export const sectionColorSchema = z.enum(sectionColors);
+/** A palette swatch id, as wide as a board's `color`: a workspace palette may add its own. */
+export const sectionColorSchema = z.string().min(1).max(64);
 export const edgeEndpointKindSchema = z.enum(edgeEndpointKinds);
 
 export const entityIdSchema = z.string().min(1);
@@ -388,7 +394,8 @@ export type RatingPresentation = z.infer<typeof ratingPresentationSchema>;
 export type SelectOption = z.infer<typeof selectOptionSchema>;
 export type Placement = z.infer<typeof placementSchema>;
 export type Section = z.infer<typeof sectionSchema>;
-export type SectionColor = z.infer<typeof sectionColorSchema>;
+/** One of the six shipped colour ids, for the token tables that must stay exhaustive. */
+export type SectionColor = (typeof sectionColors)[number];
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
 export type EdgeKind = z.infer<typeof edgeKindSchema>;
 export type EdgePath = z.infer<typeof edgePathSchema>;

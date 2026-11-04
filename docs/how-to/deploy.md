@@ -371,7 +371,11 @@ EOF
 ```
 
 Retention (7 daily and 4 weekly copies) belongs to the bucket lifecycle, and the rule plus the restore
-caveats are in [operate.md](operate.md). Snapshots are unencrypted: plaintext content, uploaded images,
+caveats are in [operate.md](operate.md). The prune line is not optional: `backup.sh` deletes nothing
+locally, so a schedule without one fills the root disk, and a full disk stops Docker from spawning the
+healthcheck rather than stopping the server, which reads as every container going unhealthy at once.
+An hourly run has the same rule at a different rate: it is worth a shorter RPO only with a matching
+prune, because each pair is about 200 MB and a 29 GB root also has to fit a build. Snapshots are unencrypted: plaintext content, uploaded images,
 share and owner hashes. The bucket is encrypted at rest and the directory is root-only. Keep
 `/srv/backups` off the data volume, or a volume loss takes the backups with it.
 

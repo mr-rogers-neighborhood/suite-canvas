@@ -15,10 +15,16 @@ release edits the tag and the id recorded below.
 | Change record | the matching `CHANGELOG.md` section |
 | Evidence | the `pnpm verify` run and the security scan output, quoted in the release notes |
 
-Built on the host on 2026-11-04 after a pre-deploy snapshot at
-`/srv/backups/suite-20261104T182400Z.tar.gz`; the rollback path is `suite:rollback-v0.1.0-alpha.2`, which
-names the image the rebuild replaced. The identity is the one value a host build cannot know in
-advance, so it is added once the build finishes.
+Built on the host on 2026-11-04 that identity is
+`sha256:2fb123536c482e6a6783b0e98113e794eb6c606e5835d8d753928fcc3df18804`, taken after a pre-deploy
+snapshot at `/srv/backups/suite-20261104T182400Z.tar.gz`; the rollback path is
+`suite:rollback-v0.1.0-alpha.2`, whose id `e46fe6583cc3` is the alpha.2 build recorded above. The
+running container reports `suite_build_info{version="v0.1.0-alpha.3"} 1` and a `server ready` line
+carrying the same version.
+
+`pnpm verify` was green on the release commit: 4,986 Vitest cases, the story suite with its axe
+checks, the billing suite and the canvas build. The full `pnpm e2e` was not run on this commit, so the
+tag is still the lead's to create, as the policy below says.
 
 `SUITE_VERSION` is baked into the image at build time, so a running container reports what it is:
 `version` in `/api/admin/status`, `suite_build_info{version="…"} 1` in `/metrics`, and the

@@ -6,7 +6,7 @@ One task at a time: the steps for a job you already know you need to do.
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Release and roll back](release.md) | A release is a tag, an image built from it on the host that serves it, the image id that identifies it, a smoke test against a host, and a rollback pa… | 2026-11-01 |
+| [Release and roll back](release.md) | A release is a tag, an image built from it on the host that serves it, the image id that identifies it, a smoke test against a host, and a rollback pa… | 2026-11-04 |
 | [Change the data model](change-the-data-model.md) | A record change travels one path: schema, reader, writer, facade, then the tests that prove two clients still converge. Skipping the reader step is ho… | 2026-10-31 |
 | [Deploy a server](deploy.md) | One small instance, one Docker host, one app container, six SQLite stores on one volume, Caddy in front, Cloudflare in front of Caddy. | 2026-10-31 |
 | [Contribute a change](contribute.md) | One change, from branch to merge. The coding standards are in reference/conventions.md, the repo map in AGENTS.md, and the local gate in test-and-veri… | 2026-10-30 |

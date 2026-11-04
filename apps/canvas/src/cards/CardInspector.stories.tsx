@@ -153,7 +153,7 @@ const meta = {
           isCurrent: true,
           sectionPath: [
             { id: "s1", name: "Timelines" },
-            { id: "s2", name: "Drafts", color: "var(--section-blue)" },
+            { id: "s2", name: "Drafts", color: "blue" },
           ],
         },
         {

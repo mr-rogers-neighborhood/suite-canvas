@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { selectionSubject, subjectKindsForTables } from "./subject";
+import {
+  primaryNodeIdFor,
+  selectionSubject,
+  styleTargetsFor,
+  subjectKindsForTables,
+} from "./subject";
 
 const NONE = { nodeIds: [], sectionIds: [], edgeIds: [], portalIds: new Set<string>() };
 
@@ -40,5 +45,41 @@ describe("what a surface is looking at", () => {
     expect(subject.counts.sections).toBe(2);
     expect(subject.primary).toBe("section");
     expect(subjectKindsForTables(subject)).toEqual(["section"]);
+  });
+});
+
+describe("styleTargetsFor", () => {
+  it("hands the style editor every kind of the selection", () => {
+    const subject = selectionSubject({
+      nodeIds: ["card-1", "card-2"],
+      sectionIds: ["frame-1"],
+      edgeIds: ["link-1"],
+      portalIds: new Set<string>(),
+    });
+
+    expect(styleTargetsFor(subject)).toEqual([
+      { kind: "card", id: "card-1" },
+      { kind: "card", id: "card-2" },
+      { kind: "edge", id: "link-1" },
+      { kind: "section", id: "frame-1" },
+    ]);
+  });
+
+  it("is empty for an empty selection", () => {
+    expect(styleTargetsFor(selectionSubject(NONE))).toEqual([]);
+  });
+});
+
+describe("primaryNodeIdFor", () => {
+  it("keeps the card the reader pressed", () => {
+    expect(primaryNodeIdFor("pressed", ["a", "b"])).toBe("pressed");
+  });
+
+  it("opens on the last of a marquee", () => {
+    expect(primaryNodeIdFor(null, ["a", "b", "c"])).toBe("c");
+  });
+
+  it("is nothing when there is no press and nothing selected", () => {
+    expect(primaryNodeIdFor(null, [])).toBeNull();
   });
 });

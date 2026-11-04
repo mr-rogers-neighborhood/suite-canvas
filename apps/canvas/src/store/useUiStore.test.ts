@@ -117,6 +117,21 @@ describe("useUiStore", () => {
     expect(state.editingSurface).toBe("canvas");
   });
 
+  it("should drop the selection the drawer described, so it cannot reopen", () => {
+    useUiStore.setState({
+      selectedNodeIds: ["card-a"],
+      selectedSectionIds: ["section-a"],
+      selectedEdgeIds: ["edge-a"],
+    });
+
+    useUiStore.getState().closeInspector();
+
+    const state = useUiStore.getState();
+    expect(state.selectedNodeIds).toEqual([]);
+    expect(state.selectedSectionIds).toEqual([]);
+    expect(state.selectedEdgeIds).toEqual([]);
+  });
+
   it("should leave a canvas edit alone when the inspector closes", () => {
     useUiStore.getState().startEditing("card-a", "title", "canvas");
     useUiStore.getState().closeInspector();

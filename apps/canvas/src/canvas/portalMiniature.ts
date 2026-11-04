@@ -1,6 +1,7 @@
-import type { Card, GraphEdge, Placement, Section } from "@suite/graph";
+import type { Card, GraphEdge, PaletteSwatch, Placement, Section } from "@suite/graph";
 import { edgeEndpoints, PORTAL_BOARD_FIELD_ID } from "@suite/graph";
 import { type LinkScene, linkAnchors } from "./links/linkGeometry";
+import { type PaintMode, sectionSwatch, sectionWash } from "./sections/sectionPalette";
 
 /** Card box assumed when a placement has never been resized. */
 export const MINIATURE_CARD_SIZE = { width: 224, height: 160 } as const;
@@ -260,9 +261,14 @@ export function miniatureDots(
 }
 
 /**
- * Section band fill: the same token the canvas sections use, thinned out the
- * same way. A miniature is a hint of the board, not a saturated diagram.
+ * Section band fill: the same swatch the canvas sections wear, thinned out further. A
+ * miniature is a hint of the board, not a saturated diagram, so it goes through the one
+ * resolver and then mixes at its own weight.
  */
-export function miniatureSectionColor(color?: Section["color"]): string {
-  return `color-mix(in srgb, var(--section-${color ?? "slate"}) 18%, transparent)`;
+export function miniatureSectionColor(
+  color: Section["color"] | undefined,
+  palette: readonly PaletteSwatch[],
+  mode: PaintMode,
+): string {
+  return sectionWash(sectionSwatch(color, palette, mode).stroke, 18);
 }

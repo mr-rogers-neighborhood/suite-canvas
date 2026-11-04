@@ -11,6 +11,8 @@ import { PeekSurface } from "./peek/PeekSurface";
 import { anchorOf } from "./peek/peekAnchor";
 import { useEntityPeek } from "./peek/useEntityPeek";
 import type { PeekController } from "./peek/usePeek";
+import { sectionSwatch } from "./sections/sectionPalette";
+import { useSurfacePaint } from "./surfaceContext";
 
 export interface OutlineTreeProps {
   sections: Section[];
@@ -43,6 +45,9 @@ export function OutlineTree({
 }: OutlineTreeProps) {
   const rows = useMemo(() => outlineRows(sections, membership), [sections, membership]);
   const peersBySection = useMemo(() => outlinePeerIds(peers), [peers]);
+  // The default context carries the shipped palette, so a story or a test renders the same dot
+  // a workspace with an edited palette does.
+  const surface = useSurfacePaint();
 
   return (
     <div className="board-outline" data-testid="outline-rail" data-handbook-region="board-outline">
@@ -104,9 +109,8 @@ export function OutlineTree({
                     aria-hidden="true"
                     className="board-outline__dot"
                     style={{
-                      backgroundColor: section.color
-                        ? `var(--section-${section.color})`
-                        : "var(--section-slate)",
+                      backgroundColor: sectionSwatch(section.color, surface.palette, surface.mode)
+                        .stroke,
                     }}
                   />
                   <span className="board-outline__title">{title}</span>

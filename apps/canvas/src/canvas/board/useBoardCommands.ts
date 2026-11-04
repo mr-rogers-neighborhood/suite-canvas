@@ -10,6 +10,7 @@ import { ensureViewType, VIEW_TYPE_ID } from "../../cards/viewCard";
 import { ensureWhiteboardType } from "../../cards/whiteboard";
 import { openMediaPickerOnBoard } from "../../editor/mediaPicker";
 import { clipboardFrom } from "../../entities/clipboard";
+import { type ColourSelection, colourPlan, colourPlanIsEmpty } from "../../entities/colour";
 import { useUiStore } from "../../store/useUiStore";
 import { useViewsStore } from "../../store/viewsStore";
 import { installBlueprintCard } from "../blueprints/blueprint";
@@ -25,6 +26,7 @@ import { COLLAPSED_CARD_HEIGHT } from "../nodeData";
 import { portalSizeForBounds } from "../PortalCard";
 import { boardBounds } from "../portalMiniature";
 import { sectionsExpandPlan } from "../sections/sectionLayout";
+import { writeSelectionColour } from "./selectionColour";
 import { dragDelta, mergeSectionWrites, selectionDragPlan } from "./selectionDrag";
 import type { useBoardProjection } from "./useBoardProjection";
 import type { useBoardUi } from "./useBoardUi";
@@ -611,26 +613,27 @@ export function useBoardCommands(
   }, [canManageSchema, boardOrder, selectedNodeIds, workspace]);
 
   /**
-   * One colour across many cards. The palette row is the same one a single card
-   * gets, so a reader who right-clicked inside a selection restyles the selection
-   * rather than the card the press happened to land on.
+   * One colour across the whole selection: cards and portals in their `style.swatch`, links in
+   * theirs, frames in their `color`. The palette row is the same one a single card gets, so a
+   * reader who right-clicked inside a selection restyles the selection rather than the card the
+   * press happened to land on.
+   *
+   * The batch is what makes it one undo step: every setter defers its own commit to the end of
+   * the batch, so undo takes the whole selection back at once. The inspector writes by the same
+   * rule in `useStyleDraft`.
    */
-  const setSwatches = useCallback(
-    (ids: readonly string[], swatch: string | null) => {
+  const setSelectionColour = useCallback(
+    (swatch: string | null, selection: ColourSelection) => {
       if (!canEditLayout) return;
-      for (const id of ids) {
-        const style = projection.cardsById.get(id)?.style ?? {};
-        workspace.setCardStyle(id, {
-          ...style,
-          ...(swatch === null ? { swatch: undefined } : { swatch }),
-        });
-      }
+      const plan = colourPlan(selection);
+      if (colourPlanIsEmpty(plan)) return;
+      writeSelectionColour(workspace, plan, swatch, projection.cardsById);
     },
     [workspace, canEditLayout, projection.cardsById],
   );
 
   return {
-    setSwatches,
+    setSelectionColour,
     unplaceSelected,
     trashSelected,
     changeLayer,

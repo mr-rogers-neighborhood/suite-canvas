@@ -36,5 +36,12 @@ have, so a panel never offers a row that would write to only half of what you pi
 count say the count — *Duplicate 4 cards* — because a plural is the only honest way to describe an
 operation on a set.
 
+The inspector follows the selection: it opens on a box as well as on a click, describing the last
+thing you picked and how many of each kind you have. Its Style tab hands one colour to everything
+selected — cards, links and frames, each in its own field — and the right-click Colour row does the
+same, so colouring a mixed selection is one press, and one press of undo takes it back. A frame's
+part of that is the only style it has: shape, sides and text size are hidden when a frame is in the
+set, because those rows could not reach it.
+
 Selection also decides what a modifier click does. With Alt held, the current gesture claims the
 click; without it, a modifier click belongs to selection and never opens the inspector.

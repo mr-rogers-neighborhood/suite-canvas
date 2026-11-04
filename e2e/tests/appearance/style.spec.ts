@@ -142,12 +142,17 @@ test("a section carries one colour, from its own panel, across a reload", async 
   await section.click({ position: { x: 4, y: 4 } });
   await expect(page.getByTestId("container-inspector")).toBeVisible();
 
-  const before = await paintVar(page, ".section-region", "background-color");
-  const swatch = page.getByTestId("container-color-violet");
-  await swatch.click();
-  await expect(swatch).toHaveAttribute("aria-pressed", "true");
+  // A frame's colour is a palette id like a card's, so it is chosen in the Style tab from the
+  // same palette the card uses.
+  await page.getByTestId("container-tab-style").click();
+  await expect(page.getByTestId("style-swatches")).toBeVisible();
 
-  // The wash is the role's, resolved by the theme, so the assertion is that it
+  const before = await paintVar(page, ".section-region", "background-color");
+  const swatch = page.getByTestId("style-swatch-violet");
+  await swatch.click();
+  await expect(swatch).toHaveAttribute("data-checked", "true");
+
+  // The wash is the swatch's, resolved for the mode on screen, so the assertion is that it
   // changed rather than that it is one particular number.
   await expect.poll(() => paintVar(page, ".section-region", "background-color")).not.toBe(before);
 

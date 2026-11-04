@@ -60,7 +60,7 @@ const where: CardWhere = {
       isCurrent: true,
       sectionPath: [
         { id: "section-1", name: "Timelines" },
-        { id: "section-2", name: "Drafts", color: "var(--section-blue)" },
+        { id: "section-2", name: "Drafts", color: "blue" },
       ],
     },
     {

@@ -6,6 +6,7 @@ import type { PeerPresence, PresenceUser } from "../collab/presence";
 import { useDrawing } from "../hooks/useDrawing";
 import { PeerNameTag } from "../presence/PeerNameTag";
 import { useCanvasStore } from "../store/useCanvasStore";
+import type { StyleTarget } from "../styles/surface/useStyleDraft";
 import { CardTitleEditor } from "./CardBodyEditor";
 import { type CardLinks, CardPanel, type CardPanelEditingField, type CardWhere } from "./CardPanel";
 import type { CardPickerOption } from "./CardPicker";
@@ -32,6 +33,8 @@ export interface CardInspectorProps {
   cards: readonly CardPickerOption[];
   /** Links from mentions, `card` values and arrows, grouped by card. */
   links: CardLinks;
+  /** Every entity in the selection, so the Style tab colours more than this card. */
+  styleTargets?: readonly StyleTarget[] | undefined;
   /** Field to reveal, when a link asked for one. */
   focusedField?: string | null;
   /** Whether the body has no text yet; a blank card opens on Content. */
@@ -140,6 +143,7 @@ export function CardInspector({
   where,
   cards,
   links,
+  styleTargets,
   linkCount,
   editing,
   cardDoc,
@@ -317,6 +321,7 @@ export function CardInspector({
           where={where}
           cards={cards}
           links={links}
+          styleTargets={styleTargets}
           focusedField={focusedField}
           variant="inspector"
           bodyEmpty={bodyEmpty}

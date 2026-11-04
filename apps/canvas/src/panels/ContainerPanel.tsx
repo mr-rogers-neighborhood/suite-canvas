@@ -1,9 +1,8 @@
-import type { Section, Tag, Target, WorkspaceDocument } from "@suite/graph";
-import { sectionColors } from "@suite/graph";
+import type { Tag, Target, WorkspaceDocument } from "@suite/graph";
 import { Fragment, useState } from "react";
-import { SECTION_STROKE } from "../canvas/sections/sectionPalette";
+import { sectionSwatch } from "../canvas/sections/sectionPalette";
+import { useSurfacePaint } from "../canvas/surfaceContext";
 import { TagPicker } from "../cards/TagPicker";
-import { ColourStrip } from "../inspector/ColourStrip";
 import type { InspectorTabId } from "../inspector/capabilities";
 import { tabLabel, tabsFor } from "../inspector/capabilities";
 import { EntityPanel } from "../inspector/EntityPanel";
@@ -15,6 +14,7 @@ import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { BoardCoverPicker } from "../styles/BoardCoverPicker";
 import { StyleTab } from "../styles/surface/StyleTab";
+import type { StyleTarget } from "../styles/surface/useStyleDraft";
 import type { ContainerPanelModel } from "./useContainerPanelModel";
 
 export interface ContainerPanelProps {
@@ -23,7 +23,6 @@ export interface ContainerPanelProps {
   /** A portal's primary action: step through it into the board it opens. */
   onOpenBoard?: ((cardId: string, boardId: string) => void) | undefined;
   onLocate: () => void;
-  onSetColor: (color: Section["color"] | null) => void;
   /** Renaming is inline, like a section's title on the canvas. */
   onRename?: ((title: string) => void) | undefined;
   /** A section's own icon, or a portal's board icon. Absent hides the row. */
@@ -36,6 +35,11 @@ export interface ContainerPanelProps {
   onRetarget?: ((boardId: string) => void) | undefined;
   /** An orphaned portal: take the card off the board it is drawn on. */
   onRemove?: (() => void) | undefined;
+  /**
+   * What the Style tab edits: this container, or every entity in the selection. The host hands in
+   * the whole selection so one colour press reaches the cards and links beside the frame.
+   */
+  styleTargets?: readonly StyleTarget[] | undefined;
   /** Defaults to the live document in the canvas store; tests inject their own. */
   workspace?: WorkspaceDocument | null;
   /** Every tag in the workspace; defaults to the live snapshot. */
@@ -58,13 +62,13 @@ export function ContainerPanel({
   onClose,
   onOpenBoard,
   onLocate,
-  onSetColor,
   onRename,
   onSetIcon,
   onSetCover,
   onNavigate,
   onRetarget,
   onRemove,
+  styleTargets,
   workspace: workspaceProp = null,
   tags: tagsProp,
 }: ContainerPanelProps) {
@@ -75,6 +79,7 @@ export function ContainerPanel({
   const snapshot = useWorkspaceSnapshot();
   const knownTags = tagsProp ?? snapshot.tags;
   const canManageSchema = useUiStore((state) => state.canManageSchema);
+  const surface = useSurfacePaint();
   // The picker is a disclosure, not a count: it only exists while the panel is
   // asking which board should replace the one that went away.
   const [picking, setPicking] = useState(false);
@@ -229,34 +234,6 @@ export function ContainerPanel({
             />
           ) : null}
 
-          {/*
-           * A section has its own colour, and it is the one paint a section owns. A portal
-           * has none here: it is a card, so its colour is the card's, in Style — the row
-           * this replaces wrote the *board's* colour, which is a different record and the
-           * reason a portal looked like it had two colour controls.
-           */}
-          {details && !portal ? (
-            <section className="mt-3">
-              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-                Colour
-              </h3>
-              <ColourStrip
-                label="Section colour"
-                className="mt-1"
-                testId="container-colors"
-                disabled={!canEdit}
-                options={sectionColors.map((color) => ({
-                  label: `Colour ${color}`,
-                  light: SECTION_STROKE[color],
-                  dark: SECTION_STROKE[color],
-                  selected: model.color === color,
-                  testId: `container-color-${color}`,
-                  onPick: () => onSetColor(model.color === color ? null : color),
-                }))}
-              />
-            </section>
-          ) : null}
-
           {details && tagTarget ? (
             <section className="mt-3" data-testid="container-tags" data-target={tagTarget.kind}>
               <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
@@ -408,7 +385,10 @@ export function ContainerPanel({
                           <span
                             aria-hidden="true"
                             className="inline-block h-2 w-2 flex-none rounded-full"
-                            style={{ background: SECTION_STROKE[group.color] }}
+                            style={{
+                              background: sectionSwatch(group.color, surface.palette, surface.mode)
+                                .stroke,
+                            }}
                           />
                         ) : null}
                         <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ink)]">
@@ -490,7 +470,7 @@ export function ContainerPanel({
       render: () => (
         <>
           <StyleTab
-            targets={[{ kind: "card", id: model.id }]}
+            targets={styleTargets ?? [{ kind: portal ? "card" : "section", id: model.id }]}
             canEdit={canEdit && !model.orphan}
             workspace={workspace}
           />

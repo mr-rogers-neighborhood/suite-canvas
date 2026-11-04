@@ -228,3 +228,114 @@ describe("StyleTab for a link", () => {
     expect(screen.queryByTestId("style-swatch-missing")).toBeNull();
   });
 });
+
+/**
+ * A frame is in the editor because its colour is a palette id like the others. It is the whole
+ * of what a frame owns, so the colour row is the only row it gets — and a selection that holds
+ * one keeps the colour and drops the rows the frame cannot take.
+ */
+describe("StyleTab for a section", () => {
+  it("writes the section's colour, and offers nothing a frame cannot take", () => {
+    const { doc, board } = seed();
+    const section = doc.createSection({
+      boardId: board.id,
+      title: "Act",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 300,
+    });
+
+    render(<StyleTab targets={[{ kind: "section", id: section.id }]} canEdit />);
+
+    // One row: no silhouette, no sides, no scale, and no fill that is not a colour.
+    expect(screen.getByTestId("style-swatches")).toBeInTheDocument();
+    expect(screen.queryByTestId("style-shapes")).toBeNull();
+    expect(screen.queryByTestId("style-outline")).toBeNull();
+    expect(screen.queryByTestId("style-side-top")).toBeNull();
+    expect(screen.queryByTestId("style-text-scale")).toBeNull();
+    expect(screen.queryByTestId("style-swatch-none")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("style-swatch-violet"));
+
+    expect(doc.getSection(section.id)?.color).toBe("violet");
+  });
+
+  it("clears the colour with Default, which is the same state as never picked", () => {
+    const { doc, board } = seed();
+    const section = doc.createSection({
+      boardId: board.id,
+      title: "Act",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 300,
+    });
+    doc.setSectionColor(section.id, "rose");
+
+    render(<StyleTab targets={[{ kind: "section", id: section.id }]} canEdit />);
+    fireEvent.click(screen.getByTestId("style-swatch-default"));
+
+    expect(doc.getSection(section.id)?.color).toBeUndefined();
+  });
+
+  it("takes a colour on a mixed selection back in one undo step", () => {
+    const { doc, board, card } = seed();
+    const section = doc.createSection({
+      boardId: board.id,
+      title: "Act",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 300,
+    });
+
+    render(
+      <StyleTab
+        targets={[
+          { kind: "card", id: card.id },
+          { kind: "section", id: section.id },
+        ]}
+        canEdit
+      />,
+    );
+    fireEvent.click(screen.getByTestId("style-swatch-amber"));
+    expect(doc.getCard(card.id)?.style?.swatch).toBe("amber");
+    expect(doc.getSection(section.id)?.color).toBe("amber");
+
+    doc.undo();
+
+    expect(doc.getCard(card.id)?.style?.swatch).toBeUndefined();
+    expect(doc.getSection(section.id)?.color).toBeUndefined();
+  });
+
+  it("colours a card and a frame from one press, and keeps only the row both can take", () => {
+    const { doc, board, card } = seed();
+    const section = doc.createSection({
+      boardId: board.id,
+      title: "Act",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 300,
+    });
+
+    render(
+      <StyleTab
+        targets={[
+          { kind: "card", id: card.id },
+          { kind: "section", id: section.id },
+        ]}
+        canEdit
+      />,
+    );
+
+    expect(screen.getByTestId("style-swatches")).toBeInTheDocument();
+    expect(screen.queryByTestId("style-shapes")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("style-swatch-green"));
+
+    expect(doc.getCard(card.id)?.style?.swatch).toBe("green");
+    expect(doc.getSection(section.id)?.color).toBe("green");
+  });
+});

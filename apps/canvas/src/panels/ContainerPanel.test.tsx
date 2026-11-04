@@ -93,7 +93,6 @@ function renderPanel(model: ContainerPanelModel, workspace: WorkspaceDocument) {
       model={model}
       onClose={noop}
       onLocate={noop}
-      onSetColor={noop}
       onSetIcon={noop}
       workspace={workspace}
       tags={tags}
@@ -178,16 +177,20 @@ describe("ContainerPanel tags", () => {
 });
 
 describe("ContainerPanel tabs", () => {
-  it("gives a section no Style tab, because its colour is the paint it owns", () => {
+  it("gives a section a Style tab, because its colour is a palette id like a card's", () => {
     const { workspace, section } = setup();
 
     renderPanel(sectionModel(workspace, section.id), workspace);
 
-    // Details, where the identity, the colour and the links live.
+    // Identity, tags and links are Details; the colour is the one row Style serves it.
     expect(screen.getByTestId("container-tags")).toBeTruthy();
-    expect(screen.getByTestId("container-colors")).toBeTruthy();
-    // A tab that held one sentence and nothing to change is not a tab.
-    expect(screen.queryByTestId("container-tab-style")).toBeNull();
+    expect(screen.queryByTestId("container-colors")).toBeNull();
+    fireEvent.click(screen.getByTestId("container-tab-style"));
+    expect(screen.getByTestId("style-swatches")).toBeTruthy();
+    // The rows a frame cannot take are not offered: no shape, no sides, no scale.
+    expect(screen.queryByTestId("style-outline")).toBeNull();
+    expect(screen.queryByTestId("style-side-top")).toBeNull();
+    expect(screen.queryByTestId("style-text-scale")).toBeNull();
   });
 
   it("offers one icon row, which a section and a portal both use", () => {
@@ -239,14 +242,14 @@ describe("ContainerPanel tabs", () => {
  * roles with every tab in the tab order and no key handling at all.
  */
 describe("ContainerPanel tab strip keyboard", () => {
-  it("is one tab stop, and a section shows Details and Contents but no Style", () => {
+  it("is one tab stop, and a section shows Details, Contents and Style", () => {
     const { workspace, section } = setup();
     renderPanel(sectionModel(workspace, section.id), workspace);
 
     expect(screen.getByTestId("container-tab-details")).toHaveAttribute("tabindex", "0");
     expect(screen.getByTestId("container-tab-content")).toHaveAttribute("tabindex", "-1");
-    // Details and Contents; Style is the theme's job for a section, not a tab.
-    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    expect(screen.getByTestId("container-tab-style")).toHaveAttribute("tabindex", "-1");
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
   });
 
   it("moves the selection and the focus with the arrows when there are two", () => {

@@ -1,4 +1,4 @@
-import type { Connector, Rect, Section } from "@suite/graph";
+import type { Connector, PaletteSwatch, Rect, Section } from "@suite/graph";
 import { useReactFlow, useViewport, ViewportPortal } from "@xyflow/react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PeerPresence } from "../../collab/presence";
@@ -14,11 +14,12 @@ import { useUiStore } from "../../store/useUiStore";
 import { sectionIcon } from "../entityIcon";
 import { stepLink, stepShape, useLinkThreadStore } from "../links/linkThread";
 import { revealConnectors } from "../NodeConnectors";
+import { useSurfacePaint } from "../surfaceContext";
 import { useLinkDraftStore } from "../useNodeConnectorWiring";
 import { labelScale } from "../zoomRange";
 import { headerSlots } from "./headerSlots";
 import type { SectionOffset } from "./sectionLayout";
-import { SECTION_FILL, SECTION_STROKE } from "./sectionPalette";
+import { type PaintMode, sectionSwatch } from "./sectionPalette";
 
 type ResizeDirection = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
@@ -26,10 +27,6 @@ const RESIZE_DIRECTIONS: ResizeDirection[] = ["nw", "n", "ne", "e", "se", "s", "
 
 const MIN_WIDTH = 160;
 const MIN_HEIGHT = 100;
-
-const FILL = SECTION_FILL;
-
-const STROKE = SECTION_STROKE;
 
 /** The paint record is already a set of custom properties; it can be spread. */
 function paintStyle(paint: Record<string, string>): CSSProperties {
@@ -43,11 +40,15 @@ function paintStyle(paint: Record<string, string>): CSSProperties {
  * three ways to say "this box is blue". The colour is the whole choice now; the
  * frame's ink, radius and edges are the theme's.
  */
-export function sectionPaint(section: Section): Record<string, string> {
+export function sectionPaint(
+  section: Section,
+  palette: readonly PaletteSwatch[],
+  mode: PaintMode,
+): Record<string, string> {
   // A section that never picked a colour writes nothing, so it keeps the frame's
   // own default rather than being marked painted for a wash it already had.
   if (section.color === undefined) return {};
-  return { "--paint-surface": FILL[section.color] };
+  return { "--paint-surface": sectionSwatch(section.color, palette, mode).fill };
 }
 
 /** What a link dragged out of a section connector landed on. */
@@ -177,7 +178,8 @@ export function SectionLayer({
   // The armed end, not merely whether one exists: a section dot is the origin
   // only when the arm names it, and a fan returns to that dot click after click.
   const armedEnd = useLinkThreadStore((state) => state.armed);
-  const mode = useUiStore((state) => state.mode);
+  const interactionMode = useUiStore((state) => state.mode);
+  const surfacePaint = useSurfacePaint();
 
   // A fold is reader state: the section's stored rect is untouched, so unfolding
   // puts every member back where it was.
@@ -441,7 +443,7 @@ export function SectionLayer({
         const shape = stepShape({
           shiftKey: pointer.shiftKey,
           ctrlKey: pointer.ctrlKey,
-          mode,
+          mode: interactionMode,
           armedShape: thread.armedShape,
         });
         const step = stepLink(shape, thread.armed, clicked);
@@ -451,7 +453,7 @@ export function SectionLayer({
         }
         // A shape chosen in the control outlives the key; a modifier's does not.
         const next = thread.armed && shape === "place" ? null : step.armed;
-        thread.arm(next, shape === mode ? "mode" : "gesture", shape);
+        thread.arm(next, shape === interactionMode ? "mode" : "gesture", shape);
       },
     );
   };
@@ -501,10 +503,10 @@ export function SectionLayer({
         <div className="section-background-layer" data-testid="section-background-layer">
           {sections.map((section) => {
             const rect = paintRect(section);
-            const color = section.color ?? "slate";
+            const swatch = sectionSwatch(section.color, surfacePaint.palette, surfacePaint.mode);
             const selected = selectedSectionIds.has(section.id);
             const peerColor = peerSelection.get(section.id);
-            const paint = sectionPaint(section);
+            const paint = sectionPaint(section, surfacePaint.palette, surfacePaint.mode);
             const painted = Object.keys(paint).length > 0;
             return (
               <button
@@ -523,8 +525,8 @@ export function SectionLayer({
                     height: rect.height,
                     // An unstyled frame keeps the section's own colour wash; a
                     // painted one takes its background from the style instead.
-                    ...(painted ? {} : { background: FILL[color] }),
-                    borderColor: selected ? STROKE[color] : undefined,
+                    ...(painted ? {} : { background: swatch.fill }),
+                    borderColor: selected ? swatch.stroke : undefined,
                     ...(peerColor ? { boxShadow: `0 0 0 2px ${peerColor}66` } : {}),
                     ...(resizes.has(section.id) && !peerGesture.has(section.id)
                       ? {
@@ -687,11 +689,11 @@ export function SectionLayer({
         <div className="section-header-layer" data-testid="section-header-layer">
           {sections.map((section) => {
             const rect = paintRect(section);
-            const color = section.color ?? "slate";
+            const swatch = sectionSwatch(section.color, surfacePaint.palette, surfacePaint.mode);
             const selected = selectedSectionIds.has(section.id);
             const peer = peerGesture.get(section.id);
             const count = members.get(section.id) ?? 0;
-            const paint = sectionPaint(section);
+            const paint = sectionPaint(section, surfacePaint.palette, surfacePaint.mode);
             const painted = Object.keys(paint).length > 0;
             return (
               // biome-ignore lint/a11y/noStaticElementInteractions: the header is the section's drag handle; its title and rename field are separate controls.
@@ -706,7 +708,7 @@ export function SectionLayer({
                     left: slots.get(section.id)?.x ?? rect.x + 8,
                     top: slots.get(section.id)?.y ?? rect.y + 6,
                     transform: `scale(${titleScale})`,
-                    borderColor: selected ? STROKE[color] : undefined,
+                    borderColor: selected ? swatch.stroke : undefined,
                     ...(peer ? { transition: "left 60ms linear, top 60ms linear" } : {}),
                     // The pill follows the section's ink so the title stays
                     // readable on a painted frame.
@@ -730,7 +732,7 @@ export function SectionLayer({
                   <span
                     aria-hidden="true"
                     className="section-color-dot"
-                    style={{ backgroundColor: STROKE[color] }}
+                    style={{ backgroundColor: swatch.stroke }}
                   />
                 )}
                 {editingSectionId === section.id ? (

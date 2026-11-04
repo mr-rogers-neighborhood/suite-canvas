@@ -261,7 +261,7 @@ with a button that names the current icon and a Clear that returns the entity to
 value means is `resolvedIcon`'s job (see [canvas.md](canvas.md#icons)); the row only decides how choosing
 reads, which is why a card, a portal and a section cannot end up with three slightly different pickers.
 
-What an inspector shows is one table, `apps/canvas/src/inspector/capabilities.ts`, not a branch per entity. A tab and a body row each declare the kinds they serve, and a surface asks for the ones that serve what it is describing: a card gets Details, Content and Style; a portal gets Details, Contents and Style; a section gets Details and Contents, because its paint is the one colour it owns and everything else about it is the theme. A kind that has nothing for a tab never sees the tab, and a mixed selection intersects rather than unions.
+What an inspector shows is one table, `apps/canvas/src/inspector/capabilities.ts`, not a branch per entity. A tab and a body row each declare the kinds they serve, and a surface asks for the ones that serve what it is describing: a card gets Details, Content and Style; a portal gets Details, Contents and Style; a section gets the same three, because its colour is a palette id like a card's. A kind that has nothing for a tab never sees the tab, and a mixed selection intersects rather than unions. That is why a frame's Style tab is the colour row and nothing else: it has no shape, sides or text scale, so those rows name kinds it is not.
 
 `InspectorTabs` draws the strip for all of them: one tab stop, arrow-key movement, and the selected tab the only one with `tabIndex=0`, so the panels differ in their body and not in their controls.
 
@@ -522,10 +522,16 @@ An unknown code is returned as itself, which keeps a log line greppable and leav
 
 Selection is UI state with several readers: the canvas paints it, the inspector opens on it, and the commands that act on "this" resolve against it. `selectedNodeIds`, `selectedEdgeIds` and `selectedSectionIds` in `useUiStore` are the whole of it; `entities/subject.ts` resolves those three into the one subject every surface reads.
 
-A modifier click belongs to multi-select and must not open the inspector; the card's click handler returns early for shift, meta and ctrl, and the drag handler decides ownership on pointer down so pan and drag never both claim the same gesture.
+A modifier click belongs to multi-select: the card's click handler returns early for shift, meta and ctrl, so the press adds to the selection instead of re-pointing the inspector at the card under it. The drawer then follows the selection as a whole, so it opens on the new member while the Style tab still reaches every member; the drag handler decides ownership on pointer down so pan and drag never both claim the same gesture.
 
-`inspector/ColourStrip.tsx` is the one colour row: the menu's inline strip and the container panel's
-section colours both render through it, and it paints the value for the theme in force.
+`inspector/ColourStrip.tsx` is the one colour strip, drawn by the context menu, and it paints the value for
+the theme in force.
+
+The drawer describes the **selection**, not one record: it opens on a marquee as well as on a click, the
+primary card is the pressed one or the last selected (`primaryNodeIdFor` in `entities/subject.ts`), a frame
+was already selection-driven, and closing it clears the selection it describes, because a panel that
+outlived its selection would reopen on the next render. Every panel hands the Style tab `styleTargetsFor(subject)`, so one press colours
+every card, link and frame in the selection, each in its own field, in one undo step.
 
 A card, a link and a section are drawn by three different layers (a node, an edge and a `ViewportPortal`
 div), so nothing in the code makes them share a look, and the accent is what keeps them one selection:
@@ -604,9 +610,9 @@ Storage is the one thing that warns without being asked, because a browser clear
 
 ## Styles and appearance
 
-Style is document data, at two levels and no more. `apps/canvas/src/styles/surface/StyleTab.tsx` edits a card, a link or a type; a card wears its type's style and then its own, and everything else wears the theme. `apps/canvas/src/canvas/surfaceContext.ts` resolves the two levels and hands the result to `surfacePaintVars`, so a collaborator sees the same colours.
+Style is document data, at two levels and no more. `apps/canvas/src/styles/surface/StyleTab.tsx` edits a card, a link, a type or a frame; a card wears its type's style and then its own, a frame's style is its one colour, and everything else wears the theme. `apps/canvas/src/canvas/surfaceContext.ts` resolves the two levels and hands the result to `surfacePaintVars`, so a collaborator sees the same colours.
 
-The same editor is mounted in three places: the inspector, the type editor in `apps/canvas/src/panels/TypeSettingsDialog.tsx`, and `apps/canvas/src/app/AppearanceHost.tsx`, which opens where a reader right-clicks. The menu's colour verb in `apps/canvas/src/canvas/board/menu/verbs.ts` adds the palette quick-picks to the same menu through `inspector/ColourStrip.tsx`, so one colour is one click and a selection of cards is restyled in one.
+The same editor is mounted in three places: the inspector, the type editor in `apps/canvas/src/panels/TypeSettingsDialog.tsx`, and `apps/canvas/src/app/AppearanceHost.tsx`, which opens where a reader right-clicks. The menu's colour verb in `apps/canvas/src/canvas/board/menu/verbs.ts` draws the palette quick-picks through `inspector/ColourStrip.tsx`, so one colour is one click. The verb is selection-aware: `MenuTarget.idsByKind` carries the whole selection, and `setSelectionColour` in `canvas/board/useBoardCommands.ts` writes cards, links and frames inside one `workspace.batch`, so a mixed selection is restyled and undone as one. `useStyleDraft`'s multi-target write batches the same way, which is what lets the Style tab and the menu agree about what one press costs.
 
 Colours come from the workspace palette: `PaletteEditor` in Settings edits it as one list, each swatch carrying a light and a dark value, and both travel in the document.
 

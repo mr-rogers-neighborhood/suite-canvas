@@ -65,6 +65,40 @@ export function selectionSubject(input: SubjectInput): SelectionSubject {
 }
 
 /**
+ * The card the drawer describes: the one the reader pressed, or the last one selected.
+ *
+ * A click still wins, because that is the card they meant; a marquee opens on its last member,
+ * the same `.at(-1)` rule the container panel uses for a frame.
+ */
+export function primaryNodeIdFor(
+  inspectorNodeId: string | null,
+  selectedNodeIds: readonly string[],
+): string | null {
+  return inspectorNodeId ?? selectedNodeIds.at(-1) ?? null;
+}
+
+/** A thing the style editor can write: a card, a link or a frame. */
+export interface StyleTargetLike {
+  kind: "card" | "edge" | "section";
+  id: string;
+}
+
+/**
+ * The selection as style targets, cards then links then frames.
+ *
+ * One list for one editor. The Style tab writes each target's own field, so colouring a mixed
+ * selection goes through the same row a single card uses — and the rows a frame cannot take are
+ * hidden by the intersection rule rather than by a second panel.
+ */
+export function styleTargetsFor(subject: SelectionSubject): StyleTargetLike[] {
+  return [
+    ...subject.nodeIds.map((id) => ({ kind: "card" as const, id })),
+    ...subject.edgeIds.map((id) => ({ kind: "edge" as const, id })),
+    ...subject.sectionIds.map((id) => ({ kind: "section" as const, id })),
+  ];
+}
+
+/**
  * The kinds a surface should ask its capability table about.
  *
  * A portal is a card the document draws as a door, so a selection that holds both asks for what both

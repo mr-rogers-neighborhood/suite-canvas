@@ -6,8 +6,14 @@ import { mergeStylePatch } from "../../canvas/styleTargets";
 import { useCanvasStore } from "../../store/useCanvasStore";
 import { useWorkspaceSnapshot } from "../../store/workspaceStore";
 
-/** The three things a reader can paint: a card, a link, or a card's type. */
-export type StyleSurfaceKind = "card" | "edge" | "type";
+/**
+ * The things a reader can paint: a card, a link, a card's type, or a section.
+ *
+ * A frame is in the list because its colour is a palette id like the others, and colouring a
+ * selection that holds one has to reach it. It has no shape, sides or text scale, so only the
+ * colour row serves it — `StyleTab` hides the rest.
+ */
+export type StyleSurfaceKind = "card" | "edge" | "type" | "section";
 
 export interface StyleTarget {
   kind: StyleSurfaceKind;
@@ -113,6 +119,20 @@ export function useStyleDraft(
             : injected.getEdge(target.id);
         return { target, style: edge?.style, typeId: null };
       }
+      if (target.kind === "section") {
+        // A frame's colour is its whole style, and it is stored in `color` rather than in a
+        // record. Reading it as a `swatch` is what lets one colour row answer for every kind.
+        const section =
+          injected === null
+            ? snapshot.sections.find((entry) => entry.id === target.id)
+            : injected.getSection(target.id);
+        const color = section?.color;
+        return {
+          target,
+          style: color === undefined ? undefined : { swatch: color },
+          typeId: null,
+        };
+      }
       const type =
         injected === null
           ? snapshot.types.find((entry) => entry.id === target.id)
@@ -168,6 +188,8 @@ export function useStyleDraft(
         const cleaned = styleFor(entry.style);
         if (entry.target.kind === "card") workspace.setCardStyle(entry.target.id, cleaned);
         else if (entry.target.kind === "edge") workspace.setEdgeStyle(entry.target.id, cleaned);
+        else if (entry.target.kind === "section")
+          workspace.setSectionColor(entry.target.id, cleaned?.swatch ?? null);
         else workspace.updateType(entry.target.id, { style: cleaned });
       }
     };

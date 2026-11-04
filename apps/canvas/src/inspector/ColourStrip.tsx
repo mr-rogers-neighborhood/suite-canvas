@@ -1,11 +1,12 @@
 import { useSurfacePaint } from "../canvas/surfaceContext";
 
 /**
- * A row of colour dots, in the menu and in every panel.
+ * A row of colour dots, drawn by the context menu.
  *
- * The menu drew one inline strip and the container panel drew another: the same markup, the same ring for
- * the value in force, spelled twice. One component means a colour is chosen the same way wherever it is
- * chosen, and the mark that says which one is on cannot drift between the two.
+ * The menu once drew one inline strip and the container panel drew another: the same markup, the same ring
+ * for the value in force, spelled twice. One component means a colour is chosen the same way wherever it is
+ * chosen. A panel's colour is the Style tab's row, which also carries "None" for a fill and reads Mixed
+ * across a selection, so it stays there — but the strip itself is shared wherever a strip is drawn.
  *
  * A swatch carries both theme values and paints the one in force, which is the bug the menu's first strip
  * fixed: setting the light value as a background left every colour in the menu daylight at night.
@@ -17,7 +18,7 @@ export interface ColourOption {
   dark: string;
   selected: boolean;
   onPick: () => void;
-  /** A caller's test id, e.g. `container-color-blue`. */
+  /** A caller's test id, e.g. `menu-colour-blue`. */
   testId?: string | undefined;
 }
 

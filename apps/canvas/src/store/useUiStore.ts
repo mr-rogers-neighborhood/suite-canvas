@@ -757,6 +757,12 @@ export const useUiStore = create<UiState>((set, get) => ({
     set((state) => ({
       inspectorNodeId: null,
       inspectorFieldId: null,
+      // The drawer describes the selection, so dismissing it dismisses what it describes. A
+      // selection left behind would reopen the panel on the next render — the same reason the
+      // link panel clears its edge ids when it closes.
+      selectedNodeIds: [],
+      selectedSectionIds: [],
+      selectedEdgeIds: [],
       // Closing the inspector leaves focus mode with it, so Escape cannot strand
       // the canvas behind a surface the reader has already dismissed.
       cardFocusId: null,

@@ -1,4 +1,5 @@
 import type { Card, GraphEdge, Placement, Section } from "@suite/graph";
+import { DEFAULT_PALETTE } from "@suite/graph";
 import { describe, expect, it } from "vitest";
 import {
   boardBounds,
@@ -124,11 +125,32 @@ describe("boardMiniature", () => {
   it("should keep the section colour for the band's token", () => {
     const model = boardMiniature([section("s1", 0, 0, 100, 100)], []);
     expect(model.sections[0]?.color).toBeUndefined();
-    expect(miniatureSectionColor(undefined)).toBe(
+    // An empty palette is the shipped-token fallback: the six keep their own tokens.
+    expect(miniatureSectionColor(undefined, [], "light")).toBe(
       "color-mix(in srgb, var(--section-slate) 18%, transparent)",
     );
-    expect(miniatureSectionColor("violet")).toBe(
+    expect(miniatureSectionColor("violet", [], "light")).toBe(
       "color-mix(in srgb, var(--section-violet) 18%, transparent)",
+    );
+  });
+
+  it("should take a workspace swatch the shipped six do not have", () => {
+    const palette = [
+      ...DEFAULT_PALETTE,
+      {
+        id: "ink-rinse",
+        name: "Ink rinse",
+        light: "#123456",
+        dark: "#abcdef",
+        inkLight: "ink" as const,
+        inkDark: "surface-strong" as const,
+      },
+    ];
+    expect(miniatureSectionColor("ink-rinse", palette, "light")).toBe(
+      "color-mix(in srgb, #123456 18%, transparent)",
+    );
+    expect(miniatureSectionColor("ink-rinse", palette, "dark")).toBe(
+      "color-mix(in srgb, #abcdef 18%, transparent)",
     );
   });
 });

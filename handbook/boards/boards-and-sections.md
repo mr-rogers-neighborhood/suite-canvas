@@ -13,6 +13,11 @@ identities rather than formatting, so a card can be mentioned as belonging to on
 list them in reading order, and a view can be filtered to "this section" without guessing from
 geometry.
 
+A section's colour comes from the workspace palette, the same one a card's fill and a link's line
+use, and it is chosen in the section's **Style** tab. Adding a colour in Settings therefore gives
+frames a new choice too, and a board whose palette changes repaints its frames and its cards
+together. A frame that never picked a colour keeps the theme's own section wash.
+
 A portal is a card that opens another board. A press on it flies through — if the target board is
 open in front of you, you go there; if it is not, the portal is the door that opens it. Portals are
 cards because a doorway should be placeable, linkable, mentionable and shared like everything else.

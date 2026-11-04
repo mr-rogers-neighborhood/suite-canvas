@@ -1,5 +1,6 @@
 import type { BoardMiniatureModel, MiniatureDot } from "./portalMiniature";
 import { miniatureSectionColor } from "./portalMiniature";
+import { useSurfacePaint } from "./surfaceContext";
 
 export interface BoardMiniatureProps {
   model: BoardMiniatureModel;
@@ -17,6 +18,7 @@ export interface BoardMiniatureProps {
  */
 export function BoardMiniature({ model, dots = [], label, className }: BoardMiniatureProps) {
   const { width, height } = model.viewBox;
+  const surface = useSurfacePaint();
   return (
     <svg
       data-testid="portal-miniature"
@@ -59,7 +61,7 @@ export function BoardMiniature({ model, dots = [], label, className }: BoardMini
           width={section.width}
           height={section.height}
           rx={1.2}
-          fill={miniatureSectionColor(section.color)}
+          fill={miniatureSectionColor(section.color, surface.palette, surface.mode)}
         />
       ))}
       {model.cards.map((card) => (

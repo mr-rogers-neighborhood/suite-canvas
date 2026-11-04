@@ -38,7 +38,9 @@ export const INSPECTOR_TABS: readonly InspectorTab[] = [
   { id: "details", title: "Details", kinds: ["card", "portal", "section", "edge"] },
   { id: "content", title: "Content", kinds: ["card", "portal", "section"] },
   // A link has no body, so it has no Content tab; it has a route instead, which is part of Style.
-  { id: "style", title: "Style", kinds: ["card", "portal", "edge"] },
+  // A frame's colour is a palette id like the others, so it shares the Style tab; the rows it
+  // cannot take are hidden there rather than the whole tab being withheld.
+  { id: "style", title: "Style", kinds: ["card", "portal", "edge", "section"] },
 ];
 
 export const INSPECTOR_SECTIONS: readonly InspectorSection[] = [
@@ -53,7 +55,7 @@ export const INSPECTOR_SECTIONS: readonly InspectorSection[] = [
   // A link's details are what it joins and what it says; everything about how it is drawn is Style.
   { id: "ends", tab: "details", title: "Ends", kinds: ["edge"] },
   { id: "route", tab: "style", title: "Route", kinds: ["edge"] },
-  { id: "style", tab: "style", title: "Style", kinds: ["card", "portal"] },
+  { id: "style", tab: "style", title: "Style", kinds: ["card", "portal", "section"] },
 ];
 
 /**

@@ -1,3 +1,5 @@
+import { sectionSwatch } from "../canvas/sections/sectionPalette";
+import { useSurfacePaint } from "../canvas/surfaceContext";
 import { Section } from "./CardPanelSection";
 import type { CardWhere } from "./cardWhere";
 
@@ -28,6 +30,7 @@ export function CardPlacementSection({
     null;
   const others = where.entries.filter((entry) => entry.boardId !== current?.boardId);
   const currentSection = current?.sectionPath.at(-1) ?? null;
+  const surface = useSurfacePaint();
   return (
     <Section title="Where">
       {where.unplaced || !current ? (
@@ -74,7 +77,11 @@ export function CardPlacementSection({
                         <span
                           aria-hidden="true"
                           className="h-2 w-2 shrink-0 rounded-full"
-                          style={{ background: section.color ?? "var(--ink-muted)" }}
+                          style={{
+                            background: section.color
+                              ? sectionSwatch(section.color, surface.palette, surface.mode).stroke
+                              : "var(--ink-muted)",
+                          }}
                         />
                         <span className="min-w-0 truncate">{section.name}</span>
                       </button>

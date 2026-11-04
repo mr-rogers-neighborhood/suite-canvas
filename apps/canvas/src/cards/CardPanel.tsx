@@ -18,6 +18,7 @@ import { inspectorPanelIds } from "../inspector/InspectorTabs";
 import { type InspectorRow, rowsFor } from "../inspector/rows";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { StyleTab } from "../styles/surface/StyleTab";
+import type { StyleTarget } from "../styles/surface/useStyleDraft";
 import { CardBodySurface } from "./CardBodySurface";
 import { CardLinksSection } from "./CardLinksSection";
 import { Section } from "./CardPanelSection";
@@ -72,6 +73,11 @@ export interface CardPanelProps {
   boards?: readonly Board[] | undefined;
   /** Every link this card has, grouped and derived by the host. */
   links: CardLinks;
+  /**
+   * What the Style tab edits: this card, or every entity in the selection. The host hands in the
+   * whole selection so one colour press reaches the frames and links beside the card.
+   */
+  styleTargets?: readonly StyleTarget[] | undefined;
   /** Field the panel was asked to reveal; it scrolls into view and takes focus. */
   focusedField?: string | null;
   /** The inspector drawer, or a plain surface that stacks every section. */
@@ -146,6 +152,7 @@ export function CardPanel({
   cards,
   boards = [],
   links,
+  styleTargets,
   focusedField = null,
   variant = "inspector",
   bodyEmpty = false,
@@ -440,7 +447,7 @@ export function CardPanel({
       kinds: ["card"],
       render: () => (
         <StyleTab
-          targets={[{ kind: "card", id: card.id }]}
+          targets={styleTargets ?? [{ kind: "card", id: card.id }]}
           canEdit={editLayout}
           typeName={typesById.get(card.primaryTypeId)?.name ?? null}
         />

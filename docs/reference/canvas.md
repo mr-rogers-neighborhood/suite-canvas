@@ -44,7 +44,7 @@ A section is a labelled region on one board, stored in `sections`:
 
 | Field | Meaning |
 | --- | --- |
-| `boardId`, `title`, `color` | identity and paint |
+| `boardId`, `title`, `color` | identity and paint; `color` is a palette id |
 | `x`, `y`, `width`, `height` | its rect in flow units |
 | `z` | order among overlapping sections; cards always paint above all of them |
 | `connectors` | link attachment points, same 0..1 fractions a card uses |
@@ -358,6 +358,24 @@ A folded section stops drawing its members: `board/useBoardNodes.ts` skips a pla
 folded, so the cards are absent rather than invisible. `sections/SectionLayer.tsx` paints the frame at header
 height through `paintRect`, and the stored rect is untouched so unfolding puts every member back. A folded
 section shows no resize handles, because there is nothing to resize.
+
+### Colour
+
+A section's `color` is a **palette id**, the same vocabulary a card's `style.swatch` and a link's use: the
+six ids `DEFAULT_PALETTE` ships (`sectionColors`) are the defaults, and a workspace palette that adds a
+swatch adds it for frames as well. One resolver, `sectionSwatch` in
+`sections/sectionPalette.ts`, answers in this order: the palette entry for the id, then the shipped
+`--section-*` token when the id is one of the six, then the theme's own section colour, which is what an
+unpainted frame and an id the palette no longer holds both get. It returns the outline and a wash that
+mixes the colour at 10%, so a frame stays a hint rather than a slab.
+
+Every reader goes through it: `SectionLayer`'s fill, selection stroke and header dot, the outline rail's
+dot in `board/BoardOutline.tsx`, the breadcrumb dot in `cards/CardPlacementSection.tsx`, the portal's
+contents dot in `panels/ContainerPanel.tsx`, and the miniature band in `canvas/portalMiniature.ts`. That
+is what makes editing the workspace palette repaint frames and cards together instead of leaving the
+frames behind. A board's own `color` is a wider string too, but the glyphs that paint it
+(`chrome/BoardGlyph.tsx`, `chrome/BoardSwitcher.tsx`) still know only the six, because boards are not
+selectable on the canvas and are a separate concern.
 
 ### Icons
 

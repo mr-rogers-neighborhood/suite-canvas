@@ -88,9 +88,14 @@ export function StyleTab({ targets, canEdit, workspace = null, typeName = null }
 
   // A link is one stroke rather than a box with four sides (ADR-0051 §1), so its
   // editor shows the line and hides what a line cannot have: a silhouette, a
-  // background, a text scale. A selection that mixes kinds has no common kind, and
-  // nothing is offered: a row that cannot reach every member is a row that lies.
+  // background, a text scale. A frame is the other way round: its colour is the whole
+  // choice, so only the colour row serves it. A selection that mixes kinds has no common
+  // kind, and nothing but the colour is offered: a row that cannot reach every member is a
+  // row that lies.
   const isLink = draft.kind === "edge";
+  const isFrame = draft.kind === "section";
+  /** A surface with a body: a card, or the type a card's default comes from. */
+  const hasBody = draft.kind === "card" || draft.kind === "type";
   /**
    * A swatch the palette no longer holds.
    *
@@ -100,8 +105,8 @@ export function StyleTab({ targets, canEdit, workspace = null, typeName = null }
    */
   const swatchMissing =
     current.swatch !== undefined && !palette.some((entry) => entry.id === current.swatch);
-  const hasShape = draft.kind !== null && !isLink;
-  const hasText = draft.kind !== null && !isLink;
+  const hasShape = hasBody;
+  const hasText = hasBody;
   const kind = draft.kind;
 
   /** A row reads Mixed when the selection disagrees about the key it edits. */
@@ -223,7 +228,7 @@ export function StyleTab({ targets, canEdit, workspace = null, typeName = null }
           data-testid="style-swatches"
           data-mixed={mixedKey("swatch") || mixedKey("surface") ? "true" : undefined}
         >
-          <span>{isLink ? "Colour" : "Fill"}</span>
+          <span>{isLink || isFrame ? "Colour" : "Fill"}</span>
           <div className="style-tab__swatches">
             <button
               type="button"
@@ -245,7 +250,7 @@ export function StyleTab({ targets, canEdit, workspace = null, typeName = null }
             </button>
             {/* A stroke with no colour is not a state, it is an invisible line, so
                   the "None" fill is offered only to a surface that has one. */}
-            {isLink ? null : (
+            {isLink || isFrame ? null : (
               <button
                 type="button"
                 className="style-swatch"
@@ -295,126 +300,130 @@ export function StyleTab({ targets, canEdit, workspace = null, typeName = null }
             could see. A colour someone can name is the palette, not a token. */}
       </section>
 
-      <section className="style-tab__group">
-        <h3 className="style-tab__heading">{isLink ? "Line" : "Edges"}</h3>
-        {isLink ? (
-          <>
-            <ChipRow
-              label="Style"
-              testId="style-line-paint"
-              mixed={mixedKey("sides")}
-              value={current.sides?.top?.paint ?? "solid"}
-              disabled={!canEdit}
-              options={PAINT_OPTIONS}
-              onSelect={(paint) => setLinePaint(paint ?? "solid")}
-            />
-            <label className="style-tab__row">
-              <span>Width</span>
-              <input
-                type="range"
-                data-testid="style-line-width"
-                min={1}
-                max={8}
-                step={0.5}
-                value={current.sides?.top?.width ?? 1.6}
+      {isFrame ? null : (
+        <section className="style-tab__group">
+          <h3 className="style-tab__heading">{isLink ? "Line" : "Edges"}</h3>
+          {isLink ? (
+            <>
+              <ChipRow
+                label="Style"
+                testId="style-line-paint"
+                mixed={mixedKey("sides")}
+                value={current.sides?.top?.paint ?? "solid"}
                 disabled={!canEdit}
-                onChange={(event) => {
-                  const width = Number(event.target.value);
+                options={PAINT_OPTIONS}
+                onSelect={(paint) => setLinePaint(paint ?? "solid")}
+              />
+              <label className="style-tab__row">
+                <span>Width</span>
+                <input
+                  type="range"
+                  data-testid="style-line-width"
+                  min={1}
+                  max={8}
+                  step={0.5}
+                  value={current.sides?.top?.width ?? 1.6}
+                  disabled={!canEdit}
+                  onChange={(event) => {
+                    const width = Number(event.target.value);
+                    const stroke = current.sides?.top;
+                    update({
+                      ...current,
+                      sides: {
+                        ...(current.sides ?? {}),
+                        top: { paint: stroke?.paint ?? "solid", ...stroke, width },
+                      },
+                    });
+                  }}
+                />
+                <span className="style-tab__value">
+                  {mixed.has("sides") ? "Mixed" : (current.sides?.top?.width ?? 1.6).toFixed(1)}
+                </span>
+              </label>
+              <ChipRow
+                label="Flow"
+                testId="style-line-flow"
+                mixed={mixedKey("sides")}
+                value={current.sides?.top?.flow ?? undefined}
+                disabled={!canEdit}
+                options={FLOW_OPTIONS}
+                onSelect={(flow) => {
                   const stroke = current.sides?.top;
                   update({
                     ...current,
                     sides: {
                       ...(current.sides ?? {}),
-                      top: { paint: stroke?.paint ?? "solid", ...stroke, width },
+                      top: { paint: stroke?.paint ?? "solid", ...stroke, flow },
                     },
                   });
                 }}
               />
-              <span className="style-tab__value">
-                {mixed.has("sides") ? "Mixed" : (current.sides?.top?.width ?? 1.6).toFixed(1)}
-              </span>
-            </label>
+            </>
+          ) : shaped ? (
             <ChipRow
-              label="Flow"
-              testId="style-line-flow"
-              mixed={mixedKey("sides")}
-              value={current.sides?.top?.flow ?? undefined}
-              disabled={!canEdit}
-              options={FLOW_OPTIONS}
-              onSelect={(flow) => {
-                const stroke = current.sides?.top;
-                update({
-                  ...current,
-                  sides: {
-                    ...(current.sides ?? {}),
-                    top: { paint: stroke?.paint ?? "solid", ...stroke, flow },
-                  },
-                });
-              }}
-            />
-          </>
-        ) : shaped ? (
-          <ChipRow
-            label="Outline"
-            testId="style-outline"
-            value={current.sides?.top?.paint ?? "solid"}
-            disabled={!canEdit}
-            options={PAINT_OPTIONS}
-            onSelect={(paint) => setOutline(paint ?? "solid")}
-          />
-        ) : (
-          styleSides.map((side) => (
-            <ChipRow
-              key={side}
-              label={SIDE_LABELS[side]}
-              testId={`style-side-${side}`}
-              mixed={mixedKey("sides")}
-              value={current.sides?.[side]?.paint ?? "solid"}
+              label="Outline"
+              testId="style-outline"
+              value={current.sides?.top?.paint ?? "solid"}
               disabled={!canEdit}
               options={PAINT_OPTIONS}
-              onSelect={(paint) => setSide(side, paint ?? "solid")}
+              onSelect={(paint) => setOutline(paint ?? "solid")}
             />
-          ))
-        )}
-      </section>
+          ) : (
+            styleSides.map((side) => (
+              <ChipRow
+                key={side}
+                label={SIDE_LABELS[side]}
+                testId={`style-side-${side}`}
+                mixed={mixedKey("sides")}
+                value={current.sides?.[side]?.paint ?? "solid"}
+                disabled={!canEdit}
+                options={PAINT_OPTIONS}
+                onSelect={(paint) => setSide(side, paint ?? "solid")}
+              />
+            ))
+          )}
+        </section>
+      )}
 
-      <section className="style-tab__group">
-        <h3 className="style-tab__heading">{hasText ? "Scale" : "Opacity"}</h3>
-        {hasText ? (
+      {isFrame ? null : (
+        <section className="style-tab__group">
+          <h3 className="style-tab__heading">{hasText ? "Scale" : "Opacity"}</h3>
+          {hasText ? (
+            <label className="style-tab__row">
+              <span>Text size</span>
+              <input
+                type="range"
+                data-testid="style-text-scale"
+                min={TEXT_SCALE_MIN}
+                max={TEXT_SCALE_MAX}
+                step={0.05}
+                value={sliderValue("textScale", 1)}
+                disabled={!canEdit}
+                onChange={(event) => update({ ...current, textScale: Number(event.target.value) })}
+              />
+              <span className="style-tab__value">
+                {mixedKey("textScale") ? "Mixed" : `${Math.round(resolved.textScale * 100)}%`}
+              </span>
+            </label>
+          ) : null}
           <label className="style-tab__row">
-            <span>Text size</span>
+            <span>Opacity</span>
             <input
               type="range"
-              data-testid="style-text-scale"
-              min={TEXT_SCALE_MIN}
-              max={TEXT_SCALE_MAX}
+              data-testid="style-opacity"
+              // The floor is a constant, not a choice: a surface its owner cannot see
+              // is one a collaborator cannot see either (ADR-0051 §5).
+              min={resolved.opacity < 0.25 ? resolved.opacity : 0.25}
+              max={1}
               step={0.05}
-              value={sliderValue("textScale", 1)}
+              value={sliderValue("opacity", 1)}
               disabled={!canEdit}
-              onChange={(event) => update({ ...current, textScale: Number(event.target.value) })}
+              onChange={(event) => update({ ...current, opacity: Number(event.target.value) })}
             />
-            <span className="style-tab__value">
-              {mixedKey("textScale") ? "Mixed" : `${Math.round(resolved.textScale * 100)}%`}
-            </span>
+            <span className="style-tab__value">{Math.round(resolved.opacity * 100)}%</span>
           </label>
-        ) : null}
-        <label className="style-tab__row">
-          <span>Opacity</span>
-          <input
-            type="range"
-            data-testid="style-opacity"
-            // The floor is a constant, not a choice: a surface its owner cannot see
-            // is one a collaborator cannot see either (ADR-0051 §5).
-            min={resolved.opacity < 0.25 ? resolved.opacity : 0.25}
-            max={1}
-            step={0.05}
-            value={sliderValue("opacity", 1)}
-            disabled={!canEdit}
-            onChange={(event) => update({ ...current, opacity: Number(event.target.value) })}
-          />
-          <span className="style-tab__value">{Math.round(resolved.opacity * 100)}%</span>
-        </label>
-      </section>
+        </section>
+      )}
 
       {kind === "card" && typeId !== null ? (
         <button

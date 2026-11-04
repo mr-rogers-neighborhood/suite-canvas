@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { setEntityIcon } from "../canvas/entityIcon";
 import { useNavigateTarget } from "../canvas/navigateTarget";
+import { primaryNodeIdFor, selectionSubject, styleTargetsFor } from "../entities/subject";
 import { ContainerPanel } from "../panels/ContainerPanel";
 import { LinkInspector } from "../panels/LinkInspector";
 import { useContainerPanelModel } from "../panels/useContainerPanelModel";
@@ -9,7 +10,9 @@ import { isShareSession } from "../session/session";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { CardInspector } from "./CardInspector";
+import { portalTargetId } from "./portal";
 import { useCardPanelModel } from "./useCardPanelModel";
 
 /**
@@ -30,7 +33,36 @@ export function CardInspectorHost() {
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const canManageSchema = useUiStore((state) => state.canManageSchema);
 
-  const model = useCardPanelModel(inspectorNodeId, "panel");
+  /**
+   * The drawer describes the selection, so it opens on a marquee as well as on a click: the
+   * primary card is the last one selected, the same `.at(-1)` rule the container panel uses for
+   * a frame. A click sets `inspectorNodeId`, which still wins — the card the reader pressed is
+   * the one they meant.
+   */
+  const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
+  const selectedSectionIds = useUiStore((state) => state.selectedSectionIds);
+  const selectedEdgeIds = useUiStore((state) => state.selectedEdgeIds);
+  const snapshot = useWorkspaceSnapshot();
+  const primaryNodeId = primaryNodeIdFor(inspectorNodeId, selectedNodeIds);
+  const subject = useMemo(
+    () =>
+      selectionSubject({
+        nodeIds: selectedNodeIds,
+        sectionIds: selectedSectionIds,
+        edgeIds: selectedEdgeIds,
+        portalIds: new Set(
+          selectedNodeIds.filter(
+            (id) => portalTargetId(snapshot.cards.find((card) => card.id === id)) !== null,
+          ),
+        ),
+      }),
+    [selectedNodeIds, selectedSectionIds, selectedEdgeIds, snapshot.cards],
+  );
+  // One list for one editor: every card, link and frame in the selection, so the Style tab
+  // colours the whole of it from the row a single card already uses.
+  const styleTargets = useMemo(() => styleTargetsFor(subject), [subject]);
+
+  const model = useCardPanelModel(primaryNodeId, "panel");
   const container = useContainerPanelModel();
   const workspace = useCanvasStore((state) => state.workspace);
   const activeBoardId = useUiStore((state) => state.activeBoardId);
@@ -39,7 +71,6 @@ export function CardInspectorHost() {
   const focusSection = useUiStore((state) => state.focusSection);
 
   const link = useLinkInspectorModel();
-  const selectedEdgeIds = useUiStore((state) => state.selectedEdgeIds);
   // Quiet is the mode that says "no drawer". A link keeps its selection there — a selected
   // edge is what Delete acts on — but the panel that describes it stays shut, exactly as it
   // does for a card.
@@ -52,15 +83,16 @@ export function CardInspectorHost() {
   const linking = useUiStore((state) => state.linkingInProgress);
 
   /**
-   * Escape closes the panel before anything under it reacts, and leaves the card
-   * selected — its own × does the same, so the key and the button agree.
+   * Escape closes the panel before anything under it reacts, and its own × does the same, so the
+   * key and the button agree. The drawer describes the selection now, so closing it also drops
+   * the selection — leaving the ids behind would reopen the panel on the next render.
    *
    * While *any* card is being edited the panel steps out of the layer stack: an
    * editor owns Escape, and it is the innermost thing on screen whichever surface
    * it is on. That is the canvas card body as much as a field in the panel, which
    * is why the test is `editingNodeId` and not "editing inside the panel".
    */
-  useEscapeLayer(closeInspector, inspectorNodeId !== null && editingNodeId === null);
+  useEscapeLayer(closeInspector, !subject.isEmpty && editingNodeId === null);
   // A container that vanished (deleted in another tab, trashed) closes the drawer
   // rather than leaving a panel describing something that is not there.
   /**
@@ -99,13 +131,21 @@ export function CardInspectorHost() {
   }, [inspectorNodeId]);
 
   // One link, one panel. A link is selected by the edge selection it already has,
-  // so the drawer needs no second open flag for it.
-  if (link && selectedEdgeIds.length === 1 && interactionMode === "inspect") {
+  // so the drawer needs no second open flag for it. A selection that holds a card keeps the
+  // card's panel: the card is the more specific subject, and its Style tab reaches the link.
+  if (
+    link &&
+    selectedEdgeIds.length === 1 &&
+    subject.counts.cards === 0 &&
+    interactionMode === "inspect"
+  ) {
     const edgeId = link.edge.id;
     return (
       <LinkInspector
         model={link}
-        onClose={() => setSelectedEdgeIds([])}
+        styleTargets={styleTargets}
+        // The same dismissal rule as the other two panels: closing drops what the panel described.
+        onClose={closeInspector}
         onNavigateEnd={(end) => {
           navigateTo({ kind: end.kind, id: end.id });
         }}
@@ -131,11 +171,14 @@ export function CardInspectorHost() {
 
   // Containers next: they share the drawer, and only one of the three can be open. A frame's panel
   // follows the selection, so quiet mode is the only thing that keeps it shut — the same rule a link
-  // answers to, and the reason there is no second "is the container panel open" flag.
-  if (container && interactionMode === "inspect") {
+  // answers to, and the reason there is no second "is the container panel open" flag. A box that
+  // caught cards inside a frame leaves the card panel where it is, because the frame is a ring
+  // around them rather than the subject.
+  if (container && subject.counts.cards === 0 && interactionMode === "inspect") {
     return (
       <ContainerPanel
         model={container}
+        styleTargets={styleTargets}
         onClose={() => useUiStore.getState().closeInspector()}
         onOpenBoard={(cardId, boardId) => requestPortalOpen(cardId, boardId)}
         onLocate={() => {
@@ -144,11 +187,6 @@ export function CardInspectorHost() {
             return;
           }
           if (container.section) focusSection(container.section.id, container.section.boardId);
-        }}
-        // A portal's colour is its card's colour, edited in Style. This row is the
-        // section's own paint, so there is one control per record.
-        onSetColor={(color) => {
-          if (container.kind === "section") workspace.setSectionColor(container.id, color);
         }}
         // One writer: a portal's icon is its own card's, and a section's is the section's.
         onSetIcon={(icon) => {
@@ -185,7 +223,9 @@ export function CardInspectorHost() {
     );
   }
 
-  if (!model) return null;
+  // Quiet mode means no drawer, the rule the link and the container already answer to. A card
+  // whose panel follows the selection would otherwise open on every marquee in a reading mode.
+  if (!model || interactionMode !== "inspect") return null;
 
   const panelEditing =
     editingNodeId === model.card.id && editingSurface === "panel" ? editingField : null;
@@ -193,6 +233,7 @@ export function CardInspectorHost() {
   return (
     <CardInspector
       card={model.card}
+      styleTargets={styleTargets}
       title={model.title}
       types={model.types}
       tags={model.tags}

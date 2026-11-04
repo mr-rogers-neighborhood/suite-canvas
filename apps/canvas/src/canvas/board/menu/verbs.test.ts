@@ -14,6 +14,8 @@ function makeContext(overrides: Record<string, unknown> = {}): BoardMenuContext 
   return {
     menu: { kind: "node", nodeId: "card-a", x: 10, y: 20, flowPosition: { x: 0, y: 0 } },
     selectedNodeIds: [],
+    selectedSectionIds: [],
+    selectedEdgeIds: [],
     canCreateContent: true,
     canManageSchema: false,
     canEditLayout: true,
@@ -27,7 +29,7 @@ function makeContext(overrides: Record<string, unknown> = {}): BoardMenuContext 
     sectionMembershipMap: new Map(),
     store: { getState: () => ({ addSelectedNodes: vi.fn() }) },
     workspace: { getEdge: () => undefined, getSection: () => ({ shrinkToFit: true }) },
-    setSwatches: vi.fn(),
+    setSelectionColour: vi.fn(),
     openAppearance: vi.fn(),
     duplicateCards: vi.fn(),
     createSectionAt: vi.fn(),
@@ -83,10 +85,10 @@ describe("the entity menu", () => {
   });
 
   it("colors every selected card from the one palette row", () => {
-    const setSwatches = vi.fn();
+    const setSelectionColour = vi.fn();
     const items = buildVerbMenu(
       makeContext({
-        setSwatches,
+        setSelectionColour,
         selectedNodeIds: ["card-a", "card-b"],
         palette: [{ id: "green", name: "Green", light: "#0f0", dark: "#0a0" }],
       }),
@@ -96,7 +98,87 @@ describe("the entity menu", () => {
       ?.swatches?.find((item) => item.label === "Green")
       ?.onSelect?.();
 
-    expect(setSwatches).toHaveBeenCalledWith(["card-a", "card-b"], "green");
+    expect(setSelectionColour).toHaveBeenCalledWith("green", {
+      nodeIds: ["card-a", "card-b"],
+      edgeIds: [],
+      sectionIds: [],
+    });
+  });
+
+  it("colours the whole selection when the press lands inside a mixed one", () => {
+    const setSelectionColour = vi.fn();
+    const items = buildVerbMenu(
+      makeContext({
+        setSelectionColour,
+        menu: { kind: "section", sectionId: "section-1", x: 0, y: 0 },
+        selectedNodeIds: ["card-a"],
+        selectedSectionIds: ["section-1"],
+        selectedEdgeIds: ["edge-a"],
+        palette: [{ id: "green", name: "Green", light: "#0f0", dark: "#0a0" }],
+      }),
+    );
+
+    byLabel(items, "Colour")
+      ?.swatches?.find((item) => item.label === "Green")
+      ?.onSelect?.();
+
+    // One press, every kind: the target carries the whole selection and the command writes each
+    // kind in its own field.
+    expect(setSelectionColour).toHaveBeenCalledWith("green", {
+      nodeIds: ["card-a"],
+      edgeIds: ["edge-a"],
+      sectionIds: ["section-1"],
+    });
+  });
+
+  it("colours only what it landed on when the press is outside the selection", () => {
+    const setSelectionColour = vi.fn();
+    const items = buildVerbMenu(
+      makeContext({
+        setSelectionColour,
+        menu: {
+          kind: "node",
+          nodeId: "card-b",
+          x: 0,
+          y: 0,
+          flowPosition: { x: 0, y: 0 },
+        },
+        selectedNodeIds: ["card-a"],
+        palette: [{ id: "green", name: "Green", light: "#0f0", dark: "#0a0" }],
+      }),
+    );
+
+    byLabel(items, "Colour")
+      ?.swatches?.find((item) => item.label === "Green")
+      ?.onSelect?.();
+
+    // The press names its own target: a right-click on an unselected card must not restyle the
+    // selection it is not part of.
+    expect(setSelectionColour).toHaveBeenCalledWith("green", {
+      nodeIds: ["card-b"],
+      edgeIds: [],
+      sectionIds: [],
+    });
+  });
+
+  it("offers Default to clear, for a frame as much as a card", () => {
+    const setSelectionColour = vi.fn();
+    const items = buildVerbMenu(
+      makeContext({
+        setSelectionColour,
+        menu: { kind: "section", sectionId: "section-1", x: 0, y: 0 },
+      }),
+    );
+
+    byLabel(items, "Colour")
+      ?.swatches?.find((item) => item.label === "Default")
+      ?.onSelect?.();
+
+    expect(setSelectionColour).toHaveBeenCalledWith(null, {
+      nodeIds: [],
+      edgeIds: [],
+      sectionIds: ["section-1"],
+    });
   });
 
   it("gives a section the shared colour row and none of the card verbs", () => {
@@ -246,7 +328,12 @@ describe("the create group", () => {
    */
   it("names a verb from its own first item, so a surface that is not a menu can offer it", () => {
     const ctx = makeContext({ selectedNodeIds: ["card-a", "card-b"] });
-    const target = { kind: "card" as const, ids: ["card-a", "card-b"], anchor: "card-a" };
+    const target = {
+      kind: "card" as const,
+      ids: ["card-a", "card-b"],
+      idsByKind: { cards: ["card-a", "card-b"], edges: [], sections: [] },
+      anchor: "card-a",
+    };
     const duplicate = ENTITY_VERBS.find((verb) => verb.id === "duplicate");
     expect(duplicate).toBeDefined();
     if (!duplicate) return;

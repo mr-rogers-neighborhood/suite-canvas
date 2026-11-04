@@ -12,11 +12,14 @@ describe("inspector capabilities", () => {
     expect(tabLabel("content", "card", { tutorial: true })).toBe("Steps");
   });
 
-  it("gives a container the same three leaves, with nothing of its own to style a section", () => {
+  it("gives a container the same three leaves, and a section a colour to bring to Style", () => {
     expect(tabsFor(["portal"]).map((tab) => tab.id)).toEqual(["details", "content", "style"]);
-    expect(tabsFor(["section"]).map((tab) => tab.id)).toEqual(["details", "content"]);
+    // A frame's colour is a palette id like a card's, so it shares the Style tab; the rows it
+    // cannot take (shape, sides, scale) are what it does not get.
+    expect(tabsFor(["section"]).map((tab) => tab.id)).toEqual(["details", "content", "style"]);
     expect(tabLabel("content", "portal")).toBe("Contents");
-    expect(hasTab(["section"], "style")).toBe(false);
+    expect(hasTab(["section"], "style")).toBe(true);
+    expect(sectionsFor("style", ["section"]).map((section) => section.id)).toEqual(["style"]);
   });
 
   it("gives a link Details and Style, and a connector none", () => {
@@ -32,7 +35,11 @@ describe("inspector capabilities", () => {
       "content",
       "style",
     ]);
-    expect(tabsFor(["card", "section"]).map((tab) => tab.id)).toEqual(["details", "content"]);
+    expect(tabsFor(["card", "section"]).map((tab) => tab.id)).toEqual([
+      "details",
+      "content",
+      "style",
+    ]);
     expect(tabsFor([])).toEqual([]);
   });
 

@@ -91,7 +91,6 @@ const meta = {
   args: {
     onClose: () => {},
     onLocate: () => {},
-    onSetColor: () => {},
     workspace,
   },
   decorators: [

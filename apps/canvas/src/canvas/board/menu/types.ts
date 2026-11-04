@@ -1,5 +1,6 @@
 import type { LayerAction } from "@suite/graph";
 import type { ContextMenuItem } from "../../../dialogs/ContextMenu";
+import type { ColourSelection } from "../../../entities/colour";
 import type { ContextMenuState } from "../../../store/useUiStore";
 import type { AlignEdge, DistributeAxis } from "../../interactions/arrangeCommand";
 import type { useBoardProjection } from "../useBoardProjection";
@@ -14,6 +15,8 @@ export interface BoardMenuContext {
   cardsById: ReturnType<typeof useBoardProjection>["cardsById"];
   sectionMembershipMap: Map<string, string>;
   selectedNodeIds: string[];
+  selectedSectionIds: string[];
+  selectedEdgeIds: string[];
   store: ReturnType<typeof useBoardUi>["store"];
   mode: ReturnType<typeof useBoardUi>["mode"];
   setMode: ReturnType<typeof useBoardUi>["setMode"];
@@ -47,8 +50,8 @@ export interface BoardMenuContext {
   pasteAt: (point: { x: number; y: number }) => void;
   /** Whether anything is on the clipboard: Paste has nothing to offer until something is. */
   clipboardReady: boolean;
-  /** One colour across the cards a menu acts on. */
-  setSwatches: (ids: readonly string[], swatch: string | null) => void;
+  /** One colour across the entities a press named, each kind in its own field. */
+  setSelectionColour: (swatch: string | null, selection: ColourSelection) => void;
   moveCardToBoard: (cardId: string, boardId: string) => void;
   alsoPlaceCardOnBoard: (cardId: string, boardId: string) => void;
   otherBoards: (boardId: string | null) => { id: string; name: string }[];

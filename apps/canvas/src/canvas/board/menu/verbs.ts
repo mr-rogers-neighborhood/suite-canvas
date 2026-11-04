@@ -1,11 +1,13 @@
-import { sectionColors } from "@suite/graph";
 import { portalTargetId } from "../../../cards/portal";
 import type { ContextMenuItem } from "../../../dialogs/ContextMenu";
 import type { EntityKind } from "../../../entities/kind";
 import { viewsEnabled } from "../../../views/availability";
 import { selectionSummary } from "../../interactions/multiSelect";
-import { SECTION_STROKE } from "../../sections/sectionPalette";
+import { type MenuTarget, resolveMenuTarget } from "./target";
 import type { BoardMenuContext } from "./types";
+
+export type { MenuTarget, SelectionGroups } from "./target";
+export { resolveMenuTarget } from "./target";
 
 /**
  * One menu, described as rows.
@@ -50,16 +52,6 @@ const GROUP_ORDER: readonly MenuGroup[] = [
   "danger",
 ];
 
-export interface MenuTarget {
-  kind: EntityKind;
-  /** What the menu acts on: one thing, or the whole selection a press landed in. */
-  ids: readonly string[];
-  /** The pressed thing, when there is one. */
-  anchor?: string | undefined;
-  /** A section connector's section; card connectors name their card instead. */
-  sectionId?: string | undefined;
-}
-
 /**
  * One thing that can be done to something, described once.
  *
@@ -86,50 +78,33 @@ const colourRow: EntityVerb = {
   kinds: ["card", "portal", "section", "edge"],
   render: (ctx, target) => {
     if (!ctx.canEditLayout) return [];
-    // A section's palette is its own six names; a card and a link wear a theme swatch.
-    if (target.kind === "section") {
-      const sectionId = target.ids[0];
-      if (!sectionId) return [];
-      const current = ctx.workspace.getSection(sectionId)?.color;
-      return [
-        {
-          label: "Colour",
-          swatches: sectionColors.map((color) => ({
-            label: color.charAt(0).toUpperCase() + color.slice(1),
-            swatch: { light: SECTION_STROKE[color], dark: SECTION_STROKE[color] },
-            swatchSelected: current === color,
-            onSelect: () => ctx.workspace.setSectionColor(sectionId, color),
-          })),
-        },
-      ];
-    }
-    if (target.kind === "edge") {
-      const edgeId = target.ids[0];
-      if (!edgeId) return [];
-      const style = ctx.workspace.getEdge(edgeId)?.style;
-      return [
-        {
-          label: "Colour",
-          swatches: swatches(ctx, style?.swatch, (swatch) =>
-            ctx.workspace.setEdgeStyle(edgeId, {
-              ...(style ?? {}),
-              ...(swatch === null ? { swatch: undefined } : { swatch }),
-            }),
-          ),
-        },
-      ];
-    }
-    const first = target.ids[0];
-    if (!first) return [];
-    const style = ctx.cardsById.get(first)?.style;
+    // One strip for every kind: a section's colour is a palette id now, so the six-name list it
+    // used to draw here was a second vocabulary for the same field.
     return [
       {
         label: "Colour",
-        swatches: swatches(ctx, style?.swatch, (swatch) => ctx.setSwatches(target.ids, swatch)),
+        swatches: swatches(ctx, currentSwatch(ctx, target), (swatch) =>
+          // The target's groups, not the store's selection: a press outside the selection
+          // colours what it landed on, which is the rule every other verb follows.
+          ctx.setSelectionColour(swatch, {
+            nodeIds: target.idsByKind.cards,
+            edgeIds: target.idsByKind.edges,
+            sectionIds: target.idsByKind.sections,
+          }),
+        ),
       },
     ];
   },
 };
+
+/** The colour in force, read from what the press landed on so the strip can mark it. */
+function currentSwatch(ctx: BoardMenuContext, target: MenuTarget): string | undefined {
+  const id = target.anchor ?? target.ids[0];
+  if (id === undefined) return undefined;
+  if (target.kind === "edge") return ctx.workspace.getEdge(id)?.style?.swatch;
+  if (target.kind === "section") return ctx.workspace.getSection(id)?.color;
+  return ctx.cardsById.get(id)?.style?.swatch;
+}
 
 const appearanceRow: EntityVerb = {
   id: "appearance",
@@ -800,40 +775,6 @@ export function verbsFor(kinds: readonly EntityKind[]): EntityVerb[] {
     .map((row, index) => ({ row, index }))
     .sort((a, b) => order(a.row.group) - order(b.row.group) || a.index - b.index)
     .map((entry) => entry.row);
-}
-
-/** What a right-click landed on, or null when it landed on nothing an entity owns. */
-export function resolveMenuTarget(ctx: BoardMenuContext): MenuTarget | null {
-  const menu = ctx.menu;
-  if (menu.kind === "canvas") return { kind: "canvas", ids: [] };
-  if (menu.kind === "section") {
-    return menu.sectionId ? { kind: "section", ids: [menu.sectionId] } : null;
-  }
-  if (menu.kind === "edge") {
-    return menu.edgeId ? { kind: "edge", ids: [menu.edgeId] } : null;
-  }
-  if (menu.kind === "connector") {
-    if (!menu.connectorId) return null;
-    if (menu.sectionId) {
-      return {
-        kind: "connector",
-        ids: [menu.connectorId],
-        anchor: menu.connectorId,
-        sectionId: menu.sectionId,
-      };
-    }
-    if (!menu.nodeId) return null;
-    return { kind: "connector", ids: [menu.connectorId], anchor: menu.nodeId };
-  }
-  const nodeId = menu.nodeId;
-  if (!nodeId) return null;
-  const summary = selectionSummary(ctx.selectedNodeIds);
-  const inSelection = summary.multiple && summary.ids.includes(nodeId);
-  return {
-    kind: portalTargetId(ctx.cardsById.get(nodeId)) ? "portal" : "card",
-    ids: inSelection ? summary.ids : [nodeId],
-    anchor: nodeId,
-  };
 }
 
 /** The whole menu for whatever was right-clicked. */

@@ -5,6 +5,7 @@ import { type InspectorTabId, tabLabel, tabsFor } from "../inspector/capabilitie
 import { EntityPanel } from "../inspector/EntityPanel";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { StyleTab } from "../styles/surface/StyleTab";
+import type { StyleTarget } from "../styles/surface/useStyleDraft";
 import { describeDot, type LinkEndView, type LinkInspectorModel } from "./useLinkInspectorModel";
 
 export interface LinkInspectorProps {
@@ -24,6 +25,11 @@ export interface LinkInspectorProps {
   onSetDescription: (description: string) => void;
   /** 0..1 along the line; `null` puts the label back at the middle. */
   onSetLabelOffset: (offset: number | null) => void;
+  /**
+   * What the Style tab edits: this link, or every entity in the selection. The host hands in the
+   * whole selection so one colour press reaches the cards and frames beside the link.
+   */
+  styleTargets?: readonly StyleTarget[] | undefined;
 }
 
 /** Every value of the stored `path` enum, `avoid` included (ADR-0052 §6). */
@@ -60,6 +66,7 @@ export function LinkInspector({
   onDelete,
   onSetDescription,
   onSetLabelOffset,
+  styleTargets,
 }: LinkInspectorProps) {
   const { canEdit, canManageStructure } = model;
   const edgeId = model.edge.id;
@@ -413,7 +420,10 @@ export function LinkInspector({
               <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
                 Style
               </h3>
-              <StyleTab targets={[{ kind: "edge", id: edgeId }]} canEdit={canEdit} />
+              <StyleTab
+                targets={styleTargets ?? [{ kind: "edge", id: edgeId }]}
+                canEdit={canEdit}
+              />
             </section>
           </>
         ) : null}

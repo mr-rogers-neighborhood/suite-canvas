@@ -8,6 +8,7 @@ import {
 export interface CardWhereSection {
   id: string;
   name: string;
+  /** The section's palette id; the row resolves it for the mode on screen. */
   color?: string;
 }
 
@@ -52,7 +53,7 @@ export function sectionPath(match: Section, sections: Section[]): CardWhereSecti
       .map((section) => ({
         id: section.id,
         name: section.title || "Untitled section",
-        ...(section.color ? { color: `var(--section-${section.color})` } : {}),
+        ...(section.color ? { color: section.color } : {}),
       }))
   );
 }

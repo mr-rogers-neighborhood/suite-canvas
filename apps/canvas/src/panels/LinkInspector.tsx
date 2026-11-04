@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { isolatedEdgeId, setIsolatedEdge, useIsolatedEdgeId } from "../canvas/routeIsolation";
 import { type InspectorTabId, tabLabel, tabsFor } from "../inspector/capabilities";
 import { EntityPanel } from "../inspector/EntityPanel";
+import { inspectorPanelIds } from "../inspector/InspectorTabs";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { StyleTab } from "../styles/surface/StyleTab";
 import type { StyleTarget } from "../styles/surface/useStyleDraft";
@@ -30,7 +31,12 @@ export interface LinkInspectorProps {
    * whole selection so one colour press reaches the cards and frames beside the link.
    */
   styleTargets?: readonly StyleTarget[] | undefined;
+  /** What the selection holds, when it holds more than this link. */
+  selectionSummary?: string | null | undefined;
 }
+
+/** This panel's tab and tabpanel ids, shared with the strip it renders. */
+const LINK_PANEL_IDS = inspectorPanelIds("link");
 
 /** Every value of the stored `path` enum, `avoid` included (ADR-0052 §6). */
 const PATHS: Array<{ value: GraphEdge["path"]; label: string }> = [
@@ -67,6 +73,7 @@ export function LinkInspector({
   onSetDescription,
   onSetLabelOffset,
   styleTargets,
+  selectionSummary = null,
 }: LinkInspectorProps) {
   const { canEdit, canManageStructure } = model;
   const edgeId = model.edge.id;
@@ -143,7 +150,12 @@ export function LinkInspector({
           {model.source.title} {"\u2192"} {model.target.title}
         </>
       }
-      subtitle={model.bidirectional ? "Link \u00b7 two-way" : "Link"}
+      subtitle={
+        <>
+          {model.bidirectional ? "Link \u00b7 two-way" : "Link"}
+          {selectionSummary ? ` \u00b7 ${selectionSummary}` : ""}
+        </>
+      }
       onClose={onClose}
       closeTestId="link-close"
       tabs={tabs}
@@ -153,7 +165,13 @@ export function LinkInspector({
       tabsTestId="link-panel-tabs"
       tabTestId={(id) => `link-tab-${id}`}
     >
-      <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5">
+      <div
+        className="min-h-0 flex-1 overflow-auto px-3 py-2.5"
+        role="tabpanel"
+        id={LINK_PANEL_IDS[tab].panel}
+        aria-labelledby={LINK_PANEL_IDS[tab].tab}
+        data-testid={`link-${tab}`}
+      >
         {/* The two ends: what they are, which dot holds the link, and a way there. */}
         {tab === "details"
           ? (["source", "target"] as const).map((end) => {

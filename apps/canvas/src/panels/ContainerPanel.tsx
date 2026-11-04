@@ -40,6 +40,8 @@ export interface ContainerPanelProps {
    * the whole selection so one colour press reaches the cards and links beside the frame.
    */
   styleTargets?: readonly StyleTarget[] | undefined;
+  /** What the selection holds, when it holds more than this container. */
+  selectionSummary?: string | null | undefined;
   /** Defaults to the live document in the canvas store; tests inject their own. */
   workspace?: WorkspaceDocument | null;
   /** Every tag in the workspace; defaults to the live snapshot. */
@@ -69,6 +71,7 @@ export function ContainerPanel({
   onRetarget,
   onRemove,
   styleTargets,
+  selectionSummary = null,
   workspace: workspaceProp = null,
   tags: tagsProp,
 }: ContainerPanelProps) {
@@ -493,6 +496,7 @@ export function ContainerPanel({
           {!portal
             ? ` \u00b7 ${model.members.length} card${model.members.length === 1 ? "" : "s"}`
             : ""}
+          {selectionSummary ? ` \u00b7 ${selectionSummary}` : ""}
         </>
       }
       onClose={onClose}

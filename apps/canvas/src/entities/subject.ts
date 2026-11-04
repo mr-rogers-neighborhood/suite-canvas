@@ -77,6 +77,23 @@ export function primaryNodeIdFor(
   return inspectorNodeId ?? selectedNodeIds.at(-1) ?? null;
 }
 
+/**
+ * What the selection holds, in the panel's words: "3 cards · 2 sections · 1 link".
+ *
+ * A colour press reaches all of it, so the drawer says how much "it" is. One entity is its own
+ * subject and needs no count; an empty selection is nothing to describe.
+ */
+export function selectionSummaryText(counts: SubjectCounts): string | null {
+  const parts: string[] = [];
+  const add = (n: number, one: string, many: string) => {
+    if (n > 0) parts.push(`${n} ${n === 1 ? one : many}`);
+  };
+  add(counts.cards, "card", "cards");
+  add(counts.sections, "section", "sections");
+  add(counts.links, "link", "links");
+  return parts.length > 1 ? parts.join(" \u00b7 ") : null;
+}
+
 /** A thing the style editor can write: a card, a link or a frame. */
 export interface StyleTargetLike {
   kind: "card" | "edge" | "section";

@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef } from "react";
 import { setEntityIcon } from "../canvas/entityIcon";
 import { useNavigateTarget } from "../canvas/navigateTarget";
-import { primaryNodeIdFor, selectionSubject, styleTargetsFor } from "../entities/subject";
+import {
+  primaryNodeIdFor,
+  selectionSubject,
+  selectionSummaryText,
+  styleTargetsFor,
+} from "../entities/subject";
 import { ContainerPanel } from "../panels/ContainerPanel";
 import { LinkInspector } from "../panels/LinkInspector";
 import { useContainerPanelModel } from "../panels/useContainerPanelModel";
@@ -61,6 +66,8 @@ export function CardInspectorHost() {
   // One list for one editor: every card, link and frame in the selection, so the Style tab
   // colours the whole of it from the row a single card already uses.
   const styleTargets = useMemo(() => styleTargetsFor(subject), [subject]);
+  // What a colour press will reach, said once above the Style tab of every panel.
+  const selectionSummary = useMemo(() => selectionSummaryText(subject.counts), [subject]);
 
   const model = useCardPanelModel(primaryNodeId, "panel");
   const container = useContainerPanelModel();
@@ -144,6 +151,7 @@ export function CardInspectorHost() {
       <LinkInspector
         model={link}
         styleTargets={styleTargets}
+        selectionSummary={selectionSummary}
         // The same dismissal rule as the other two panels: closing drops what the panel described.
         onClose={closeInspector}
         onNavigateEnd={(end) => {
@@ -179,6 +187,7 @@ export function CardInspectorHost() {
       <ContainerPanel
         model={container}
         styleTargets={styleTargets}
+        selectionSummary={selectionSummary}
         onClose={() => useUiStore.getState().closeInspector()}
         onOpenBoard={(cardId, boardId) => requestPortalOpen(cardId, boardId)}
         onLocate={() => {
@@ -234,6 +243,7 @@ export function CardInspectorHost() {
     <CardInspector
       card={model.card}
       styleTargets={styleTargets}
+      selectionSummary={selectionSummary}
       title={model.title}
       types={model.types}
       tags={model.tags}

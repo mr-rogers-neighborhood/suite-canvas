@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   primaryNodeIdFor,
   selectionSubject,
+  selectionSummaryText,
   styleTargetsFor,
   subjectKindsForTables,
 } from "./subject";
@@ -81,5 +82,26 @@ describe("primaryNodeIdFor", () => {
 
   it("is nothing when there is no press and nothing selected", () => {
     expect(primaryNodeIdFor(null, [])).toBeNull();
+  });
+});
+
+describe("selectionSummaryText", () => {
+  it("names every kind of a mixed selection", () => {
+    expect(selectionSummaryText({ cards: 3, sections: 2, links: 1 })).toBe(
+      "3 cards \u00b7 2 sections \u00b7 1 link",
+    );
+  });
+
+  it("is quiet when the selection is one thing, which needs no count", () => {
+    expect(selectionSummaryText({ cards: 1, sections: 0, links: 0 })).toBeNull();
+    expect(selectionSummaryText({ cards: 0, sections: 0, links: 1 })).toBeNull();
+    expect(selectionSummaryText({ cards: 0, sections: 0, links: 0 })).toBeNull();
+  });
+
+  it("counts a kind on its own once another kind is present", () => {
+    expect(selectionSummaryText({ cards: 4, sections: 0, links: 0 })).toBeNull();
+    expect(selectionSummaryText({ cards: 4, sections: 1, links: 0 })).toBe(
+      "4 cards \u00b7 1 section",
+    );
   });
 });

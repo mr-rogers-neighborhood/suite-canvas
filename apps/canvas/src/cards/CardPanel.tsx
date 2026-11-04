@@ -78,6 +78,8 @@ export interface CardPanelProps {
    * whole selection so one colour press reaches the frames and links beside the card.
    */
   styleTargets?: readonly StyleTarget[] | undefined;
+  /** What the selection holds, when it holds more than this card, said above the Style tab. */
+  selectionSummary?: string | null | undefined;
   /** Field the panel was asked to reveal; it scrolls into view and takes focus. */
   focusedField?: string | null;
   /** The inspector drawer, or a plain surface that stacks every section. */
@@ -153,6 +155,7 @@ export function CardPanel({
   boards = [],
   links,
   styleTargets,
+  selectionSummary = null,
   focusedField = null,
   variant = "inspector",
   bodyEmpty = false,
@@ -446,11 +449,19 @@ export function CardPanel({
       tab: "style",
       kinds: ["card"],
       render: () => (
-        <StyleTab
-          targets={styleTargets ?? [{ kind: "card", id: card.id }]}
-          canEdit={editLayout}
-          typeName={typesById.get(card.primaryTypeId)?.name ?? null}
-        />
+        <>
+          {selectionSummary ? (
+            <p
+              className="style-tab__hint"
+              data-testid="style-selection-summary"
+            >{`Colours every selected thing: ${selectionSummary}`}</p>
+          ) : null}
+          <StyleTab
+            targets={styleTargets ?? [{ kind: "card", id: card.id }]}
+            canEdit={editLayout}
+            typeName={typesById.get(card.primaryTypeId)?.name ?? null}
+          />
+        </>
       ),
     },
   ];

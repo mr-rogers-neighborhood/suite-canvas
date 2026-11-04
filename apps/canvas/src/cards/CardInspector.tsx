@@ -35,6 +35,8 @@ export interface CardInspectorProps {
   links: CardLinks;
   /** Every entity in the selection, so the Style tab colours more than this card. */
   styleTargets?: readonly StyleTarget[] | undefined;
+  /** What the selection holds, when it holds more than this card. */
+  selectionSummary?: string | null | undefined;
   /** Field to reveal, when a link asked for one. */
   focusedField?: string | null;
   /** Whether the body has no text yet; a blank card opens on Content. */
@@ -144,6 +146,7 @@ export function CardInspector({
   cards,
   links,
   styleTargets,
+  selectionSummary = null,
   linkCount,
   editing,
   cardDoc,
@@ -255,6 +258,9 @@ export function CardInspector({
                 ? "In the inbox"
                 : `On ${where.entries.length} board${where.entries.length === 1 ? "" : "s"}`}
             </span>
+            {selectionSummary ? (
+              <span data-testid="inspector-selection-count">{selectionSummary}</span>
+            ) : null}
             {linkCount > 0 ? (
               <span
                 data-testid="inspector-link-count"
@@ -322,6 +328,7 @@ export function CardInspector({
           cards={cards}
           links={links}
           styleTargets={styleTargets}
+          selectionSummary={selectionSummary}
           focusedField={focusedField}
           variant="inspector"
           bodyEmpty={bodyEmpty}

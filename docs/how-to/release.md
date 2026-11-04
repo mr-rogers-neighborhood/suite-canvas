@@ -8,15 +8,17 @@ release edits the tag and the id recorded below.
 
 | Thing | Value |
 | --- | --- |
-| Version | `0.1.0-alpha.2` in `package.json` and the newest `CHANGELOG.md` heading |
-| Git tag | `v0.1.0-alpha.2` on the release commit |
-| Image | `suite:v0.1.0-alpha.2`, built on the host that runs it and also tagged `suite:local` |
-| Identity | the image id from `docker image inspect --format '{{.Id}}' suite:v0.1.0-alpha.2` |
+| Version | `0.1.0-alpha.3` in `package.json` and the newest `CHANGELOG.md` heading |
+| Git tag | `v0.1.0-alpha.3` on the release commit |
+| Image | `suite:v0.1.0-alpha.3`, built on the host that runs it and also tagged `suite:local` |
+| Identity | the image id from `docker image inspect --format '{{.Id}}' suite:v0.1.0-alpha.3` |
 | Change record | the matching `CHANGELOG.md` section |
 | Evidence | the `pnpm verify` run and the security scan output, quoted in the release notes |
 
-Built on the host on 2026-11-02 that identity was `sha256:e46fe6583cc3c6e765d9dd75427058b8960cb7561ba46f93eb9af0eda224d69e`, taken after a
-pre-deploy snapshot at `/srv/backups/suite-20261102T034020Z.tar.gz`; the rollback path is `suite:v0.1.0-alpha.1`.
+Built on the host on 2026-11-04 after a pre-deploy snapshot at
+`/srv/backups/suite-20261104T182400Z.tar.gz`; the rollback path is `suite:rollback-v0.1.0-alpha.2`, which
+names the image the rebuild replaced. The identity is the one value a host build cannot know in
+advance, so it is added once the build finishes.
 
 `SUITE_VERSION` is baked into the image at build time, so a running container reports what it is:
 `version` in `/api/admin/status`, `suite_build_info{version="…"} 1` in `/metrics`, and the
@@ -27,7 +29,7 @@ The lead creates the tag after integration. A workstream does not push one.
 
 ## Cut one
 
-1. `package.json` and the newest `CHANGELOG.md` heading both say `0.1.0-alpha.2`.
+1. `package.json` and the newest `CHANGELOG.md` heading both say `0.1.0-alpha.3`.
 2. `node scripts/docs-check.mjs` and `node scripts/generate-limits.mjs --check` are clean.
 3. `pnpm verify` is green on the commit being tagged, and a full `pnpm e2e` passed on that same commit,
    in that order, with nothing already listening on `:5173` or `:1235`. A tag is the milestone where

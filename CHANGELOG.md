@@ -1,5 +1,29 @@
 ## [Unreleased]
 
+## [0.1.0-alpha.3] - 2026-11-04
+
+### Added
+
+- One colour for the whole selection: a right-click or the inspector's **Style** tab paints every selected card, link
+  and frame, each in its own field, and one press of undo takes it back. The drawer says how much it reaches, so
+  "colour everything" is a sentence with a count in it.
+
+- The inspector follows the selection: it opens on a box as well as on a click, keeps the card's panel when the cards
+  sit inside a selected frame, and a frame's colour is the first row of its Style tab.
+
+- A section's colour is a **palette id**, the same vocabulary a card's fill and a link's line use, so adding a colour
+  in Settings gives frames the choice too and editing the palette repaints them together.
+
+- The marquee's three toggles are independent: cards, sections and links, so a box can take the cards it touches
+  without also sweeping up the arrows it crosses.
+
+### Changed
+
+- **Explain** moved beside **Outline** in the canvas controls.
+
+- A right-click menu and a panel body are one table each now: a verb or a row declares the kinds it serves, so an
+  action that cannot reach every member of a selection is absent rather than disabled.
+
 ## [0.1.0-alpha.2] - 2026-11-01
 
 ### Added

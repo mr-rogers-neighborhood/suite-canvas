@@ -63,3 +63,7 @@ internal/
 .agents/
 .gemini/
 
+
+# electron-builder output: a build artefact, never committed.
+apps/desktop/release/
+apps/start/release/

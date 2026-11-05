@@ -23,6 +23,11 @@ files:
 extraResources:
   - from: ../canvas/dist
     to: renderer
+# Start discovers an app by the manifest beside its executable, so this lands
+# next to the binary rather than in resources.
+extraFiles:
+  - from: suite.app.json
+    to: suite.app.json
 
 asar: true
 
@@ -40,6 +45,10 @@ linux:
   target:
     - deb
     - AppImage
+  # Without this the binary is named after the package, which for a scoped name
+  # becomes `@suitedesktop`. The executable name is part of what Start records,
+  # so it has to be a name a person would recognise.
+  executableName: suite-canvas
   category: Office
   icon: build/icons
   synopsis: A local-first canvas for connected thinking

@@ -79,6 +79,54 @@ async function openInRenderer(info: OpenDocumentInfo): Promise<void> {
 function applyMenu(): void {
   const documentOpen = store !== null;
   const template: MenuItemConstructorOptions[] = [
+    // The suite menu. Every item is a deep link Start resolves, so with Start
+    // absent they do nothing rather than fail: the window this belongs to is
+    // already the app that handles the files it opens.
+    {
+      label: "Suite",
+      submenu: [
+        {
+          label: "Open Suite Start",
+          click: () => {
+            void shell.openExternal("suite://start/").catch(() => {
+              // No handler installed: the launcher is not on this machine.
+            });
+          },
+        },
+        { type: "separator" },
+        {
+          label: "Open Canvas",
+          click: () => {
+            void shell.openExternal("suite://canvas/").catch(() => {});
+          },
+        },
+        {
+          label: "Open Planner",
+          click: () => {
+            void shell.openExternal("suite://planner/").catch(() => {});
+          },
+        },
+        {
+          label: "Open Budget",
+          click: () => {
+            void shell.openExternal("suite://budget/").catch(() => {});
+          },
+        },
+        { type: "separator" },
+        {
+          label: "Show in Start",
+          click: () => {
+            void shell.openExternal("suite://start/").catch(() => {});
+          },
+        },
+        {
+          label: "Account…",
+          click: () => {
+            void shell.openExternal("https://start.suite.run/account").catch(() => {});
+          },
+        },
+      ],
+    },
     {
       label: "File",
       submenu: [

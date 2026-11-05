@@ -1,0 +1,15 @@
+{
+  "format": "suite.app",
+  "id": "canvas",
+  "name": "Suite Canvas",
+  "version": "0.1.0",
+  "contractVersion": "1.0.0",
+  "deepLinkPrefix": "suite://canvas/",
+  "fileExtensions": ["canvas"],
+  "protocols": ["suite-canvas"],
+  "update": {
+    "feed": "https://releases.suite.run/canvas/stable",
+    "channel": "alpha"
+  },
+  "capabilities": ["document.file", "sync.relay", "attachments", "publish"]
+}

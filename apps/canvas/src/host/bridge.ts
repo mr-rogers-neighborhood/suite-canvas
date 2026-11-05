@@ -52,6 +52,14 @@ export interface BridgeSaveRequest {
   readonly attachments?: readonly BridgeAttachment[];
 }
 
+/** One entry in the launcher's recent list, as the shell reports it. */
+export interface BridgeRecentFile {
+  readonly path: string;
+  readonly name: string;
+  readonly folder: string;
+  readonly openedAt: number;
+}
+
 /** A refusal the renderer must show rather than swallow. */
 export interface BridgeFailure {
   readonly ok: false;
@@ -72,6 +80,12 @@ export interface DesktopBridge {
   flushDocument(): Promise<{ ok: true } | BridgeFailure>;
   documentInfo(): Promise<BridgeDocumentInfo | null>;
   appInfo(): Promise<{ host: "desktop"; version: string; platform: string }>;
+  /** Show the open dialog and open the choice. The renderer passes no path. */
+  openFileDialog(): Promise<void>;
+  /** Open a path this shell reported earlier, re-validated in main. */
+  openDocument(path: string): Promise<void>;
+  recentFiles(): Promise<readonly BridgeRecentFile[]>;
+  forgetRecent(path: string): Promise<void>;
 }
 
 export type HostKind = "web" | "desktop";

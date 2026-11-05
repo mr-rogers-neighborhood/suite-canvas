@@ -6,6 +6,7 @@ One task at a time: the steps for a job you already know you need to do.
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
+| [Run the desktop app](run-the-desktop-app.md) | The Canvas desktop application is one renderer in a shell that owns a file. This page is the loop for working on it. It assumes a checkout and pnpm in… | 2026-11-05 |
 | [Test and verify a change](test-and-verify.md) | Suite runs three test runners: Vitest for the workspace projects, Playwright for end-to-end journeys, and node --test for @suite/billing, which sits o… | 2026-11-04 |
 | [Deploy a server](deploy.md) | One small instance, one Docker host, one app container, six SQLite stores on one volume, Caddy in front, Cloudflare in front of Caddy. | 2026-11-04 |
 | [Release and roll back](release.md) | A release is a tag, an image built from it on the host that serves it, the image id that identifies it, a smoke test against a host, and a rollback pa… | 2026-11-04 |

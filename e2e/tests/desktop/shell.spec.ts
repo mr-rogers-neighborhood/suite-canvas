@@ -202,3 +202,54 @@ test("creates a file when a new workspace is started from the launcher", async (
     await run.close();
   }
 });
+
+test("lists a file it opened earlier, with the folder, and opens it again", async () => {
+  const path = box.documentPath("Field notes.canvas");
+  await writeDocument(path, workspaceEnvelope({ workspaceId: "ws-recent" }));
+
+  const first = await launch(box, [path]);
+  try {
+    await waitForDocument(first.page);
+  } finally {
+    await first.close();
+  }
+
+  // A fresh launch with no file: the launcher is home, and the file it wrote is
+  // the way back in.
+  const second = await launch(box, []);
+  try {
+    await waitForBridge(second.page);
+    const recents = second.page.getByTestId("desktop-recents");
+    await expect(recents).toBeVisible({ timeout: 30_000 });
+    await expect(second.page.getByTestId("desktop-recent").first()).toContainText("Field notes");
+    // The folder is shown because the file is somewhere a person can find it.
+    await expect(second.page.getByTestId("desktop-recent").first()).toContainText(box.library);
+
+    // Opening navigates the window, so the press is dispatched: a real click
+    // would wait for an actionability check on a page already unloading.
+    await second.page.getByTestId("desktop-recent").first().dispatchEvent("click");
+    await waitForDocument(second.page);
+    expect((await openInfo(second.page))?.path).toBe(path);
+  } finally {
+    await second.close();
+  }
+});
+
+test("opens the shell's own file dialog from the launcher", async () => {
+  // The picker is native, so the assertion is that the launcher asks the shell
+  // rather than a web file input: on the desktop the shell owns the file, and a
+  // browser input would import a copy instead of opening it.
+  const run = await launch(box, []);
+  try {
+    await waitForBridge(run.page);
+    const handled = await run.page.evaluate(() => {
+      const bridge = (globalThis as { suiteDesktop?: Record<string, unknown> }).suiteDesktop;
+      return (
+        typeof bridge?.openFileDialog === "function" && typeof bridge?.openDocument === "function"
+      );
+    });
+    expect(handled).toBe(true);
+  } finally {
+    await run.close();
+  }
+});

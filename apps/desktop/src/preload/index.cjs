@@ -19,6 +19,10 @@ const CHANNELS = {
   flushDocument: "suite:document:flush",
   documentInfo: "suite:document:info",
   appInfo: "suite:app:info",
+  openFileDialog: "suite:document:pick",
+  openDocument: "suite:document:open",
+  recentFiles: "suite:document:recents",
+  forgetRecent: "suite:document:forget",
 };
 
 contextBridge.exposeInMainWorld("suiteDesktop", {
@@ -32,4 +36,8 @@ contextBridge.exposeInMainWorld("suiteDesktop", {
   flushDocument: () => ipcRenderer.invoke(CHANNELS.flushDocument),
   documentInfo: () => ipcRenderer.invoke(CHANNELS.documentInfo),
   appInfo: () => ipcRenderer.invoke(CHANNELS.appInfo),
+  openFileDialog: () => ipcRenderer.invoke(CHANNELS.openFileDialog),
+  openDocument: (path) => ipcRenderer.invoke(CHANNELS.openDocument, path),
+  recentFiles: () => ipcRenderer.invoke(CHANNELS.recentFiles),
+  forgetRecent: (path) => ipcRenderer.invoke(CHANNELS.forgetRecent, path),
 });

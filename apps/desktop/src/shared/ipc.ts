@@ -18,6 +18,14 @@ export const IPC = {
   documentInfo: "suite:document:info",
   /** The shell's own version and platform, for diagnostics. */
   appInfo: "suite:app:info",
+  /** Show the open dialog and open whatever is chosen. */
+  openFileDialog: "suite:document:pick",
+  /** Open a path the shell reported earlier, after re-validating it. */
+  openDocument: "suite:document:open",
+  /** Files this machine opened, newest first. */
+  recentFiles: "suite:document:recents",
+  /** Drop one entry from that list. */
+  forgetRecent: "suite:document:forget",
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
@@ -63,6 +71,15 @@ export interface SaveDocumentRequest {
     readonly height: number | null;
     readonly bytes: Uint8Array;
   }[];
+}
+
+/** One entry in the launcher's recent list. */
+export interface RecentFileInfo {
+  readonly path: string;
+  readonly name: string;
+  /** The containing directory, shown so a person can find the file. */
+  readonly folder: string;
+  readonly openedAt: number;
 }
 
 export interface AppInfo {

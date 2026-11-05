@@ -5,6 +5,7 @@ import { useAccountStore } from "../auth/useAccountStore";
 import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
 import { ToastLayer } from "../feedback/ToastLayer";
 import { toast } from "../feedback/toast";
+import { desktopBridge, hostKind } from "../host/bridge";
 import {
   DEFAULT_WORKSPACE_NAME,
   forgetWorkspaceName,
@@ -29,6 +30,7 @@ import {
   workspaceUrl,
 } from "../session/workspaceTransfer";
 import { AlphaNotice } from "./AlphaNotice";
+import { DesktopRecents } from "./DesktopRecents";
 import { RepositoryButton, RepositoryFooter, SavedLocallyPrompt } from "./LauncherChrome";
 import { type RecentEntry, RecentWorkspaceRow } from "./RecentWorkspaceRow";
 import {
@@ -431,7 +433,18 @@ export function WorkspaceLauncher() {
               type="button"
               data-testid="launcher-import"
               className="rounded-lg border border-[var(--hairline)] px-4 py-2 text-[13px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-              onClick={() => fileInput.current?.click()}
+              onClick={() => {
+                // On the desktop the shell owns the file, so its dialog opens it in
+                // place. The browser's input would import a copy as a new
+                // IndexedDB workspace, which is the wrong thing for a file-first
+                // build.
+                const bridge = desktopBridge();
+                if (bridge === null) {
+                  fileInput.current?.click();
+                  return;
+                }
+                void bridge.openFileDialog();
+              }}
               disabled={busy}
             >
               Open workspace file…
@@ -612,6 +625,8 @@ export function WorkspaceLauncher() {
               </button>
             </div>
           ) : null}
+
+          {hostKind() === "desktop" ? <DesktopRecents /> : null}
 
           {signedOut && recents.length > 0 ? <SavedLocallyPrompt /> : null}
 

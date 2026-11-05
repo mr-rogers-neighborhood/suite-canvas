@@ -108,7 +108,7 @@ in use, the run stops before a browser opens and names the process holding it.
 | `pnpm e2e:canvas` | Boot, boards, cards, links, selection, input, library, appearance |
 | `pnpm e2e:collab` | Collab, sharing, account |
 | `pnpm e2e:views` | Views |
-| `pnpm e2e:desktop` | The desktop shell: open, save, convert, lock, recover, create ([desktop.md](../reference/desktop.md)) |
+| `pnpm e2e:desktop` | The desktop shell: open, save, convert, lock, recover, create, recents ([run-the-desktop-app.md](run-the-desktop-app.md)) |
 | `pnpm e2e:changed` | Playwright's `--only-changed origin/main`: the specs touched since that ref |
 | `pnpm e2e` | Every spec, the milestone run |
 | `pnpm e2e:doctor` | Reports the processes holding the e2e ports, and stops nothing |

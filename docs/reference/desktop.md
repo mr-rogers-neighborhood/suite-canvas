@@ -106,6 +106,33 @@ The asset resolver refuses any request whose path contains `.` or `..`, read fro
 WHATWG URL normalises `a/../b` to `b` before anyone can inspect it, so a climb would otherwise be
 silently reinterpreted as a legitimate path.
 
+## The renderer seam
+
+The window loads one of two pages, decided in `apps/desktop/src/main/rendererUrl.ts`:
+
+| `SUITE_DESKTOP_DEV_URL` | Page | Used by |
+| --- | --- | --- |
+| set | that server's `/index.html` | `pnpm dev:desktop` |
+| unset | `app://canvas/index.html` | the packaged app and `pnpm e2e:desktop` |
+
+Every navigation goes through it: the launcher, an opened document and the `will-navigate` guard.
+A window that half-follows the seam bounces between two origins on the first open. The rule is a
+pure function so it is a test rather than something only a running window discovers.
+
+The main process restarts rather than hot-swapping on a change. It owns the document, the lock and the
+backup timer, and replacing those under a live window would be a story about state that is not true. A
+restart reopens the file, which is also the path a crash takes, so the loop exercises recovery every
+time.
+
+## Images in the file
+
+The editor writes pasted bytes to IndexedDB; the shell writes the file. A save therefore carries the
+attachment set, and the renderer sends it only when the set of referenced ids changed, comparing
+`documentAttachments` against what it last sent, so a routine autosave does not re-read every image. The
+shell keeps the last set it was given, so a later document-only save preserves them.
+
+An image whose bytes are gone is reported and skipped, never a reason to refuse the save.
+
 ## The build pairing
 
 The desktop shell loads `apps/canvas/dist`, so the profile that bundle was built

@@ -27,6 +27,10 @@ function bridge(overrides: Partial<DesktopBridge> = {}): RecordingBridge {
     },
     documentInfo: async () => null,
     appInfo: async () => ({ host: "desktop", version: "0.1.0", platform: "linux" }),
+    openFileDialog: async () => {},
+    openDocument: async () => {},
+    recentFiles: async () => [],
+    forgetRecent: async () => {},
   };
   // A plain object, not a getter: `Object.assign` would evaluate a getter once
   // and freeze the count at zero.
@@ -80,11 +84,12 @@ describe("LoroDesktopPersistence", () => {
     await persistence.load();
     workspace.createCard({ id: "c9", boardId: board.id, position: { x: 1, y: 1 } });
 
-    await vi.waitFor(() => expect(shell.saved.length).toBeGreaterThan(0));
+    // Wait for the edit's save rather than for any save: creating the document
+    // writes once with no cards, and that one is not the subject of the test.
+    await vi.waitFor(() => expect(shell.saved.at(-1)?.manifest.cards).toBe(1));
     const request = shell.saved.at(-1);
     expect(request?.workspaceId).toBe("ws-1");
     expect(request?.snapshot).toBeInstanceOf(Uint8Array);
-    expect(request?.manifest.cards).toBe(1);
     expect(request?.manifest.boards).toBe(1);
     persistence.destroy();
   });
@@ -168,5 +173,31 @@ describe("LoroDesktopPersistence", () => {
     workspace.ensureBoard();
     await Promise.resolve();
     expect(shell.saved.length).toBe(before);
+  });
+});
+
+describe("LoroDesktopPersistence attachments", () => {
+  it("sends images only when the referenced set changes", async () => {
+    const doc = new LoroDoc();
+    const workspace = new WorkspaceDocument(doc);
+    workspace.ensureDefaultTypes();
+    const board = workspace.ensureBoard();
+    const shell = bridge({ loadDocument: async () => null });
+
+    const persistence = new LoroDesktopPersistence("ws-1", doc, shell.bridge);
+    await persistence.load();
+    await vi.waitFor(() => expect(shell.saved.length).toBeGreaterThan(0));
+
+    // The first save states the set explicitly, empty though it is: that is how
+    // the shell learns there are no images rather than having to assume it.
+    expect(shell.saved.at(-1)?.attachments).toEqual([]);
+
+    // An edit that leaves the referenced set alone omits the section, so a
+    // routine autosave does not re-send megabytes it already sent.
+    workspace.createCard({ id: "c1", boardId: board.id, position: { x: 0, y: 0 } });
+    await vi.waitFor(() => expect(shell.saved.at(-1)?.manifest.cards).toBe(1));
+    expect(shell.saved.at(-1)?.attachments).toBeUndefined();
+
+    persistence.destroy();
   });
 });

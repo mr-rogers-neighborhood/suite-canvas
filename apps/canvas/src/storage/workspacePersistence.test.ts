@@ -14,6 +14,10 @@ function fakeBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
     flushDocument: async () => ({ ok: true }),
     documentInfo: async () => null,
     appInfo: async () => ({ host: "desktop", version: "0.1.0", platform: "linux" }),
+    openFileDialog: async () => {},
+    openDocument: async () => {},
+    recentFiles: async () => [],
+    forgetRecent: async () => {},
     ...overrides,
   };
 }

@@ -1,4 +1,5 @@
 import { accountHttpBase } from "../session/endpoints";
+import { isStandalone } from "../session/mode";
 
 /**
  * Sending a message from the bubble.
@@ -48,6 +49,13 @@ const NOTHING: FeedbackCapability = { configured: false, captcha: false };
 export async function feedbackCapability(
   input: { base?: string; fetch?: typeof globalThis.fetch } = {},
 ): Promise<FeedbackCapability> {
+  // A standalone build, and therefore the desktop app, has no control plane to
+  // ask. Asking anyway puts a failed request in the console of every local
+  // session, for an answer that cannot change. A caller that supplies its own
+  // `base` or `fetch` is driving this deliberately — a test, or a deployment
+  // that knows its own endpoint — and is still honoured.
+  if (input.base === undefined && input.fetch === undefined && isStandalone()) return NOTHING;
+
   const call = input.fetch ?? globalThis.fetch;
   try {
     const response = await call(`${input.base ?? accountHttpBase()}${FEEDBACK_PATH}`, {

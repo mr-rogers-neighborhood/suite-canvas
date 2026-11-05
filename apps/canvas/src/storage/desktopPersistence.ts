@@ -1,6 +1,8 @@
-import { WorkspaceDocument } from "@suite/graph";
+import { documentAttachments, WorkspaceDocument } from "@suite/graph";
 import type { LoroDoc } from "loro-crdt";
-import type { DesktopBridge } from "../host/bridge";
+import type { BridgeAttachment, DesktopBridge } from "../host/bridge";
+import { defaultAttachmentSources } from "../session/attachmentBytes";
+import { gatherAttachments } from "../session/workspaceTransfer";
 
 /**
  * The local copy, when the main process holds it.
@@ -30,6 +32,14 @@ export class LoroDesktopPersistence {
   private loaded = false;
   private pending: Uint8Array | null = null;
   private writing: Promise<void> = Promise.resolve();
+  /**
+   * The attachment ids the shell already holds.
+   *
+   * A save sends the images only when this set changes, so a routine autosave
+   * does not re-read every pasted photo out of IndexedDB. The shell keeps the
+   * last set it was given, so a document-only save preserves them.
+   */
+  private sentAttachments: string | null = null;
 
   constructor(
     private readonly workspaceId: string,
@@ -82,11 +92,15 @@ export class LoroDesktopPersistence {
     this.pending = null;
     const title = this.title();
     this.writing = this.writing.then(async () => {
+      // `undefined` means "unchanged since the last save", and the shell keeps
+      // what it was given; an explicit list replaces it.
+      const attachments = await this.refreshAttachments();
       await this.bridge.saveDocument({
         workspaceId: this.workspaceId,
         ...(title === undefined ? {} : { title }),
         snapshot: this.snapshot(),
         manifest: this.manifest(),
+        ...(attachments === undefined ? {} : { attachments }),
       });
     });
     await this.writing.catch((error: unknown) => {
@@ -115,6 +129,64 @@ export class LoroDesktopPersistence {
       types: count("types"),
       tags: count("tags"),
     };
+  }
+
+  /**
+   * Collect image bytes when the set of referenced images changed.
+   *
+   * The document references images by id; the bytes live wherever the editor put
+   * them. Gathering is asynchronous and can be slow, so it happens only when the
+   * referenced set differs from what the shell already has.
+   *
+   * A missing image is reported and skipped: a photo whose bytes are gone must
+   * not stop the text beside it from being saved.
+   */
+  private async refreshAttachments(): Promise<readonly BridgeAttachment[] | undefined> {
+    const referenced = documentAttachments(new WorkspaceDocument(this.doc))
+      .map((entry) => entry.id)
+      .sort();
+    const key = referenced.join(",");
+    // Unchanged since the last save: nothing to say, so say nothing.
+    if (this.sentAttachments === key) return undefined;
+
+    try {
+      const gathered = await gatherAttachments(
+        new WorkspaceDocument(this.doc),
+        defaultAttachmentSources(),
+      );
+      const attachments = Object.entries(gathered.attachments).map(([id, entry]) => ({
+        id,
+        mime: entry.mime,
+        name: entry.name,
+        width: entry.width,
+        height: entry.height,
+        bytes: entry.bytes,
+      }));
+      this.sentAttachments = key;
+
+      if (gathered.missing.length > 0) {
+        const titles = [
+          ...new Set(gathered.missing.flatMap((entry) => entry.cards.map((card) => card.title))),
+        ];
+        this.options.onFailure?.({
+          code: "missing-attachment",
+          message:
+            `${gathered.missing.length} image${gathered.missing.length === 1 ? "" : "s"} could not be ` +
+            `read and ${gathered.missing.length === 1 ? "is" : "are"} not in this file` +
+            (titles.length === 0 ? "." : `: ${titles.join(", ")}.`),
+        });
+      }
+      return attachments;
+    } catch (error) {
+      // Gathering failing must not cost the document: omit the section this
+      // time, and try again on the next change to the referenced set.
+      this.sentAttachments = null;
+      this.options.onFailure?.({
+        code: "attachment-failed",
+        message: error instanceof Error ? error.message : "Images could not be read.",
+      });
+      return undefined;
+    }
   }
 
   /**

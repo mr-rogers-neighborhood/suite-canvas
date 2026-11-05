@@ -7,9 +7,10 @@
   "main": "./dist/main/index.js",
   "scripts": {
     "build": "pnpm --filter @suite/canvas build:standalone && tsc -p tsconfig.build.json && node scripts/stage.mjs",
-    "dev": "node scripts/dev.mjs",
     "start": "electron .",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev:shell": "node scripts/shell.mjs",
+    "dev:shell:watch": "node scripts/watch.mjs"
   },
   "dependencies": {
     "@suite/files": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.1.0&path:/packages/files",

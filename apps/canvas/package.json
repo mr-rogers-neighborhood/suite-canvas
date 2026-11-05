@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "test:stories": "vitest run --config vitest.stories.config.ts"
+    "test:stories": "vitest run --config vitest.stories.config.ts",
+    "dev:standalone": "VITE_SUITE_MODE=standalone vite"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "0.18.1",

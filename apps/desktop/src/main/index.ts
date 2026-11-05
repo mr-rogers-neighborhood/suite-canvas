@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   app,
@@ -11,9 +12,16 @@ import {
   protocol,
   shell,
 } from "electron";
-import { type FileFailure, IPC, type OpenDocumentInfo } from "../shared/ipc.js";
+import {
+  type FileFailure,
+  IPC,
+  type OpenDocumentInfo,
+  type RecentFileInfo,
+} from "../shared/ipc.js";
 import { type DesktopPaths, desktopPaths } from "./paths.js";
 import { DESKTOP_CSP, resolveAppAsset } from "./protocol.js";
+import { type RecentsStore, recentsStore } from "./recents.js";
+import { isRendererOrigin, rendererUrl } from "./rendererUrl.js";
 import { DocumentStore, freeDocumentPath, looksLikeCanvasFile, type OpenResult } from "./store.js";
 
 /**
@@ -27,13 +35,13 @@ import { DocumentStore, freeDocumentPath, looksLikeCanvasFile, type OpenResult }
  */
 
 const APP_ID = "run.suite.canvas";
-const RENDERER_URL = "app://canvas/index.html";
 
 /** Files handed to a cold start, before `ready`. */
 const pendingFiles: string[] = [];
 let mainWindow: BrowserWindow | null = null;
 let store: DocumentStore | null = null;
 let paths: DesktopPaths = desktopPaths();
+let recents: RecentsStore | null = null;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -69,7 +77,7 @@ function fileFromArgv(argv: readonly string[]): string | null {
 async function openInRenderer(info: OpenDocumentInfo): Promise<void> {
   const window = mainWindow;
   if (!window) return;
-  const url = new URL(RENDERER_URL);
+  const url = rendererUrl();
   url.searchParams.set("workspace", info.workspaceId);
   url.searchParams.set("desktop", "1");
   window.setTitle(`${info.name} — Suite Canvas`);
@@ -150,6 +158,44 @@ function applyMenu(): void {
         { role: "close" },
       ],
     },
+    // Development only. A packaged build has no business offering to open the
+    // same file twice, and no reason to expose the data directory.
+    ...(app.isPackaged
+      ? []
+      : [
+          {
+            label: "Developer",
+            submenu: [
+              { role: "reload" as const },
+              { role: "toggleDevTools" as const },
+              { type: "separator" as const },
+              {
+                label: "Reveal app data",
+                click: () => {
+                  void shell.openPath(paths.data);
+                },
+              },
+              {
+                // The manual test for the lock. It needs its own Electron
+                // profile, or single-instance answers before the file lock is
+                // ever reached and the dialog never appears.
+                label: "Open this file in a second window",
+                enabled: documentOpen,
+                click: () => {
+                  const open = store?.documentInfo.path;
+                  if (!open) return;
+                  const profile = join(paths.data, "second-window");
+                  const child = spawn(process.execPath, [
+                    app.getAppPath(),
+                    `--user-data-dir=${profile}`,
+                    open,
+                  ]);
+                  child.unref();
+                },
+              },
+            ],
+          },
+        ]),
     { role: "editMenu" },
     { role: "viewMenu" },
     { role: "windowMenu" },
@@ -213,17 +259,31 @@ async function openDocument(path: string): Promise<void> {
     return;
   }
 
+  await adopt(result);
+  await openInRenderer(result.info);
+}
+
+/**
+ * Make a freshly opened document the window's document.
+ *
+ * One place, so the two ways to get here — opening a file and creating one —
+ * cannot disagree about what counts as history. Recording a recent is a
+ * convenience, so failing it must not fail the open.
+ */
+async function adopt(result: Extract<OpenResult, { ok: true }>): Promise<void> {
   await store?.close();
   store = result.store;
+  await recents?.remember(result.info.path).catch(() => {
+    // History is a convenience; an unrecorded open is still a successful one.
+  });
   applyMenu();
-  await openInRenderer(result.info);
 }
 
 async function showLauncher(): Promise<void> {
   const window = mainWindow;
   if (!window) return;
   window.setTitle("Suite Canvas");
-  const url = new URL(RENDERER_URL);
+  const url = rendererUrl();
   url.searchParams.set("desktop", "1");
   await window.loadURL(url.toString());
 }
@@ -254,7 +314,7 @@ function createWindow(): BrowserWindow {
     return { action: "deny" };
   });
   window.webContents.on("will-navigate", (event, url) => {
-    if (!url.startsWith("app://canvas/")) event.preventDefault();
+    if (!isRendererOrigin(url)) event.preventDefault();
   });
 
   window.on("closed", () => {
@@ -298,8 +358,7 @@ function registerIpc(): void {
       { appId: APP_ID, paths },
     );
     if (!created.ok) return;
-    store = created.store;
-    applyMenu();
+    await adopt(created);
     await openInRenderer(created.info);
   });
 
@@ -317,6 +376,33 @@ function registerIpc(): void {
     version: app.getVersion(),
     platform: process.platform,
   }));
+
+  ipcMain.handle(IPC.openFileDialog, () => openDocumentDialog());
+
+  ipcMain.handle(IPC.openDocument, async (_event, target: unknown) => {
+    // A path the shell itself reported earlier, re-validated here: the renderer
+    // may only ask for a file this process has already opened once.
+    if (typeof target !== "string") return;
+    const known = (await recents?.list()) ?? [];
+    if (!known.some((entry) => entry.path === target)) return;
+    if (!looksLikeCanvasFile(target)) return;
+    await openDocument(target);
+  });
+
+  ipcMain.handle(IPC.recentFiles, async (): Promise<readonly RecentFileInfo[]> => {
+    const entries = (await recents?.list()) ?? [];
+    return entries.map((entry) => ({
+      path: entry.path,
+      name: entry.name,
+      folder: dirname(entry.path),
+      openedAt: entry.openedAt,
+    }));
+  });
+
+  ipcMain.handle(IPC.forgetRecent, async (_event, target: unknown) => {
+    if (typeof target !== "string") return;
+    await recents?.forget(target);
+  });
 }
 
 // A second launch focuses this one and hands over its file, rather than opening
@@ -355,6 +441,7 @@ if (!gotLock) {
 
   void app.whenReady().then(async () => {
     paths = desktopPaths();
+    recents = recentsStore(paths.data);
     app.setAppUserModelId(APP_ID);
 
     protocol.handle("app", async (request) => {

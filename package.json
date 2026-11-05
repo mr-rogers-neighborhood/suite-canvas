@@ -22,6 +22,7 @@
     "dev": "turbo run dev",
     "dev:db": "docker compose --profile local-db -f compose.yaml -f compose.dev.yaml up -d --wait postgres",
     "dev:db:stop": "docker compose --profile local-db -f compose.yaml -f compose.dev.yaml stop postgres",
+    "dev:desktop": "node scripts/dev-desktop.mjs",
     "dev:env": "node scripts/dev-env.mjs",
     "docs:check": "node scripts/docs-check.mjs && node scripts/generate-doc-indexes.mjs --check && node scripts/generate-limits.mjs --check && node scripts/sync-handbook.mjs --check",
     "docs:index": "node scripts/generate-doc-indexes.mjs",

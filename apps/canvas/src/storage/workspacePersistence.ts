@@ -1,6 +1,7 @@
 import type { LoroDoc } from "loro-crdt";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
-import type { HostKind } from "../host/bridge";
+import { type DesktopBridge, desktopBridge, type HostKind } from "../host/bridge";
+import { LoroDesktopPersistence } from "./desktopPersistence";
 
 /**
  * Where the local copy of a document lives.
@@ -30,6 +31,10 @@ export interface PersistenceRequest {
   readonly doc: LoroDoc;
   /** Whether this environment has IndexedDB at all. */
   readonly indexedDb: boolean;
+  /** The shell's bridge, when there is one. Injected in tests. */
+  readonly bridge?: DesktopBridge | null;
+  /** Told when a write is refused, so the shell can show it. */
+  readonly onFailure?: (failure: { code: string; message: string }) => void;
 }
 
 /**
@@ -45,9 +50,18 @@ export function createWorkspacePersistence(
   if (request.roomId === null) return null;
 
   if (request.host === "desktop") {
-    throw new Error(
-      "desktop persistence is not wired yet: the file store arrives with the desktop shell, " +
-        "and a desktop build must not run with the document kept only in memory.",
+    const bridge = request.bridge ?? desktopBridge();
+    if (bridge === null) {
+      throw new Error(
+        "this build was started as a desktop app but no shell bridge is present, so the " +
+          "document would live only in memory.",
+      );
+    }
+    return new LoroDesktopPersistence(
+      request.roomId,
+      request.doc,
+      bridge,
+      request.onFailure ? { onFailure: request.onFailure } : {},
     );
   }
 

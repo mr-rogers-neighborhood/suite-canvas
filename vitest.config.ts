@@ -110,6 +110,16 @@ export default defineConfig({
         },
       },
       {
+        // The desktop shell's main process: the lock, the file store, recovery
+        // and the page policy. Node, and no Electron, because none of it needs a
+        // window — which is what makes it testable at all.
+        test: {
+          name: "desktop",
+          environment: "node",
+          include: ["apps/desktop/src/**/*.test.ts"],
+        },
+      },
+      {
         test: {
           name: "canvas",
           environment: "jsdom",

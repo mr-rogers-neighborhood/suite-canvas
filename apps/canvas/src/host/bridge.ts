@@ -7,31 +7,77 @@
  * the bridge the preload injects, not a build flag — a flag would say what was
  * compiled, while the renderer needs to know what actually loaded beside it.
  *
- * The bridge is deliberately tiny. Every method added here is a new thing the
+ * The bridge is deliberately small. Every method added here is a new thing the
  * renderer may ask the main process to do, so each one is added in the increment
- * that needs it and allowlisted in the preload.
+ * that needs it and allowlisted in the preload. Note what none of them take: a
+ * path. The renderer says *what* to do, and the main process decides *where*.
  */
 
 /** Global the preload sets. One name, so there is one thing to look for. */
 export const DESKTOP_BRIDGE_KEY = "suiteDesktop";
+
+/** One attachment's bytes, as the main process needs them to write the file. */
+export interface BridgeAttachment {
+  readonly id: string;
+  readonly mime: string;
+  readonly name: string;
+  readonly width: number | null;
+  readonly height: number | null;
+  readonly bytes: Uint8Array;
+}
+
+/** What the main process says the open document is. */
+export interface BridgeDocumentInfo {
+  readonly workspaceId: string;
+  readonly path: string;
+  readonly name: string;
+  /** The legacy file this open converted, when it was one. */
+  readonly migratedFrom: string | null;
+  /** The backup this open recovered from, when the file was damaged. */
+  readonly recoveredFrom: string | null;
+}
+
+export interface BridgeSaveRequest {
+  readonly workspaceId: string;
+  /** The workspace's own name, used to name the file on its first save. */
+  readonly title?: string;
+  readonly snapshot: Uint8Array;
+  readonly manifest: {
+    readonly boards: number;
+    readonly cards: number;
+    readonly types: number;
+    readonly tags: number;
+  };
+  /** Present only when the attachment set changed. */
+  readonly attachments?: readonly BridgeAttachment[];
+}
+
+/** A refusal the renderer must show rather than swallow. */
+export interface BridgeFailure {
+  readonly ok: false;
+  readonly code: string;
+  readonly message: string;
+}
 
 /** What a desktop build's preload exposes. A present bridge *is* the desktop. */
 export interface DesktopBridge {
   readonly host: "desktop";
   /** The shell's own version, for diagnostics and for a minimum-shell check. */
   readonly version: string;
+  readonly platform: string;
+  /** The open document and its snapshot, or null when the shell has none. */
+  loadDocument(): Promise<{ info: BridgeDocumentInfo; snapshot: Uint8Array } | null>;
+  saveDocument(request: BridgeSaveRequest): Promise<void>;
+  /** Wait for anything queued to reach the disk. */
+  flushDocument(): Promise<{ ok: true } | BridgeFailure>;
+  documentInfo(): Promise<BridgeDocumentInfo | null>;
+  appInfo(): Promise<{ host: "desktop"; version: string; platform: string }>;
 }
 
 export type HostKind = "web" | "desktop";
 
 interface BridgeScope {
   readonly suiteDesktop?: unknown;
-}
-
-function isDesktopBridge(value: unknown): value is DesktopBridge {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as { host?: unknown; version?: unknown };
-  return candidate.host === "desktop" && typeof candidate.version === "string";
 }
 
 /**
@@ -43,7 +89,15 @@ function isDesktopBridge(value: unknown): value is DesktopBridge {
 export function desktopBridge(
   scope: BridgeScope = globalThis as unknown as BridgeScope,
 ): DesktopBridge | null {
-  return isDesktopBridge(scope.suiteDesktop) ? scope.suiteDesktop : null;
+  const candidate = scope.suiteDesktop;
+  if (typeof candidate !== "object" || candidate === null) return null;
+  const bridge = candidate as Partial<DesktopBridge>;
+  // Only the host marker is required to identify the shell. A missing method is
+  // a version mismatch the caller sees, not a reason to pretend to be a browser
+  // and quietly write somewhere else.
+  return bridge.host === "desktop" && typeof bridge.version === "string"
+    ? (bridge as DesktopBridge)
+    : null;
 }
 
 /** `"desktop"` when a bridge is present, otherwise `"web"`. */

@@ -5,6 +5,11 @@ packages:
   - "e2e"
 allowBuilds:
   esbuild: true
+  # Electron's postinstall downloads the runtime the desktop shell needs.
+  electron: true
+  # Reached only by electron-builder's Windows target, which this repository does
+  # not build. Denied explicitly so the install does not ask about it again.
+  electron-winstaller: false
 # Two of these are shipped in the canvas bundle through `@excalidraw/excalidraw`
 # and its Mermaid converter; `qs` is only reached by Stryker. Each is pinned to a
 # version the advisory database reports as patched, so `pnpm security:deps` stays

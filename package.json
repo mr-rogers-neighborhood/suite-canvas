@@ -36,6 +36,7 @@
     "e2e:canvas": "pnpm --filter @suite/e2e e2e:canvas",
     "e2e:changed": "pnpm --filter @suite/e2e e2e:changed",
     "e2e:collab": "pnpm --filter @suite/e2e e2e:collab",
+    "e2e:desktop": "pnpm --filter @suite/e2e e2e:desktop",
     "e2e:doctor": "pnpm --filter @suite/e2e e2e:doctor",
     "e2e:full": "pnpm --filter @suite/e2e e2e:full",
     "e2e:headed": "pnpm --filter @suite/e2e e2e:headed",
@@ -47,6 +48,7 @@
     "e2e:ui:stop": "pnpm --filter @suite/e2e e2e:ui:stop",
     "e2e:views": "pnpm --filter @suite/e2e e2e:views",
     "format": "biome format --write .",
+    "handbook": "node scripts/sync-handbook.mjs",
     "knip": "knip",
     "limits:check": "node scripts/generate-limits.mjs --check",
     "lint": "biome check .",
@@ -57,10 +59,10 @@
     "prepare": "husky",
     "scratchpad": "node scripts/scratchpad.mjs",
     "security:deps": "pnpm audit --audit-level high && pnpm audit signatures",
+    "security:history": "node scripts/security-secrets.mjs --history",
     "security:image": "node scripts/security-image.mjs",
     "security:osv": "node scripts/security-osv.mjs",
     "security:secrets": "node scripts/security-secrets.mjs",
-    "security:history": "node scripts/security-secrets.mjs --history",
     "setup": "node scripts/dev-env.mjs",
     "shape": "node scripts/check-shape.mjs",
     "site:build": "pnpm --filter @suite/site build",
@@ -74,8 +76,7 @@
     "test:watch": "vitest",
     "typecheck": "turbo run typecheck",
     "up": "docker compose --profile local-db build && docker compose --profile local-db up -d && node scripts/doctor.mjs",
-    "verify": "node scripts/scratchpad.mjs --quiet && pnpm lint && pnpm typecheck && pnpm test && pnpm turbo run test --filter=@suite/billing && pnpm test:stories && pnpm build && pnpm docs:check && pnpm docs:symbols && pnpm shape && pnpm security:deps && pnpm security:secrets",
-    "handbook": "node scripts/sync-handbook.mjs"
+    "verify": "node scripts/scratchpad.mjs --quiet && pnpm lint && pnpm typecheck && pnpm test && pnpm turbo run test --filter=@suite/billing && pnpm test:stories && pnpm build && pnpm docs:check && pnpm docs:symbols && pnpm shape && pnpm security:deps && pnpm security:secrets"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

@@ -1,0 +1,86 @@
+# The Canvas desktop build.
+#
+# `deb` is the primary Linux target: it is what carries the `.canvas` MIME
+# association and the `x-scheme-handler/suite-canvas` declaration, because those
+# live in the desktop entry the package installs. `AppImage` is the portable
+# alternative and registers its protocols at runtime, so it works without an
+# installer and without root.
+#
+# macOS and Windows are configured but cannot be produced here: both need a
+# signing identity this repository does not have, and an unsigned build is not
+# something to hand a user.
+appId: run.suite.canvas
+productName: Suite Canvas
+copyright: Copyright © Suite
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - package.json
+extraResources:
+  - from: ../canvas/dist
+    to: renderer
+
+asar: true
+
+# Fuses are the switches an attacker cannot turn back on after packaging:
+# without them, a modified binary can be told to run any Node script.
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+
+linux:
+  target:
+    - deb
+    - AppImage
+  category: Office
+  icon: build/icons
+  synopsis: A local-first canvas for connected thinking
+  description: Cards, boards and writing in one document that works offline and lives in a file you own.
+  desktop:
+    entry:
+      MimeType: application/x-suite-canvas;
+      StartupWMClass: Suite Canvas
+
+deb:
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+
+appImage:
+  license: MIT
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+
+win:
+  target:
+    - nsis
+
+fileAssociations:
+  - ext: canvas
+    name: Suite Canvas Workspace
+    description: A Suite Canvas workspace
+    role: Editor
+    mimeType: application/x-suite-canvas
+
+protocols:
+  - name: Suite Canvas
+    schemes:
+      - suite-canvas

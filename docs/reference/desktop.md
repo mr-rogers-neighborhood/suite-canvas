@@ -20,6 +20,13 @@ actually loaded beside it, so `hostKind()` looks for the `suiteDesktop` object t
 desktop build with no bridge throws at boot rather than opening a session that persists nowhere. The one
 failure this product cannot accept is a session that silently keeps nothing.
 
+A bridge that exists is not automatically a bridge this build can use. A window left open by an earlier
+build keeps the preload it loaded, so a method added since then is simply absent, and asking for it calls
+`undefined` while the window still looks functional. `REQUIRED_BRIDGE_METHODS` in
+`apps/canvas/src/host/bridge.ts` lists what the renderer calls, `bridgeMissing()` compares that list with
+what the preload published, and boot renders one sentence instead of configuring a session:
+"This window's shell is out of date. Restart Suite to load the current shell."
+
 `createWorkspacePersistence` is the single decision point, and the `WorkspacePersistence` port has three
 methods (`load`, `flush`, `destroy`) because that is all the store uses. Multi-tab leadership and
 compaction stay inside the IndexedDB adapter, where coordination belongs; the file adapter has no peers

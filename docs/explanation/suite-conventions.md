@@ -27,6 +27,7 @@ narrow enough to state in a paragraph.
 | Link shape | `suite://<app>/…` and `suite://<app>/workspace/<id>` | One form to match, so a hub can route without knowing the app |
 | App manifest | `suite.app.json` beside the executable | The hub discovers what exists; the manifest cannot name a binary |
 | Install record | the hub's own data directory | The only place an executable path lives |
+| App table | `SUITE_APPS` in `@suite/contracts` | Id, display name, folder and extension per app, so the hub lists a planner's files without importing planner |
 
 These live in `@suite/contracts`, which imports nothing from Node so a renderer can load it too.
 
@@ -39,6 +40,17 @@ These live in `@suite/contracts`, which imports nothing from Node so a renderer 
 - **A shared runtime.** Separate processes, separate windows, separate update feeds.
 - **One schema.** A `.canvas` is canvas's, a `.planner` is planner's. A bundle is a container of those
   files, not a fourth format.
+
+## The app table, and the index
+
+`SUITE_APPS` names each app's id, display name, documents folder and file extension. The hub reads one
+level of each folder and lists what it finds, with the app that claims it.
+
+That index is a reading, not a store. It keeps no names, no pins and no last board, because a second list
+that disagrees with the app's own library is worse than no list. Opening a file is all a row offers.
+
+A file whose app is not installed is listed rather than hidden, and the row says no app is installed. A
+missing app is a prompt to install it, never a broken reference.
 
 ## What "integrated" then means
 

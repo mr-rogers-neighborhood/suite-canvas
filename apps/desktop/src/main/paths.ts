@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { suitePaths } from "@suite/contracts";
 
 /**
  * Where a desktop canvas keeps its things.
@@ -26,33 +26,27 @@ export interface DesktopPaths {
   readonly locks: string;
 }
 
-function dataRoot(home: string, platform: NodeJS.Platform): string {
-  if (platform === "darwin") return join(home, "Library", "Application Support", "Suite Canvas");
-  if (platform === "win32") return join(home, "AppData", "Roaming", "Suite Canvas");
-  const xdg = process.env.XDG_DATA_HOME;
-  const base = xdg && xdg.length > 0 ? xdg : join(home, ".local", "share");
-  return join(base, "suite", "canvas");
-}
-
 /**
  * Resolve the roots for a platform.
  *
- * `SUITE_CANVAS_LIBRARY` overrides the document directory and `SUITE_CANVAS_DATA`
- * the data directory. Both exist for tests and for a portable install; neither
- * is read from a document, so neither can be steered by a file.
+ * The convention itself lives in `@suite/contracts`, so the three apps cannot
+ * drift into three answers to "where does a file go". What stays here is the
+ * canvas's own overrides: `SUITE_CANVAS_LIBRARY` and `SUITE_CANVAS_DATA`, which
+ * exist for a test and a portable install. Neither is read from a document, so no
+ * file can steer a write.
  */
 export function desktopPaths(
   platform: NodeJS.Platform = process.platform,
   home: string = homedir(),
 ): DesktopPaths {
-  const library =
-    process.env.SUITE_CANVAS_LIBRARY?.trim() || join(home, "Documents", "Suite", "Canvas");
-  const data = process.env.SUITE_CANVAS_DATA?.trim() || dataRoot(home, platform);
-  return {
-    library: resolve(library),
-    data: resolve(data),
-    locks: resolve(join(data, "locks")),
-  };
+  const paths = suitePaths("Canvas", {
+    platform,
+    home,
+    documentsOverride: process.env.SUITE_CANVAS_LIBRARY,
+    dataOverride: process.env.SUITE_CANVAS_DATA,
+    xdgDataHome: process.env.XDG_DATA_HOME,
+  });
+  return { library: paths.documents, data: paths.data, locks: paths.locks };
 }
 
 /**

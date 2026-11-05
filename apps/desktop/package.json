@@ -13,7 +13,7 @@
     "dev:shell:watch": "node scripts/watch.mjs"
   },
   "dependencies": {
-    "@suite/files": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.1.0&path:/packages/files",
+    "@suite/files": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.2.0&path:/packages/files",
     "@suite/graph": "workspace:*",
     "zod": "^4.6.7"
   },

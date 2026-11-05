@@ -270,11 +270,16 @@ test("anchors the home surface, and scrolls it instead of clipping", async () =>
     // The card used to be vertically centred, so it floated 182px down at 840 and
     // drifted on every resize; at 480 it overflowed the bottom and could not
     // centre at all. Both are measured, because "looks right" is not a check.
-    const at = async (height: number) => {
-      await run.page.setViewportSize({ width: 1280, height });
-      await run.page.waitForTimeout(150);
-      return run.page.evaluate(() => {
+    // A fixed delay is a guess: layout after a resize settles at a different
+    // moment on a loaded machine. Reading until two consecutive measurements
+    // agree measures the layout rather than the scheduler.
+    const read = () =>
+      run.page.evaluate(() => {
         const main = document.querySelector('[data-testid="workspace-launcher"]');
+        // A resize can scroll the surface to keep the focused control in view,
+        // and this measures layout, so it starts from the top.
+        if (main) main.scrollTop = 0;
+        window.scrollTo(0, 0);
         const inner = main?.firstElementChild;
         const box = inner?.getBoundingClientRect();
         return {
@@ -284,6 +289,26 @@ test("anchors the home surface, and scrolls it instead of clipping", async () =>
           scrolls: main ? main.scrollHeight > window.innerHeight : false,
         };
       });
+
+    const at = async (height: number) => {
+      await run.page.setViewportSize({ width: 1280, height });
+      let previous: Awaited<ReturnType<typeof read>> | null = null;
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        await run.page.waitForTimeout(50);
+        const current = await read();
+        // A re-render can leave the surface briefly absent. That is not a
+        // measurement, so it is skipped rather than compared.
+        if (current.top < 0) continue;
+        if (
+          previous !== null &&
+          current.top === previous.top &&
+          current.bottom === previous.bottom
+        ) {
+          return current;
+        }
+        previous = current;
+      }
+      throw new Error(`the home surface never settled at ${height}px`);
     };
 
     const tall = await at(840);

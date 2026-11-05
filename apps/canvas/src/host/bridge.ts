@@ -90,6 +90,34 @@ export interface DesktopBridge {
 
 export type HostKind = "web" | "desktop";
 
+/**
+ * A method, as opposed to the three values that identify the host.
+ *
+ * The distinction matters: a shell from an older build still publishes `host`
+ * and `version`, so only the callable half can tell a usable bridge from a stale
+ * one.
+ */
+export type BridgeMethod = Exclude<keyof DesktopBridge, "host" | "version" | "platform">;
+
+/**
+ * What this build of the renderer calls, and therefore needs.
+ *
+ * A window left open by a previous build keeps the preload it loaded at launch,
+ * so a method added since then is simply absent. Without this list the renderer
+ * asks for it, the call is `undefined`, and the window does nothing at all.
+ */
+export const REQUIRED_BRIDGE_METHODS = [
+  "loadDocument",
+  "saveDocument",
+  "flushDocument",
+  "documentInfo",
+  "appInfo",
+  "openFileDialog",
+  "openDocument",
+  "recentFiles",
+  "forgetRecent",
+] as const satisfies readonly BridgeMethod[];
+
 interface BridgeScope {
   readonly suiteDesktop?: unknown;
 }
@@ -117,4 +145,18 @@ export function desktopBridge(
 /** `"desktop"` when a bridge is present, otherwise `"web"`. */
 export function hostKind(scope?: BridgeScope): HostKind {
   return desktopBridge(scope) === null ? "web" : "desktop";
+}
+
+/**
+ * The methods a bridge does not publish.
+ *
+ * Empty means the shell beside this renderer is current enough to boot. A
+ * non-empty answer is a version mismatch the person has to see: the window is
+ * from a previous build, and only a restart replaces it.
+ */
+export function bridgeMissing(
+  bridge: DesktopBridge,
+  required: readonly BridgeMethod[] = REQUIRED_BRIDGE_METHODS,
+): readonly BridgeMethod[] {
+  return required.filter((method) => typeof bridge[method] !== "function");
 }

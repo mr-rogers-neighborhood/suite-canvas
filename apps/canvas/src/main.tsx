@@ -3,7 +3,8 @@ import { type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { crashReportingWanted } from "./crash/consent";
 import { startCrashReporting } from "./crash/report";
-import { desktopBridge } from "./host/bridge";
+import { bridgeMissing, desktopBridge } from "./host/bridge";
+import { StaleShell } from "./host/StaleShell";
 import { type BootPlan, bootPlan, hasShareLink, suiteMode } from "./session/mode";
 import {
   configureSession,
@@ -184,7 +185,20 @@ async function boot() {
     // A desktop build is the standalone profile, but it is not the same boot: the
     // document is a file the shell opened, not a workspace the URL names.
     const bridge = desktopBridge();
-    const started = bridge === null ? bootLocal() : await bootDesktop(bridge);
+    let started: boolean;
+    if (bridge === null) {
+      started = bootLocal();
+    } else {
+      // A window left open by a previous build keeps the preload it loaded, so
+      // the method this build needs may not exist. Say so rather than offering a
+      // window whose controls do nothing.
+      const missing = bridgeMissing(bridge);
+      if (missing.length > 0) {
+        render(<StaleShell missing={missing} />);
+        return;
+      }
+      started = await bootDesktop(bridge);
+    }
     if (!started) return;
   }
 

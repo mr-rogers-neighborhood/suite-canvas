@@ -29,14 +29,37 @@ import {
  * second dependency for three `fetch` calls, and `billing.ts` already owns them.
  */
 
+/**
+ * The origin the account service answers on.
+ *
+ * Better Auth rejects any base that is not `http(s)`, and an `app://` origin is
+ * exactly what a desktop renderer has. That surface does not exist in a build
+ * with no account — the desktop shell is the standalone profile — so the honest
+ * answer is a base that is valid but unreachable, rather than a throw at import
+ * time that takes the whole app down before it can say so.
+ */
+function isHttpOrigin(value: string): boolean {
+  return value.startsWith("http://") || value.startsWith("https://");
+}
+
+/**
+ * The absolute base for a relative mount, given the page's origin.
+ *
+ * Pure, and exported, because the rule is a test rather than something only a
+ * running desktop window can discover: an origin that is not `http(s)` cannot
+ * carry this client, so it gets a valid but unreachable base instead of a throw.
+ */
+export function accountBaseFor(origin: string, base: string): string {
+  if (!base.startsWith("/")) return base;
+  return isHttpOrigin(origin) ? `${origin}${base}` : `http://localhost.invalid${base}`;
+}
+
 function clientBase(): string {
   const base = authClientBase();
-  if (base.startsWith("/")) {
-    // No browser (a test importing the module): Better Auth wants an absolute URL.
-    const origin = typeof window === "undefined" ? "http://localhost" : window.location.origin;
-    return `${origin}${base}`;
-  }
-  return base;
+  if (!base.startsWith("/")) return base;
+  // No browser (a test importing the module): Better Auth wants an absolute URL.
+  const origin = typeof window === "undefined" ? "http://localhost" : window.location.origin;
+  return accountBaseFor(origin, base);
 }
 
 export const authClient = createAuthClient({

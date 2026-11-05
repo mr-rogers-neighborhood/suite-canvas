@@ -6,7 +6,7 @@
   "description": "The Canvas desktop shell: main process owns the file, the lock, the backups and recovery; the preload publishes one allowlisted bridge; the renderer is the existing canvas build.",
   "main": "./dist/main/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node scripts/stage.mjs",
+    "build": "pnpm --filter @suite/canvas build:standalone && tsc -p tsconfig.build.json && node scripts/stage.mjs",
     "dev": "node scripts/dev.mjs",
     "start": "electron .",
     "typecheck": "tsc --noEmit -p tsconfig.json"

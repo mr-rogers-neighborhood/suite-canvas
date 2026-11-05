@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,7 +18,30 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "..");
-const PORT = Number(process.env.SUITE_DEV_PORT ?? 5173);
+const PREFERRED_PORT = Number(process.env.SUITE_DEV_PORT ?? 5173);
+
+/**
+ * The first port from `from` upward that nothing is listening on.
+ *
+ * The port cannot be left to Vite's "in use, trying another one": this script
+ * waits for a server and then points the shell at it, and both need the number
+ * Vite actually bound. Guessing 5173 while Vite took 5174 opened the *other*
+ * process's page, which is how a stale dev server gets mistaken for this one.
+ */
+async function freePort(from) {
+  for (let port = from; port < from + 20; port += 1) {
+    const free = await new Promise((resolve) => {
+      const server = createServer();
+      server.once("error", () => resolve(false));
+      server.once("listening", () => server.close(() => resolve(true)));
+      server.listen(port, "127.0.0.1");
+    });
+    if (free) return port;
+  }
+  throw new Error(`no free port between ${from} and ${from + 19}`);
+}
+
+const PORT = await freePort(PREFERRED_PORT);
 const origin = `http://localhost:${PORT}`;
 
 const children = [];
@@ -78,9 +102,15 @@ async function waitForServer(url, timeoutMs) {
   return false;
 }
 
-const canvas = start("pnpm", ["--filter", "@suite/canvas", "dev:standalone"], {
-  FORCE_COLOR: "1",
-});
+// Vite is invoked directly rather than through the package script: `pnpm run
+// script -- --port` forwards the `--` as an argument, which Vite ignores, and it
+// then quietly picks a port of its own while this script waits on the one it
+// chose. `--strictPort` makes a race fail loudly instead of silently relocating.
+const canvas = start(
+  "pnpm",
+  ["--filter", "@suite/canvas", "exec", "vite", "--port", String(PORT), "--strictPort"],
+  { FORCE_COLOR: "1", VITE_SUITE_MODE: "standalone" },
+);
 
 // A dev server that dies before it listens is a real failure; say so instead of
 // waiting out the timeout.

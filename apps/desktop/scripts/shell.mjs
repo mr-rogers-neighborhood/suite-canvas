@@ -57,4 +57,13 @@ const child = spawn(process.execPath, [electron, app, ...process.argv.slice(2)],
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => child.kill(signal));
 }
-child.on("exit", (code) => process.exit(code ?? 0));
+// Preserve *how* the window ended. A child killed by a signal gives `code ===
+// null`, and reporting that as a clean 0 told the watcher the user had closed the
+// window, so a restart terminated the loop instead of replacing the process.
+child.on("exit", (code, signal) => {
+  if (signal !== null) {
+    process.kill(process.pid, signal);
+    return;
+  }
+  process.exit(code ?? 0);
+});

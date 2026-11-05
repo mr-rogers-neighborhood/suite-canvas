@@ -122,6 +122,49 @@ export interface CreateWorkspaceFileOptions {
   compact?: boolean;
 }
 
+/** Everything an envelope carries, already decided. */
+export interface BuildWorkspaceFileInput {
+  workspaceId: string;
+  /** A Loro snapshot, exactly as `doc.export({ mode: "snapshot" })` returns it. */
+  snapshot: Uint8Array;
+  manifest: WorkspaceFileManifest;
+  exportedAt?: string;
+  attachments?: WorkspaceFileAttachmentInputs;
+}
+
+/**
+ * Assemble an envelope from parts.
+ *
+ * Split out from `createWorkspaceFile` for the desktop main process, which has
+ * the snapshot and the counts but no `WorkspaceDocument`: it must not hold a
+ * second copy of the document, and it must not re-encode an attachment blob
+ * that has not changed. Assembling here keeps one owner for the format.
+ */
+export function buildWorkspaceFile(input: BuildWorkspaceFileInput): WorkspaceFile {
+  const attachments = input.attachments ?? {};
+  return {
+    kind: WORKSPACE_FILE_KIND,
+    version: WORKSPACE_FILE_VERSION,
+    schemaVersion: SCHEMA_VERSION,
+    exportedAt: input.exportedAt ?? new Date().toISOString(),
+    workspaceId: input.workspaceId,
+    document: bytesToBase64(input.snapshot),
+    manifest: input.manifest,
+    attachments: Object.fromEntries(
+      Object.entries(attachments).map(([id, source]) => [
+        id,
+        {
+          mime: source.mime,
+          name: source.name,
+          width: source.width,
+          height: source.height,
+          data: bytesToBase64(source.bytes),
+        },
+      ]),
+    ),
+  };
+}
+
 /** Snapshot plus a small manifest, so a person can see what the file holds. */
 export function createWorkspaceFile(
   workspaceId: string,

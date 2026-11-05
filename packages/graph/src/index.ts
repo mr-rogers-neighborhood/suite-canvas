@@ -569,6 +569,8 @@ export type {
 } from "./workspaceFile.js";
 export {
   BUNDLE_FILE_EXTENSION,
+  type BuildWorkspaceFileInput,
+  buildWorkspaceFile,
   createWorkspaceFile,
   damagedAttachmentWarning,
   isLegacyWorkspaceFileKind,

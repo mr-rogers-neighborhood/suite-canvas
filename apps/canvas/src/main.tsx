@@ -3,6 +3,7 @@ import { type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { crashReportingWanted } from "./crash/consent";
 import { startCrashReporting } from "./crash/report";
+import { desktopBridge } from "./host/bridge";
 import { type BootPlan, bootPlan, hasShareLink, suiteMode } from "./session/mode";
 import {
   configureSession,
@@ -133,6 +134,25 @@ async function bootRelay(plan: BootPlan): Promise<boolean> {
   return true;
 }
 
+/**
+ * The desktop boot: the shell owns the document, so the id comes from the file.
+ *
+ * This runs before `./App` and `./store` are imported. The store reads the
+ * session once at import time, so a session configured afterwards would leave it
+ * keyed to no document and persisting nowhere.
+ */
+async function bootDesktop(
+  bridge: NonNullable<ReturnType<typeof desktopBridge>>,
+): Promise<boolean> {
+  if (hasShareLink(window.location.href)) {
+    render(<LocalOnlyNotice />);
+    return false;
+  }
+  const { configureDesktopSession } = await import("./session/desktopDocument");
+  await configureDesktopSession(bridge);
+  return true;
+}
+
 /** The standalone boot: no claim, no share, no socket — just this browser. */
 function bootLocal(): boolean {
   if (hasShareLink(window.location.href)) {
@@ -160,8 +180,12 @@ async function boot() {
   // same comparison `isStandalone()` makes.
   if (import.meta.env.VITE_SUITE_MODE !== "standalone") {
     if (!(await bootRelay(plan))) return;
-  } else if (!bootLocal()) {
-    return;
+  } else {
+    // A desktop build is the standalone profile, but it is not the same boot: the
+    // document is a file the shell opened, not a workspace the URL names.
+    const bridge = desktopBridge();
+    const started = bridge === null ? bootLocal() : await bootDesktop(bridge);
+    if (!started) return;
   }
 
   const { default: App } = await import("./App");

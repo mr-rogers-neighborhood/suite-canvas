@@ -78,7 +78,8 @@ async function openInRenderer(info: OpenDocumentInfo): Promise<void> {
   const window = mainWindow;
   if (!window) return;
   const url = rendererUrl();
-  url.searchParams.set("workspace", info.workspaceId);
+  // No workspace id: the file is the identity, and the renderer asks the shell
+  // for it. A second copy in the address bar could only disagree with the file.
   url.searchParams.set("desktop", "1");
   window.setTitle(`${info.name} — Suite Canvas`);
   await window.loadURL(url.toString());

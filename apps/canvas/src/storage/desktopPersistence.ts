@@ -2,6 +2,7 @@ import { documentAttachments, WorkspaceDocument } from "@suite/graph";
 import type { LoroDoc } from "loro-crdt";
 import type { BridgeAttachment, DesktopBridge } from "../host/bridge";
 import { defaultAttachmentSources } from "../session/attachmentBytes";
+import { takeDesktopBoot } from "../session/desktopDocument";
 import { gatherAttachments } from "../session/workspaceTransfer";
 
 /**
@@ -56,7 +57,10 @@ export class LoroDesktopPersistence {
    */
   async load(): Promise<void> {
     if (this.loaded) return;
-    const opened = await this.bridge.loadDocument();
+    // The boot already asked the shell, and the snapshot it got is handed over
+    // here rather than requested again: the bytes are the document, and a large
+    // one should not cross the boundary twice on every open.
+    const opened = takeDesktopBoot() ?? (await this.bridge.loadDocument());
     if (opened) {
       // Importing is not an edit: it must not be forwarded back as one.
       this.doc.import(opened.snapshot);

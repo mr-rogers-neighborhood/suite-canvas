@@ -7,6 +7,7 @@ import type { FocusState } from "../collab/presence";
 import { TAB_ID } from "../collab/tabId";
 import { markBoot, measureBoot } from "../dev/bootTiming";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
+import { hostKind } from "../host/bridge";
 import { preloadIconRefs } from "../icons/iconSets";
 import { takeChosenTemplate } from "../launcher/starterTemplates";
 import { readLastBoard, rememberLastBoard } from "../session/lastBoard";
@@ -269,6 +270,15 @@ export function useWorkspaceBoot(args: {
   // Keep the URL shareable without a reload. A share keeps its token and never
   // gains a workspace id: the link is the whole credential.
   useEffect(() => {
+    // A desktop window has no address bar to keep in step, and the file is the
+    // document's identity: writing the workspace into the URL would put a second
+    // copy of the id where the shell already answered it. The board is still
+    // remembered, which is what the URL was carrying on the web.
+    if (hostKind() === "desktop") {
+      if (activeBoardId && !share) rememberLastBoard(workspaceId, activeBoardId);
+      return;
+    }
+
     if (!activeBoardId) {
       // A placeholder tab is the workspace without a board, so the address stops
       // naming the last one. Without this a reload would reopen it.

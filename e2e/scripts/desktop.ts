@@ -137,7 +137,10 @@ export async function waitForDocument(page: Page): Promise<void> {
   await waitForBridge(page);
   // The document URL is what the renderer navigates to; waiting for it means the
   // next evaluate cannot be destroyed by the navigation that is still in flight.
-  await page.waitForURL(/[?&]workspace=/u, { timeout: 30_000 });
+  // The URL names no workspace: the file is the identity, and the shell reports
+  // it over the bridge. Waiting for a query parameter would wait forever, so the
+  // signal is the document itself, polled in a way that survives a navigation.
+  await page.waitForURL(/[?&]desktop=1/u, { timeout: 30_000 });
   await expect
     .poll(async () => (await openInfo(page).catch(() => null)) !== null, { timeout: 30_000 })
     .toBe(true);

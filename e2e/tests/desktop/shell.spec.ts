@@ -43,6 +43,12 @@ test("opens a .canvas file and shows it as the open document", async () => {
   try {
     await waitForDocument(run.page);
 
+    // The address bar names no workspace: the file is the identity, and the
+    // renderer asks the shell for it. A copy in the URL could only disagree.
+    const url = new URL(run.page.url());
+    expect(url.searchParams.has("workspace")).toBe(false);
+    expect(url.searchParams.get("desktop")).toBe("1");
+
     const info = await openInfo(run.page);
     expect(info).toMatchObject({
       workspaceId: "ws-open",
@@ -186,7 +192,8 @@ test("creates a file when a new workspace is started from the launcher", async (
     // a real click would wait for an actionability check on a page that is
     // already unloading.
     await run.page.getByTestId("launcher-new").dispatchEvent("click");
-    await run.page.waitForURL(/workspace=/u, { timeout: 30_000 });
+    // The launcher URL already carries `desktop=1`, so the settled signal is the
+    // shell reporting a document rather than the address bar changing.
     await waitForDocument(run.page);
 
     const info = await openInfo(run.page);

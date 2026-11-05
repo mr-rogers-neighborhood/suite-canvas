@@ -28,13 +28,19 @@ export function DesktopRecents(): React.JSX.Element | null {
     };
   }, []);
 
-  if (files.length === 0) return null;
+  if (files.length === 0) {
+    return (
+      <p
+        data-testid="desktop-recents-empty"
+        className="mt-3 rounded-xl border border-dashed border-[var(--hairline)] px-4 py-8 text-center text-[13px] text-[var(--ink-muted)]"
+      >
+        Nothing opened yet. Start a new workspace or open a <code>.canvas</code> file.
+      </p>
+    );
+  }
 
   return (
-    <section className="mt-6" data-testid="desktop-recents">
-      <h2 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
-        Recent files
-      </h2>
+    <div data-testid="desktop-recents">
       <ul className="mt-2 divide-y divide-[var(--hairline)] overflow-hidden rounded-xl border border-[var(--hairline)]">
         {files.map((file) => (
           <li key={file.path} className="flex items-center gap-2">
@@ -75,6 +81,6 @@ export function DesktopRecents(): React.JSX.Element | null {
           That file is no longer open in this window. Open it again from its folder.
         </p>
       )}
-    </section>
+    </div>
   );
 }

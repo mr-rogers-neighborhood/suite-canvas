@@ -69,7 +69,12 @@ export async function launch(
   // Electron's own single-instance lock is scoped to the user-data directory, so
   // a second process that should reach the *file* lock needs its own profile.
   // Without it the second launch exits before it ever reads a document.
-  const profileArgs = options.profile ? [`--user-data-dir=${join(box.root, options.profile)}`] : [];
+  // Every launch gets its own Electron profile. The single-instance lock is
+  // scoped to that directory, so a spec needing a *second* process must not fight
+  // the first for it, and a developer running the app by hand holds the default
+  // profile: without this the whole tier fails for a reason that has nothing to
+  // do with the code under test.
+  const profileArgs = [`--user-data-dir=${join(box.root, options.profile ?? "primary")}`];
   const app = await electron.launch({
     args: [APP_DIR, ...args, ...profileArgs],
     env: {

@@ -358,18 +358,24 @@ describe("WorkspaceLauncher templates", () => {
     fireEvent.click(screen.getByTestId("launcher-new"));
 
     const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
-    expect(url.searchParams.get("template")).toBe("notebook");
     expect(url.searchParams.get("fresh")).toBe("1");
+    // The starter travels as an object, which is the only shape that resolves a
+    // template the bundle does not carry. It no longer rides the URL.
+    expect(takeChosenTemplate(url.searchParams.get("workspace") ?? "")?.id).toBe("notebook");
+    expect(url.searchParams.get("template")).toBeNull();
   });
 
-  it("carries the chosen template to the editor that writes the document", () => {
+  it("names the workspace after the starter, so the file is named after it too", () => {
     render(<WorkspaceLauncher />);
 
     fireEvent.change(screen.getByTestId("launcher-template"), { target: { value: "discworld" } });
     fireEvent.click(screen.getByTestId("launcher-new"));
 
     const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
-    expect(url.searchParams.get("template")).toBe("discworld");
+    const workspaceId = url.searchParams.get("workspace") ?? "";
+    // On the desktop the workspace name is what the file is called; a template
+    // that left it "Untitled workspace" would produce an untitled file.
+    expect(readWorkspaceNames()[workspaceId]).toBe("Discworld Reading Guide");
   });
 
   it("still offers a blank workspace, which sends no template at all", () => {
@@ -382,6 +388,7 @@ describe("WorkspaceLauncher templates", () => {
 
     const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
     expect(url.searchParams.get("template")).toBeNull();
+    expect(takeChosenTemplate(url.searchParams.get("workspace") ?? "")).toBeNull();
   });
 
   it("hands the chosen template to the boot as an object, not only as an id", () => {

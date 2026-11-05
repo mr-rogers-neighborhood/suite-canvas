@@ -253,3 +253,49 @@ test("opens the shell's own file dialog from the launcher", async () => {
     await run.close();
   }
 });
+
+test("anchors the home surface, and scrolls it instead of clipping", async () => {
+  const run = await launch(box, []);
+  try {
+    await waitForBridge(run.page);
+    const card = run.page.locator('[data-testid="workspace-launcher"] > div');
+
+    // The card used to be vertically centred, so it floated 182px down at 840 and
+    // drifted on every resize; at 480 it overflowed the bottom and could not
+    // centre at all. Both are measured, because "looks right" is not a check.
+    const at = async (height: number) => {
+      await run.page.setViewportSize({ width: 1280, height });
+      await run.page.waitForTimeout(150);
+      return run.page.evaluate(() => {
+        const main = document.querySelector('[data-testid="workspace-launcher"]');
+        const inner = main?.firstElementChild;
+        const box = inner?.getBoundingClientRect();
+        return {
+          viewport: window.innerHeight,
+          top: box ? Math.round(box.top) : -1,
+          bottom: box ? Math.round(box.bottom) : -1,
+          scrolls: main ? main.scrollHeight > window.innerHeight : false,
+        };
+      });
+    };
+
+    const tall = await at(840);
+    const short = await at(480);
+
+    // Anchored, not centred: centring put the card 182px down at 840 and moved it
+    // on every resize. A scrollbar appearing at 480 can shift layout by a few
+    // pixels, so the assertion is that it stays near the top at both heights
+    // rather than that the two are identical.
+    expect(tall.top).toBeLessThan(100);
+    expect(short.top).toBeLessThan(100);
+    expect(Math.abs(tall.top - short.top)).toBeLessThanOrEqual(16);
+
+    // And short windows scroll rather than clipping: at 480 the card used to end
+    // 36px past the bottom with no way to reach it.
+    expect(short.bottom).toBeGreaterThan(short.viewport);
+    expect(short.scrolls).toBe(true);
+    await expect(card).toBeVisible();
+  } finally {
+    await run.close();
+  }
+});

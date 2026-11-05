@@ -7,6 +7,11 @@ export interface VaultImportDialogProps {
   vaultTarget: (RecentWorkspace & { name: string }) | null;
   onClearTarget: () => void;
   onImportFolder: (target: RecentWorkspace & { name: string }, files: FileList | null) => void;
+  /**
+   * The same picker with no target: the home surface has no row to write into,
+   * so the import creates the workspace it lands in.
+   */
+  onImportHome?: ((files: FileList | null) => void) | undefined;
   onImportZip: (target: RecentWorkspace & { name: string }, files: FileList | null) => void;
 }
 
@@ -19,6 +24,7 @@ export function VaultImportDialog({
   vaultTarget,
   onClearTarget,
   onImportFolder,
+  onImportHome,
   onImportZip,
 }: VaultImportDialogProps) {
   return (
@@ -37,6 +43,7 @@ export function VaultImportDialog({
           event.target.value = "";
           onClearTarget();
           if (target) onImportFolder(target, files);
+          else onImportHome?.(files);
         }}
       />
       {/* A tablet's Files app can hand over one file but cannot unpack a folder,

@@ -1,7 +1,9 @@
 import { STARTER_TEMPLATES, type WorkspaceTemplate } from "@suite/graph";
 import type { VaultFile } from "@suite/import-obsidian";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { docsBaseUrl } from "../auth/docsUrl";
 import { useAccountStore } from "../auth/useAccountStore";
+import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
 import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
 import { ToastLayer } from "../feedback/ToastLayer";
 import { toast } from "../feedback/toast";
@@ -41,7 +43,12 @@ import {
 } from "./starterTemplates";
 import { useAccountWorkspaces } from "./useAccountWorkspaces";
 import { VaultImportDialog } from "./VaultImportDialog";
-import { importVaultIntoWorkspace, vaultFilesFromPicker, vaultName } from "./vaultImport";
+import {
+  importVaultIntoNewWorkspace,
+  importVaultIntoWorkspace,
+  vaultFilesFromPicker,
+  vaultName,
+} from "./vaultImport";
 import { readVaultZip } from "./vaultZip";
 
 /** The workspace name leads the row; the last board name is only a fallback. */
@@ -204,6 +211,11 @@ export function WorkspaceLauncher() {
         : b.lastOpenedAt - a.lastOpenedAt || a.name.localeCompare(b.name),
     );
 
+  // One surface, two capability sets: a shell owns the file, a browser owns the
+  // storage. Asking the host keeps the two in one component instead of two
+  // launchers that drift.
+  const isDesktop = hostKind() === "desktop";
+
   const startNew = () => {
     const workspaceId = newWorkspaceId();
     const chosen = starterTemplateById(templates, template);
@@ -211,10 +223,14 @@ export function WorkspaceLauncher() {
     // built with. The chosen template therefore travels as itself as well, which is
     // the only way a starter that came from the server can be applied at all.
     if (chosen !== undefined) rememberChosenTemplate(workspaceId, chosen);
-    rememberWorkspace({ id: workspaceId, title: DEFAULT_WORKSPACE_NAME });
+    // A starter names the workspace as well as its board: on the desktop the
+    // workspace name is what the file is called, so a template that left it
+    // "Untitled workspace" would produce `Untitled workspace.canvas`.
+    const title = chosen?.name ?? DEFAULT_WORKSPACE_NAME;
+    rememberWorkspace({ id: workspaceId, title });
+    if (chosen !== undefined) rememberWorkspaceName(workspaceId, title);
     const url = new URL(workspaceUrl(workspaceId, null));
     url.searchParams.set("fresh", "1");
-    if (chosen !== undefined) url.searchParams.set("template", chosen.id);
     navigateTo(url.toString());
   };
 
@@ -344,6 +360,76 @@ export function WorkspaceLauncher() {
     );
   };
 
+  /**
+   * Import a vault with no workspace chosen, which is the home's own case.
+   *
+   * The document is built here and then stored by whichever host owns storage:
+   * the browser keeps it under the new id, the shell writes it as a file. The
+   * import runs once, so the two hosts cannot produce different documents.
+   */
+  const importVaultHome = async (list: FileList | null) => {
+    if (!list || list.length === 0) return;
+    const { files, name } = await vaultFilesFromPicker(list);
+    if (files.length === 0) {
+      setError("Nothing was imported: that folder holds no notes or canvases.");
+      return;
+    }
+
+    const workspaceId = newWorkspaceId();
+    setProgress(`Importing ${name ?? "vault"}\u2026`);
+    setError(null);
+    setNotice(null);
+    try {
+      const { outcome, document } = importVaultIntoNewWorkspace({
+        workspaceId,
+        files,
+        ...(name === undefined ? {} : { homeBoardName: name }),
+      });
+      if (!outcome.ok) {
+        setError(outcome.message);
+        return;
+      }
+
+      const title = name ?? DEFAULT_WORKSPACE_NAME;
+      const bridge = desktopBridge();
+      if (bridge !== null) {
+        // The shell creates the file from this document, then moves the window
+        // onto it; the import is already inside the snapshot it is handed.
+        await bridge.saveDocument({
+          workspaceId,
+          title,
+          snapshot: new Uint8Array(document.exportSnapshot()),
+          manifest: {
+            boards: document.listBoards().length,
+            cards: document.listCards().length,
+            types: document.listTypes().length,
+            tags: document.listTags().length,
+          },
+        });
+      } else {
+        const doc = document.doc;
+        const persistence = new LoroIndexeddbPersistence(workspaceId, doc);
+        try {
+          await persistence.open();
+          await persistence.compact();
+        } finally {
+          persistence.destroy();
+        }
+        rememberWorkspace({ id: workspaceId, title, boardId: outcome.boardId ?? null });
+        rememberWorkspaceName(workspaceId, title);
+        openWorkspace(workspaceId, outcome.boardId ?? null);
+      }
+
+      toast.success(outcome.message, {
+        ...(outcome.detail === undefined ? {} : { detail: outcome.detail }),
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not import that folder.");
+    } finally {
+      setProgress(null);
+    }
+  };
+
   const exportRecent = async (entry: RecentEntry) => {
     setProgress(`Exporting ${entry.name}\u2026`);
     setError(null);
@@ -396,14 +482,18 @@ export function WorkspaceLauncher() {
   return (
     <main
       data-testid="workspace-launcher"
-      className="workspace-launcher flex min-h-screen items-center justify-center bg-[var(--canvas-bg)] px-4 py-10 text-[var(--ink)]"
+      // Anchored to the top, not centred. A home surface that floats in the
+      // middle drifts every time the window is resized, and a card taller than a
+      // short window could not centre at all: it clipped 36px off the bottom at
+      // 480px. The container scrolls instead, so the whole surface stays reachable.
+      className="workspace-launcher min-h-screen overflow-y-auto bg-[var(--canvas-bg)] px-4 py-10 text-[var(--ink)]"
       // A vault is dropped on a row, never on the page. Claiming the drag here
       // stops the browser from navigating to the dropped file when someone
       // misses a row, which would lose the launcher instead of doing nothing.
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => event.preventDefault()}
     >
-      <div className="w-[min(760px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] shadow-[0_30px_80px_-40px_rgba(0,0,0,0.55)]">
+      <div className="mx-auto w-[min(760px,100%)] overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] shadow-[0_30px_80px_-40px_rgba(0,0,0,0.55)]">
         <header className="border-b border-[var(--hairline)] px-8 pt-8 pb-7">
           <div className="flex items-end justify-between gap-6">
             <div>
@@ -449,6 +539,24 @@ export function WorkspaceLauncher() {
             >
               Open workspace file…
             </button>
+            <button
+              type="button"
+              data-testid="launcher-vault"
+              className="rounded-lg border border-[var(--hairline)] px-4 py-2 text-[13px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+              onClick={() => vaultInput.current?.click()}
+              disabled={busy}
+            >
+              Import a vault…
+            </button>
+            <a
+              data-testid="launcher-docs"
+              className="rounded-lg border border-[var(--hairline)] px-4 py-2 text-[13px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+              href={docsBaseUrl()}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Docs
+            </a>
             <RepositoryButton />
             <input
               ref={fileInput}
@@ -466,6 +574,7 @@ export function WorkspaceLauncher() {
                 vaultInput.current = element;
                 if (element) element.webkitdirectory = true;
               }}
+              onImportHome={importVaultHome}
               zipInputRef={zipInput}
               vaultTarget={vaultTarget}
               onClearTarget={() => setVaultTarget(null)}
@@ -491,7 +600,7 @@ export function WorkspaceLauncher() {
               stretching the select until the name is cut off. */}
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-[var(--ink-muted)]">
             <label className="flex items-center gap-2">
-              <span>Start from</span>
+              <span>New from</span>
               <select
                 data-testid="launcher-template"
                 aria-label="Workspace template"
@@ -550,7 +659,16 @@ export function WorkspaceLauncher() {
           </div>
         )}
 
-        <section className="px-8 py-6" aria-labelledby="recent-title">
+        {isDesktop ? (
+          <section className="px-8 py-6" aria-labelledby="recent-title">
+            <h2 id="recent-title" className="text-[12px] font-semibold uppercase tracking-wide">
+              Recent files
+            </h2>
+            <DesktopRecents />
+          </section>
+        ) : null}
+
+        <section className={isDesktop ? "hidden" : "px-8 py-6"} aria-labelledby="recent-title">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 id="recent-title" className="text-[12px] font-semibold uppercase tracking-wide">
               Recent workspaces
@@ -625,8 +743,6 @@ export function WorkspaceLauncher() {
               </button>
             </div>
           ) : null}
-
-          {hostKind() === "desktop" ? <DesktopRecents /> : null}
 
           {signedOut && recents.length > 0 ? <SavedLocallyPrompt /> : null}
 

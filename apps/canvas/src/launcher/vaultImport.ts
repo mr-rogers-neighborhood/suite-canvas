@@ -12,13 +12,18 @@ import { LoroDoc } from "loro-crdt";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
 
 /**
- * Owns the launcher's Obsidian drop: read the dropped folder, write it into a
- * workspace this browser already holds, and say what happened.
+ * Owns the launcher's Obsidian import: read the dropped folder, write it into a
+ * workspace, and say what happened.
  *
- * The import never creates a workspace. A vault that lands in a new document
- * would look like an import and behave like a new workspace: no name, no other
- * boards, and nothing the reader chose. So a workspace that is not cached on
- * this device is refused by name instead.
+ * A drop onto a row writes into that workspace. The home surface has no row, so
+ * it imports into a new one, and the objection to that is answered rather than
+ * ignored: a new document would look like an import and behave like a nameless
+ * new workspace, so the vault names both the workspace and its home board. The
+ * file therefore arrives called after the vault, which is what the reader chose.
+ *
+ * A workspace that is not cached on this device is still refused by name: an
+ * import into a document this browser cannot write would report a success that
+ * never happened.
  */
 
 export interface VaultImportOutcome {
@@ -122,6 +127,55 @@ export function lossDetail(
   }
   lines.push(...report.notes);
   return lines.length > 0 ? lines.join(" ") : undefined;
+}
+
+/**
+ * Read a vault into a document of its own, without a workspace that already exists.
+ *
+ * The caller decides where the result is stored: the browser keeps it in
+ * IndexedDB, and the desktop shell writes it as a file. Both get the same
+ * document, so the two hosts cannot disagree about what an import produces.
+ */
+export function importVaultIntoNewWorkspace(args: {
+  workspaceId: string;
+  files: readonly VaultFile[];
+  homeBoardName?: string | undefined;
+}): { outcome: VaultImportOutcome; document: WorkspaceDocument } {
+  const document = new WorkspaceDocument();
+  document.ensureDefaultTypes();
+  const name = args.homeBoardName?.trim();
+  if (name && name.length > 0) {
+    try {
+      document.renameWorkspace(name);
+    } catch {
+      // A name the schema refuses is not worth failing an import over; the
+      // board still carries it.
+    }
+  }
+
+  const result = importObsidianVault(document, {
+    files: [...args.files],
+    ...(name ? { homeBoardName: name } : {}),
+  });
+  if (result.isErr()) {
+    return {
+      document,
+      outcome: { ok: false, message: "Nothing was imported.", detail: result.error.message },
+    };
+  }
+
+  const report = result.value;
+  const boardId = report.boards[0]?.id;
+  const detail = lossDetail(report, []);
+  return {
+    document,
+    outcome: {
+      ok: true,
+      message: reportSummary(report),
+      ...(detail === undefined ? {} : { detail }),
+      ...(boardId === undefined ? {} : { boardId }),
+    },
+  };
 }
 
 /** The dropped folder's own name, which is what the home board is called. */

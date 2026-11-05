@@ -1,0 +1,119 @@
+# Desktop
+
+The Canvas desktop application. It is the same renderer the web build serves, wrapped in a main process
+that owns a file the user chose. It does not cover the document model ([data-model.md](data-model.md)) or
+the relay ([runtime.md](runtime.md)); the desktop build is the local profile and runs neither.
+
+## Two hosts, one renderer
+
+`apps/canvas` is one bundle in three deployments. What changes is not the UI but what the page can reach,
+and the renderer asks rather than assumes.
+
+| | `apps/canvas/src/host/bridge.ts` says | Local copy | Shape |
+| --- | --- | --- | --- |
+| Web, hosted | `hostKind()` is `"web"` | `LoroIndexeddbPersistence` | relay and sharing in parity |
+| Web, standalone | `hostKind()` is `"web"` | `LoroIndexeddbPersistence` | no relay, no account |
+| Desktop | `hostKind()` is `"desktop"` | `LoroDesktopPersistence` | one file, no relay, no account |
+
+The host is **not** a build flag. A flag would say what was compiled; the renderer needs to know what
+actually loaded beside it, so `hostKind()` looks for the `suiteDesktop` object the preload publishes. A
+desktop build with no bridge throws at boot rather than opening a session that persists nowhere. The one
+failure this product cannot accept is a session that silently keeps nothing.
+
+`createWorkspacePersistence` is the single decision point, and the `WorkspacePersistence` port has three
+methods (`load`, `flush`, `destroy`) because that is all the store uses. Multi-tab leadership and
+compaction stay inside the IndexedDB adapter, where coordination belongs; the file adapter has no peers
+to coordinate with because the lock makes sure of it.
+
+## What owns what
+
+The main process is a **file** authority, not a document authority.
+
+```
+apps/desktop/src/main
+  index.ts    lifecycle, single instance, protocol, window, menu, IPC handlers
+  store.ts    open, save, convert, recover, the mtime guard, the debounce
+  lock.ts     one writer per file
+  paths.ts    library, data directory, lock names
+  protocol.ts the page policy and the asset resolver
+apps/desktop/src/preload
+  index.cjs   the bridge, in CommonJS because a sandboxed preload cannot use ESM
+```
+
+The renderer owns the document: it has the schema, the editors and the attachment store. So a save is a
+payload: a snapshot, the manifest counts, and the attachments when they changed. The main process
+assembles the envelope, writes it atomically and keeps the attachment section it was last given. A
+routine autosave therefore does not re-encode megabytes of images, and the main process never holds a
+second copy of a document it does not edit.
+
+## Where things live
+
+Two roots, and the split is the decision:
+
+| Artefact | Location | Why |
+| --- | --- | --- |
+| Workspace files | `~/Documents/Suite/Canvas` | A person looks there, so it can be copied, backed up, or put in a folder their own cloud already syncs: local-first with no relay |
+| Backups | Beside the document, `<name>.<stamp>.bak` | "Recover with a file manager when the app is the thing that broke" is a promise the format makes |
+| Locks | The per-user data directory | A lock beside a synced file would carry another machine's pid, and every sync would look like a contended file |
+
+`SUITE_CANVAS_LIBRARY` and `SUITE_CANVAS_DATA` override both roots. They exist for tests and a portable
+install, and neither is read from a document, so no file can steer a write.
+
+## The four guards
+
+Each one exists because the file is the only copy — and each one has a test named after it.
+
+1. **The lock.** One writer per file. `<sha256(path)>.json` with a pid, a hostname, a start time and a
+   heartbeat. A second process is **refused**, not warned: two documents each holding a snapshot overwrite
+   one another and the loser's work is gone with no error anywhere. A lock from the same machine goes
+   stale after 30 seconds without a heartbeat; a lock from another machine never does, because a clock
+   difference or a sleeping laptop would otherwise let two machines write.
+2. **The atomic write.** Temp file, `fsync`, `rename`, then `fsync` the directory, all from
+   `@suite/files/node`. A crash mid-write leaves the previous version intact rather than a truncated
+   envelope no reader will accept.
+3. **The mtime guard.** The store records the size and modification time it last wrote. If the file moved
+   underneath it, whether a sync client, an editor or a restore, writing stops and the user is told,
+   instead of racing whatever did it.
+4. **Recovery.** A file that will not parse is never replaced by an empty one. Backups are tried newest
+   first; if one reads, the document opens from it and the damaged file is left exactly as it was.
+
+## The `.canvas` conversion
+
+Opening a legacy `.suite` canvas file writes the `.canvas` beside it, validates the new file, and keeps
+the original. The conversion is a rename, not a re-export: `migrateWorkspaceFile` copies the snapshot
+verbatim, because re-exporting would mint a new version vector and change bytes the user never touched.
+
+## What the desktop build is not
+
+It is the `standalone` profile. There is no relay, no account and no sharing, and the page policy's
+`connect-src 'self'` makes that structural rather than a promise. Hosted sign-in and sync arrive with
+`@suite/identity`; until then a half-working sign-in would be worse than none, because a session cookie
+set for `app.suite.run` does not apply to an `app://` origin.
+
+## The page policy
+
+`app://canvas` is a real, secure origin, so a document keeps the query-parameter routes it already has
+(`?workspace=…`) and relative asset paths still resolve. `DESKTOP_CSP` is the deployment's policy with
+`connect-src 'self'` and `wasm-unsafe-eval`, because Loro's core is WebAssembly and a sandboxed
+renderer without it cannot open a document at all.
+
+`script-src` has no `unsafe-inline`. The one inline script the app used to carry, the Excalidraw asset
+base, is `apps/canvas/public/excalidraw-assets.js` now, which is also what lets the deployment's own
+policy keep it strict. `style-src` keeps `unsafe-inline` because the theme, radius and density are
+restored before first paint.
+
+The asset resolver refuses any request whose path contains `.` or `..`, read from the **raw** URL: a
+WHATWG URL normalises `a/../b` to `b` before anyone can inspect it, so a climb would otherwise be
+silently reinterpreted as a legitimate path.
+
+## Packaging
+
+`electron-builder.yml`. The `deb` is the primary Linux target because it carries the `.canvas` MIME
+association and `x-scheme-handler/suite-canvas`, which live in the desktop entry a package installs; the
+AppImage is the portable alternative and registers its protocols at runtime.
+
+Electron fuses are set: `runAsNode` and `NODE_OPTIONS` off, ASAR integrity on, and app code loadable only
+from the ASAR. Without them a modified binary can be told to run any Node script.
+
+macOS and Windows are configured and cannot be produced here: both need a signing identity this
+repository does not have, and an unsigned build is not something to hand a user.

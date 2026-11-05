@@ -15,6 +15,7 @@ This page is the map. Each subsystem has its own reference page, and the reasoni
 | Path | Responsibility |
 | --- | --- |
 | `apps/canvas` | React 19 canvas, Tiptap editors, panels, launcher, Zustand UI state |
+| `apps/desktop` | The desktop shell: file store, lock, backups, recovery, preload bridge ([desktop.md](desktop.md)) |
 | `apps/collab-server` | Loro WebSocket relay, HTTP API, SQLite stores, projection worker |
 | `packages/graph` | Schema, records, typed CRDT layer, pure planning and projection |
 | `services/auth` | Identity, organizations, invitations, seats, licence checks |

@@ -19,10 +19,12 @@
     "e2e:changed": "node scripts/preflight.mjs --clean && playwright test --only-changed origin/main",
     "e2e:doctor": "node scripts/preflight.mjs",
     "e2e:stop": "node scripts/preflight.mjs --fix --clean",
-    "e2e:logs": "node scripts/logs.mjs"
+    "e2e:logs": "node scripts/logs.mjs",
+    "e2e:desktop": "playwright test --config=playwright.desktop.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
-    "@types/node": "^26.6.5"
+    "@types/node": "^26.6.5",
+    "@suite/graph": "workspace:*"
   }
 }

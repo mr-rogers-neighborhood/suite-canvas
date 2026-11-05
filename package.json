@@ -98,5 +98,9 @@
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc}": "biome check --write"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@suite/contracts": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.1.0&path:/packages/contracts",
+    "@suite/files": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.1.0&path:/packages/files"
+  }
 }

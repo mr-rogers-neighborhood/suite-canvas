@@ -46,13 +46,27 @@ assembles the envelope, writes it atomically and keeps the attachment section it
 routine autosave therefore does not re-encode megabytes of images, and the main process never holds a
 second copy of a document it does not edit.
 
+## The document's identity
+
+The file *is* the document. The workspace id lives inside the envelope, so the address bar names no
+workspace at all: the window loads `index.html?desktop=1` and the renderer asks the shell what is open.
+
+That has to happen before `./store` is imported, because that module reads the session once at import
+time to pick its room and its persistence. `main.tsx` therefore awaits the shell, configures the
+session, and only then imports the store. The store stays synchronous, which is what keeps the change
+small: three non-test modules ever read the id.
+
+The snapshot comes with that answer and is handed to the persistence adapter, so a large document
+crosses the IPC boundary once on open rather than twice. The board is still remembered, through the
+store the URL used to carry on the web.
+
 ## Where things live
 
 Two roots, and the split is the decision:
 
 | Artefact | Location | Why |
 | --- | --- | --- |
-| Workspace files | `~/Documents/Suite/Canvas` | A person looks there, so it can be copied, backed up, or put in a folder their own cloud already syncs: local-first with no relay |
+| Workspace files | `~/Documents/Suite/Canvas` (the suite convention, from `@suite/contracts`) | A person looks there, so it can be copied, backed up, or put in a folder their own cloud already syncs: local-first with no relay |
 | Backups | Beside the document, `<name>.<stamp>.bak` | "Recover with a file manager when the app is the thing that broke" is a promise the format makes |
 | Locks | The per-user data directory | A lock beside a synced file would carry another machine's pid, and every sync would look like a contended file |
 

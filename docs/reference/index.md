@@ -6,7 +6,7 @@ Facts to look up: the data model, the commands, the quotas, the security boundar
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Desktop](desktop.md) | The Canvas desktop application. It is the same renderer the web build serves, wrapped in a main process that owns a file the user chose. It does not c… | 2026-11-04 |
+| [Desktop](desktop.md) | The Canvas desktop application. It is the same renderer the web build serves, wrapped in a main process that owns a file the user chose. It does not c… | 2026-11-05 |
 | [Architecture](architecture.md) | Suite is a local-first collaborative canvas. One Loro document per workspace is the source of truth, @suite/graph validates every write, and the React… | 2026-11-04 |
 | [Data model](data-model.md) | This page does not cover how the canvas draws these records or how a share link is authenticated; architecture.md and security-model.md own those. It… | 2026-11-04 |
 | [Glossary](glossary.md) | One definition per term, in the sense this repository uses it. The model behind them is architecture.md, and the code identifiers are listed beside ea… | 2026-11-04 |

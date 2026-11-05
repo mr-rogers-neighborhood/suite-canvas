@@ -39,6 +39,16 @@ pnpm --filter @suite/desktop dev:shell  # a window on the bundle
 `dev:shell` reads `SUITE_DESKTOP_DEV_URL` when it is set, so pointing it at a Vite server by hand does
 the same thing `dev:desktop` does.
 
+## The home surface
+
+The window opens on the launcher, which is the app's home: **New** (optionally from a starter, which
+names the workspace and therefore the file), **Open a file…**, **Import a vault…**, **Docs**, and the
+recent files the shell remembers.
+
+It is anchored to the top rather than centred. Centring put the card 182px down in a tall window and
+moved it on every resize; at 480px it overflowed the bottom with no way to reach it. The surface
+scrolls instead, and `pnpm e2e:desktop` measures that rather than trusting it.
+
 ## Where the files are
 
 | Thing | Where |

@@ -26,6 +26,7 @@ import { desktopCsp, resolveAppAsset } from "./protocol.js";
 import { type RecentsStore, recentsStore } from "./recents.js";
 import { devServerUrl, isRendererOrigin, rendererUrl } from "./rendererUrl.js";
 import { DocumentStore, freeDocumentPath, looksLikeCanvasFile, type OpenResult } from "./store.js";
+import { checkForUpdates } from "./updateCheck.js";
 
 /**
  * The Canvas desktop shell.
@@ -495,6 +496,18 @@ if (!gotLock) {
 
     mainWindow = createWindow();
     applyMenu();
+
+    // One check per launch, in the background: it writes the report the hub reads,
+    // and a failure is a line in the log rather than a dialog over someone's work.
+    // A dev run has no feed, so it does not ask.
+    void checkForUpdates({
+      dataDir: paths.data,
+      version: app.getVersion(),
+      channel: "alpha",
+      packaged: app.isPackaged,
+    }).then(({ error }) => {
+      if (error !== null && app.isPackaged) console.warn(`[update] ${error}`);
+    });
 
     // The launcher is always the first page. A refusal — a file another window
     // holds, a file that will not parse — is then a dialog over somewhere the

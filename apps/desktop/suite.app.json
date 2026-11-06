@@ -6,5 +6,9 @@
   "contractVersion": "1.0.0",
   "deepLinkPrefix": "suite://canvas/",
   "fileExtensions": ["canvas"],
+  "update": {
+    "feed": "https://github.com/mr-rogers-neighborhood/suite-canvas/releases/latest/download",
+    "channel": "alpha"
+  },
   "capabilities": ["document.file", "sync", "attachments", "publish"]
 }

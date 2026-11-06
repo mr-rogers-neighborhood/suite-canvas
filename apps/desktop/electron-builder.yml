@@ -93,3 +93,11 @@ fileAssociations:
 
 # No per-app scheme: Start owns `suite://` and routes to the app. A second
 # scheme nothing registers or handles is a promise the app does not keep.
+
+# The feed the app's updater reads, and the one the hub reads when a person asks.
+# `latest/download` is a stable redirect to the newest release's assets, so the
+# URL never has to be rewritten per version, and GitHub serves the manifest the
+# updater writes beside the artifacts.
+publish:
+  provider: generic
+  url: https://github.com/mr-rogers-neighborhood/suite-canvas/releases/latest/download

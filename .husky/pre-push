@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# The gate that a CI service would have run.
+#
+# There is no hosted runner: this suite builds and signs its own releases on the
+# machine it lives on, so the gate runs there too. `pnpm check` is the repository's
+# own definition of healthy — lint, types, tests, and for the packages, that the
+# committed output still matches a fresh build, which is what the app repositories
+# install from a tag.
+#
+# `git push --no-verify` skips this. Nothing else does.
+pnpm check

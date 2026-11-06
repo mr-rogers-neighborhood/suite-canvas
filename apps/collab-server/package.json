@@ -16,16 +16,16 @@
     "@suite/auth": "workspace:*",
     "@suite/graph": "workspace:*",
     "@suite/licence": "workspace:*",
-    "jose": "^6.2.13",
+    "jose": "^6.2.15",
     "loro-adaptors": "^0.6.1",
-    "loro-crdt": "^1.16.4",
+    "loro-crdt": "^1.17.1",
     "loro-protocol": "^0.3.0",
     "loro-websocket": "0.6.2",
     "neverthrow": "^8.2.0",
-    "remeda": "^2.54.1"
+    "remeda": "^2.58.0"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "tsx": "^4.23.15",
     "typescript": "~5.9.3"
   }

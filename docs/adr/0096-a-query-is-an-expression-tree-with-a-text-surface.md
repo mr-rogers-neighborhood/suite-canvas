@@ -1,6 +1,6 @@
 # ADR-0096: a query is an expression tree with a text surface
 
-- Status: partial
+- Status: partial (reconsidering)
 - Date: 2026-11-03
 - Related: [ADR-0037](./0037-a-saved-view-is-a-lens.md), [ADR-0043](./0043-a-view-is-a-lens-a-database-or-a-render.md), [ADR-0095](./0095-the-library-is-the-view-surface.md), [`packages/graph/src/queryLanguage/`](../../packages/graph/src/queryLanguage/), [`docs/reference/query-language.md`](../../docs/reference/query-language.md)
 - Shipped: `ViewExpression` in the schema; `parseQuery`, `serializeQuery`, `expressionMatches`, `materializeRelative`, `liftLegacyQuery`, `countFacets`; the `board` predicate and `contains` operator; field sorts; `FilterBar` with chips and canonical text; legacy lift on read and normalization on write.

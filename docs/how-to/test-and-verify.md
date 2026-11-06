@@ -65,6 +65,23 @@ script says what is missing on a machine.
   generated documentation indexes, and that the in-app handbook matches its Markdown source.
 - `pnpm docs:symbols` checks that a path or a `pnpm` script a page names actually exists.
 
+## What earns a test
+
+The policy is written down once, in the `suite-dev` repository's decision records, because it governs
+every repository. The short version applies here.
+
+A test names a rule, not a function: "a saved view is a lens over the same cards" rather than
+"`workspace.listViews`". It is worth writing where being wrong is expensive, which in this app means a
+file write, a schema change, a permission gate, or parsing something that came from outside. A bug that
+shipped earns a regression test.
+
+Tests live beside the module and are deleted with the feature they cover. A test that breaks on every
+refactor without a behaviour change is testing the implementation, and belongs rewritten or removed.
+
+A test file past about 400 lines is split at its next change rather than in a sweep. Three are over
+that line today: `apps/canvas/src/library/LibraryDrawer.test.tsx`,
+`packages/graph/src/merge.test.ts` and `apps/canvas/src/cards/CardPanel.test.tsx`.
+
 ## Coverage and mutation
 
 `pnpm coverage:graph` measures the document package with a threshold, because that is the code where a

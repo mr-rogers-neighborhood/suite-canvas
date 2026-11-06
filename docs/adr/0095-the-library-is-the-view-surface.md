@@ -1,6 +1,6 @@
 # ADR-0095: the library is the view surface
 
-- Status: partial
+- Status: partial (reconsidering)
 - Date: 2026-11-03
 - Related: [ADR-0011](./0011-library-dock-and-card-chrome.md), [ADR-0037](./0037-a-saved-view-is-a-lens.md), [ADR-0043](./0043-a-view-is-a-lens-a-database-or-a-render.md), [ADR-0047](./0047-a-view-can-be-a-card-and-an-embed-is-one-concept.md), [ADR-0085](./0085-a-view-is-a-configuration-a-layer-and-a-projection.md), [ADR-0086](./0086-a-view-is-read-before-it-is-edited.md), [ADR-0096](./0096-a-query-is-an-expression-tree-with-a-text-surface.md), [`apps/canvas/src/library/`](../../apps/canvas/src/library/)
 - Shipped: a rail of saved views in the drawer header; `+ View` creates a record; selecting a view renders `LibraryViewSurface` with `FilterBar`, the shared `ViewSurface`, and `DataTable`; the system tab strip is narrowed to Inbox, Cards, Media, Annotations and Trash; `Open large` expands the drawer; `ViewsLayer`, `ViewsContextDrawer`, `SurfaceControls`, `ViewsBar` and the `viewsEnabled` switch are deleted; columns, bulk edits, add row and cell editors are built.

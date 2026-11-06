@@ -65,7 +65,7 @@ export async function checkForUpdates(options: UpdateCheckOptions): Promise<Upda
     return { state: null, error: "this build has no update feed", verified: false };
   }
 
-  const check = await checkSignedFeed(feed, platform, options.fetch ?? ((url) => fetch(url)), now);
+  const check = await checkSignedFeed(feed, platform, options.fetch, now);
   if (!check.verified || check.version === null) {
     // No report: a card that says "checked" would be claiming an answer nobody gave.
     return {

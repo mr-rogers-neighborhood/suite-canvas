@@ -23,6 +23,12 @@ const CHANNELS = {
   openDocument: "suite:document:open",
   recentFiles: "suite:document:recents",
   forgetRecent: "suite:document:forget",
+  syncStatus: "suite:sync:status",
+  syncEnable: "suite:sync:enable",
+  syncDisable: "suite:sync:disable",
+  syncPublish: "suite:sync:publish",
+  syncIncoming: "suite:sync:incoming",
+  syncChanged: "suite:sync:changed",
 };
 
 contextBridge.exposeInMainWorld("suiteDesktop", {
@@ -40,4 +46,17 @@ contextBridge.exposeInMainWorld("suiteDesktop", {
   openDocument: (path) => ipcRenderer.invoke(CHANNELS.openDocument, path),
   recentFiles: () => ipcRenderer.invoke(CHANNELS.recentFiles),
   forgetRecent: (path) => ipcRenderer.invoke(CHANNELS.forgetRecent, path),
+
+  // Sync. The page hands over an exported update and receives one back; the keys and
+  // the socket stay in main, which is the whole reason these are the only two doors.
+  syncStatus: () => ipcRenderer.invoke(CHANNELS.syncStatus),
+  syncEnable: (url) => ipcRenderer.invoke(CHANNELS.syncEnable, url),
+  syncDisable: () => ipcRenderer.invoke(CHANNELS.syncDisable),
+  syncPublish: (update) => ipcRenderer.invoke(CHANNELS.syncPublish, update),
+  onSyncIncoming: (listener) => {
+    ipcRenderer.on(CHANNELS.syncIncoming, (_event, update) => listener(update));
+  },
+  onSyncChanged: (listener) => {
+    ipcRenderer.on(CHANNELS.syncChanged, (_event, info) => listener(info));
+  },
 });

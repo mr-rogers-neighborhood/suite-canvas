@@ -25,6 +25,26 @@ function searchParam(key: string): string | null {
   return new URLSearchParams(window.location.search).get(key);
 }
 
+/**
+ * The sync doors main exposes.
+ *
+ * The renderer never holds a key or a socket: it exports a document update and receives
+ * one back. Both directions are plain arrays because this crosses a context boundary.
+ */
+interface SyncBridge {
+  syncEnable(url: string): Promise<unknown>;
+  syncDisable(): Promise<unknown>;
+  syncStatus(): Promise<unknown>;
+  syncPublish(update: number[]): Promise<unknown>;
+  onSyncIncoming(listener: (update: number[]) => void): void;
+  onSyncChanged(listener: (info: { status: { state: string } }) => void): void;
+}
+
+function syncBridge(): SyncBridge | null {
+  const bridge = (globalThis as { suiteDesktop?: Partial<SyncBridge> }).suiteDesktop;
+  return bridge?.onSyncIncoming === undefined ? null : (bridge as SyncBridge);
+}
+
 /** A workspace owns its boards and cards. `?doc=` remains a legacy alias. */
 export function resolveWorkspaceId(): string | null {
   return searchParam("workspace") ?? searchParam("doc");
@@ -79,6 +99,10 @@ interface CanvasState {
   /** True when a transport is configured. Always false until there is one. */
   syncEnabled: boolean;
   connect: () => void;
+  /** Opt in: point this workspace at a host. */
+  enableSync: (url: string) => Promise<void>;
+  /** Stop syncing. The local document is untouched. */
+  disableSync: () => Promise<void>;
   /**
    * Persist locally and wait until the room has the latest local version.
    * Publishes call this so the server never reads a draft the transport has
@@ -95,8 +119,23 @@ interface CanvasState {
 }
 
 export const useCanvasStore = create<CanvasState>((set) => {
-  // A launch syncs with nothing. The transport lives in the main process, because
-  // the key schedule does, so there is no provider to construct here yet.
+  // A launch syncs with nothing: sync is opt-in, and the default has to be the private
+  // one. The transport lives in main with the key schedule, so the renderer only ever
+  // hands over an update or receives one.
+  const sync = syncBridge();
+  if (sync !== null) {
+    sync.onSyncIncoming((update) => {
+      try {
+        doc.import(Uint8Array.from(update));
+      } catch (error) {
+        console.warn("[sync] an update from the host did not apply", error);
+      }
+    });
+    // Local commits only: an import would otherwise echo straight back to the host.
+    doc.subscribeLocalUpdates((update) => {
+      void sync.syncPublish(Array.from(update));
+    });
+  }
 
   if (persistence) {
     markBoot("hydrate:start");
@@ -132,6 +171,14 @@ export const useCanvasStore = create<CanvasState>((set) => {
     synced: true,
     syncEnabled: false,
     connect: () => {},
+    enableSync: async (url) => {
+      set({ status: "connecting" });
+      await sync?.syncEnable(url);
+    },
+    disableSync: async () => {
+      await sync?.syncDisable();
+      set({ status: "disconnected" });
+    },
     flush: async () => {
       await persistence?.flush();
     },

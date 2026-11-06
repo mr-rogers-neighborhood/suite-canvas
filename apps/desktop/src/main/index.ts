@@ -26,6 +26,7 @@ import { desktopCsp, resolveAppAsset } from "./protocol.js";
 import { type RecentsStore, recentsStore } from "./recents.js";
 import { devServerUrl, isRendererOrigin, rendererUrl } from "./rendererUrl.js";
 import { DocumentStore, freeDocumentPath, looksLikeCanvasFile, type OpenResult } from "./store.js";
+import { registerSyncIpc } from "./sync/ipc.js";
 import { checkForUpdates } from "./updateCheck.js";
 
 /**
@@ -55,6 +56,7 @@ if (userDataOverride !== undefined && userDataOverride.length > 0) {
 const pendingFiles: string[] = [];
 let mainWindow: BrowserWindow | null = null;
 let store: DocumentStore | null = null;
+let syncIpc: ReturnType<typeof registerSyncIpc> | null = null;
 let paths: DesktopPaths = desktopPaths();
 let recents: RecentsStore | null = null;
 
@@ -490,6 +492,14 @@ if (!gotLock) {
     });
 
     registerIpc();
+    // Sync is opt-in per workspace, so this only wires the doors; nothing connects until
+    // the page asks, and nothing is sent until it hands over a document update.
+    syncIpc = registerSyncIpc({
+      dataDir: paths.data,
+      currentWorkspaceId: () => store?.documentInfo.workspaceId ?? null,
+      webContents: () => mainWindow?.webContents ?? null,
+      onIpc,
+    });
 
     const coldStart = fileFromArgv(process.argv);
     if (coldStart) attachFile(coldStart);
@@ -529,6 +539,7 @@ if (!gotLock) {
   });
 
   app.on("before-quit", () => {
+    void syncIpc?.stop();
     void store?.close();
   });
 }

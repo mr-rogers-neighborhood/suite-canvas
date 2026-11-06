@@ -22,6 +22,18 @@ export const IPC = {
   openFileDialog: "suite:document:pick",
   /** Open a path the shell reported earlier, after re-validating it. */
   openDocument: "suite:document:open",
+  /** What sync is doing for the open workspace. */
+  syncStatus: "suite:sync:status",
+  /** Opt in: point this workspace at a host. */
+  syncEnable: "suite:sync:enable",
+  /** Stop syncing this workspace. The local document is untouched. */
+  syncDisable: "suite:sync:disable",
+  /** A document update the renderer exported, on its way to the group. */
+  syncPublish: "suite:sync:publish",
+  /** Pushed the other way: an update to import. */
+  syncIncoming: "suite:sync:incoming",
+  /** Pushed when the status changes, so the status line redraws. */
+  syncChanged: "suite:sync:changed",
   /** Files this machine opened, newest first. */
   recentFiles: "suite:document:recents",
   /** Drop one entry from that list. */
@@ -31,6 +43,21 @@ export const IPC = {
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
 
 /** What the renderer is told when it asks what is open. */
+/** What the sync service is doing, as the renderer is allowed to see it. */
+export type SyncState =
+  | { readonly state: "off" }
+  | { readonly state: "connecting" }
+  | { readonly state: "syncing"; readonly count: number }
+  | { readonly state: "asleep"; readonly reason: string }
+  | { readonly state: "refused"; readonly reason: string };
+
+/** Everything the renderer needs to draw a status line, and nothing else. */
+export interface SyncInfo {
+  readonly workspaceId: string | null;
+  readonly deviceId: string;
+  readonly status: SyncState;
+}
+
 export interface OpenDocumentInfo {
   /** The workspace id the renderer keys its store by; carried in the page URL. */
   readonly workspaceId: string;

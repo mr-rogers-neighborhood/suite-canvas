@@ -221,7 +221,14 @@ describe("session capabilities", () => {
       sessionForShare("tok", share({ scope: "workspace", role: "editor" })),
       sessionForShare("tok", share({ scope: "board", role: "editor" })),
       sessionForShare("tok", share({ scope: "selection", role: "viewer" })),
-      { ...getSession(), credential: "account" as const, role: "owner" as const },
+      {
+        workspaceId: "ws",
+        roomId: "ws",
+        share: null,
+        role: "editor" as const,
+        readOnly: false,
+        credential: "account" as const,
+      },
     ]) {
       const capabilities = sessionCapabilities(config);
       expect(capabilities.canManageLinks).toBe(false);

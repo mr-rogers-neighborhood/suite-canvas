@@ -10,6 +10,8 @@ import { collabWsUrl } from "../session/endpoints";
 import { isStandalone } from "../session/mode";
 import { getSession } from "../session/session";
 import { createWorkspacePersistence } from "../storage/workspacePersistence";
+import { readSuiteSyncConfig } from "../sync/config";
+import { SuiteSyncProvider } from "../sync/suiteSyncProvider";
 
 export type ConnectionStatus = LoroConnectionStatus;
 
@@ -73,16 +75,20 @@ const auth: ProviderAuth | undefined = SESSION.share
 /** How long to wait for the first server sync before treating the doc as local. */
 const SYNC_WAIT_MS = 5000;
 
+type CanvasProvider = LoroProvider | SuiteSyncProvider;
+
 interface CanvasState {
   workspace: WorkspaceDocument;
   presence: EphemeralStore;
   cursors: CursorEphemeralStore;
-  provider: LoroProvider | null;
+  provider: CanvasProvider | null;
   status: ConnectionStatus;
   /** True once local storage has hydrated. */
   ready: boolean;
   /** True once the first server sync landed (or the wait ran out). */
   synced: boolean;
+  /** True when a dev `suite-sync` transport is configured. */
+  syncEnabled: boolean;
   connect: () => void;
   /**
    * Persist locally and wait until the room has the latest local version.
@@ -107,29 +113,43 @@ interface CanvasState {
 /**
  * A socket is pointless without a relay: unit tests mount components with no
  * server, and the standalone profile is a static build with no relay at all.
- * `LoroProvider` opens its socket in the constructor, so this has to be decided
- * before the provider is constructed at module load.
+ * A `suite-sync` query is the exception: it is the dev transport, and it is
+ * chosen before either provider is constructed at module load.
  */
-const NO_TRANSPORT = import.meta.env.MODE === "test" || isStandalone();
+const SYNC_READ = readSuiteSyncConfig(WORKSPACE_ID);
+const SYNC_CONFIG = SYNC_READ?.ok ? SYNC_READ.value : null;
+if (SYNC_READ !== null && !SYNC_READ.ok) {
+  console.warn(`[suite-sync] ${SYNC_READ.error}`);
+}
+const NO_TRANSPORT = import.meta.env.MODE === "test" || (isStandalone() && SYNC_CONFIG === null);
 
 export const useCanvasStore = create<CanvasState>((set) => {
-  const provider =
-    !ROOM_ID || typeof window === "undefined" || NO_TRANSPORT
-      ? null
-      : new LoroProvider({
-          url: collabWsUrl(),
-          workspaceId: ROOM_ID,
+  const onSynced = () => {
+    markBoot("sync:end");
+    measureBoot("to-synced", "store:created", "sync:end");
+    set({ synced: true });
+  };
+
+  const provider: CanvasProvider | null =
+    SYNC_CONFIG !== null && import.meta.env.MODE !== "test"
+      ? new SuiteSyncProvider({
+          ...SYNC_CONFIG,
           doc,
-          presence,
-          cursors,
-          ...(auth ? { auth } : {}),
           onStatus: (status) => set({ status }),
-          onSynced: () => {
-            markBoot("sync:end");
-            measureBoot("to-synced", "store:created", "sync:end");
-            set({ synced: true });
-          },
-        });
+          onSynced,
+        })
+      : !ROOM_ID || typeof window === "undefined" || NO_TRANSPORT
+        ? null
+        : new LoroProvider({
+            url: collabWsUrl(),
+            workspaceId: ROOM_ID,
+            doc,
+            presence,
+            cursors,
+            ...(auth ? { auth } : {}),
+            onStatus: (status) => set({ status }),
+            onSynced,
+          });
 
   if (persistence) {
     markBoot("hydrate:start");
@@ -173,6 +193,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
     status: provider ? provider.status : "connecting",
     ready: persistence === null,
     synced: provider === null,
+    syncEnabled: SYNC_CONFIG !== null,
     connect: () => {
       void provider?.connect();
     },

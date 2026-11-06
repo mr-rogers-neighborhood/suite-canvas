@@ -19,7 +19,7 @@ import {
   type RecentFileInfo,
 } from "../shared/ipc.js";
 import { type DesktopPaths, desktopPaths } from "./paths.js";
-import { DESKTOP_CSP, resolveAppAsset } from "./protocol.js";
+import { desktopCsp, resolveAppAsset } from "./protocol.js";
 import { type RecentsStore, recentsStore } from "./recents.js";
 import { isRendererOrigin, rendererUrl } from "./rendererUrl.js";
 import { DocumentStore, freeDocumentPath, looksLikeCanvasFile, type OpenResult } from "./store.js";
@@ -450,7 +450,7 @@ if (!gotLock) {
       if (!resolved.ok) return new Response("not found", { status: 404 });
       const response = await net.fetch(pathToFileURL(resolved.file).toString());
       const headers = new Headers(response.headers);
-      headers.set("Content-Security-Policy", DESKTOP_CSP);
+      headers.set("Content-Security-Policy", desktopCsp());
       headers.set("X-Content-Type-Options", "nosniff");
       return new Response(response.body, { status: response.status, headers });
     });

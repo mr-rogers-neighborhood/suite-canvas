@@ -80,6 +80,7 @@ function WorkspaceShell({
   const provider = useCanvasStore((state) => state.provider);
   const presence = useCanvasStore((state) => state.presence);
   const status = useCanvasStore((state) => state.status);
+  const syncEnabled = useCanvasStore((state) => state.syncEnabled);
   const ready = useCanvasStore((state) => state.ready);
   const synced = useCanvasStore((state) => state.synced);
   // The skeleton stays until the workspace has a first sync *or* this build will
@@ -692,6 +693,7 @@ function WorkspaceShell({
         requestLeave={requestLeave}
         setPaletteOpen={setPaletteOpen}
         standalone={standalone}
+        syncEnabled={syncEnabled}
         status={status}
         share={share}
         peerCount={peerCount}

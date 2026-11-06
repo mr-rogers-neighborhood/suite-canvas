@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DESKTOP_CSP, resolveAppAsset, scriptSrcDirective } from "./protocol.js";
+import { DESKTOP_CSP, desktopCsp, resolveAppAsset, scriptSrcDirective } from "./protocol.js";
 
 const ROOT = "/opt/suite/resources/renderer";
 
@@ -39,6 +39,21 @@ describe("resolveAppAsset", () => {
     // `/opt/suite/resources/rendererevil` shares the prefix but is a different
     // directory, so the check has to be on a separator boundary.
     expect(resolveAppAsset("app://canvas/../rendererevil/x.js", ROOT)).toEqual({ ok: false });
+  });
+});
+
+describe("desktopCsp", () => {
+  it("keeps the shipped policy when no sync URL is configured", () => {
+    expect(desktopCsp({})).toBe(DESKTOP_CSP);
+  });
+
+  it("allows the dev sync origin", () => {
+    const csp = desktopCsp({ SUITE_SYNC_URL: "ws://127.0.0.1:8787/sync" });
+    expect(csp).toContain("connect-src 'self' ws://127.0.0.1:8787");
+  });
+
+  it("ignores a URL that is not a WebSocket", () => {
+    expect(desktopCsp({ SUITE_SYNC_URL: "https://example.test" })).toBe(DESKTOP_CSP);
   });
 });
 

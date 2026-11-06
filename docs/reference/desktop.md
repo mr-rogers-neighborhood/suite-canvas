@@ -111,6 +111,15 @@ It is the `standalone` profile. There is no relay, no account and no sharing, an
 `@suite/identity`; until then a half-working sign-in would be worse than none, because a session cookie
 set for `app.suite.run` does not apply to an `app://` origin.
 
+## Local sync (dev)
+
+The desktop shell can point at a user-run `suite-sync` server for the two-copy demo:
+`SUITE_SYNC_URL`, `SUITE_SYNC_MEMBER`, `SUITE_SYNC_WORKSPACE`, `SUITE_SYNC_EPOCH` and
+`SUITE_SYNC_DEVICE`. `rendererUrl` passes them to the page, and `desktopCsp` adds the server origin to
+`connect-src` only when `SUITE_SYNC_URL` is a `ws:` or `wss:` URL. The transport is plaintext and
+loopback-only; [the suite-sync demo](https://github.com/mr-rogers-neighborhood/suite-sync/blob/main/docs/how-to/canvas-sync-demo.md)
+has the commands. It is not the shipped security model.
+
 ## The page policy
 
 `app://canvas` is a real, secure origin, so a document keeps the query-parameter routes it already has

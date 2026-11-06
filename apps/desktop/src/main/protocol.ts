@@ -32,6 +32,32 @@ export const DESKTOP_CSP = [
   "frame-ancestors 'none'",
 ].join("; ");
 
+/**
+ * The desktop policy with an optional dev sync origin.
+ *
+ * The shipped profile is local-only. The dev `suite-sync` transport is the one
+ * exception, and only when `SUITE_SYNC_URL` names a WebSocket origin. A policy
+ * that cannot open the socket would make the demo look like a sync bug.
+ */
+export function desktopCsp(env: NodeJS.ProcessEnv = process.env): string {
+  const origin = syncOrigin(env.SUITE_SYNC_URL);
+  return origin === null
+    ? DESKTOP_CSP
+    : DESKTOP_CSP.replace("connect-src 'self'", `connect-src 'self' ${origin}`);
+}
+
+function syncOrigin(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  if (trimmed === undefined || trimmed.length === 0) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "ws:" && url.protocol !== "wss:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 /** The `script-src` directive on its own, for a caller that checks the policy. */
 export function scriptSrcDirective(policy: string = DESKTOP_CSP): string {
   return (

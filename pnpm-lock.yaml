@@ -251,6 +251,9 @@ importers:
       '@suite/import-obsidian':
         specifier: workspace:*
         version: link:../../packages/import-obsidian
+      '@suite/sync':
+        specifier: git+https://github.com/mr-rogers-neighborhood/suite-sync.git#v0.3.3&path:/packages/protocol
+        version: https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/b20a9b156eb98d4e18bc3f76782043b2056b8832#path:/packages/protocol
       '@tiptap/extensions':
         specifier: ^3.32.0
         version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
@@ -3780,6 +3783,10 @@ packages:
   '@suite/files@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/1907197274e3dcf50c733bc4008e8f754f7eedb1#path:/packages/files':
     resolution: {gitHosted: true, integrity: sha512-gtMRAiPs68F70pIUxquFaunpU7wDwAH18Ybz6+aopRhND6uA4hHIKPlL11VWVqlUD+/4uRk4zVmWhBSnJtyYpg==, path: /packages/files, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/1907197274e3dcf50c733bc4008e8f754f7eedb1}
     version: 0.1.0
+
+  '@suite/sync@https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/b20a9b156eb98d4e18bc3f76782043b2056b8832#path:/packages/protocol':
+    resolution: {gitHosted: true, integrity: sha512-okfMqAKal3j1PauiLhEBpmC6pUqLYO9SvE7+N2zuGlS4laDDwCYI6mKGWDYxSf36HvO5ZltHQwsnIaFGJTdpQw==, path: /packages/protocol, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/b20a9b156eb98d4e18bc3f76782043b2056b8832}
+    version: 0.3.1
 
   '@swc/helpers@0.5.23':
     resolution: {integrity: sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw==}
@@ -11590,6 +11597,11 @@ snapshots:
 
   '@suite/files@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/1907197274e3dcf50c733bc4008e8f754f7eedb1#path:/packages/files':
     dependencies:
+      zod: 4.6.7
+
+  '@suite/sync@https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/b20a9b156eb98d4e18bc3f76782043b2056b8832#path:/packages/protocol':
+    dependencies:
+      loro-crdt: 1.16.4
       zod: 4.6.7
 
   '@swc/helpers@0.5.23':

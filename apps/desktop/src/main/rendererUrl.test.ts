@@ -29,6 +29,31 @@ describe("rendererUrl", () => {
       "http://localhost:5173/index.html",
     );
   });
+
+  it("passes the dev sync transport as query parameters", () => {
+    const member = "a".repeat(64);
+    const workspace = "b".repeat(64);
+    const url = rendererUrl({
+      ...dev,
+      SUITE_SYNC_URL: "ws://127.0.0.1:8787/sync",
+      SUITE_SYNC_MEMBER: member,
+      SUITE_SYNC_WORKSPACE: workspace,
+      SUITE_SYNC_EPOCH: "2",
+      SUITE_SYNC_DEVICE: "c".repeat(64),
+    });
+
+    expect(url.searchParams.get("syncUrl")).toBe("ws://127.0.0.1:8787/sync");
+    expect(url.searchParams.get("member")).toBe(member);
+    expect(url.searchParams.get("syncWorkspace")).toBe(workspace);
+    expect(url.searchParams.get("epoch")).toBe("2");
+    expect(url.searchParams.get("device")).toBe("c".repeat(64));
+  });
+
+  it("leaves the URL alone without a sync URL and member", () => {
+    expect(rendererUrl({ ...dev, SUITE_SYNC_URL: "ws://127.0.0.1:8787/sync" }).toString()).toBe(
+      "http://localhost:5173/index.html",
+    );
+  });
 });
 
 describe("isRendererOrigin", () => {

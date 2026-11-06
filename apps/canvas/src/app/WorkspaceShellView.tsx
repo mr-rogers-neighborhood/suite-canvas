@@ -104,6 +104,7 @@ export interface WorkspaceShellViewProps {
   requestLeave: (destination?: string) => void;
   setPaletteOpen: UiState["setPaletteOpen"];
   standalone: boolean;
+  syncEnabled: boolean;
   status: CanvasState["status"];
   share: ShareSession | null;
   peerCount: number;
@@ -219,6 +220,7 @@ export function WorkspaceShellView({
   requestLeave,
   setPaletteOpen,
   standalone,
+  syncEnabled,
   status,
   share,
   peerCount,
@@ -378,9 +380,9 @@ export function WorkspaceShellView({
           onOpenSearch={() => setPaletteOpen(true)}
           // A standalone build never opens a socket, so "Syncing" would be a lie;
           // the status slot reports the connection it has (none) beside the note.
-          status={standalone ? "disconnected" : status}
+          status={standalone && !syncEnabled ? "disconnected" : status}
           {...(share ? { role: share.role } : {})}
-          peerCount={standalone ? 0 : peerCount}
+          peerCount={standalone && !syncEnabled ? 0 : peerCount}
           phase={phase}
           {...(claim === undefined ? {} : { claim })}
           reason={reason ?? null}
@@ -439,7 +441,7 @@ export function WorkspaceShellView({
                     onLeave={requestLeave}
                   />
                 </Suspense>
-                {standalone ? (
+                {standalone && !syncEnabled ? (
                   <span
                     data-testid="local-only"
                     title="This build keeps every workspace in this browser: no sync, no sharing."

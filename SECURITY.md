@@ -46,9 +46,9 @@ layer will and will not change.
 
 ## Deployment expectations
 
-TLS, disk encryption and coordinated backups belong to the operator. A plain-HTTP deployment cannot
-sync and is not supported. `deploy/backup.sh` and `deploy/restore.sh` handle the volume as a whole.
-See [Operate a deployment](docs/how-to/operate.md) and [Limits](docs/reference/limits.md).
+TLS, disk encryption and backups belong to the person running it. Canvas talks to no service, so there
+is no deployment to secure: the file and the machine it is on are the whole surface.
+[Security model](docs/reference/security-model.md) is the detail.
 
 ## Supported versions
 

@@ -91,8 +91,8 @@ field to that schema in five places.
    is filtered out, and draw inside a `ViewportPortal` so the layer shares the camera.
 
 Tests: `apps/canvas/src/collab/peerProjection.test.ts` covers projection, sanitizing and the TTL, and
-`apps/canvas/src/collab/usePresenceStore.test.ts` covers the publish path. Two clients in
-`e2e/tests/collab/collab.spec.ts` are the only place a real round trip is checked.
+`apps/canvas/src/collab/usePresenceStore.test.ts` covers the publish path. Presence has no transport
+since the relay was retired; the publish path is what a future one plugs into.
 
 ## Before you open the pull request
 

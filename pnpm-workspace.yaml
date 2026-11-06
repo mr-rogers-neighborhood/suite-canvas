@@ -1,7 +1,6 @@
 packages:
   - "apps/*"
   - "packages/*"
-  - "services/*"
   - "e2e"
 allowBuilds:
   esbuild: true
@@ -42,13 +41,6 @@ patchedDependencies:
   # a reader diffs against upstream. Includes the loro-prosemirror#77 init race
   # and a `commitOrigin` option for scoping undo. Drop it when a release has them.
   loro-prosemirror@0.4.4: patches/loro-prosemirror@0.4.4.patch
-  # 0.6.2 is the newest published version and it ships `dist` only (`files:
-  # ["dist"]`), so there is no `src/` to patch and no release to upgrade to.
-  # This adds per-room credential tracking plus `disconnectRoomWhere`/
-  # `disconnectAuth`, which the relay's own revoke path depends on for live
-  # kick: without it, revoking a link stops new joins but leaves open sockets
-  # connected. `apps/collab-server/src/patchGuard.test.ts` fails if it is missing.
-  loro-websocket@0.6.2: patches/loro-websocket@0.6.2.patch
   # Stryker 10's vitest-runner joins test-suite names with a space, but Vitest 5
   # matches testNamePattern against names joined with " > ", so every covered
   # mutant ran zero tests and was reported Survived. Same change as

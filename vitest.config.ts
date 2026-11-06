@@ -3,8 +3,8 @@ import { defineConfig } from "vitest/config";
 /**
  * Coverage is collected across all projects in one run, so the reporter options
  * below live at the root. `coverage.thresholds` accepts path globs, which is how
- * the gate is scoped to `@suite/graph` only — `server` and `canvas` are measured
- * and printed but not gated until they have enough real assertions to justify it.
+ * the gate is scoped to `@suite/graph` only — `canvas` is measured and printed
+ * but not gated until it has enough real assertions to justify it.
  */
 export default defineConfig({
   test: {
@@ -16,19 +16,12 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text-summary", "lcov"],
       reportsDirectory: "coverage",
-      include: [
-        "packages/graph/src/**",
-        "packages/licence/src/**",
-        "apps/collab-server/src/**",
-        "apps/canvas/src/**",
-      ],
+      include: ["packages/graph/src/**", "apps/canvas/src/**"],
       exclude: [
         "**/*.test.*",
         "**/*.spec.*",
         "**/*.stories.*",
         "**/dist/**",
-        // The operator panel is a separate entry point with its own bundle.
-        "**/admin/**",
         "apps/canvas/src/test/**",
         "**/*.d.ts",
         "**/*.css",
@@ -62,51 +55,6 @@ export default defineConfig({
           name: "importer",
           environment: "node",
           include: ["packages/import-obsidian/src/**/*.test.ts"],
-        },
-      },
-      {
-        // The licence token format is shared by the relay and the billing
-        // service, so its suite is its own project rather than either one's.
-        test: {
-          name: "licence",
-          environment: "node",
-          include: ["packages/licence/src/**/*.test.ts"],
-        },
-      },
-      {
-        // The settings registry and its precedence rules, shared by the control
-        // plane, the relay and the panel: pure functions, so its own project.
-        test: {
-          name: "settings",
-          environment: "node",
-          include: ["packages/settings/src/**/*.test.ts"],
-        },
-      },
-      {
-        test: {
-          name: "server",
-          environment: "node",
-          include: ["apps/collab-server/src/**/*.test.ts"],
-        },
-      },
-      {
-        // The control-plane host. Its own project because the tests bind real
-        // sockets and because the contract it publishes is what the auth and
-        // billing modules are written against.
-        test: {
-          name: "control-plane",
-          environment: "node",
-          include: ["apps/control-plane/src/**/*.test.ts"],
-        },
-      },
-      {
-        // The account control plane. Its own project because it is the only
-        // suite allowed to reach for `better-auth`, and because a failure here
-        // should name itself in CI rather than hide inside the relay's suite.
-        test: {
-          name: "auth",
-          environment: "node",
-          include: ["services/auth/src/**/*.test.ts"],
         },
       },
       {

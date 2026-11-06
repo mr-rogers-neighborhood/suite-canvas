@@ -37,13 +37,11 @@ with the fix. A change that spans two clients needs a two-document test.
 
 ## Documentation is part of the change
 
-- A command, port, store path or default changes with [docs/how-to/operate.md](docs/how-to/operate.md)
-  or [docs/how-to/deploy.md](docs/how-to/deploy.md).
-- `docs/reference/limits.md` is generated: run `node scripts/generate-limits.mjs`, never edit it.
+- A command, path or default changes with the page that names it.
 - `node scripts/docs-check.mjs` fails on a broken link, an unbalanced fence, a retired term or a stale
   version.
-- A decision that changes behaviour, ownership or a published number gets a record in the internal
-  decision log, which is gitignored. Ask the maintainer for the template.
+- A decision that changes behaviour or ownership gets a record in [docs/adr](docs/adr), the same way
+  every earlier one did.
 
 ## Commits
 

@@ -114,9 +114,8 @@ The account control plane has the same shape in `services/auth/src/` (`http/`, `
 `invitations/`, `licensing/`, `organizations/`, `store/`), and billing in `services/billing/src/`
 (`handler/`, `stripe/`, `store/`, `ops/`).
 
-A new quota is a constant in `config/limits.ts` plus a regenerated
-[reference/limits.md](../reference/limits.md), never a hand-edited number. A new stored format needs an
-N−1 fixture under `apps/collab-server/src/fixtures/n-1/` and a test that opens it.
+A new limit is a constant in the package that enforces it, with a test at the boundary. A new stored
+format needs a fixture of the previous shape and a test that opens it.
 
 ## 7. Verify
 

@@ -1,8 +1,8 @@
 # Desktop
 
 The Canvas desktop application. It is the same renderer the web build serves, wrapped in a main process
-that owns a file the user chose. It does not cover the document model ([data-model.md](data-model.md)) or
-the relay ([runtime.md](runtime.md)); the desktop build is the local profile and runs neither.
+that owns a file the user chose. It does not cover the document model ([data-model.md](data-model.md));
+that is the renderer's business, and the shell never reads it.
 
 ## Two hosts, one renderer
 

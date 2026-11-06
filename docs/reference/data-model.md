@@ -273,8 +273,8 @@ place that calls it. Apply's guards are replay guards, so a plan applied twice w
 time, and each step compares before writing for that reason. `publish/apply.ts` keeps one named function per
 change kind, so the replay rule for each kind can be read on its own.
 
-The caps a plan enforces are in [limits.md](limits.md): bytes per card text, bytes per draft, coordinate
-range, rich-text nesting and a fixed allowlist of node and mark names.
+The caps the schema enforces live with it in `@suite/graph`: bytes per card text, coordinate range,
+rich-text nesting and a fixed allowlist of node and mark names.
 
 ## Projection: a second document per share
 

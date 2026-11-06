@@ -164,8 +164,7 @@ node scripts/check-docs-symbols.mjs
 ```
 
 Update the record table in [data-model.md](../reference/data-model.md) when the shape changes. A new cap is
-a constant in `config/limits.ts` plus a regenerated [limits.md](../reference/limits.md); never hand-edit the
-numbers, because `node scripts/generate-limits.mjs --check` fails on a stale page.
+a constant in the package that enforces it, with a test at the boundary.
 
 ## Subsets for the other cases
 

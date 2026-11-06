@@ -5,8 +5,9 @@
  *      repository root or from the page's own directory.
  *   2. A `pnpm <script>` that is not a pnpm built-in exists in the root
  *      `package.json`.
- *   3. An `ADR-NNNN` reference has a record in `internal/history/decisions` or
- *      `internal/decisions/open` when those trees are present.
+ *   3. An `ADR-NNNN` reference has a record in `docs/adr`, or is named in the
+ *      gaps section of `docs/adr/README.md` as one that was never written or was
+ *      withdrawn.
  *
  * Globs, placeholders, and bare file names (`schema.ts`) are skipped: a page
  * may describe a naming convention without pointing at one file.
@@ -115,10 +116,7 @@ const pages = [...ROOT_PAGES.map((page) => join(root, page)), ...walk(docsRoot)]
   (page) => existsSync(page) && statSync(page).isFile(),
 );
 
-const adrDirs = [
-  join(root, "internal", "history", "decisions"),
-  join(root, "internal", "decisions", "open"),
-];
+const adrDirs = [join(root, "docs", "adr")];
 const haveAdrArchive = adrDirs.some((dir) => existsSync(dir));
 const adrIds = new Set();
 if (haveAdrArchive) {
@@ -129,11 +127,24 @@ if (haveAdrArchive) {
       if (match) adrIds.add(match[1]);
     }
   }
+  // The gaps are documented rather than filed: a number that was never written,
+  // or was withdrawn with the hosted tier, is still a legitimate citation as long
+  // as the index says so.
+  const index = join(root, "docs", "adr", "README.md");
+  if (existsSync(index)) {
+    const text = readFileSync(index, "utf8");
+    const gaps = text.slice(text.indexOf("## Numbers that have no record"));
+    for (const match of gaps.matchAll(/`(\d{4})`/g)) adrIds.add(match[1]);
+  }
 }
 
 for (const page of pages) {
   const rel = relative(root, page).split("\\").join("/");
   const text = readFileSync(page, "utf8");
+  // A decision record is dated, not maintained: its links were written against
+  // the tree of the day, so a rotted path is history rather than drift. The ADR
+  // *number* rule below still applies, because that is what readers follow.
+  const isRecord = rel.startsWith("docs/adr/") && rel !== "docs/adr/README.md";
 
   for (const match of text.matchAll(/`([^`\n]+)`/g)) {
     const symbol = match[1].trim();
@@ -143,6 +154,7 @@ for (const page of pages) {
     const ext = path.slice(path.lastIndexOf("."));
     if (!KNOWN_EXT.has(ext)) continue;
 
+    if (isRecord) continue;
     const fromRoot = join(root, path);
     const fromPage = join(dirname(page), path);
     if (!existsSync(fromRoot) && !existsSync(fromPage)) {
@@ -151,6 +163,7 @@ for (const page of pages) {
   }
 
   for (const code of text.matchAll(/`([^`\n]+)`/g)) {
+    if (isRecord) break;
     for (const match of code[1].matchAll(/\bpnpm\s+((?:--?[\w-]+\s+)*)([a-zA-Z][\w:-]*)/g)) {
       const flags = match[1];
       const name = match[2];

@@ -16,8 +16,6 @@ import {
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
-import { operatorToken } from "../templates/operatorToken";
-import { SaveTemplateDialog } from "./SaveTemplateDialog";
 
 /**
  * Share management needs the relay. Every branch below tests
@@ -41,7 +39,7 @@ export interface WorkspaceActionsProps {
 
 /**
  * The workspace-level actions that belong in the app bar: import a vault, export the
- * exact backup, save a starter template, and return to the launcher.
+ * exact backup, and return to the launcher.
  *
  * Sharing is not here. It is its own control beside the sync pill (`ShareAction`), because a
  * reader looking at a board should not have to open a menu about the document to hand the
@@ -58,7 +56,6 @@ export function WorkspaceActions({ workspaceId, title, onLeave }: WorkspaceActio
   const [menuOpen, setMenuOpen] = useState(false);
   useEscapeLayer(() => setMenuOpen(false), menuOpen);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [templateOpen, setTemplateOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -70,12 +67,6 @@ export function WorkspaceActions({ workspaceId, title, onLeave }: WorkspaceActio
   const openTypeSettings = useUiStore((state) => state.openTypeSettings);
   // Read at render, not stored: the token is the operator panel's, written in
   // this tab's `sessionStorage`, and this menu is only drawn when it is opened.
-  // Without one the action is not offered at all — "save a template" is not a
-  // thing a person who cannot write templates should be invited to attempt. The
-  // literal keeps the branch foldable in a standalone build, which has no
-  // control plane for a template to land in.
-  const canSaveTemplate =
-    import.meta.env.VITE_SUITE_MODE !== "standalone" && operatorToken() !== null;
   // One delete entry per profile: an account session can delete the relay copy,
   // and a standalone build can delete the only copy there is. A share session
   // returns null above, so neither ever renders for a link holder.
@@ -293,26 +284,6 @@ export function WorkspaceActions({ workspaceId, title, onLeave }: WorkspaceActio
             >
               Card types…
             </button>
-            {canSaveTemplate ? (
-              <>
-                {/* Authoring, not exporting: the workspace's own boards and
-                    pictures become the thing a new workspace starts from. Only
-                    an operator can write a template, so the row follows the
-                    token rather than a build profile. */}
-                <button
-                  type="button"
-                  role="menuitem"
-                  data-testid="workspace-save-template"
-                  className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setTemplateOpen(true);
-                  }}
-                >
-                  Save as starter template…
-                </button>
-              </>
-            ) : null}
             {/* Account-level, but this menu is the only signed-in surface the app
                 has: the consent an operator needs in order to help lives here until
                 there is an account page to hold it. */}
@@ -400,14 +371,6 @@ export function WorkspaceActions({ workspaceId, title, onLeave }: WorkspaceActio
         </span>
       ) : null}
       {supportOpen ? <SupportAccessDialog onClose={() => setSupportOpen(false)} /> : null}
-      {canSaveTemplate && templateOpen ? (
-        <SaveTemplateDialog
-          workspace={workspace}
-          title={title}
-          onClose={() => setTemplateOpen(false)}
-          onSaved={(message) => setNotice(message)}
-        />
-      ) : null}
       {canDeleteWorkspace && deleteOpen ? (
         <DeleteWorkspaceDialog
           workspaceId={workspaceId}

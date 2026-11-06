@@ -29,28 +29,25 @@ afterEach(() => {
 });
 
 describe("suiteMode", () => {
-  it("defaults to relay so a plain checkout keeps the full product", () => {
+  it("is local, whatever the build asked for", () => {
     expect(suiteMode()).toBe(DEFAULT_SUITE_MODE);
-    expect(suiteMode()).toBe("relay");
-    expect(isStandalone()).toBe(false);
+    expect(suiteMode()).toBe("local");
+    expect(isStandalone()).toBe(true);
   });
 
-  it("only the exact standalone value switches the build profile", () => {
-    vi.stubEnv("VITE_SUITE_MODE", "standalone");
-    expect(isStandalone()).toBe(true);
-
-    vi.stubEnv("VITE_SUITE_MODE", "Standalone");
-    expect(isStandalone()).toBe(false);
-
+  it("does not become something else when a stale relay profile is set", () => {
+    // A build that still passes `VITE_SUITE_MODE=relay` gets the local profile and
+    // a warning: the service it was written for is not in this repository.
     vi.stubEnv("VITE_SUITE_MODE", "relay");
-    expect(isStandalone()).toBe(false);
+    expect(suiteMode()).toBe("local");
+    expect(isStandalone()).toBe(true);
   });
 });
 
 describe("bootPlan", () => {
-  it("never resolves a share in a standalone build, whatever the URL", () => {
-    // A capability link opened in a local-only build: no fetch may be attempted,
-    // because the relay that link belongs to is not part of this build.
+  it("never resolves a share or opens a provider, whatever the URL", () => {
+    // A capability link is just a page URL now: the relay that link belongs to is
+    // not part of this build, so nothing may be fetched on the way to the launcher.
     for (const url of [
       "/?share=abc",
       "/?share=abc&workspace=ws-1",
@@ -58,7 +55,7 @@ describe("bootPlan", () => {
       "/?workspace=ws-1",
       "/",
     ]) {
-      expect(bootPlan("standalone", url)).toEqual({
+      expect(bootPlan("local", url)).toEqual({
         resolveShare: false,
         connectProvider: false,
         showSharing: false,
@@ -66,29 +63,8 @@ describe("bootPlan", () => {
     }
   });
 
-  it("resolves a share link on a relay and opens the provider for anything else", () => {
-    expect(bootPlan("relay", "/?share=abc")).toEqual({
-      resolveShare: true,
-      connectProvider: true,
-      showSharing: true,
-    });
-
-    // A workspace URL has no boot-time identity step: the session credential is
-    // minted from the cookie on the first room join.
-    expect(bootPlan("relay", "/?workspace=ws-1")).toEqual({
-      resolveShare: false,
-      connectProvider: true,
-      showSharing: true,
-    });
-
-    expect(bootPlan("relay", "/")).toEqual({
-      resolveShare: false,
-      connectProvider: true,
-      showSharing: true,
-    });
-  });
-
-  it("reads share links, the resume marker and workspace ids from a page URL", () => {
+  it("reads the resume marker and workspace ids from a page URL", () => {
+    // The helpers survive because a document link is still a URL a person can keep.
     expect(hasShareLink("/?share=abc")).toBe(true);
     expect(hasShareLink(`/${SHARE_SESSION_FRAGMENT}`)).toBe(true);
     expect(hasShareLink("/?workspace=ws-1")).toBe(false);
@@ -255,7 +231,6 @@ describe("standalone guard rails", () => {
     "session/workspaceDelete.ts": /input\.profile === "relay"/u,
     // Capturing a starter template reads pictures and posts to the control plane;
     // a browser-only build has no control plane, so it refuses before reading.
-    "templates/captureClient.ts": /isStandalone\(\)/u,
     // The launcher's starter list is asked for over HTTP, but a standalone build has
     // no control plane: it keeps the built-ins the bundle carries instead.
     "launcher/starterTemplates.ts": /isStandalone\(\)/u,

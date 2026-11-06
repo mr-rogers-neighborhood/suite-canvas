@@ -73,7 +73,7 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check && pnpm docs:symbols
 `pnpm verify` adds the story suite, the billing tests and the build.
 
 Playwright is not part of the gate. When the owner asks for a run, the area scripts (`pnpm e2e:smoke`,
-`pnpm e2e:canvas`, `pnpm e2e:collab`, `pnpm e2e:views`) are narrower than `pnpm e2e`; [the how-to
+`pnpm e2e:canvas`, `pnpm e2e`, `pnpm e2e:views`) are narrower than `pnpm e2e`; [the how-to
 page](docs/how-to/test-and-verify.md) has each one.
 
 All verification gates are local, so every gate claim in this repo names a local command.

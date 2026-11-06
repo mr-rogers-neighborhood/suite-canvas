@@ -264,26 +264,19 @@ describe("pasting an image", () => {
 });
 
 describe("relay uploader", () => {
-  it("is absent without an account session, and present on one", () => {
-    configureSession({
-      workspaceId: "ws-1",
-      roomId: "ws-1",
-      share: null,
-      role: "editor",
-      readOnly: false,
-      credential: "account",
-    });
-    expect(relayUploader()).not.toBeNull();
-
-    // A share session presents a link token, so it never uploads.
-    configureSession({
-      workspaceId: "ws-1",
-      roomId: "ws-1",
-      share: null,
-      role: "editor",
-      readOnly: false,
-      credential: "share",
-    });
-    expect(relayUploader()).toBeNull();
+  it("is absent in every session, because there is no relay to upload to", () => {
+    // It used to be present for an account session and absent for a share. The
+    // build is local now, so the only answer is the one a share always got.
+    for (const credential of ["account", "share"] as const) {
+      configureSession({
+        workspaceId: "ws-1",
+        roomId: "ws-1",
+        share: null,
+        role: "editor",
+        readOnly: false,
+        credential,
+      });
+      expect(relayUploader()).toBeNull();
+    }
   });
 });

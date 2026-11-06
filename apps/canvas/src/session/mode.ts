@@ -1,19 +1,19 @@
 /**
- * Build-time deployment profile.
+ * The build is local. There is one profile.
  *
- * One codebase ships three profiles. A hosted free build is static assets only
- * (`standalone`): no relay, no sharing, everything it makes lives in this
- * browser. Self-hosted and hosted paid builds (`relay`) keep full parity, and
- * the licence gates the relay rather than a feature.
+ * The canvas used to ship three: a static standalone build, a self-hosted relay
+ * and a hosted paid build. The relay and the hosted tier are gone, so what
+ * remains is the one that always worked without a server — a document in this
+ * app, on this machine, with the file as the only copy that matters.
  *
- * `VITE_SUITE_MODE` is inlined by Vite at build time, so a standalone bundle
- * carries no relay URL and cannot render a control that needs one. The default
- * is `relay`: an un-configured build keeps the full product.
+ * `VITE_SUITE_MODE` is kept as the name of the compile-time switch because a
+ * bundle still inlines it; a value other than the default is refused rather than
+ * silently half-honoured.
  */
-export type SuiteMode = "standalone" | "relay";
+export type SuiteMode = "local";
 
-/** No `VITE_SUITE_MODE` means the full product; a bare checkout keeps working. */
-export const DEFAULT_SUITE_MODE: SuiteMode = "relay";
+/** The only profile there is. */
+export const DEFAULT_SUITE_MODE: SuiteMode = "local";
 
 /**
  * Fragment marker left behind once a share token has been exchanged for the
@@ -22,14 +22,31 @@ export const DEFAULT_SUITE_MODE: SuiteMode = "relay";
  */
 const SHARE_SESSION_MARKER = "#share-session";
 
-/** The profile this build was compiled for. */
+/**
+ * The profile this build was compiled for.
+ *
+ * A build that asked for `relay` asks for something this repository no longer
+ * contains, so it gets the local profile and says so once at boot rather than
+ * rendering controls whose backing service is missing.
+ */
 export function suiteMode(): SuiteMode {
-  return import.meta.env.VITE_SUITE_MODE === "standalone" ? "standalone" : DEFAULT_SUITE_MODE;
+  if (import.meta.env.VITE_SUITE_MODE === "relay") {
+    console.warn("Suite Canvas: VITE_SUITE_MODE=relay is retired; this build is local.");
+  }
+  return DEFAULT_SUITE_MODE;
 }
 
-/** True in the hosted free profile: IndexedDB only, no relay, no sharing. */
+/**
+ * True, always: the app is local.
+ *
+ * Every call site asks "may this reach the relay?" — attachments, sketch files,
+ * video, templates, the share session. The answer is now the same everywhere, and
+ * the branches behind it are unreachable. They are kept until each is deleted
+ * with its feature, because removing the gate before the code behind it is how
+ * an app starts offering a button whose service is gone.
+ */
 export function isStandalone(): boolean {
-  return suiteMode() === "standalone";
+  return true;
 }
 
 /**
@@ -46,7 +63,7 @@ export interface BootPlan {
   showSharing: boolean;
 }
 
-/** A standalone build has none of the relay machinery. */
+/** There is no relay machinery to plan for. */
 const LOCAL_ONLY_PLAN: BootPlan = {
   resolveShare: false,
   connectProvider: false,
@@ -77,17 +94,13 @@ export function workspaceIdFromUrl(url: string): string | null {
   return id !== null && id.length > 0 ? id : null;
 }
 
-export function bootPlan(mode: SuiteMode, url: string): BootPlan {
-  // In a standalone build a share link is just a page URL: there is no relay to
-  // resolve or claim against, so nothing runs and `main.tsx` says the build is
-  // local-only instead of turning a capability link into a network error.
-  if (mode === "standalone") return LOCAL_ONLY_PLAN;
-  // There is no claim step left at boot: an account session is minted from the
-  // cookie on the first room join, and an anonymous workspace is linked to an
-  // account by `onLinkAccount` at sign-up (ADR-0076).
-  return {
-    resolveShare: hasShareLink(url),
-    connectProvider: true,
-    showSharing: true,
-  };
+/**
+ * What boot does: nothing that needs a server.
+ *
+ * A `?share=` link is just a page URL now — there is no relay to resolve a token
+ * against, so a stale link opens the launcher instead of failing as a network
+ * error.
+ */
+export function bootPlan(_mode: SuiteMode, _url: string): BootPlan {
+  return LOCAL_ONLY_PLAN;
 }

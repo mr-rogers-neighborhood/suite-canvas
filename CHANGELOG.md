@@ -361,7 +361,7 @@ release adds is everything somebody outside the project needs in order to trust 
   a tooling tree the application never calls), and the Caddy image upgrades its Alpine packages over
   a CRITICAL brotli decoder overflow. Six HIGH findings remain inside the Caddy binary, which no
   change here can reach; they are named in
-  [docs/how-to/release.md](docs/how-to/release.md#the-image-scan).
+  [docs/how-to/release.md](docs/how-to/release.md).
 - `pnpm security:history` scans the whole commit history for credentials, and
   [docs/how-to/publish.md](docs/how-to/publish.md) records the result of the scan that preceded this
   release.

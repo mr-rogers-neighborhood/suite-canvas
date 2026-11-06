@@ -56,10 +56,8 @@ page saying what was chosen, what it costs and what it rules out. Records are ke
 and are not published with the source, so write the reasoning into the prose too rather than leaving
 an `ADR-NNNN` reference as the only explanation.
 
-A command, port, store path or default changes in the same commit as
-[operate.md](operate.md) or [deploy.md](deploy.md). A quota changes in the constants, then
-`node scripts/generate-limits.mjs` rewrites [reference/limits.md](../reference/limits.md); never edit
-that page by hand.
+A command, path or default changes in the same commit as the page that names it. A limit changes in the
+constant that enforces it, and the test at the boundary changes with it.
 
 Retired vocabulary fails `node scripts/docs-check.mjs`: the old name for the typed document layer, the
 old name for the React binding, a stale store count, and a stale CRDT claim. Fix the sentence instead

@@ -177,7 +177,14 @@ const files = [
   ]
     .map((name) => join(root, name))
     .filter((path) => existsSync(path)),
-  ...markdownFiles(join(root, "docs")),
+  // A decision record is dated, not maintained. Its prose answers to the rules of
+  // the day it was written, and rewriting it to satisfy today's term list or
+  // em-dash budget would falsify the record. The index that explains the archive
+  // is a live page and stays checked.
+  ...markdownFiles(join(root, "docs")).filter(
+    (path) =>
+      !relativePath(path).startsWith("docs/adr/") || relativePath(path) === "docs/adr/README.md",
+  ),
   ...(existsSync(join(root, "history")) ? markdownFiles(join(root, "history")) : []),
   ...(existsSync(join(root, ".github")) ? markdownFiles(join(root, ".github")) : []),
 ];

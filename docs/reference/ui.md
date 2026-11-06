@@ -289,12 +289,11 @@ The outline rail is the first surface wired to it: `BoardOutline.tsx` gives each
 
 ## The handbook
 
-The handbook explains the interface from inside it. Its articles are Markdown files in `handbook/` at the
-repository root, one per user-facing element or system, and the same files are published by the docs
-site: `scripts/sync-handbook.mjs` renders them twice, once as a typed module for the app
-(`apps/canvas/src/handbook/articles.generated.ts`, HTML already rendered) and once as pages with a
-`meta.json` sidebar. Editing an article is editing a file, and `pnpm docs:check` fails when either output
-is stale.
+The handbook explains the interface from inside it. Its articles are Markdown files in `handbook/` at
+the repository root, one per user-facing element or system, and they are compiled into a typed module
+for the app (`apps/canvas/src/handbook/articles.generated.ts`, HTML already rendered) by
+`scripts/sync-handbook.mjs`. Editing an article is editing a file; the generator is run by
+`pnpm docs:check`, which fails when the module is stale.
 
 An article names its subject in frontmatter, `targets: [{ kind, id }]`, where `kind` is `ui`, `card`,
 `board` or `section`. `ui` names a region of the shell from `apps/canvas/src/handbook/regions.ts`, and

@@ -1,28 +1,44 @@
 # Suite Canvas
 
-**A canvas for thinking in connections.** Cards, boards and writing live in one document that works
-offline, syncs when you want it, and exports to a file you own.
+**A canvas for thinking in connections.** Cards, boards and writing live in one document, on your
+machine, in a file you own.
 
 ![layout.gif](https://i.imgduck.com/u/v8jzuR.gif)
 
-[**Open the app**](https://app.suite.run) · [Documentation](https://docs.suite.run) ·
-[Run it yourself](#run-it-yourself)
+> **Alpha.** Canvas is the most developed app in the suite and still changes shape. Keep the file
+> somewhere you back up, and expect to export rather than rely on it.
 
-> **Suite is alpha software.** The hosted deployment is at <https://app.suite.run> - expect rough edges
->
-> A subscription is **early access** to additional document storage, members (seats), and file uploads, and paying for one can help support the project. It is optional twice over: the canvas, the cards and
-> export work without one, on this device, with no account and no limit; and the source is public
-> under MIT, so you can run the whole thing yourself. A self-hosted relay needs no licence token and
-> enforces no limit ([self-hosting](docs/reference/billing.md)); a licence is only what a *seller*
-> issues to somebody else.
->
-> The hosted deployment bills monthly through Stripe, which holds the card while this deployment
-> never sees it. A discount code, if somebody gave you one, is entered on Stripe's own page, and a
-> plan cancels from the portal.
->
-> One thing that is easy to discover too late: **a workspace is this browser's copy until a plan puts
-> it in your account**, so clearing site data takes it with it. Export is always available and never
-> asks for a plan.
+---
+
+Developer note:
+
+**What is Suite?**
+
+Suite is a collection of applications, a relay for sync and collaboration, and a toolbox for updating and managing your applications.
+
+This architecture came from trying basically every application worth trying in its respective space and being left wanting. I can't claim to have replaced these applications, but I'm building my own that provide the feature sets I need. They're released open-source under the MIT license, local-first, and easy to install and manage from your own computer. Mobile applications are out of scope for now, but will come once there's a solid foundation. If these applications are useful to you, you're free to use them however you'd like, or fork and develop them into your own suite.
+
+Applications I've tested in the past include knowledge management tools and outliners such as Obsidian, Notion, Capacities, Heptabase, Tana, Logseq, and AnyType. They also include planners and task management tools such as Sunsama, Akiflow, Todoist, and TickTick, as well as budgeting applications such as YNAB and Actual.
+
+Each of these has something going for it that the others don't, and every one is missing a critical set of capabilities I'd want from that kind of application: a simple, local-first, integrated sync service, and flexible, deep collaboration features. Some are free and open-source, even local-first; others are tied entirely to the cloud and an internet connection. None contain the exact set of capabilities I want for a visual note-taking and research application.
+
+That led to Suite Canvas, originally the only application in the collection. Suite Canvas combines the typed-object-graph model from apps like Capacities with the canvas-driven, research-oriented experience of Heptabase. It takes smaller influences from other applications on the list, and from some that aren't (such as a generalized version of Tana's Supertags). It's the most mature of the bunch, though still very much in alpha.
+
+I've tried to build something like Canvas several times, and each attempt hit scope creep or a design wall that led me to abandon or restart it. Approaches that didn't work out:
+
+- **Canvas as a CMS.** A tool for thinking always becomes constrained by the language and thought process of web design. People don't think in routes or views, and mashing the two languages together produced something confusing and not worth using. Adding mapping between the CMS and the canvas didn't help either (I carried over, and still maintain, many architectural ideas from WordPress plugins like Advanced Custom Fields, Metabox, and Pods). It was clunky and felt like using two separate applications that don't mix.
+- **Infinite canvas.** It seems ideal, and I love the infinite-zoom drawings people make. I tried ICE, an experimental canvas engine, and PixiJS. Both looked striking and had genuinely impressive features (ICE let you arrange cards fractally, for example), but they were complexity tar pits that forced the entire application design to contort around them. That's before getting into accessibility, sync and collaboration, and also navigation: it predictably makes it very easy to get lost. Good for art, not clear that it is good for a structured thinking tool. I did end up integrating excalidraw, via the "Sketch" card type and embed, so you maintain the important bit of being able to draw and sketch on an infinite canvas, and then embed it in your non-infinite canvas. I also added the "Portal" card type, a way to link from one canvas board to another. These were more comprehensive and easily justified expansions.
+- **No-code/low-code systems and computational notebook features.** These seem ideal too, but they cause both classes of problems above and worse ones. You lose the ability to arbitrarily rearrange your thoughts, because your links and cards now mean something beyond simple data. The result can be as striking as an infinite canavas (I even had links animate to show you the data-flow directly), but in my attempts it wasn't useful, just looked cool.
+
+None of these experiments were pointless. Each revealed insights I didn't have before and taught me something about software design.
+
+Suite Planner, Suite Budget, and the surrounding tooling (Suite Start and Suite Sync) came from realizing I can't fit all of these application types onto a canvas interface. I tried, and hit the the third design wall mentioned above. It was too complex, too deep, and too over-engineered to be functional and usable, let alone shippable.
+
+So the applications are split into three that match their domains. A canvas is a thinking and research tool. A planner is a task, project management, and calendaring tool. A budget is a budgeting tool. I plan to experiment with integrations (embedding your calendar or budget into your canvas, or attaching your canvas to your calendar or budget, for example), but those features need to be considered deeply to actually be useful.
+
+In the end, you should have a canvas, a planner, and a budget: all simple and easy to use, all with integrated and easy-to-run sync and update services, and none of them requiring you to connect to a centralized server or cloud service to use, at all. That's what will make Suite pretty sweet.
+
+---
 
 ## What it does
 
@@ -33,91 +49,66 @@ offline, syncs when you want it, and exports to a file you own.
   them.
 - **Rich text where you want it.** Every card opens into a full editor, with mentions, checklists,
   tables and images.
-- **Works offline.** Edits land in a local database and a reload resumes where you were, with or
-  without a network.
-- **Share and collaborate** A share link grants one board, one card or a
-  whole workspace, as editor or viewer.
-- **Nothing is trapped.** Export a workspace as a single `.canvas` file, and keep the recovery key
-  beside it.
-- **Yours to run.** The whole thing is one compose file, a relay and a static app, with no vendor in
-  the path.
+- **Works offline, always.** The document is a CRDT in this app and a file on disk. There is no
+  account to sign in to and nothing to reach.
+- **Sketch and link.** A Sketch card is an Excalidraw drawing embedded on a board; a Portal card
+  opens another board.
+- **Nothing is trapped.** Export the workspace as one `.canvas` file and keep it beside whatever you
+  already back up.
 
-## Try it
+## Run it
 
-The hosted app is <https://app.suite.run>. Pick a template on the launcher, or open a `.canvas` file
-somebody sent you. Nothing needs installing, and the canvas works signed out.
-
-## Run it locally
-
-Node 22 or newer, pnpm 12.13.0, and Docker for the optional database.
+Node 22 or newer, and pnpm 12.13.0.
 
 ```sh
 pnpm install
-pnpm dev:env   # accounts on, session secret generated
-pnpm dev:db    # Postgres, for accounts and billing
-pnpm dev
+pnpm dev            # the renderer, at http://localhost:5173
 ```
 
-Open <http://localhost:5173>. A second window at the same address shows live edits and presence.
-`pnpm dev:env` writes a `.env` and never overwrites one; without it the app runs local-only, with no
-accounts. `pnpm check:env` reports what is and is not set up, one line each, with the command that
-fixes the failing ones.
-
-[Run Suite locally](docs/tutorials/run-locally.md) covers the standalone bundle and custom ports.
-
-## Run it yourself
-
-Same build, no licence token, no limits:
+The browser build runs the whole app against local storage, which is the fastest way to work on it.
+The thing that ships is the desktop app:
 
 ```sh
-git clone https://github.com/mr-rogers-neighborhood/suite-canvas.git
-cd suite-canvas
-cp .env.example .env      # set the domain, then read the file
-docker compose up -d
+pnpm dev:desktop    # Electron shell around the same renderer
+pnpm --filter @suite/desktop package:dir   # an unpacked binary in apps/desktop/release
 ```
-
-[Deploy a server](docs/how-to/deploy.md) has the instance, the environment and the first boot.
-[Operate a deployment](docs/how-to/operate.md) covers watching, backups and restores.
 
 ## How it is built
 
 React 19 on a React Flow surface, one Loro CRDT document per workspace, a typed object graph validated
-by Zod, and a WebSocket relay that flushes each room to SQLite. Zustand holds UI state only: document
-truth lives in the CRDT and nowhere else. Presence rides an ephemeral channel and is never written to
-the document.
+by Zod, and an Electron shell that owns the file. Zustand holds UI state only: document truth lives in
+the CRDT and nowhere else.
 
 | Path | What lives there |
 | --- | --- |
-| `apps/canvas` | The app: launcher, boards, cards, editor, panels |
-| `apps/collab-server` | The sync relay, its stores and attachment serving |
-| `apps/control-plane` | Accounts, organizations, billing |
+| `apps/canvas` | The renderer: launcher, boards, cards, editor, panels |
+| `apps/desktop` | The Electron shell: the file, the lock, the window, packaging |
 | `packages/graph` | `@suite/graph`: the schema and the document layer |
-| `services/auth`, `services/billing` | Sign-in, organizations, invitations, Stripe |
-| `apps/docs`, `apps/site` | The documentation and marketing sites |
-| `e2e`, `docs`, `deploy` | Playwright specs, the four documentation sections, deployment |
+| `packages/import-obsidian` | Reads an Obsidian vault into a document |
+| `e2e` | The Playwright suites, including the desktop one |
+| `docs/adr` | Every architecture decision, dated |
 
-It stands on other people's work, and each of these is worth a look on its own: [Loro](https://loro.dev)
-for the document, [React Flow](https://reactflow.dev) for the surface, [Tiptap](https://tiptap.dev) for
-the editor, [Zod](https://zod.dev) for the schema, [Better Auth](https://better-auth.com) and
-[Stripe](https://stripe.com) for accounts and payments.
+It stands on other people's work, and each is worth a look on its own: [Loro](https://loro.dev) for the
+document, [React Flow](https://reactflow.dev) for the surface, [Tiptap](https://tiptap.dev) for the
+editor, [Zod](https://zod.dev) for the schema, [Excalidraw](https://excalidraw.com) for the sketch.
 
-[Architecture](docs/reference/architecture.md) is the longer version.
+[Architecture](docs/reference/architecture.md) is the longer version, and
+[the conventions](docs/explanation/suite-conventions.md) say what Canvas shares with the other apps —
+and what it deliberately does not.
 
 ## Documentation
 
 | | |
 | --- | --- |
-| [Tutorials](docs/tutorials/index.md)<br>Learn by doing. | [How-to](docs/how-to/index.md)<br>One job at a time: add a feature, test, deploy, operate. |
-| [Reference](docs/reference/index.md)<br>Facts to look up: architecture, limits, security. | [Explanation](docs/explanation/index.md)<br>Why the product and the code are shaped this way. |
-
-The same pages, rendered and searchable, are at <https://docs.suite.run>.
+| [Tutorials](docs/tutorials/index.md)<br>Learn by doing. | [How-to](docs/how-to/index.md)<br>One job at a time: add a feature, change the model, test. |
+| [Reference](docs/reference/index.md)<br>Facts to look up: architecture, the data model, the desktop plumbing. | [Explanation](docs/explanation/index.md)<br>Why the product and the code are shaped this way. |
 
 ## Working on the whole suite
 
-The hub, the sync server and the three apps are developed together from
+Canvas is one of three apps beside a hub and a sync service, and they are developed together from
 [`suite-dev`](https://github.com/mr-rogers-neighborhood/suite-dev), which assumes the repositories are
-cloned side by side. It stages the real binaries, runs the hub and the sync server together, seeds a
-workspace, and owns the cross-app e2e suite. `pnpm preflight` there says what is missing.
+cloned side by side. It stages the real binaries, runs the hub, and owns the cross-app end-to-end
+suite, and that repository's own `preflight` script says what is missing.
 
 ## Contributing
 
@@ -130,5 +121,4 @@ Report a vulnerability per [SECURITY.md](SECURITY.md). Participation is covered 
 
 ## Licence
 
-MIT, © Suite contributors. The hosted service and the name are not part of what you get to resell:
-run the code, under your own name, and you have all of it.
+MIT, © Suite contributors.

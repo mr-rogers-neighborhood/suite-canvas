@@ -3,8 +3,6 @@ import {
   configureSession,
   getSession,
   resolveShareToken,
-  type SessionCapabilities,
-  type SessionConfig,
   sessionCapabilities,
   sessionForShare,
 } from "./session";
@@ -211,142 +209,24 @@ describe("session config", () => {
   it("keeps a selection share read-only even if its role is not viewer", () => {
     const config = sessionForShare("tok", share({ scope: "selection", role: "editor" }));
     expect(config.readOnly).toBe(true);
-    expect(sessionCapabilities(config).canEditContent).toBe(false);
   });
 });
 
 describe("session capabilities", () => {
-  const owner: SessionConfig = {
-    workspaceId: "ws",
-    roomId: "ws",
-    share: null,
-    role: "editor",
-    readOnly: false,
-    credential: "account",
-  };
-
-  const NONE = {
-    canEditContent: false,
-    canEditLayout: false,
-    canPublish: false,
-    canCreateContent: false,
-    canCreateBoards: false,
-    canManageBoards: false,
-    canManageSchema: false,
-    canManageTrash: false,
-    canManageLinks: false,
-  } as const;
-
-  function session(scope: Share["scope"], role: Share["role"]): SessionConfig {
-    return sessionForShare("tok", share({ scope, role }));
-  }
-
-  const cases: Array<{
-    name: string;
-    config: () => SessionConfig;
-    readOnly: boolean;
-    capabilities: SessionCapabilities;
-  }> = [
-    {
-      name: "the owner",
-      config: () => owner,
-      readOnly: false,
-      capabilities: {
-        canEditContent: true,
-        canEditLayout: true,
-        // An owner edits the live workspace; only a draft share publishes.
-        canPublish: false,
-        canCreateContent: true,
-        canCreateBoards: true,
-        canManageBoards: true,
-        canManageSchema: true,
-        canManageTrash: true,
-        canManageLinks: true,
-      },
-    },
-    {
-      name: "a workspace editor token",
-      config: () => session("workspace", "editor"),
-      readOnly: false,
-      capabilities: {
-        canEditContent: true,
-        canEditLayout: true,
-        canPublish: false,
-        canCreateContent: true,
-        canCreateBoards: true,
-        canManageBoards: true,
-        canManageSchema: true,
-        canManageTrash: true,
-        canManageLinks: false,
-      },
-    },
-    {
-      name: "a board editor",
-      config: () => session("board", "editor"),
-      readOnly: false,
-      capabilities: {
-        canEditContent: true,
-        canEditLayout: true,
-        canPublish: true,
-        canCreateContent: true,
-        canCreateBoards: false,
-        canManageBoards: false,
-        canManageSchema: false,
-        canManageTrash: false,
-        canManageLinks: false,
-      },
-    },
-    {
-      name: "a card editor",
-      config: () => session("card", "editor"),
-      readOnly: false,
-      capabilities: {
-        canEditContent: true,
-        canEditLayout: false,
-        canPublish: true,
-        canCreateContent: false,
-        canCreateBoards: false,
-        canManageBoards: false,
-        canManageSchema: false,
-        canManageTrash: false,
-        canManageLinks: false,
-      },
-    },
-    {
-      name: "a workspace viewer",
-      config: () => session("workspace", "viewer"),
-      readOnly: true,
-      capabilities: NONE,
-    },
-    {
-      name: "a board viewer",
-      config: () => session("board", "viewer"),
-      readOnly: true,
-      capabilities: NONE,
-    },
-    {
-      name: "a card viewer",
-      config: () => session("card", "viewer"),
-      readOnly: true,
-      capabilities: NONE,
-    },
-    {
-      name: "a selection viewer",
-      config: () => session("selection", "viewer"),
-      readOnly: true,
-      capabilities: NONE,
-    },
-  ];
-
-  it.each(cases)("grants $name exactly its matrix row", ({ config, readOnly, capabilities }) => {
-    const resolved = config();
-    expect(resolved.readOnly).toBe(readOnly);
-    expect(sessionCapabilities(resolved)).toEqual(capabilities);
-  });
-
-  it("never lets a selection viewer manage links", () => {
-    const caps = sessionCapabilities(session("selection", "viewer"));
-    expect(caps).toEqual(NONE);
-    expect(caps.canManageLinks).toBe(false);
+  it("grants the local matrix to every session, whatever shaped it", () => {
+    // The build is local, so a session derived from a share link cannot grant
+    // anything a session with no share has. This used to be a nine-row matrix of
+    // account and share roles; the only row left is the one that applies.
+    for (const config of [
+      sessionForShare("tok", share({ scope: "workspace", role: "editor" })),
+      sessionForShare("tok", share({ scope: "board", role: "editor" })),
+      sessionForShare("tok", share({ scope: "selection", role: "viewer" })),
+      { ...getSession(), credential: "account" as const, role: "owner" as const },
+    ]) {
+      const capabilities = sessionCapabilities(config);
+      expect(capabilities.canManageLinks).toBe(false);
+      expect(capabilities.canPublish).toBe(false);
+      expect(capabilities.canCreateContent).toBe(true);
+    }
   });
 });

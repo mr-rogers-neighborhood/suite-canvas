@@ -8,6 +8,5 @@ Why the product and the code are shaped this way, including the decisions that p
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [What the suite shares](suite-conventions.md) | Three applications and a hub. What makes them a suite is not a database: it is a set of conventions small enough that each app can be installed, opene… | 2026-11-05 |
-| [Where a relay runs, and why no app needs Start](sync-hosting.md) | Sync separates a daemon from the interface in front of it. A relay is one process serving a workspace to the people who share it; the screen that star… | 2026-11-05 |
+| [What the suite shares](suite-conventions.md) | Three applications and a hub. What makes them a suite is not a database: it is a set of conventions small enough that each app can be installed, opene… | 2026-11-06 |
 | [Design direction](design.md) | Suite is a local-first canvas over a workspace of typed cards. One Loro document holds the whole workspace, the browser edits it offline, and a relay… | 2026-10-27 |

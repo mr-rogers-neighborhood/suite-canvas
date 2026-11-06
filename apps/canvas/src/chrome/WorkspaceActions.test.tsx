@@ -1,6 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { OPERATOR_TOKEN_KEY } from "../templates/operatorToken";
 import { WorkspaceActions } from "./WorkspaceActions";
 
 /**
@@ -40,32 +39,22 @@ describe("the workspace menu", () => {
 });
 
 /**
- * Capturing a starter template writes through the operator token, so the row
- * exists only where a token does: offering it to everyone would be an invitation
- * to a request that can only be refused.
+ * A starter template used to be captured here and posted to a control plane.
+ * Both are gone, so the row is gone with them: a menu entry for a request that
+ * cannot succeed is worse than no row at all.
  */
-describe("saving the workspace as a starter template", () => {
+describe("a starter template row", () => {
   afterEach(() => {
     window.sessionStorage.clear();
   });
 
-  it("offers nothing when this tab holds no operator token", () => {
+  it("never offers a template row: templates are written by hand now", () => {
+    // The row posted to a control plane that no longer exists, so it is gone
+    // rather than hidden behind a token nobody can obtain.
+    window.sessionStorage.setItem("suite:operator-token", "operator-token");
     render(<WorkspaceActions workspaceId="w1" title="Research" />);
     fireEvent.click(screen.getByTestId("workspace-menu"));
 
     expect(screen.queryByTestId("workspace-save-template")).not.toBeInTheDocument();
-  });
-
-  it("offers the row with a token and opens the prompt from it", () => {
-    window.sessionStorage.setItem(OPERATOR_TOKEN_KEY, "operator-token");
-    render(<WorkspaceActions workspaceId="w1" title="Research" />);
-    fireEvent.click(screen.getByTestId("workspace-menu"));
-
-    fireEvent.click(screen.getByTestId("workspace-save-template"));
-
-    // The menu closes behind it and the prompt carries the workspace's own title.
-    expect(screen.queryByTestId("workspace-menu-list")).not.toBeInTheDocument();
-    expect(screen.getByTestId("save-template-dialog")).toBeInTheDocument();
-    expect(screen.getByTestId("save-template-name")).toHaveValue("Research");
   });
 });

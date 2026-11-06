@@ -56,9 +56,9 @@ Prefer plain readonly objects, discriminated unions and exhaustive `switch`.
 
 No boolean-flag arguments. Take a small options object, or write two named functions.
 
-`Result<T, E>` from `neverthrow` belongs at fallible boundaries: parsing, validation, HTTP handlers,
-licence and admission checks. Use `ok` and `err`, then `map`, `andThen` or `match`, and convert once at
-the seam; `services/auth/src/http/response.ts` holds the single error to status mapping.
+`Result<T, E>` from `neverthrow` belongs at fallible boundaries: parsing, validation, and a check whose
+failure is expected rather than a bug. Use `ok` and `err`, then `map`, `andThen` or `match`, and convert
+to a value or a message once at the seam.
 
 Throw for programmer errors and invariants only, and never a bare `Error("…")` across a module boundary.
 Define a tagged error type.

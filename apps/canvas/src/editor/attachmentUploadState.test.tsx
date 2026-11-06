@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { type Editor, EditorContent, type JSONContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,7 +8,6 @@ import {
   ATTACHMENT_NODE_NAME,
   Attachment,
   attachmentUploadState,
-  markAttachmentUploaded,
   storeLocalAttachment,
 } from "./attachmentNode";
 import { IMAGE_NODE_NAME, ImageLink } from "./imageLinkNode";
@@ -56,22 +55,15 @@ describe("attachment upload state", () => {
     expect(await attachmentUploadState(ID)).toBe("local");
   });
 
-  it("flips to synced when the relay accepts the bytes and drops the caption", async () => {
+  it("never reaches a synced state, because nothing uploads it", async () => {
+    // There is one copy of the bytes and it is on this machine, so there is no
+    // pending state to explain and no later state to reach.
     await storeLocalAttachment(ID, PNG, "image/png");
-    const { unmount } = render(
-      <Harness content={imageBody({ id: ID, mime: "image/png", name: "diagram.png" })} />,
-    );
-
-    expect(await screen.findByText(PENDING_UPLOAD_NOTICE)).toBeInTheDocument();
-    await screen.findByAltText("diagram.png");
-
-    await markAttachmentUploaded(ID);
-    expect(await attachmentUploadState(ID)).toBe("synced");
-
-    unmount();
     render(<Harness content={imageBody({ id: ID, mime: "image/png", name: "diagram.png" })} />);
+
     await screen.findByAltText("diagram.png");
-    await waitFor(() => expect(screen.queryByText(PENDING_UPLOAD_NOTICE)).toBeNull());
+    expect(screen.queryByText(PENDING_UPLOAD_NOTICE)).toBeNull();
+    expect(await attachmentUploadState(ID)).toBe("local");
   });
 
   it("reads unknown, and shows no caption, for a record written before the flag", async () => {

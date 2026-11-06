@@ -31,36 +31,6 @@ export function devServerUrl(env: NodeJS.ProcessEnv = process.env): string | nul
 export function rendererUrl(env: NodeJS.ProcessEnv = process.env): URL {
   const dev = devServerUrl(env);
   const url = dev !== null ? new URL("/index.html", dev) : new URL(BUNDLED_ENTRY);
-  return withSyncParams(url, env);
-}
-
-/**
- * The dev sync transport, handed to the renderer as query parameters.
- *
- * A real shell would pass this through the bridge; the query is the smallest
- * seam that lets two copies of the app join one `suite-sync` server. The
- * renderer caches it in sessionStorage because it rewrites its URL to the board.
- */
-function withSyncParams(url: URL, env: NodeJS.ProcessEnv): URL {
-  const syncUrl = env.SUITE_SYNC_URL?.trim();
-  const member = env.SUITE_SYNC_MEMBER?.trim();
-  if (syncUrl === undefined || syncUrl.length === 0) return url;
-  if (member === undefined || member.length === 0) return url;
-
-  url.searchParams.set("syncUrl", syncUrl);
-  url.searchParams.set("member", member);
-  url.searchParams.set("epoch", env.SUITE_SYNC_EPOCH?.trim() || "1");
-
-  const workspace = env.SUITE_SYNC_WORKSPACE?.trim();
-  if (workspace !== undefined && workspace.length > 0) {
-    url.searchParams.set("syncWorkspace", workspace);
-  }
-
-  const device = env.SUITE_SYNC_DEVICE?.trim();
-  if (device !== undefined && device.length > 0) {
-    url.searchParams.set("device", device);
-  }
-
   return url;
 }
 

@@ -111,14 +111,15 @@ It is the `standalone` profile. There is no relay, no account and no sharing, an
 `@suite/identity`; until then a half-working sign-in would be worse than none, because a session cookie
 set for `app.suite.run` does not apply to an `app://` origin.
 
-## Local sync (dev)
+## Local sync
 
-The desktop shell can point at a user-run `suite-sync` server for the two-copy demo:
-`SUITE_SYNC_URL`, `SUITE_SYNC_MEMBER`, `SUITE_SYNC_WORKSPACE`, `SUITE_SYNC_EPOCH` and
-`SUITE_SYNC_DEVICE`. `rendererUrl` passes them to the page, and `desktopCsp` adds the server origin to
-`connect-src` only when `SUITE_SYNC_URL` is a `ws:` or `wss:` URL. The transport is plaintext and
-loopback-only; [the suite-sync demo](https://github.com/mr-rogers-neighborhood/suite-sync/blob/main/docs/how-to/canvas-sync-demo.md)
-has the commands. It is not the shipped security model.
+There is none yet, and there is deliberately no half of one. The document lives in the renderer and
+the key schedule lives in the main process, so the transport that carries an encrypted update is main's
+to own; a renderer-side client would put a group secret in a sandboxed page to save one IPC hop.
+
+The plaintext dev transport was removed with the room it talked to (`suite-sync` ADR-0006). The page
+policy below makes that structural rather than a promise: `connect-src 'self'`, with no environment
+variable that can widen it.
 
 ## The page policy
 

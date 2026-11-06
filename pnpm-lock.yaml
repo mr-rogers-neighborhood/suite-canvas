@@ -241,9 +241,6 @@ importers:
       '@suite/import-obsidian':
         specifier: workspace:*
         version: link:../../packages/import-obsidian
-      '@suite/sync':
-        specifier: git+https://github.com/mr-rogers-neighborhood/suite-sync.git#v0.3.4&path:/packages/protocol
-        version: https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/6127f05a093f39df8843fb266faa2b594b4d7520#path:/packages/protocol
       '@tiptap/extensions':
         specifier: ^3.32.0
         version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
@@ -2429,10 +2426,6 @@ packages:
   '@suite/files@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/39fc575d4086327ac2a860ef854d4c713b3956b2#path:/packages/files':
     resolution: {gitHosted: true, integrity: sha512-swwrwngeyVaAA1nTvBnBgZbch3qFDCRi7uFAT2ADVqgzjNRwT3njc+k5lqVwbzJ/ZIOqXAFc6WrI/dAwwvJWpQ==, path: /packages/files, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/39fc575d4086327ac2a860ef854d4c713b3956b2}
     version: 0.6.1
-
-  '@suite/sync@https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/6127f05a093f39df8843fb266faa2b594b4d7520#path:/packages/protocol':
-    resolution: {gitHosted: true, integrity: sha512-4rHOEhKBG6LTIxCfuV2spIRQcDMtovwPhsBqPA0HKhbWTp2XPi/I4RqLirNrfM0q/aU3IovOt/ZMewL5h1aRlQ==, path: /packages/protocol, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/6127f05a093f39df8843fb266faa2b594b4d7520}
-    version: 0.3.4
 
   '@szmarczak/http-timer@4.0.6':
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
@@ -7665,11 +7658,6 @@ snapshots:
 
   '@suite/files@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/39fc575d4086327ac2a860ef854d4c713b3956b2#path:/packages/files':
     dependencies:
-      zod: 4.6.7
-
-  '@suite/sync@https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/6127f05a093f39df8843fb266faa2b594b4d7520#path:/packages/protocol':
-    dependencies:
-      loro-crdt: 1.16.4
       zod: 4.6.7
 
   '@szmarczak/http-timer@4.0.6':

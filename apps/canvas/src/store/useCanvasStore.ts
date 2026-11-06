@@ -7,8 +7,6 @@ import { markBoot, measureBoot } from "../dev/bootTiming";
 import { hostKind } from "../host/bridge";
 import { getSession } from "../session/session";
 import { createWorkspacePersistence } from "../storage/workspacePersistence";
-import { readSuiteSyncConfig } from "../sync/config";
-import { SuiteSyncProvider } from "../sync/suiteSyncProvider";
 
 /**
  * What the indicator can say. The words are the ones the title bar already uses;
@@ -62,22 +60,23 @@ const persistence = createWorkspacePersistence({
 
 markBoot("store:created");
 
-/** How long to wait for the first server sync before treating the doc as local. */
-const SYNC_WAIT_MS = 5000;
-
-type CanvasProvider = SuiteSyncProvider;
-
 interface CanvasState {
   workspace: WorkspaceDocument;
   presence: EphemeralStore;
   cursors: CursorEphemeralStore;
-  provider: CanvasProvider | null;
+  /**
+   * Null until the transport exists.
+   *
+   * The sync client runs in the main process, because the key schedule does, so the
+   * renderer will hand it a document update rather than open a socket itself.
+   */
+  provider: null;
   status: ConnectionStatus;
   /** True once local storage has hydrated. */
   ready: boolean;
-  /** True once the first server sync landed (or the wait ran out). */
+  /** True once there is nothing left to wait for before the board can paint. */
   synced: boolean;
-  /** True when a dev `suite-sync` transport is configured. */
+  /** True when a transport is configured. Always false until there is one. */
   syncEnabled: boolean;
   connect: () => void;
   /**
@@ -86,12 +85,7 @@ interface CanvasState {
    * not received yet.
    */
   flush: () => Promise<void>;
-  /**
-   * Rejoin the relay room with this browser's local document. The claim retry
-   * calls it when a workspace becomes claimable after boot; the provider also
-   * calls its own `rejoin` when the connection returns. A no-op without a
-   * relay, or while the room is live.
-   */
+  /** Rejoin the host. A no-op until the transport exists. */
   rejoin: () => void;
   /**
    * Stops writing this document to this browser. Used by “Forget this browser”:
@@ -100,36 +94,9 @@ interface CanvasState {
   forgetLocal: () => void;
 }
 
-/**
- * A socket is pointless without a relay: unit tests mount components with no
- * server, and the standalone profile is a static build with no relay at all.
- * A `suite-sync` query is the exception: it is the dev transport, and it is
- * chosen before either provider is constructed at module load.
- */
-const SYNC_READ = readSuiteSyncConfig(WORKSPACE_ID);
-const SYNC_CONFIG = SYNC_READ?.ok ? SYNC_READ.value : null;
-if (SYNC_READ !== null && !SYNC_READ.ok) {
-  console.warn(`[suite-sync] ${SYNC_READ.error}`);
-}
-
 export const useCanvasStore = create<CanvasState>((set) => {
-  const onSynced = () => {
-    markBoot("sync:end");
-    measureBoot("to-synced", "store:created", "sync:end");
-    set({ synced: true });
-  };
-
-  // The only transport left is the dev `suite-sync` one, chosen by a query
-  // parameter. A normal launch syncs with nothing, which is the product.
-  const provider: CanvasProvider | null =
-    SYNC_CONFIG !== null && import.meta.env.MODE !== "test"
-      ? new SuiteSyncProvider({
-          ...SYNC_CONFIG,
-          doc,
-          onStatus: (status) => set({ status }),
-          onSynced,
-        })
-      : null;
+  // A launch syncs with nothing. The transport lives in the main process, because
+  // the key schedule does, so there is no provider to construct here yet.
 
   if (persistence) {
     markBoot("hydrate:start");
@@ -143,16 +110,6 @@ export const useCanvasStore = create<CanvasState>((set) => {
       });
   } else {
     markBoot("hydrate:end");
-  }
-
-  if (provider) {
-    setTimeout(() => {
-      if (!useCanvasStore.getState().synced) {
-        markBoot("sync:end");
-        measureBoot("to-synced", "store:created", "sync:end");
-        set({ synced: true });
-      }
-    }, SYNC_WAIT_MS);
   }
 
   const flush = () => {
@@ -169,20 +126,16 @@ export const useCanvasStore = create<CanvasState>((set) => {
     workspace,
     presence,
     cursors,
-    provider,
-    status: provider ? provider.status : "connecting",
+    provider: null,
+    status: "disconnected",
     ready: persistence === null,
-    synced: provider === null,
-    syncEnabled: SYNC_CONFIG !== null,
-    connect: () => {
-      void provider?.connect();
-    },
+    synced: true,
+    syncEnabled: false,
+    connect: () => {},
     flush: async () => {
-      await Promise.all([persistence?.flush(), provider?.flush()]);
+      await persistence?.flush();
     },
-    rejoin: () => {
-      void provider?.rejoin();
-    },
+    rejoin: () => {},
     forgetLocal: () => {
       persistence?.destroy();
     },

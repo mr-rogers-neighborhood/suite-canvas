@@ -43,17 +43,9 @@ describe("resolveAppAsset", () => {
 });
 
 describe("desktopCsp", () => {
-  it("keeps the shipped policy when no sync URL is configured", () => {
-    expect(desktopCsp({})).toBe(DESKTOP_CSP);
-  });
-
-  it("allows the dev sync origin", () => {
-    const csp = desktopCsp({ SUITE_SYNC_URL: "ws://127.0.0.1:8787/sync" });
-    expect(csp).toContain("connect-src 'self' ws://127.0.0.1:8787");
-  });
-
-  it("ignores a URL that is not a WebSocket", () => {
-    expect(desktopCsp({ SUITE_SYNC_URL: "https://example.test" })).toBe(DESKTOP_CSP);
+  it("is the shared policy with no dev exception", () => {
+    expect(desktopCsp()).toBe(DESKTOP_CSP);
+    expect(DESKTOP_CSP).toContain("connect-src 'self'");
   });
 });
 

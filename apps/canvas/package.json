@@ -18,7 +18,6 @@
     "@excalidraw/excalidraw": "0.18.1",
     "@suite/graph": "workspace:*",
     "@suite/import-obsidian": "workspace:*",
-    "@suite/sync": "git+https://github.com/mr-rogers-neighborhood/suite-sync.git#v0.3.4&path:/packages/protocol",
     "@tiptap/extensions": "^3.32.0",
     "@tiptap/pm": "^3.32.0",
     "@tiptap/react": "^3.32.0",

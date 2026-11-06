@@ -72,8 +72,10 @@ deb:
     - libuuid1
     - libsecret-1-0
 
-appImage:
-  license: MIT
+# No `appImage.license`: electron-builder reads it as a path to a file to show at
+# install, wants `.txt` or `.html`, and a bare `MIT` made it look for a file with
+# that name and fail the build. The licence is in the repository, and in the app's
+# own About rows.
 
 mac:
   category: public.app-category.productivity

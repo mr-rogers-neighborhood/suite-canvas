@@ -30,18 +30,46 @@ git push origin main v0.1.0-alpha.3
 
 ## The package
 
-`apps/desktop` builds the shipped article:
+`electron-builder` writes the artifact and the feed file beside it:
 
 ```sh
-pnpm --filter @suite/desktop package:dir    # an unpacked binary, for a check
-pnpm --filter @suite/desktop build          # the renderer bundle and the compiled main process
+pnpm --filter @suite/desktop build
+cd apps/desktop && pnpm exec electron-builder --linux AppImage --publish never
 ```
 
-The Linux package is the one this repository produces today. macOS and Windows are configured and need
-a signing identity this repository does not have; an unsigned build is not something to hand a person.
+That produces `Suite Canvas-<version>.AppImage` and `latest-linux.yml` in
+`apps/desktop/release`. The yml is what an updater reads: a version, the artifact's
+name, its sha512 and its size. Nothing else needs generating.
 
-## What is not here yet
+The Linux package is the one this repository produces today. macOS and Windows are
+configured and need a signing identity this repository does not have.
 
-Self-update. The plan is `electron-updater` against GitHub Releases with signed manifests, so the feed
-is one nobody has to trust blindly. Until that exists, a release is installed by hand and there is no
-`latest.yml` to point an app at.
+## Publishing
+
+The manifest's `update.feed` is this repository's `releases/latest/download`, a
+stable redirect to the newest release's assets. So publishing is uploading the
+artifact and the yml to a GitHub Release whose tag is the version:
+
+```sh
+gh release create v0.1.0 \
+  "apps/desktop/release/Suite Canvas-0.1.0.AppImage" \
+  apps/desktop/release/latest-linux.yml \
+  --title "Suite Canvas 0.1.0" --notes-file notes.md
+```
+
+`latest/download` then serves that yml, both to the app's own updater and to the
+hub when a person presses Check for updates. One URL, so the two cannot disagree.
+
+## Before the first public release
+
+**Signing is not wired yet, and an updater that trusts an unsigned manifest is
+worse than one that never updates.** Two things are missing, in order:
+
+1. A publisher key, generated once, with the private half in CI and the public half
+   pinned in the app. The manifest is signed, and the app refuses one that does not
+   verify.
+2. A CI job that builds on a tag and signs, so a release is produced by the same
+   process every time rather than by hand on one machine.
+
+Until both exist, a build here is for testing self-update locally, not for handing
+to a person.

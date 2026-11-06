@@ -36,6 +36,14 @@ import { DocumentStore, freeDocumentPath, looksLikeCanvasFile, type OpenResult }
 
 const APP_ID = "run.suite.canvas";
 
+// The single-instance lock lives in `userData`, so two copies of the shell need
+// two directories. A test or a second demo profile sets this; a normal launch
+// keeps the platform default and finds the document it already had.
+const userDataOverride = process.env.SUITE_CANVAS_USER_DATA?.trim();
+if (userDataOverride !== undefined && userDataOverride.length > 0) {
+  app.setPath("userData", userDataOverride);
+}
+
 /** Files handed to a cold start, before `ready`. */
 const pendingFiles: string[] = [];
 let mainWindow: BrowserWindow | null = null;

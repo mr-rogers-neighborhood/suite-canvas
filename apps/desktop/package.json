@@ -7,13 +7,14 @@
   "main": "./dist/main/index.js",
   "scripts": {
     "build": "pnpm --filter @suite/canvas build:standalone && tsc -p tsconfig.build.json && node scripts/stage.mjs",
-    "package:dir": "electron-builder --dir",
-    "start": "electron .",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
     "dev:shell": "node scripts/shell.mjs",
-    "dev:shell:watch": "node scripts/watch.mjs"
+    "dev:shell:watch": "node scripts/watch.mjs",
+    "package:dir": "pnpm build && electron-builder --dir",
+    "start": "electron .",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@suite/contracts": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.2.0&path:/packages/contracts",
     "@suite/files": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.2.0&path:/packages/files",
     "@suite/graph": "workspace:*",
     "zod": "^4.6.7"
@@ -24,5 +25,10 @@
     "electron-builder": "^26.0.12",
     "typescript": "~5.9.3",
     "vitest": "^5.0.5"
-  }
+  },
+  "author": {
+    "name": "Suite contributors",
+    "email": "maintainers@suite.run"
+  },
+  "license": "MIT"
 }

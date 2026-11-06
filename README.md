@@ -112,6 +112,13 @@ the editor, [Zod](https://zod.dev) for the schema, [Better Auth](https://better-
 
 The same pages, rendered and searchable, are at <https://docs.suite.run>.
 
+## Working on the whole suite
+
+The hub, the sync server and the three apps are developed together from
+[`suite-dev`](https://github.com/mr-rogers-neighborhood/suite-dev), which assumes the repositories are
+cloned side by side. It stages the real binaries, runs the hub and the sync server together, seeds a
+workspace, and owns the cross-app e2e suite. `pnpm preflight` there says what is missing.
+
 ## Contributing
 
 Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) is the short version and

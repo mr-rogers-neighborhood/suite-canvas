@@ -90,7 +90,20 @@ The public half is `SUITE_UPDATE_PUBLIC_KEY` in `@suite/desktop`, with
 
 ## What is still missing
 
-CI. A release is currently built and signed by hand on one machine, which is how two
-releases end up produced two different ways. The next step is a workflow that builds
-on a tag, signs with the key from a repository secret, and uploads, so the artefact
-and the manifest come from the same process every time.
+**A release workflow.** CI now gates every push (lint, types, tests, and for this
+repository the doc and shape gates), but a release is still built and signed by hand
+on one machine, which is how two releases end up produced two different ways.
+
+When a workflow does own this, the key arrives as a repository secret rather than a
+file:
+
+```sh
+gh secret set SUITE_UPDATE_KEY < ~/.config/suite/update-key.pem
+```
+
+Two things to know before doing that. A secret is **not a backup** — GitHub will
+never show it to you again, so the offline copy of the key remains the only copy you
+can restore from. And a secret is readable by any workflow that runs on a tag, so the
+release workflow must be the only one allowed to run on one.
+
+Until then the key stays on one machine, and releases stay a deliberate act.

@@ -38,9 +38,8 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 | Book card | `apps/canvas/src/cards/BookCardFace.tsx` | The card on the canvas: the cover filling it, the title, author and chapter count, and **Read** |
 | Book block | `apps/canvas/src/editor/BookView.tsx` | The block itself, for a card that holds a book among other content: the same cover, details and **Read** |
 | Media picker | `apps/canvas/src/editor/MediaPickerHost.tsx` | The one table of media kinds, applied to an editor target or a board target. Each row's icon is a reference from the bundled set, in the picker's own ink |
-| Handbook | `apps/canvas/src/handbook/HandbookBubble.tsx` | The contextual article list, the article, its spotlight and the feedback form, in one shell float. **Shut** (see below) |
-| Account | `apps/canvas/src/auth/SignInEntry.tsx` and `AccountPanel.tsx` | Sign in or the account menu, and one dialog for the account, members, devices and the plan |
-| Launcher | `apps/canvas/src/launcher/WorkspaceLauncher.tsx` | Recents with rename, export and delete, import, and the same account entry the title bar has |
+| Handbook | `apps/canvas/src/handbook/HandbookBubble.tsx` | The contextual article list, the article and its spotlight, in one shell float. **Shut** (see below) |
+| Launcher | `apps/canvas/src/launcher/WorkspaceLauncher.tsx` | Recents with rename, export and delete, and import |
 
 The shell holds no document data. Selection, the active board, open tabs, filters, the open surface and the palette query live in `apps/canvas/src/store/useUiStore.ts`; the document arrives through `useWorkspaceSnapshot`.
 
@@ -699,15 +698,15 @@ Focus is always visible on interactive elements, and a focusable read-only contr
 | Focus trap and focus restore | `apps/canvas/src/dialogs/useFocusTrap.test.tsx` |
 | Menu arrow keys, and focus entering the menu | `apps/canvas/src/dialogs/menuKeys.test.tsx` |
 | Tab strip keyboard | `apps/canvas/src/dialogs/tabKeys.test.tsx` |
-| Each menu takes focus on open | `ContextMenu.test.tsx`, `Dock.test.tsx`, `ViewsBar.test.tsx`, `BoardTabs.test.tsx`, `WorkspaceActions.test.tsx`, `ThemeToggle.test.tsx`, `CardTypePicker.test.tsx` and `SignInEntry.test.tsx` beside each component |
+| Each menu takes focus on open | `ContextMenu.test.tsx`, `Dock.test.tsx`, `ViewsBar.test.tsx`, `BoardTabs.test.tsx`, `WorkspaceActions.test.tsx`, `ThemeToggle.test.tsx` and `CardTypePicker.test.tsx` beside each component |
 | A combobox keeps focus in its field | `apps/canvas/src/cards/CardPicker.test.tsx` |
-| Each modal dialog traps Tab | `SignInDialog.test.tsx` and `AdmissionPanel.test.tsx` in `apps/canvas/src/auth/`, `ShareDialog.trap.test.tsx` and `ConflictDialog.test.tsx` in `apps/canvas/src/sharing/`, `SettingsDialog.test.tsx` |
+| Each modal dialog traps Tab | `SettingsDialog.test.tsx`, `DeleteWorkspaceDialog.test.tsx` and `CardPicker.test.tsx` beside each component |
 | Card focus mode as a dialog | `apps/canvas/src/cards/CardFocusSurface.test.tsx` |
 | Library rows by keyboard, sort and truncation | `apps/canvas/src/library/LibraryDrawer.test.tsx` |
 | Shortcut rows and the sheet | `apps/canvas/src/command/ShortcutSheet.test.tsx` |
 | Undo and redo buttons | `apps/canvas/src/chrome/UndoRedo.test.tsx` |
 | One focus ring token | `apps/canvas/src/styles/focusRing.test.ts` |
-| Questions that replaced the platform confirm | `useLibraryRowActions.test.ts` and `LibraryDrawer.test.tsx` in `apps/canvas/src/library/`, `ShareDialog.test.tsx` and `ConflictDialog.test.tsx` in `apps/canvas/src/sharing/` |
+| Questions that replaced the platform confirm | `useLibraryRowActions.test.ts` and `LibraryDrawer.test.tsx` in `apps/canvas/src/library/` |
 | Palette ranking and rows | `apps/canvas/src/command/CommandPalette.test.tsx` |
 | Command availability | `apps/canvas/src/command/commandRegistry.test.ts` |
 | Tab strip keyboard | `apps/canvas/src/cards/CardPanel.test.tsx` |
@@ -723,6 +722,6 @@ Focus is always visible on interactive elements, and a focusable read-only contr
 
 Storybook covers the components whose look is the behaviour: `*.stories.tsx` beside each component in `apps/canvas/src/chrome/`, `apps/canvas/src/library/`, `apps/canvas/src/presence/` and `apps/canvas/src/dialogs/`.
 
-The surfaces that mount without a live document have a story: `WorkspaceLauncher.stories.tsx` (empty state, because the recents come from this browser), `CommandPalette.stories.tsx` (static rows, including the shortcut column), `ShortcutSheet.stories.tsx`, `SettingsDialog.stories.tsx`, `ConflictDialog.stories.tsx` in `apps/canvas/src/sharing/`, and `ContainerPanel.stories.tsx` in `apps/canvas/src/panels/` with a plain document fixture.
+The surfaces that mount without a live document have a story: `WorkspaceLauncher.stories.tsx` (empty state, because the recents come from this browser), `CommandPalette.stories.tsx` (static rows, including the shortcut column), `ShortcutSheet.stories.tsx`, `SettingsDialog.stories.tsx`, and `ContainerPanel.stories.tsx` in `apps/canvas/src/panels/` with a plain document fixture.
 
 Three surfaces cannot be mounted that way, so the story suite cannot catch a regression in them: the canvas (`apps/canvas/src/canvas/**`) needs the projection, the camera and a real `LoroDoc` fed by the provider; the shell (`apps/canvas/src/app/WorkspaceShellView.tsx`) needs the same document plus a live session; and the share dialogs that call the relay need a `/api/shares` answer, which is why only the pure `ConflictDialog` has a story.

@@ -165,16 +165,9 @@ An image whose bytes are gone is reported and skipped, never a reason to refuse 
 
 ## The build pairing
 
-The desktop shell loads `apps/canvas/dist`, so the profile that bundle was built
-with matters: the shell is the `standalone` profile, and a `relay` bundle
-constructs the account client against an `app://` origin, which fails before the
-window can render. `apps/desktop`'s own `build` therefore runs
-`build:standalone` first, rather than leaving the pairing to whoever remembers.
-
-`accountBaseFor` in `apps/canvas/src/auth/client.ts` is the second half of that
-guard: an origin that cannot carry the account client gets a valid but
-unreachable base instead of a throw at import time, because a throw there takes
-down screens that have nothing to do with accounts.
+The desktop shell loads `apps/canvas/dist`, so the renderer must be built before
+the shell. `apps/desktop`'s own `build` therefore runs the canvas build first,
+rather than leaving the order to whoever remembers.
 
 ## Packaging
 

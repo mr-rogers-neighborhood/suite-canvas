@@ -40,6 +40,8 @@ electronFuses:
   enableNodeCliInspectArguments: false
   enableEmbeddedAsarIntegrityValidation: true
   onlyLoadAppFromAsar: true
+  # Every page is served from a custom protocol now, so file:// needs no extra privileges.
+  grantFileProtocolExtraPrivileges: false
 
 linux:
   target:
@@ -89,7 +91,5 @@ fileAssociations:
     role: Editor
     mimeType: application/x-suite-canvas
 
-protocols:
-  - name: Suite Canvas
-    schemes:
-      - suite-canvas
+# No per-app scheme: Start owns `suite://` and routes to the app. A second
+# scheme nothing registers or handles is a promise the app does not keep.

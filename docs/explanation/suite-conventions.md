@@ -24,7 +24,7 @@ narrow enough to state in a paragraph.
 | Where documents live | `~/Documents/Suite/<App>` | A person looks there, and a folder their own cloud already syncs is local-first without a relay |
 | Where machine state lives | the per-user data directory | A lock beside a synced file carries another machine's process id |
 | Backups | beside the document, `<name>.<stamp>.bak` | "Recover with a file manager when the app is the thing that broke" |
-| Link shape | `suite://<app>/…` and `suite://<app>/workspace/<id>` | One form to match, so a hub can route without knowing the app |
+| Link shape | `suite://<app>/workspace/<file name>` | One form to match, so a hub can route without knowing the app. The name is the document's file name, so the hub builds a link from its own index and the app resolves it against its own folder |
 | App manifest | `suite.app.json` beside the executable | The hub discovers what exists; the manifest cannot name a binary |
 | Install record | the hub's own data directory | The only place an executable path lives |
 | App table | `SUITE_APPS` in `@suite/contracts` | Id, display name, folder and extension per app, so the hub lists a planner's files without importing planner |

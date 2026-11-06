@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isTrustedSender } from "@suite/desktop";
 import {
   app,
   BrowserWindow,
@@ -18,10 +20,11 @@ import {
   type OpenDocumentInfo,
   type RecentFileInfo,
 } from "../shared/ipc.js";
+import { documentFromArgv } from "./documentLink.js";
 import { type DesktopPaths, desktopPaths } from "./paths.js";
 import { desktopCsp, resolveAppAsset } from "./protocol.js";
 import { type RecentsStore, recentsStore } from "./recents.js";
-import { isRendererOrigin, rendererUrl } from "./rendererUrl.js";
+import { devServerUrl, isRendererOrigin, rendererUrl } from "./rendererUrl.js";
 import { DocumentStore, freeDocumentPath, looksLikeCanvasFile, type OpenResult } from "./store.js";
 
 /**
@@ -72,14 +75,9 @@ function attachFile(target: string): void {
   pendingFiles.push(resolved);
 }
 
-/** A file argument, from a cold start or from a protocol activation. */
+/** The document the command line names, whether a path or a link the hub routed here. */
 function fileFromArgv(argv: readonly string[]): string | null {
-  for (const argument of argv.slice(1)) {
-    if (argument.startsWith("-")) continue;
-    if (argument.startsWith("suite://") || argument.startsWith("suite-canvas://")) continue;
-    if (looksLikeCanvasFile(argument)) return argument;
-  }
-  return null;
+  return documentFromArgv(argv, paths.library, looksLikeCanvasFile, existsSync);
 }
 
 async function openInRenderer(info: OpenDocumentInfo): Promise<void> {
@@ -346,13 +344,39 @@ function createWindow(): BrowserWindow {
   return window;
 }
 
+/**
+ * The pages this shell accepts messages from: its own bundle, and the dev
+ * server when one is configured.
+ */
+function pageOrigins(): readonly string[] {
+  const dev = devServerUrl();
+  return dev === null ? ["app://canvas"] : ["app://canvas", dev];
+}
+
+/**
+ * Register a channel, but only answer the page this shell loaded.
+ *
+ * Electron's checklist asks every handler to validate the sender. It costs one
+ * comparison and closes the gap between "the window is ours" and "the message
+ * came from our window".
+ */
+function onIpc(
+  channel: string,
+  handler: (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!isTrustedSender(event.senderFrame?.url, pageOrigins())) return undefined;
+    return handler(event, ...args);
+  });
+}
+
 function registerIpc(): void {
-  ipcMain.handle(IPC.loadDocument, () => {
+  onIpc(IPC.loadDocument, () => {
     if (!store) return null;
     return { info: store.documentInfo, snapshot: store.currentSnapshot() };
   });
 
-  ipcMain.handle(IPC.saveDocument, async (_event, request: unknown) => {
+  onIpc(IPC.saveDocument, async (_event, request: unknown) => {
     if (store) {
       store.save(request as Parameters<DocumentStore["save"]>[0]);
       return;
@@ -371,24 +395,24 @@ function registerIpc(): void {
     await openInRenderer(created.info);
   });
 
-  ipcMain.handle(IPC.flushDocument, async () => {
+  onIpc(IPC.flushDocument, async () => {
     if (!store) return { ok: true };
     await store.flush();
     const failure: FileFailure | null = store.lastFailure;
     return failure ?? { ok: true };
   });
 
-  ipcMain.handle(IPC.documentInfo, () => store?.documentInfo ?? null);
+  onIpc(IPC.documentInfo, () => store?.documentInfo ?? null);
 
-  ipcMain.handle(IPC.appInfo, () => ({
+  onIpc(IPC.appInfo, () => ({
     host: "desktop",
     version: app.getVersion(),
     platform: process.platform,
   }));
 
-  ipcMain.handle(IPC.openFileDialog, () => openDocumentDialog());
+  onIpc(IPC.openFileDialog, () => openDocumentDialog());
 
-  ipcMain.handle(IPC.openDocument, async (_event, target: unknown) => {
+  onIpc(IPC.openDocument, async (_event, target: unknown) => {
     // A path the shell itself reported earlier, re-validated here: the renderer
     // may only ask for a file this process has already opened once.
     if (typeof target !== "string") return;
@@ -398,7 +422,7 @@ function registerIpc(): void {
     await openDocument(target);
   });
 
-  ipcMain.handle(IPC.recentFiles, async (): Promise<readonly RecentFileInfo[]> => {
+  onIpc(IPC.recentFiles, async (): Promise<readonly RecentFileInfo[]> => {
     const entries = (await recents?.list()) ?? [];
     return entries.map((entry) => ({
       path: entry.path,
@@ -408,7 +432,7 @@ function registerIpc(): void {
     }));
   });
 
-  ipcMain.handle(IPC.forgetRecent, async (_event, target: unknown) => {
+  onIpc(IPC.forgetRecent, async (_event, target: unknown) => {
     if (typeof target !== "string") return;
     await recents?.forget(target);
   });
@@ -439,14 +463,10 @@ if (!gotLock) {
     attachFile(path);
   });
 
-  app.on("open-url", (event, url) => {
-    event.preventDefault();
-    if (app.isReady() && mainWindow && store) {
-      // A suite:// link is Start's to route; reaching this app means the link
-      // names it, and the renderer resolves what it points at.
-      mainWindow.webContents.send(IPC.documentInfo, url);
-    }
-  });
+  // No `open-url` handler: `suite://` belongs to Start, which routes a link by
+  // launching this app with it in `argv`. A scheme this app does not register can
+  // never deliver this event, and listening for one would be a promise it cannot
+  // keep.
 
   void app.whenReady().then(async () => {
     paths = desktopPaths();

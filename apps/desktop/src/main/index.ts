@@ -39,6 +39,9 @@ import { DocumentStore, freeDocumentPath, looksLikeCanvasFile, type OpenResult }
 
 const APP_ID = "run.suite.canvas";
 
+/** Where "Support Suite…" goes. One line, so it can point at whatever page should take money. */
+const SUPPORT_URL = "https://github.com/mr-rogers-neighborhood/suite-canvas";
+
 // The single-instance lock lives in `userData`, so two copies of the shell need
 // two directories. A test or a second demo profile sets this; a normal launch
 // keeps the platform default and finds the document it already had.
@@ -135,9 +138,11 @@ function applyMenu(): void {
           },
         },
         {
-          label: "Account…",
+          // The one ask in the product. No account, no paywall, nothing gated;
+          // the source is MIT and stays that way whether or not anyone uses it.
+          label: "Support Suite…",
           click: () => {
-            void shell.openExternal("https://start.suite.run/account").catch(() => {});
+            void shell.openExternal(SUPPORT_URL).catch(() => {});
           },
         },
       ],

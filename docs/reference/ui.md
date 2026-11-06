@@ -16,9 +16,8 @@ Three surfaces hold the chrome: the title bar, the navigation row inside it, and
 
 | Surface | Component | What it owns |
 | --- | --- | --- |
-| Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, sync and storage status, **Share** (`ShareAction.tsx`, its own control beside the status pill), the workspace menu, the account slot, the theme toggle |
+| Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, the saved status, the workspace menu, the theme toggle |
 | Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history, outline and explain buttons in `app/WorkspaceShellView.tsx` and `canvas/PurposeControl.tsx` | Home, the open boards with their peer counts, undo, redo, version history, the outline and the purpose (explain), in one row. Explain sits outside the edit gate: a reader who may not write still gathers a selection to read it |
-| Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface, plus the plan wall and the retry for whoever just paid |
 | Views | `apps/canvas/src/chrome/ViewsBar.tsx` | One icon in the nav row, after explain, opening the views layer on the projected view. **Shut** (see below) |
 | Views layer | `apps/canvas/src/views/ViewsLayer.tsx` | The full-window mode: the rail of saved views with row actions, the presentation in read or edit mode, the context drawer and the pick |
 | Views surface | `apps/canvas/src/views/ViewSurface.tsx` | One view drawn: a table, grid, list or board, or a graph or chart, with grouping, drill-down and in-place cells |

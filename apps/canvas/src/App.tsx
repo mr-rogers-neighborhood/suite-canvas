@@ -10,10 +10,8 @@ import { useLeaveTransition } from "./app/useLeaveTransition";
 import { useLibraryItems } from "./app/useLibraryItems";
 import { useStaleBuild } from "./app/useStaleBuild";
 import { useWorkspaceBoot } from "./app/useWorkspaceBoot";
-import { useWorkspaceSyncFacts } from "./app/useWorkspaceSyncFacts";
 import { WorkspaceShellView } from "./app/WorkspaceShellView";
 import { useSurfacePalette, useWorkspacePalette } from "./app/workspacePaint";
-import { useAccountStore } from "./auth/useAccountStore";
 import { attachDots } from "./canvas/attachDots";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./canvas/interactions/multiSelect";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
@@ -221,31 +219,9 @@ function WorkspaceShell({
   // no sharing, all decided once at build time.
   const standalone = isStandalone();
 
-  // The account is read once by `SignInDialogHost`; the header consumes the answer.
-  // A device with no account is signed out, which is where it already was — nothing
-  // about the local path changes (ADR-0067 §6).
-  const accountPhase = useAccountStore((state) => state.phase);
-  const openPanel = useAccountStore((state) => state.openPanel);
-  const syncFacts = useWorkspaceSyncFacts({
-    workspaceId: workspaceId ?? "",
-    phase: accountPhase,
-    status,
-    workspaceName,
-    shared: share !== null,
-  });
-  const openSignIn = useAccountStore((state) => state.openSignIn);
+  // The sync indicator reads the connection and nothing else: there is no account
+  // to ask about a claim, and no plan panel to open.
   const { leaving, inRoom, requestLeave } = useLeaveTransition({ standalone, peerCount });
-
-  // Closing the plan panel is the end of a checkout or a portal round trip that happened
-  // without leaving the app: the browser tab came back to a page that never re-mounted, so
-  // nothing has asked the control plane about this workspace since before the payment.
-  const panelOpen = useAccountStore((state) => state.panelOpen);
-  const wasPanelOpen = useRef(panelOpen);
-  useEffect(() => {
-    const closed = wasPanelOpen.current && !panelOpen;
-    wasPanelOpen.current = panelOpen;
-    if (closed && syncFacts.claim === "capped") syncFacts.reclaim();
-  }, [panelOpen, syncFacts.claim, syncFacts.reclaim]);
 
   useWorkspaceBoot({
     workspace,
@@ -701,13 +677,7 @@ function WorkspaceShell({
         workspace={workspace}
         workspaceName={workspaceName}
         setWorkspaceName={setWorkspaceName}
-        phase={accountPhase}
-        claim={syncFacts.claim}
-        reason={syncFacts.reason}
-        onSeePlans={() => openPanel("plan")}
-        onReclaim={syncFacts.reclaim}
         inRoom={inRoom}
-        openSignIn={openSignIn}
         readOnly={readOnly}
         activeBoardId={activeBoardId}
         activeBoardName={activeBoardName}

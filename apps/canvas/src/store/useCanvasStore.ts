@@ -2,18 +2,25 @@ import { WorkspaceDocument } from "@suite/graph";
 import { EphemeralStore, LoroDoc } from "loro-crdt";
 import { CursorEphemeralStore } from "loro-prosemirror";
 import { create } from "zustand";
-import { type LoroConnectionStatus, LoroProvider, type ProviderAuth } from "../collab/loroProvider";
 import { TAB_ID } from "../collab/tabId";
 import { markBoot, measureBoot } from "../dev/bootTiming";
 import { hostKind } from "../host/bridge";
-import { collabWsUrl } from "../session/endpoints";
-import { isStandalone } from "../session/mode";
 import { getSession } from "../session/session";
 import { createWorkspacePersistence } from "../storage/workspacePersistence";
 import { readSuiteSyncConfig } from "../sync/config";
 import { SuiteSyncProvider } from "../sync/suiteSyncProvider";
 
-export type ConnectionStatus = LoroConnectionStatus;
+/**
+ * What the indicator can say. The words are the ones the title bar already uses;
+ * a status of `unauthorized` can no longer happen, and stays because surfaces
+ * branch on it.
+ */
+export type ConnectionStatus =
+  | "connected"
+  | "connecting"
+  | "rejoining"
+  | "disconnected"
+  | "unauthorized";
 
 function searchParam(key: string): string | null {
   if (typeof window === "undefined") return null;
@@ -55,27 +62,10 @@ const persistence = createWorkspacePersistence({
 
 markBoot("store:created");
 
-/**
- * A share token is the only credential a share room accepts, and it is constant.
- * A normal editor session presents the account's session JWT (ADR-0074), which
- * lives five minutes — so the provider is handed a mint rather than the token,
- * and asks for a fresh one at every room join.
- */
-const auth: ProviderAuth | undefined = SESSION.share
-  ? new TextEncoder().encode(SESSION.share.token)
-  : SESSION.credential === "account" && import.meta.env.VITE_SUITE_MODE !== "standalone"
-    ? async () => {
-        // On demand, so the token client is not in the boot chunk of a build
-        // that never joins a room. The literal lets a standalone bundle drop it.
-        const { relayCredentialBytes } = await import("../auth/credential");
-        return relayCredentialBytes();
-      }
-    : undefined;
-
 /** How long to wait for the first server sync before treating the doc as local. */
 const SYNC_WAIT_MS = 5000;
 
-type CanvasProvider = LoroProvider | SuiteSyncProvider;
+type CanvasProvider = SuiteSyncProvider;
 
 interface CanvasState {
   workspace: WorkspaceDocument;
@@ -121,7 +111,6 @@ const SYNC_CONFIG = SYNC_READ?.ok ? SYNC_READ.value : null;
 if (SYNC_READ !== null && !SYNC_READ.ok) {
   console.warn(`[suite-sync] ${SYNC_READ.error}`);
 }
-const NO_TRANSPORT = import.meta.env.MODE === "test" || (isStandalone() && SYNC_CONFIG === null);
 
 export const useCanvasStore = create<CanvasState>((set) => {
   const onSynced = () => {
@@ -130,6 +119,8 @@ export const useCanvasStore = create<CanvasState>((set) => {
     set({ synced: true });
   };
 
+  // The only transport left is the dev `suite-sync` one, chosen by a query
+  // parameter. A normal launch syncs with nothing, which is the product.
   const provider: CanvasProvider | null =
     SYNC_CONFIG !== null && import.meta.env.MODE !== "test"
       ? new SuiteSyncProvider({
@@ -138,18 +129,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
           onStatus: (status) => set({ status }),
           onSynced,
         })
-      : !ROOM_ID || typeof window === "undefined" || NO_TRANSPORT
-        ? null
-        : new LoroProvider({
-            url: collabWsUrl(),
-            workspaceId: ROOM_ID,
-            doc,
-            presence,
-            cursors,
-            ...(auth ? { auth } : {}),
-            onStatus: (status) => set({ status }),
-            onSynced,
-          });
+      : null;
 
   if (persistence) {
     markBoot("hydrate:start");

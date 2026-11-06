@@ -37,16 +37,3 @@ export const EditorShare: Story = {
  * The one status: what this device can say about its own copy lives under the
  * same control that says who else is here (ADR-0064 amendment).
  */
-export const WithStorage: Story = {
-  args: {
-    status: "connected",
-    peerCount: 1,
-    storage: (
-      <div className="text-[12px] leading-5">
-        <h2 className="text-[13px] font-semibold text-[var(--ink)]">This device</h2>
-        <p className="mt-2 text-[11px] text-[var(--ink-muted)]">Saved on this device</p>
-        <p className="mt-2 text-[var(--ink)]">Sign in to keep this workspace anywhere.</p>
-      </div>
-    ),
-  },
-};

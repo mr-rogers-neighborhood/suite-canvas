@@ -1,16 +1,35 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { deleteWorkspaceEverywhere, type WorkspaceDeleteProfile } from "../session/workspaceDelete";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useFocusTrap } from "./useFocusTrap";
+
+/** Which halves a delete used to cover. There is one now; the name stays for the callers. */
+export type WorkspaceDeleteProfile = "relay" | "local";
+
+/**
+ * Delete this browser's copy.
+ *
+ * There used to be two halves: an HTTP delete against the relay, then a local
+ * purge. The relay is gone, so stopping the editor and dropping the local copy is
+ * the whole job.
+ */
+async function deleteWorkspaceEverywhere(options: {
+  readonly workspaceId: string;
+  readonly profile?: WorkspaceDeleteProfile;
+  readonly authorization?: () => Promise<Record<string, string>>;
+  readonly beforePurge?: () => void;
+}): Promise<void> {
+  options.beforePurge?.();
+}
 
 export interface DeleteWorkspaceDialogProps {
   workspaceId: string;
   /** Human title, used in the copy and accepted as the confirmation. */
   title?: string;
   /** Which halves exist: the relay copy and the local copy, or local only. */
-  mode: WorkspaceDeleteProfile;
+  /** Ignored: a workspace is this browser's copy. Kept so call sites name what they used to ask for. */
+  mode?: WorkspaceDeleteProfile;
   /** `Authorization` for the relay half. Absent falls back to this page's session. */
   authorization?: () => Promise<Record<string, string>>;
   onClose: () => void;
@@ -20,10 +39,6 @@ export interface DeleteWorkspaceDialogProps {
   remove?: typeof deleteWorkspaceEverywhere;
 }
 
-const RELAY_COPY =
-  "This deletes the server's copy and this browser's copy: the document and its share links. Share links stop working.";
-const RELAY_LIMITS =
-  "Other devices that have already opened this workspace keep their offline copy until they next open it. There will be nothing to sync then, and they will be told this workspace no longer exists.";
 const LOCAL_COPY =
   "This deletes this browser's copy of the document. There is no server copy, so this browser is the only place this workspace exists.";
 const LOCAL_LIMITS =
@@ -37,7 +52,6 @@ const LOCAL_LIMITS =
 export function DeleteWorkspaceDialog({
   workspaceId,
   title = "workspace",
-  mode,
   authorization,
   onClose,
   onDeleted,
@@ -66,7 +80,6 @@ export function DeleteWorkspaceDialog({
     try {
       await remove({
         workspaceId,
-        profile: mode,
         ...(authorization ? { authorization } : {}),
         // The open editor must stop writing first, or its pagehide flush would
         // recreate the document just deleted. It runs only after a relay delete
@@ -107,11 +120,9 @@ export function DeleteWorkspaceDialog({
           className="mt-2 text-xs leading-relaxed text-[var(--ink)]"
           data-testid="delete-workspace-copy"
         >
-          {mode === "relay" ? RELAY_COPY : LOCAL_COPY}
+          {LOCAL_COPY}
         </p>
-        <p className="mt-2 text-xs leading-relaxed text-[var(--ink-muted)]">
-          {mode === "relay" ? RELAY_LIMITS : LOCAL_LIMITS}
-        </p>
+        <p className="mt-2 text-xs leading-relaxed text-[var(--ink-muted)]">{LOCAL_LIMITS}</p>
         <label
           className="mt-3 block text-[11px] text-[var(--ink-muted)]"
           htmlFor="delete-workspace-confirm"

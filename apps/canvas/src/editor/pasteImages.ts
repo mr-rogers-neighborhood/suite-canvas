@@ -1,17 +1,10 @@
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { Extension } from "@tiptap/react";
-import { canUploadMedia } from "../auth/mediaUploadGating";
-import { announceUploadRefusal } from "../auth/uploadRefusal";
-import { collabHttpBase } from "../session/endpoints";
-import { isStandalone } from "../session/mode";
-import { getSession } from "../session/session";
 import {
   attachmentBlob,
   attachmentId,
   isAttachmentMime,
-  markAttachmentUploaded,
-  pageLocation,
   storeLocalAttachment,
 } from "./attachmentNode";
 import { imageAltFromSrc, imageLinkFromText } from "./imageLinkNode";
@@ -33,6 +26,7 @@ export interface PasteImagesOptions {
    * Uploads one image. `null` means this page has no relay: the bytes stay in
    * IndexedDB. Leaving it undefined picks the relay automatically.
    */
+  /** Ignored. A caller that used to pass a relay uploader is now passing nothing. */
   upload?: PasteUploader | null;
   /** Local byte cache; IndexedDB unless a test supplies its own. */
   storeLocal?: (id: string, bytes: Uint8Array, mime: string) => Promise<void>;
@@ -55,90 +49,15 @@ function clipboardMime(type: string): string {
 export type RelayRequest = (url: string, init: RequestInit) => Promise<Response>;
 
 /**
- * The transport, taken from `globalThis` so it stays injectable (a test passes
- * its own) and so this module holds no call of its own. `relayUploader` is the
- * profile gate: a standalone build, an offline tab and a share session (which
- * holds a link token, never an account session) all return null before a request
- * is built, so nothing here is reached without a relay to reach.
+ * No uploader exists.
+ *
+ * This used to return a function when the page had a relay to reach: not in a
+ * standalone build, not offline, and never for a share session, which held a link
+ * token rather than an account session. Every caller treats `null` as "these bytes
+ * stay in this window", which is now the only answer.
  */
-function platformRequest(): RelayRequest | null {
-  const implementation = (globalThis as { fetch?: unknown }).fetch;
-  return typeof implementation === "function"
-    ? (implementation as RelayRequest).bind(globalThis)
-    : null;
-}
-
-/**
- * Uploads one pasted image to the relay, or returns null when this page cannot
- * upload: a standalone build has no relay at all, an offline browser has none
- * reachable, and a share session only ever holds a link token — never the
- * account's session — so it must not try. Returning a function here is the
- * "relay configured" test the paste path relies on.
- */
-export function relayUploader(
-  request: RelayRequest | null = platformRequest(),
-): PasteUploader | null {
-  if (request === null) return null;
-  if (typeof window === "undefined") return null;
-  if (isStandalone()) return null;
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return null;
-
-  const session = getSession();
-  if (session.workspaceId === null) return null;
-  // A share session holds a link token and never the account's session, so it
-  // must not try — in any profile. That rule is above the relaxation, not beside it.
-  if (session.credential === "share") return null;
-  // A development tab often has no account session, and running the relay locally
-  // is how this round trip gets tested at all. `import.meta.env.DEV` is folded to
-  // false in every production bundle, so the relaxation cannot ship: a deployed
-  // build still uploads only as an account.
-  const signedIn = session.credential === "account";
-  if (!signedIn && !import.meta.env.DEV) return null;
-  const workspaceId = session.workspaceId;
-
-  return async ({ id, bytes, mime }) => {
-    // Minted per upload: the token the tab booted with has a five-minute life,
-    // and a paste can land long after boot. Imported on demand so a build that
-    // never uploads never carries the token client.
-    const authorization: Record<string, string> = signedIn
-      ? await (await import("../auth/credential")).credentialAuthorization()
-      : {};
-    const response = await request(
-      `${collabHttpBase(pageLocation())}/api/attachments/${encodeURIComponent(workspaceId)}`,
-      {
-        method: "POST",
-        headers: {
-          ...authorization,
-          "content-type": mime,
-          // The node already carries this id; the relay stores under it, so an
-          // offline copy and its later upload are the same attachment.
-          "x-suite-attachment-id": id,
-        },
-        body: bytes as unknown as BodyInit,
-      },
-    );
-    if (!response.ok) {
-      // A full plan is a real answer, not a broken upload: say which one it is
-      // and raise the one prompt that can sell more storage.
-      if (response.status === 402 || response.status === 413) {
-        const { noteRefusal } = await import("../auth/refusal");
-        noteRefusal(
-          response.status === 413 ? "attachment-limit" : "storage-limit",
-          response.status,
-        );
-      }
-      throw Object.assign(new Error(`The relay refused the media (${response.status}).`), {
-        status: response.status,
-      });
-    }
-  };
-}
-
-/** The HTTP status an upload failed with, when it failed for a stated reason. */
-function uploadStatus(error: unknown): number | null {
-  if (typeof error !== "object" || error === null || !("status" in error)) return null;
-  const status = (error as { status?: unknown }).status;
-  return typeof status === "number" ? status : null;
+export function relayUploader(): PasteUploader | null {
+  return null;
 }
 
 /** Dimensions from the decoded image, or null when this browser cannot decode it. */
@@ -201,15 +120,14 @@ function clipboardText(event: ClipboardEvent): string {
 /**
  * One file, prepared: its bytes stored and uploaded, and the attributes a `media` block needs.
  *
- * Split out from the insert because there are now two places a block can land — at the caret of an editor, and in
- * a card made where the reader right-clicked — and the upload is the same work either way. The permission check,
- * the local copy and the relay attempt live here so no caller can skip one of them.
+ * Split out from the insert because there are two places a block can land — at the caret of an editor, and in a
+ * card made where the reader right-clicked — and storing the bytes is the same work either way. The local copy
+ * lives here so no caller can skip it.
  */
 export async function prepareMediaFile(
   file: File,
   options: PasteImagesOptions = {},
 ): Promise<MediaAttrs | null> {
-  const upload = options.upload === undefined ? relayUploader() : options.upload;
   const storeLocal = options.storeLocal ?? storeLocalAttachment;
   const measure = options.measure ?? measureImage;
   const newId = options.newId ?? attachmentId;
@@ -219,32 +137,9 @@ export async function prepareMediaFile(
   const bytes = new Uint8Array(await file.arrayBuffer());
   const id = newId();
 
-  let uploaded = false;
-  if (upload !== null) {
-    try {
-      await upload({ id, bytes, mime });
-      uploaded = true;
-    } catch (error) {
-      // A relay that is unreachable right now is not a lost file: keep the bytes locally and let the block render
-      // here, exactly as offline does. But a stated refusal is not unreachability — a 401 or a 403 means the bytes
-      // will never reach a collaborator, so say so instead of leaving a card that looks uploaded and is not.
-      console.warn("[attachments] upload failed; keeping the media locally", error);
-      const status = uploadStatus(error);
-      if (status === 401 || status === 403) {
-        announceUploadRefusal({
-          allowed: false,
-          reason:
-            status === 401
-              ? "Sign in to upload files: an upload needs an account."
-              : "This workspace's plan does not include file uploads.",
-        });
-      }
-    }
-  }
-  if (uploaded) await markAttachmentUploaded(id);
-  // LOCAL-ONLY otherwise: with no relay (standalone build, offline tab, share session) these bytes live in this
-  // browser's IndexedDB and nowhere else.
-  else await storeLocal(id, bytes, mime);
+  // The bytes live in this browser's IndexedDB and nowhere else: there is no
+  // relay to hand them to, and no second copy to keep in step.
+  await storeLocal(id, bytes, mime);
 
   const name = file.name || options.fallbackName || "Attached file";
   if (mime === "application/epub+zip") {
@@ -318,11 +213,6 @@ export const PasteImages = Extension.create<PasteImagesOptions>({
           handleDrop: (view, event) => {
             const files = dragDropMedia(event);
             if (files.length > 0) {
-              const permission = canUploadMedia();
-              if (!permission.allowed) {
-                announceUploadRefusal(permission);
-                return true;
-              }
               closeImageUrlPrompt(view);
               void insertMediaFiles(view, files, options).catch((error: unknown) => {
                 console.error("[attachments] drop failed", error);
@@ -334,11 +224,6 @@ export const PasteImages = Extension.create<PasteImagesOptions>({
           handlePaste: (view, event) => {
             const files = clipboardImages(event);
             if (files.length > 0) {
-              const permission = canUploadMedia();
-              if (!permission.allowed) {
-                announceUploadRefusal(permission);
-                return true;
-              }
               // Bytes win over a URL when a clipboard carries both: the user
               // had a real image, and dropping it for a link would lose the
               // pixels they copied (and leave them dependent on a third party).

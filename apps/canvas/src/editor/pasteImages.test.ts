@@ -177,21 +177,6 @@ describe("pasting an image", () => {
     expect(Array.from(recorder.stored[0]?.bytes ?? [])).toEqual(Array.from(PNG));
   });
 
-  it("uploads when a relay is configured and keeps no local copy", async () => {
-    const { editor: instance, recorder } = createEditor({
-      upload: async (input) => {
-        recorder.uploads.push(input);
-      },
-    });
-    paste(instance, [new File([PNG], "shot.png", { type: "image/png" })]);
-
-    await vi.waitFor(() => expect(recorder.uploads).toHaveLength(1));
-    expect(recorder.uploads[0]?.id).toBe(ID);
-    expect(recorder.uploads[0]?.mime).toBe("image/png");
-    expect(Array.from(recorder.uploads[0]?.bytes ?? [])).toEqual(Array.from(PNG));
-    expect(recorder.stored).toHaveLength(0);
-  });
-
   it("falls back to a local copy when the upload fails", async () => {
     const { editor: instance, recorder } = createEditor({
       upload: async () => {
@@ -232,27 +217,6 @@ describe("pasting an image", () => {
     }
   });
 
-  it("flips a local record to synced when the relay accepts the same id", async () => {
-    const fake = installFakeIndexedDb();
-    try {
-      // What an earlier failed attempt (or an import) left behind.
-      await storeLocalAttachment(ID, PNG, "image/png");
-      expect(await attachmentUploadState(ID)).toBe("local");
-
-      const { editor: instance } = createEditor({
-        upload: async () => {},
-        newId: () => ID,
-      });
-      paste(instance, [new File([PNG], "shot.png", { type: "image/png" })]);
-
-      await vi.waitFor(async () => {
-        expect(await attachmentUploadState(ID)).toBe("synced");
-      });
-    } finally {
-      fake.restore();
-    }
-  });
-
   it("leaves a paste with no image to the editor", async () => {
     const { editor: instance, recorder } = createEditor();
     const text = new File(["hello"], "notes.txt", { type: "text/plain" });
@@ -267,16 +231,14 @@ describe("relay uploader", () => {
   it("is absent in every session, because there is no relay to upload to", () => {
     // It used to be present for an account session and absent for a share. The
     // build is local now, so the only answer is the one a share always got.
-    for (const credential of ["account", "share"] as const) {
-      configureSession({
-        workspaceId: "ws-1",
-        roomId: "ws-1",
-        share: null,
-        role: "editor",
-        readOnly: false,
-        credential,
-      });
-      expect(relayUploader()).toBeNull();
-    }
+    configureSession({
+      workspaceId: "ws-1",
+      roomId: "ws-1",
+      share: null,
+      role: "editor",
+      readOnly: false,
+      credential: "none",
+    });
+    expect(relayUploader()).toBeNull();
   });
 });

@@ -48,13 +48,7 @@ describe("DeleteWorkspaceDialog", () => {
     fireEvent.change(confirmInput(), { target: { value: "Research" } });
     fireEvent.click(confirmButton());
     await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
-    expect(remove).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workspaceId: "ws-1",
-        profile: "relay",
-        authorization: expect.any(Function),
-      }),
-    );
+    expect(remove).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "ws-1" }));
   });
 
   it("shows a failure inline and keeps the dialog open", async () => {
@@ -73,16 +67,16 @@ describe("DeleteWorkspaceDialog", () => {
 
   /** The two profiles delete different halves, so they must not share copy. */
   it("says what a local-only delete does", () => {
-    setup({ mode: "standalone" });
+    setup({ mode: "local" });
     const copy = screen.getByTestId("delete-workspace-copy");
     expect(copy).toHaveTextContent("this browser is the only place");
     expect(copy).not.toHaveTextContent("share links");
   });
 
-  it("warns that other devices keep an offline copy", () => {
+  it("warns that other browsers keep whatever they already have", () => {
     setup();
     expect(screen.getByTestId("delete-workspace-dialog")).toHaveTextContent(
-      "keep their offline copy until they next open it",
+      "Other browsers keep whatever they already have",
     );
   });
 });

@@ -4,11 +4,13 @@ import type { CanvasPurpose } from "../canvas/purpose";
 import { useRecordRunStore } from "../canvas/recordRun";
 import type { ClipboardEntry } from "../entities/clipboard";
 import { getSession, type SessionCapabilities, sessionCapabilities } from "../session/session";
-import type { ShareScope } from "../session/shares";
 import { type InteractionMode, interactionModePatch, nextInteractionMode } from "./interactionMode";
 import { type MarqueeSlice, marqueeActions, marqueeInitial } from "./marqueeSlice";
 import { type ReaderUiSlice, readerUiActions, readerUiInitial } from "./readerUiSlice";
 import { type TourSlice, tourActions, tourInitial } from "./tourSlice";
+
+/** What a share link used to cover. The dialog that asked is gone; the name stays for its callers. */
+export type ShareScope = "workspace" | "board" | "card" | "selection";
 
 export type { InteractionMode } from "./interactionMode";
 export type { MarqueeSubject } from "./marqueeSlice";

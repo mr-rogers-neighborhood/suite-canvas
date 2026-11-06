@@ -1,4 +1,3 @@
-import { useAccountStore } from "../auth/useAccountStore";
 import { repositoryUrl } from "../repository";
 
 /**
@@ -53,41 +52,20 @@ export function RepositoryFooter() {
 }
 
 /**
- * The account door, in the body rather than in the header.
+ * Says where the list above lives.
  *
- * A visitor with no account and workspaces saved here is the one reader for whom the account
- * surfaces answer a question they have already asked: the list above says these live here, and an
- * account is the way out of that. The header carries the same pair, and this is the copy placed
- * where somebody who has just read their own list will look.
+ * It used to be an account door: "saved in this browser only", with two buttons
+ * that opened a sign-up. There is no account to open, and the sentence is the
+ * useful half, so it stays as a sentence.
  */
 export function SavedLocallyPrompt() {
   return (
-    <div
-      data-testid="launcher-account-prompt"
-      className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--hairline)] bg-[var(--surface)] px-3 py-2.5"
+    <p
+      data-testid="launcher-local-note"
+      className="mt-4 text-[12px] leading-5 text-[var(--ink-muted)]"
     >
-      <div className="min-w-0 flex-1 text-[12px] leading-5">
-        <p className="font-medium">Saved in this browser only.</p>
-        <p className="text-[var(--ink-muted)]">
-          An account keeps them, and a plan syncs them to your other devices.
-        </p>
-      </div>
-      <button
-        type="button"
-        data-testid="launcher-account-prompt-create"
-        className="shrink-0 rounded-lg bg-[var(--ink)] px-2.5 py-1 text-[11px] font-medium text-[var(--surface)]"
-        onClick={() => useAccountStore.getState().openSignIn("sign-up")}
-      >
-        Create account
-      </button>
-      <button
-        type="button"
-        data-testid="launcher-account-prompt-signin"
-        className="shrink-0 rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-        onClick={() => useAccountStore.getState().openSignIn("sign-in")}
-      >
-        Sign in
-      </button>
-    </div>
+      These live in this browser until you export them. A workspace is a file: export it and it is
+      yours to move, back up, or open again.
+    </p>
   );
 }

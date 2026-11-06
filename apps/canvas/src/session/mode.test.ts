@@ -5,22 +5,8 @@ import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceActions } from "../chrome/WorkspaceActions";
 import { useUiStore } from "../store/useUiStore";
-import {
-  bootPlan,
-  DEFAULT_SUITE_MODE,
-  hasShareLink,
-  isStandalone,
-  suiteMode,
-  workspaceIdFromUrl,
-} from "./mode";
-import {
-  configureSession,
-  getSession,
-  sessionCapabilities,
-  sessionForShare,
-  standaloneSession,
-} from "./session";
-import { SHARE_SESSION_FRAGMENT, type Share } from "./shares";
+import { bootPlan, DEFAULT_SUITE_MODE, hasShareLink, isStandalone, suiteMode } from "./mode";
+import { configureSession, standaloneSession } from "./session";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -46,15 +32,9 @@ describe("suiteMode", () => {
 
 describe("bootPlan", () => {
   it("never resolves a share or opens a provider, whatever the URL", () => {
-    // A capability link is just a page URL now: the relay that link belongs to is
+    // A capability link is just a page URL now: the relay that link belonged to is
     // not part of this build, so nothing may be fetched on the way to the launcher.
-    for (const url of [
-      "/?share=abc",
-      "/?share=abc&workspace=ws-1",
-      "/#share-session",
-      "/?workspace=ws-1",
-      "/",
-    ]) {
+    for (const url of ["/?share=abc", "/#share-session", "/?workspace=ws-1", "/"]) {
       expect(bootPlan("local", url)).toEqual({
         resolveShare: false,
         connectProvider: false,
@@ -63,268 +43,87 @@ describe("bootPlan", () => {
     }
   });
 
-  it("reads the resume marker and workspace ids from a page URL", () => {
-    // The helpers survive because a document link is still a URL a person can keep.
+  it("still recognises a share-shaped URL", () => {
+    // The helper stays because the launcher says "this build is local" instead of
+    // pretending a dead link works.
     expect(hasShareLink("/?share=abc")).toBe(true);
-    expect(hasShareLink(`/${SHARE_SESSION_FRAGMENT}`)).toBe(true);
     expect(hasShareLink("/?workspace=ws-1")).toBe(false);
-    // `mode.ts` copies this marker so it stays free of the share client: this
-    // assertion is the link between the copy and `shares.ts`.
-    expect(SHARE_SESSION_FRAGMENT).toBe("#share-session");
-    expect(workspaceIdFromUrl("/?workspace=ws-1")).toBe("ws-1");
-    expect(workspaceIdFromUrl("/?doc=legacy")).toBe("legacy");
-    expect(workspaceIdFromUrl("/?workspace=")).toBeNull();
-    expect(workspaceIdFromUrl("not a url with spaces")).toBeNull();
   });
 });
 
-describe("standalone session", () => {
-  const share: Share = {
-    id: "share-1",
-    scope: "workspace",
-    role: "editor",
-    workspaceId: "workspace-1",
-    boardId: null,
-    cardId: null,
-    createdAt: 0,
-    revokedAt: null,
-    expiresAt: null,
-    roomId: "workspace-1",
-    cardIds: [],
-    cardCount: 0,
-  };
-
-  it("hides link management and publishing but keeps local editing", () => {
-    vi.stubEnv("VITE_SUITE_MODE", "standalone");
-    const capabilities = sessionCapabilities(getSession());
-    expect(capabilities.canManageLinks).toBe(false);
-    expect(capabilities.canPublish).toBe(false);
-    expect(capabilities.canEditContent).toBe(true);
-    expect(capabilities.canEditLayout).toBe(true);
-    expect(capabilities.canCreateContent).toBe(true);
-    expect(capabilities.canCreateBoards).toBe(true);
-    expect(capabilities.canManageBoards).toBe(true);
-    expect(capabilities.canManageSchema).toBe(true);
-    expect(capabilities.canManageTrash).toBe(true);
-  });
-
-  it("cannot regain link management through a share-shaped session", () => {
-    vi.stubEnv("VITE_SUITE_MODE", "standalone");
-    // A relay-style owner session would carry links; the build profile wins.
-    const owner = sessionCapabilities(getSession());
-    expect(owner.canManageLinks).toBe(false);
-    const projected = sessionCapabilities(sessionForShare("tok", share));
-    expect(projected.canManageLinks).toBe(false);
-    expect(projected.canPublish).toBe(false);
-  });
-
-  it("boots a workspace with no credential and no share", () => {
-    vi.stubEnv("VITE_SUITE_MODE", "standalone");
-    configureSession(
-      standaloneSession({
-        workspaceId: "ws-1",
-        roomId: "ws-1",
-        share: sessionForShare("tok", share).share,
-        role: "editor",
-        readOnly: false,
-        credential: "account",
-      }),
-    );
-    expect(getSession()).toMatchObject({
-      workspaceId: "ws-1",
-      roomId: "ws-1",
-      share: null,
-      credential: "none",
-    });
-  });
-});
-
-describe("standalone workspace actions", () => {
-  it("keeps export reachable while Share and the account surfaces are gone", () => {
-    vi.stubEnv("VITE_SUITE_MODE", "standalone");
-    // What `useUiStore` derives from STANDALONE_CAPABILITIES at boot.
+describe("the workspace menu", () => {
+  it("keeps export reachable and offers no share row", () => {
     useUiStore.setState({ canManageLinks: false });
-    configureSession(
-      standaloneSession({
-        workspaceId: "ws-1",
-        roomId: "ws-1",
-        share: null,
-        role: "editor",
-        readOnly: false,
-        credential: "none",
-      }),
-    );
+    configureSession(standaloneSession({ workspaceId: "ws-1" }));
 
     render(createElement(WorkspaceActions, { workspaceId: "ws-1", title: "Local" }));
 
-    // Export is local, so the workspace menu survives the standalone profile.
     fireEvent.click(screen.getByTestId("workspace-menu"));
-    // Share is not a row in this menu any more, and the delete row needs link management.
     expect(screen.queryByTestId("workspace-menu-share")).toBeNull();
     expect(screen.getByTestId("workspace-export-backup")).toBeTruthy();
     expect(screen.getByTestId("workspace-export-json")).toBeTruthy();
     expect(screen.getByTestId("workspace-export-markdown")).toBeTruthy();
-    // No recovery file and no account row: both were credentials, not files.
-    expect(screen.getByTestId("workspace-menu-list")).not.toHaveTextContent("Owner file");
     expect(screen.queryByTestId("workspace-recovery-key")).toBeNull();
   });
 });
 
 /**
- * Source-level guard rails. Nothing here executes the app: these tests read
- * `apps/canvas/src` and fail when a change would let a standalone build reach a
- * relay it does not have.
+ * Source-level guard rail. Nothing here executes the app: it reads
+ * `apps/canvas/src` and fails when a file grows a network call.
+ *
+ * The app talks to nothing. Before the relay was retired this listed the modules
+ * allowed to reach it and the files that gated them off; now the list is down to
+ * one, and anything new fails here rather than shipping a request to a service
+ * that does not exist.
  */
-describe("standalone guard rails", () => {
-  // jsdom gives `import.meta.url` a http origin, so the tree is found from the
-  // working directory: the repo root when vitest runs from there, else the
-  // package.
+describe("no network calls", () => {
   const SRC =
     ["apps/canvas/src", "src"]
       .map((candidate) => path.resolve(process.cwd(), candidate))
       .find((candidate) => existsSync(path.join(candidate, "main.tsx"))) ??
     path.resolve(process.cwd(), "src");
 
-  /** Calls that can only ever reach a relay. */
-  const RELAY_CALL = /\bfetch\s*\(|\bWebSocket\s*\(|collabHttpBase\s*\(\s*\)/u;
-
   /**
-   * Modules allowed to contain a relay call, each with the files that gate them
-   * off in a standalone build. Anything else that talks to a relay fails the
-   * test below instead of shipping a request to a URL that is not there.
+   * Files that still contain a request, each with the branch that stops it.
+   *
+   * Every one asks a relay for bytes it cannot get locally: a cover image, a
+   * sketch, a book, its metadata. The branch is `isStandalone()`, which is
+   * constant true, so none of them runs. They are listed rather than deleted in
+   * this commit because each is a local-first fallback to write, not a line to
+   * remove — deleting the request would delete the feature that reads it.
    */
-  const RELAY_MODULES: Readonly<Record<string, readonly string[]>> = {
-    "auth/credential.ts": ["main.tsx", "store/useCanvasStore.ts"],
-    "session/shares.ts": ["main.tsx", "App.tsx", "chrome/WorkspaceActions.tsx"],
-    // The Better Auth client. `App.tsx` reaches it only through a lazy chunk that
-    // the standalone branch never renders, so a standalone build has no auth code.
-    "auth/client.ts": ["App.tsx"],
-    // The operator panel is its own `admin.html` entry; the app never imports it.
-    "admin/api.ts": [],
-    // The launcher's sync badges. `readAccountWorkspaces` returns immediately in a
-    // standalone build, so no request is ever built there.
-    "session/accountWorkspaces.ts": ["launcher/WorkspaceLauncher.tsx"],
-    // The relay's own explanation of a refusal, asked only after a join was
-    // already refused, which a standalone build never attempts.
-    "session/syncAccess.ts": ["App.tsx"],
-    // The claim goes to the account service, and only with a session; a
-    // standalone build has neither.
-    "session/workspaceClaim.ts": ["App.tsx"],
-    // Support access is an account row on the control plane: the dialog is mounted
-    // from a menu row the standalone build does not draw, so it never renders there.
-    "dialogs/SupportAccessDialog.tsx": ["chrome/WorkspaceActions.tsx"],
-    // The worn role is a control-plane row, and the reader refuses before it builds a
-    // request in a standalone build: `readWornRole` returns at the first line.
-    "session/roleOverride.ts": ["app/WornRoleStrip.tsx"],
-    // Notices are an account row on the control plane, read by the strip that explains
-    // them; a standalone build has no accounts and draws neither.
-    "session/accountNotices.ts": ["app/NoticeStrip.tsx"],
-  };
-
-  /**
-   * Modules that legitimately serve both profiles: they take the profile as an
-   * argument and only reach the relay inside that branch. The guard cannot
-   * prove a runtime branch, so instead it requires the branch to be spelled
-   * out here — deleting the check fails the test.
-   */
-  const PROFILE_BRANCHED_MODULES: Readonly<Record<string, RegExp>> = {
-    "session/workspaceDelete.ts": /input\.profile === "relay"/u,
-    // Capturing a starter template reads pictures and posts to the control plane;
-    // a browser-only build has no control plane, so it refuses before reading.
-    // The launcher's starter list is asked for over HTTP, but a standalone build has
-    // no control plane: it keeps the built-ins the bundle carries instead.
-    "launcher/starterTemplates.ts": /isStandalone\(\)/u,
-    // A sketch's pictures are read from this browser first and the relay second, and
-    // a standalone build has no relay to ask.
-    "cards/sketchFiles.ts": /isStandalone\(\)/u,
-    // A book's bytes are read from this browser first and the relay second, and a standalone
-    // build has no relay: it says the book is not here rather than asking nobody.
-    "reader/useBookBytes.ts": /isStandalone\(\)/u,
-    // A book's cover and details are read from this browser's copy, and the relay is asked only when there is no
-    // local one. A standalone build shows the tile instead.
-    "reader/bookMeta.ts": /isStandalone\(\)/u,
-    // A cover link is fetched by the panel, and the bytes only reach the relay through
-    // `relayUploader`, which returns null where there is no relay to reach.
-    "styles/coverFromUrl.ts": /relayUploader\(\)/u,
-    // The stale-build check asks this origin for the page it was served from. The
-    // path is spelled out, so there is no relay to reach in either profile.
+  const ALLOWED: Readonly<Record<string, RegExp>> = {
+    // It asks this origin for the page it was served from, to notice a stale build.
     "app/useStaleBuild.ts": /fetch\("\/"/u,
-    // Real-time media storage usage checks the relay, guarded for standalone builds.
-    "auth/billing.ts": /isStandalone\(\)/u,
-    // Purging attachments deletes from relay store when not in standalone mode.
-    "editor/attachmentNode.ts": /isStandalone\(\)/u,
+    // A cover link is fetched by the panel; the bytes only reach a relay through
+    // `relayUploader`, which now returns null everywhere.
+    "styles/coverFromUrl.ts": /relayUploader\(\)/u,
+    "cards/sketchFiles.ts": /isStandalone\(\)/u,
+    "reader/useBookBytes.ts": /isStandalone\(\)/u,
+    "reader/bookMeta.ts": /isStandalone\(\)/u,
   };
+
+  const NETWORK_CALL = /\bfetch\s*\(|\bWebSocket\s*\(|\bXMLHttpRequest\b|\bEventSource\s*\(/u;
 
   function sourceFiles(directory: string): string[] {
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
       const full = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        return entry.name === "test" ? [] : sourceFiles(full);
-      }
+      if (entry.isDirectory()) return entry.name === "test" ? [] : sourceFiles(full);
       if (!/\.(?:ts|tsx)$/u.test(entry.name)) return [];
       if (/\.(?:test|stories)\.(?:ts|tsx)$/u.test(entry.name)) return [];
       return [full];
     });
   }
 
-  const relative = (file: string): string => path.relative(SRC, file).split(path.sep).join("/");
-
-  it("keeps every direct relay call in a module standalone never loads", () => {
-    const offenders = sourceFiles(SRC)
-      .filter((file) => RELAY_CALL.test(readFileSync(file, "utf8")))
-      .map(relative)
-      .filter((file) => !(file in RELAY_MODULES))
-      .filter((file) => {
-        const branch = PROFILE_BRANCHED_MODULES[file];
-        if (!branch) return true;
-        const source = readFileSync(path.join(SRC, file), "utf8");
-        expect(source, `${file} must gate its relay call on the profile`).toMatch(branch);
-        return false;
-      });
-    expect(
-      offenders,
-      "These modules call a relay directly. Put the call behind isStandalone() " +
-        "or add the module to RELAY_MODULES with the gate that keeps standalone away from it.",
-    ).toEqual([]);
-  });
-
-  it("still has the standalone gate that each relay module depends on", () => {
-    for (const [relayModule, gates] of Object.entries(RELAY_MODULES)) {
-      expect(existsSync(path.join(SRC, relayModule)), `${relayModule} moved`).toBe(true);
-      for (const gate of gates) {
-        const source = readFileSync(path.join(SRC, gate), "utf8");
-        // Either the helper or the literal the bundler can fold: both mean a
-        // standalone build never runs this file.
-        expect(source, `${gate} must gate ${relayModule} on the build profile`).toMatch(
-          /isStandalone\(\)|VITE_SUITE_MODE/u,
-        );
-      }
+  it("appears only where a file is allowed to have one", () => {
+    const offenders: string[] = [];
+    for (const file of sourceFiles(SRC)) {
+      const rel = path.relative(SRC, file).split(path.sep).join("/");
+      const text = readFileSync(file, "utf8");
+      if (!NETWORK_CALL.test(text)) continue;
+      const allowed = ALLOWED[rel];
+      if (allowed === undefined || !allowed.test(text)) offenders.push(rel);
     }
-  });
-
-  it("keeps the sync transport out of a standalone bundle", () => {
-    // `useCanvasStore` builds its Loro provider at module load and that provider
-    // opens its socket in the constructor, so a standalone build must take the
-    // store's "no transport" path. That decision lives in the store itself —
-    // checked here by reading the source, because a runtime test would need a
-    // window and a socket to prove a negative.
-    const store = readFileSync(path.join(SRC, "store/useCanvasStore.ts"), "utf8");
-    expect(store).toMatch(/isStandalone\(\)/u);
-    expect(store).toMatch(/NO_TRANSPORT/u);
-    // No build-time rewriting of `import.meta.env.MODE`: the profile is read
-    // once, in `mode.ts`, and nothing else needs to impersonate a test build.
-    const config = readFileSync(path.resolve(SRC, "..", "vite.config.ts"), "utf8");
-    expect(config).not.toMatch(/"import\.meta\.env\.MODE"/u);
-  });
-
-  it("keeps the relay client out of the boot chunk", () => {
-    const main = readFileSync(path.join(SRC, "main.tsx"), "utf8");
-    // `main.tsx` must load the share client on demand: a static import would put
-    // it in every build's boot chunk, standalone included, no matter what the
-    // runtime check does.
-    expect(main).not.toMatch(/from\s+"\.\/session\/shares"/u);
-    expect(main).toMatch(/import\("\.\/session\/shares"\)/u);
-    // The literal, not a helper call, is what lets the bundler drop the branch.
-    expect(main).toMatch(/VITE_SUITE_MODE !== "standalone"/u);
+    expect(offenders).toEqual([]);
   });
 });

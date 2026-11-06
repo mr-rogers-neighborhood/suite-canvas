@@ -5,8 +5,6 @@ import { planFloats } from "../canvas/floatPlan";
 import { useNavigateTarget } from "../canvas/navigateTarget";
 import { shellBounds, shellObstacles } from "../canvas/shellObstacles";
 import { targetElement } from "../canvas/targetElement";
-import { FeedbackComposer } from "../feedback/FeedbackComposer";
-import { useFeedbackCapability } from "../feedback/useFeedbackCapability";
 import { ExplainPanel } from "../panels/ExplainPanel";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { activeHandbookRect, defaultHandbookRects, useHandbookStore } from "../store/handbookStore";
@@ -78,7 +76,6 @@ export function HandbookBubble() {
   const articleId = useHandbookStore((state) => state.articleId);
   const lastArticleId = useHandbookStore((state) => state.lastArticleId);
   const scope = useHandbookStore((state) => state.scope);
-  const pane = useHandbookStore((state) => state.pane);
   const picking = useHandbookStore((state) => state.picking);
   const toggle = useHandbookStore((state) => state.toggle);
   const setOpen = useHandbookStore((state) => state.setOpen);
@@ -98,7 +95,6 @@ export function HandbookBubble() {
   const pinned = usePinStore((state) => state.pinned);
   const rects = usePinStore((state) => state.rects);
   const navigateTo = useNavigateTarget();
-  const capability = useFeedbackCapability();
   const { present } = usePresentTargets();
 
   const [hover, setHover] = useState<{ target: Target; anchor: ReturnType<typeof boxOf> } | null>(
@@ -399,20 +395,7 @@ export function HandbookBubble() {
             ) : null}
 
             <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
-              {pane === "feedback" ? (
-                <FeedbackComposer
-                  surface={article === null ? "handbook" : `handbook:${article.id}`}
-                  context={article === null ? undefined : article.title}
-                  captcha={capability.captcha}
-                  placeholder={
-                    article === null
-                      ? "What should the handbook say that it does not?"
-                      : "What is wrong or missing here?"
-                  }
-                  onSent={() => setPane("handbook")}
-                  onCancel={() => setPane("handbook")}
-                />
-              ) : article === null ? (
+              {article === null ? (
                 match.articles.length === 0 ? (
                   <p className="text-[12px] text-[var(--ink-muted)]" data-testid="handbook-empty">
                     {scope.length > 0
@@ -504,14 +487,6 @@ export function HandbookBubble() {
                   {picking ? "Click something…" : "Point at something"}
                 </button>
               ) : null}
-              <button
-                type="button"
-                data-testid="handbook-feedback"
-                className="ml-auto rounded px-1.5 py-0.5 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
-                onClick={() => setPane(pane === "feedback" ? "handbook" : "feedback")}
-              >
-                Send feedback
-              </button>
             </footer>
             <button
               type="button"

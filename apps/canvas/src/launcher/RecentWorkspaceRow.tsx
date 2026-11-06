@@ -1,5 +1,4 @@
 import type { DragEvent } from "react";
-import { syncLabelOf, syncStateOf } from "../session/accountWorkspaces";
 import type { RecentWorkspace } from "../session/workspaceTransfer";
 import { ImportMenu } from "./ImportMenu";
 import { RenameWorkspaceDialog } from "./RenameWorkspaceDialog";
@@ -14,7 +13,6 @@ export interface RecentWorkspaceRowProps {
   draft: string;
   nameError: string | null;
   dropping: boolean;
-  account: Parameters<typeof syncStateOf>[1];
   busy: boolean;
   importMenuOpen: boolean;
   onDragOver: (event: DragEvent<HTMLLIElement>) => void;
@@ -50,7 +48,6 @@ export function RecentWorkspaceRow({
   draft,
   nameError,
   dropping,
-  account,
   busy,
   importMenuOpen,
   onDragOver,
@@ -118,15 +115,6 @@ export function RecentWorkspaceRow({
               {detail}
             </span>
             <span className="shrink-0">{openedAt(entry.lastOpenedAt)}</span>
-            {syncLabelOf(syncStateOf(entry.id, account)) === null ? null : (
-              <span
-                data-testid={`launcher-sync-${entry.id}`}
-                data-sync={syncStateOf(entry.id, account)}
-                className="shrink-0 rounded-full border border-[var(--hairline)] px-1.5 text-[10px] leading-4"
-              >
-                {syncLabelOf(syncStateOf(entry.id, account))}
-              </span>
-            )}
           </span>
         </button>
       )}

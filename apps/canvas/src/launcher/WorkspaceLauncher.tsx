@@ -1,10 +1,7 @@
 import { STARTER_TEMPLATES, type WorkspaceTemplate } from "@suite/graph";
 import type { VaultFile } from "@suite/import-obsidian";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { docsBaseUrl } from "../auth/docsUrl";
-import { useAccountStore } from "../auth/useAccountStore";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
-import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
 import { ToastLayer } from "../feedback/ToastLayer";
 import { toast } from "../feedback/toast";
 import { desktopBridge, hostKind } from "../host/bridge";
@@ -41,7 +38,6 @@ import {
   rememberChosenTemplate,
   starterTemplateById,
 } from "./starterTemplates";
-import { useAccountWorkspaces } from "./useAccountWorkspaces";
 import { VaultImportDialog } from "./VaultImportDialog";
 import {
   importVaultIntoNewWorkspace,
@@ -59,26 +55,6 @@ function labelRecent(
 ): RecentEntry {
   return { ...entry, name: resolveWorkspaceName(names[entry.id], fallback) };
 }
-
-/**
- * The account surfaces pull in the Better Auth client, so they are loaded on
- * demand for the same reason as the editor's: a standalone build has no server
- * and must not ship a byte of `/api/auth`.
- */
-const AccountSurface = lazy(async () => {
-  const module = await import("../auth/AccountSurface");
-  return { default: module.AccountSurface };
-});
-
-/**
- * The screen an invitation email lands on. Loaded on demand for the same reason
- * as the account surface: it reaches `/api/auth`, and a standalone build has no
- * server to reach.
- */
-const AcceptInvitation = lazy(async () => {
-  const module = await import("../auth/AcceptInvitation");
-  return { default: module.AcceptInvitation };
-});
 
 /**
  * The starting screen: a workspace picker rather than a document. Recent
@@ -132,24 +108,7 @@ export function WorkspaceLauncher() {
   const [importMenu, setImportMenu] = useState<string | null>(null);
   const renameCancelled = useRef(false);
   // A mail link names one invitation, and this page is where it lands.
-  const [invitationId, setInvitationId] = useState<string | null>(null);
   // `null` until the account answers, and stays `null` when there is no session.
-  const { account } = useAccountWorkspaces();
-  // The store's phase, not `account === null`: the account read starts empty, and an
-  // invitation's first paint is not a reason to tell a signed-in person to sign up. A
-  // standalone build has no account service at all, so it has no door to offer.
-  const signedOut =
-    useAccountStore((state) => state.phase) === "signed-out" &&
-    import.meta.env.VITE_SUITE_MODE !== "standalone";
-  const [bringDismissed, setBringDismissed] = useState(false);
-
-  useEffect(() => {
-    void (async () => {
-      if (import.meta.env.VITE_SUITE_MODE === "standalone") return;
-      const { invitationIdFromUrl } = await import("../auth/AcceptInvitation");
-      setInvitationId(invitationIdFromUrl(window.location.href));
-    })();
-  }, []);
 
   useEffect(() => {
     // Cache, then server, then the built-ins; `loadStarterTemplates` never throws.
@@ -548,15 +507,6 @@ export function WorkspaceLauncher() {
             >
               Import a vault…
             </button>
-            <a
-              data-testid="launcher-docs"
-              className="rounded-lg border border-[var(--hairline)] px-4 py-2 text-[13px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-              href={docsBaseUrl()}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Docs
-            </a>
             <RepositoryButton />
             <input
               ref={fileInput}
@@ -585,13 +535,6 @@ export function WorkspaceLauncher() {
                 screen someone sees, and an account is what keeps a workspace
                 across devices. The literal keeps every byte of `/api/auth` out of
                 a standalone build. */}
-            {import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
-              <span className="ml-auto">
-                <Suspense fallback={null}>
-                  <AccountSurface showSignUp />
-                </Suspense>
-              </span>
-            ) : null}
           </div>
           {/* Notebook is the default rather than Blank: a new workspace should open
               with somewhere to write, and an empty document is still one choice
@@ -651,14 +594,6 @@ export function WorkspaceLauncher() {
           ) : null}
         </header>
 
-        {invitationId === null ? null : (
-          <div className="px-8 pt-6">
-            <Suspense fallback={null}>
-              <AcceptInvitation invitationId={invitationId} />
-            </Suspense>
-          </div>
-        )}
-
         {isDesktop ? (
           <section className="px-8 py-6" aria-labelledby="recent-title">
             <h2 id="recent-title" className="text-[12px] font-semibold uppercase tracking-wide">
@@ -704,47 +639,7 @@ export function WorkspaceLauncher() {
             </div>
           </div>
 
-          {/* A signed-in account that holds nothing, beside workspaces saved here, is
-              the one moment bringing them along is worth mentioning. The sentence used to
-              say "open one while signed in", which stopped being true when a plan became
-              the thing that puts a workspace in an account: the claim answers
-              `plan-required` and the workspace stays where it is. So the notice says what
-              the obstacle is and carries the door to it. */}
-          {account !== null &&
-          account.workspaces.length === 0 &&
-          recents.length > 0 &&
-          !bringDismissed ? (
-            <div
-              data-testid="launcher-bring-prompt"
-              className="mt-4 flex items-start gap-3 rounded-xl border border-[var(--hairline)] bg-[var(--surface)] px-3 py-2.5"
-            >
-              <div className="min-w-0 flex-1 text-[12px] leading-5">
-                <p className="font-medium">These are saved on this device only.</p>
-                <p className="text-[var(--ink-muted)]">
-                  A plan is what puts them in your account, on every device.
-                </p>
-              </div>
-              <button
-                type="button"
-                data-testid="launcher-bring-plans"
-                className="shrink-0 rounded-lg bg-[var(--ink)] px-2.5 py-1 text-[11px] font-medium text-[var(--surface)]"
-                onClick={() => useAccountStore.getState().openPanel("plan")}
-              >
-                See plans
-              </button>
-              <button
-                type="button"
-                data-testid="launcher-bring-dismiss"
-                aria-label="Dismiss"
-                className="rounded-md px-2 py-0.5 text-[13px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-                onClick={() => setBringDismissed(true)}
-              >
-                ×
-              </button>
-            </div>
-          ) : null}
-
-          {signedOut && recents.length > 0 ? <SavedLocallyPrompt /> : null}
+          {recents.length > 0 ? <SavedLocallyPrompt /> : null}
 
           {recents.length === 0 ? (
             <p className="mt-4 rounded-xl border border-dashed border-[var(--hairline)] px-4 py-8 text-center text-[13px] text-[var(--ink-muted)]">
@@ -772,7 +667,6 @@ export function WorkspaceLauncher() {
                       draft={draft}
                       nameError={nameError}
                       dropping={dropTargetId === entry.id}
-                      account={account}
                       busy={busy}
                       importMenuOpen={importMenu === entry.id}
                       onDragOver={(event) => {
@@ -839,7 +733,6 @@ export function WorkspaceLauncher() {
       {deleteTarget ? (
         <Suspense fallback={null}>
           <DeleteWorkspaceDialog
-            mode="standalone"
             workspaceId={deleteTarget.id}
             title={deleteTarget.name}
             onClose={() => setDeleteTarget(null)}
@@ -854,15 +747,10 @@ export function WorkspaceLauncher() {
           />
         </Suspense>
       ) : null}
-      {/* The same bubble the board carries. This is the screen somebody reaches when
-          nothing works yet, and it is the only one a signed-out visitor sees, so
-          leaving it to the board hid feedback from exactly the people most likely to
-          send it. */}
-      <SendFeedbackBubble surface="launcher" signedIn={account !== null} />
       {/* Before the list is usable: alpha, what paying buys, and the one fact a new reader
           discovers too late, that an unclaimed workspace is this browser's copy. A dismissal
           stands for ten minutes, so a visit the next day reads it again. */}
-      <AlphaNotice onSeePlans={() => useAccountStore.getState().openPanel("plan")} />
+      <AlphaNotice />
       {/* The import's report has nowhere else to go on this screen: the launcher
           is the whole page, so it mounts the one toast stack itself. */}
       <ToastLayer />

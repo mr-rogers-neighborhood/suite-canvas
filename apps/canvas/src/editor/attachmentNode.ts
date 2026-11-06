@@ -351,18 +351,11 @@ export async function deleteLocalAttachment(id: string): Promise<void> {
 }
 
 /**
- * Drops the attachment locally and, if connected to a relay, deletes it from the relay store.
+ * Drops the attachment from this machine.
+ *
+ * There used to be a second step: a delete against the relay's copy. The relay is
+ * gone, and the local copy is the whole of it.
  */
 export async function purgeAttachment(id: string): Promise<void> {
   await deleteLocalAttachment(id);
-  const { isStandalone } = await import("../session/mode");
-  if (!isStandalone() && typeof navigator !== "undefined" && navigator.onLine) {
-    try {
-      const { credentialAuthorization } = await import("../auth/credential");
-      const headers = await credentialAuthorization();
-      await fetch(attachmentUrl(id), { method: "DELETE", headers });
-    } catch {
-      // ignore
-    }
-  }
 }

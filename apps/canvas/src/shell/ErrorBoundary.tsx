@@ -1,5 +1,4 @@
 import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useState } from "react";
-import { reportCrash } from "../crash/report";
 import { useDurabilityStore } from "../storage/durability";
 import { buildInfo } from "./buildInfo";
 import {
@@ -42,11 +41,10 @@ export class CanvasErrorBoundary extends Component<BoundaryProps, BoundaryState>
   }
 
   override componentDidCatch(error: unknown, info: ErrorInfo): void {
-    // Kept for the diagnostics bundle even when reporting is off, so the person
-    // in front of the broken tab can still copy something useful.
+    // The diagnostics bundle is the only record: there is no crash service, and a
+    // person in front of the broken tab can still copy something useful.
     const route = typeof window === "undefined" ? "(no window)" : safeRoute(window.location.href);
     useDiagnosticsStore.getState().record(describeError(error, route));
-    void reportCrash(error);
     if (import.meta.env.DEV) console.error("[shell] render error", error, info.componentStack);
   }
 

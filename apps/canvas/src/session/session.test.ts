@@ -1,239 +1,63 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  configureSession,
-  getSession,
-  resolveShareToken,
-  sessionCapabilities,
-  sessionForShare,
-} from "./session";
-import { forgetShareSession, resolveShare, SHARE_SESSION_RESUME, type Share } from "./shares";
-
-const share = (overrides: Partial<Share> = {}): Share => ({
-  id: "share-1",
-  scope: "workspace",
-  role: "viewer",
-  workspaceId: "workspace-1",
-  boardId: null,
-  cardId: null,
-  createdAt: 0,
-  revokedAt: null,
-  expiresAt: null,
-  roomId: "workspace-1",
-  cardIds: [],
-  cardCount: 0,
-  ...overrides,
-});
+import { configureSession, getSession, sessionCapabilities, standaloneSession } from "./session";
 
 afterEach(() => {
-  // Restore the URL-derived default for any later test in this file.
-  configureSession({
-    workspaceId: null,
-    roomId: null,
-    share: null,
-    role: "editor",
-    readOnly: false,
-    credential: "account",
-  });
-  vi.unstubAllGlobals();
-  forgetShareSession();
   window.history.replaceState(null, "", "/");
+  configureSession(standaloneSession({}));
 });
 
 describe("session config", () => {
-  it("defaults to an editable session with no workspace", () => {
-    // jsdom runs without query parameters.
-    expect(getSession()).toEqual({
-      workspaceId: null,
-      roomId: null,
+  it("names the workspace in the URL, and nothing else", () => {
+    window.history.replaceState(null, "", "/?workspace=ws-1");
+    configureSession(standaloneSession({ workspaceId: "ws-1" }));
+    expect(getSession()).toMatchObject({
+      workspaceId: "ws-1",
+      roomId: "ws-1",
       share: null,
-      role: "editor",
       readOnly: false,
-      credential: "account",
+      credential: "none",
     });
-    expect(resolveShareToken()).toBeNull();
   });
 
-  it("derives the editable default from ?workspace= and ?doc=", async () => {
-    window.history.pushState({}, "", "/?workspace=from-url");
-    vi.resetModules();
-    const fromWorkspace = await import("./session");
-    expect(fromWorkspace.getSession()).toEqual({
-      workspaceId: "from-url",
-      roomId: "from-url",
-      share: null,
-      role: "editor",
-      readOnly: false,
-      credential: "account",
-    });
-
-    window.history.pushState({}, "", "/?doc=legacy-url");
-    vi.resetModules();
-    const fromDoc = await import("./session");
-    expect(fromDoc.getSession()).toMatchObject({ workspaceId: "legacy-url", roomId: "legacy-url" });
-
-    window.history.pushState({}, "", "/");
-  });
-
-  it("stores and returns a configured session", () => {
+  it("strips everything a session used to carry when it is made local", () => {
     configureSession({
-      workspaceId: "ws",
-      roomId: "ws",
+      workspaceId: "ws-1",
+      roomId: "ws-1",
       share: null,
       role: "editor",
-      readOnly: false,
-      credential: "account",
-    });
-    expect(getSession().workspaceId).toBe("ws");
-    expect(getSession().credential).toBe("account");
-  });
-
-  it("resumes a token-free share URL from the session marker", () => {
-    window.history.replaceState(null, "", "/#share-session");
-    expect(resolveShareToken()).toBe(SHARE_SESSION_RESUME);
-
-    // A token in the URL always wins: the exchange has not run yet.
-    window.history.replaceState(null, "", "/?share=tok-1#share-session");
-    expect(resolveShareToken()).toBe("tok-1");
-  });
-
-  it("presents the exchanged session instead of the link token", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          share: share({ scope: "board", roomId: "share-tok" }),
-          session: "sess-1",
-        }),
-      })),
-    );
-
-    await resolveShare("tok");
-    const config = sessionForShare("tok", share({ scope: "board", roomId: "share-tok" }));
-
-    // The permanent token is no longer the credential this page presents.
-    expect(config.share?.token).toBe("sess-1");
-  });
-
-  it("never uses the resume marker as a credential", () => {
-    const config = sessionForShare(SHARE_SESSION_RESUME, share({ roomId: "workspace-1" }));
-
-    // Without an exchange there is nothing to present, but a sentinel must never
-    // reach a room join as if it were a capability.
-    expect(config.share?.token).toBe("");
-    expect(config.roomId).toBe("workspace-1");
-  });
-
-  it("keeps a workspace share editable only for its editor role", () => {
-    const viewer = sessionForShare("token", share());
-    expect(viewer).toMatchObject({
-      workspaceId: "workspace-1",
-      roomId: "workspace-1",
-      role: "viewer",
       readOnly: true,
-      credential: "share",
+      credential: "none",
     });
-    expect(viewer.share).toMatchObject({
-      token: "token",
-      scope: "workspace",
-      roomId: "workspace-1",
-    });
-
-    const editor = sessionForShare("token2", share({ role: "editor" }));
-    expect(editor.readOnly).toBe(false);
+    configureSession(standaloneSession(getSession()));
+    expect(getSession().readOnly).toBe(false);
   });
 
-  it("never carries the owner workspace id for a board, card or selection share", () => {
-    // The API redacts the owner id for projections; even if it did not, the
-    // session must only know the room.
-    for (const scope of ["board", "card", "selection"] as const) {
-      const config = sessionForShare("tok", share({ scope, roomId: "share-tok", workspaceId: "" }));
-      expect(config.workspaceId).toBe("share-tok");
-      expect(config.roomId).toBe("share-tok");
-      expect(config.share?.workspaceId).toBe("share-tok");
-      expect(config.readOnly).toBe(true);
-    }
+  it("keeps the document and drops the credential", () => {
+    const session = standaloneSession({ workspaceId: "ws-9" });
+    expect(session.credential).toBe("none");
+    expect(session.share).toBeNull();
   });
 
-  it("opens a selection share in the projection room", () => {
-    const config = sessionForShare(
-      "tok",
-      share({
-        scope: "selection",
-        role: "viewer",
-        boardId: "board-1",
-        roomId: "share-tok",
-        workspaceId: "owner-workspace",
-        cardIds: [],
-        cardCount: 3,
-      }),
-    );
-
-    expect(config).toMatchObject({
-      workspaceId: "share-tok",
-      roomId: "share-tok",
-      role: "viewer",
-      readOnly: true,
-      credential: "share",
-    });
-    expect(config.share).toMatchObject({
-      token: "tok",
-      scope: "selection",
-      role: "viewer",
-      workspaceId: "share-tok",
-      boardId: "board-1",
-      cardId: null,
-      roomId: "share-tok",
-    });
-    // The owner's workspace id is nowhere in the session.
-    expect(JSON.stringify(config)).not.toContain("owner-workspace");
-  });
-
-  it("falls back to the projection room when the API omits it", () => {
-    const config = sessionForShare("tok", share({ scope: "board", roomId: null }));
-    expect(config.roomId).toBe("share-tok");
-    expect(config.workspaceId).toBe("share-tok");
-  });
-
-  it("falls back to the projection room for a selection share without a room id", () => {
-    const config = sessionForShare(
-      "tok",
-      share({ scope: "selection", roomId: null, workspaceId: "owner-workspace", cardCount: 2 }),
-    );
-    expect(config.roomId).toBe("share-tok");
-    expect(config.workspaceId).toBe("share-tok");
-    expect(config.share?.scope).toBe("selection");
-  });
-
-  it("keeps a selection share read-only even if its role is not viewer", () => {
-    const config = sessionForShare("tok", share({ scope: "selection", role: "editor" }));
-    expect(config.readOnly).toBe(true);
+  it("configures what every surface then reads", () => {
+    configureSession(standaloneSession({ workspaceId: "ws-2" }));
+    expect(getSession().workspaceId).toBe("ws-2");
   });
 });
 
 describe("session capabilities", () => {
-  it("grants the local matrix to every session, whatever shaped it", () => {
-    // The build is local, so a session derived from a share link cannot grant
-    // anything a session with no share has. This used to be a nine-row matrix of
-    // account and share roles; the only row left is the one that applies.
-    for (const config of [
-      sessionForShare("tok", share({ scope: "workspace", role: "editor" })),
-      sessionForShare("tok", share({ scope: "board", role: "editor" })),
-      sessionForShare("tok", share({ scope: "selection", role: "viewer" })),
-      {
-        workspaceId: "ws",
-        roomId: "ws",
-        share: null,
-        role: "editor" as const,
-        readOnly: false,
-        credential: "account" as const,
-      },
-    ]) {
-      const capabilities = sessionCapabilities(config);
-      expect(capabilities.canManageLinks).toBe(false);
-      expect(capabilities.canPublish).toBe(false);
-      expect(capabilities.canCreateContent).toBe(true);
-    }
+  it("grants the local matrix to every session", () => {
+    const capabilities = sessionCapabilities(standaloneSession({ workspaceId: "ws-1" }));
+    expect(capabilities.canEditContent).toBe(true);
+    expect(capabilities.canEditLayout).toBe(true);
+    expect(capabilities.canCreateContent).toBe(true);
+    expect(capabilities.canManageTrash).toBe(true);
+    // The two rows that needed a service.
+    expect(capabilities.canManageLinks).toBe(false);
+    expect(capabilities.canPublish).toBe(false);
+  });
+
+  it("answers the same for a session that was never configured", () => {
+    vi.resetModules();
+    expect(sessionCapabilities().canEditContent).toBe(true);
   });
 });

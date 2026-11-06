@@ -1,20 +1,11 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { crashReportingWanted } from "./crash/consent";
-import { startCrashReporting } from "./crash/report";
 import { bridgeMissing, desktopBridge } from "./host/bridge";
 import { StaleShell } from "./host/StaleShell";
-import { type BootPlan, bootPlan, hasShareLink, suiteMode } from "./session/mode";
-import {
-  configureSession,
-  getSession,
-  resolveShareToken,
-  sessionForShare,
-  standaloneSession,
-} from "./session/session";
-import { ShareUnavailable } from "./sharing/ShareUnavailable";
-import { installErrorRecorder, safeRoute } from "./shell/diagnostics";
+import { hasShareLink } from "./session/mode";
+import { configureSession, getSession, standaloneSession } from "./session/session";
+import { installErrorRecorder } from "./shell/diagnostics";
 import { CanvasErrorBoundary } from "./shell/ErrorBoundary";
 import {
   installIndexedDbQuotaGuard,
@@ -47,16 +38,6 @@ if (!container) {
 }
 
 const root = createRoot(container);
-
-/**
- * The live token, for the crash scrubber's absence check only. Resolved lazily so
- * a build with no consent, and a standalone build, never mints one.
- */
-async function currentRelayCredential(): Promise<string | null> {
-  if (getSession().credential !== "account") return null;
-  const { cachedCredential } = await import("./auth/credential");
-  return cachedCredential();
-}
 
 /**
  * Every page the entry point renders is behind the boundary: a share link and
@@ -114,26 +95,6 @@ function LocalOnlyNotice() {
  * A normal workspace needs nothing here. The relay credential is a session JWT
  * minted from the Better Auth cookie on the first room join, so there is no
  * owner key to create, claim, rotate or keep in the URL (ADR-0076).
- *
- * The share client is imported on demand, so a standalone build never loads it —
- * see the build-time check in `boot`.
- */
-async function bootRelay(plan: BootPlan): Promise<boolean> {
-  if (!plan.resolveShare) return true;
-  const token = resolveShareToken();
-  if (token === null) return true;
-  // `shares` carries the `/api/shares` client, so it is loaded only here.
-  const { closeShareSession, resolveShare, shareErrorMessage } = await import("./session/shares");
-  try {
-    configureSession(sessionForShare(token, await resolveShare(token)));
-  } catch (error) {
-    // A dead cookie (revoked, expired) must not be retried on the next boot.
-    await closeShareSession();
-    render(<ShareUnavailable message={shareErrorMessage(error)} />);
-    return false;
-  }
-  return true;
-}
 
 /**
  * The desktop boot: the shell owns the document, so the id comes from the file.
@@ -171,52 +132,30 @@ function bootLocal(): boolean {
  * it any later would join the wrong document.
  */
 async function boot() {
-  const plan = bootPlan(suiteMode(), window.location.href);
-
-  // This literal, rather than `isStandalone()`, keeps the relay out of a
-  // standalone bundle: Vite inlines `import.meta.env.VITE_SUITE_MODE` as a
-  // string, so the standalone build folds this to `if (false)` and drops
-  // `bootRelay` with it — no share client, no account client, no relay URL
-  // compiled in. A function call would be opaque to the bundler; this is the
-  // same comparison `isStandalone()` makes.
-  if (import.meta.env.VITE_SUITE_MODE !== "standalone") {
-    if (!(await bootRelay(plan))) return;
+  // A desktop window opens the file the shell handed over; a browser tab names its
+  // workspace in the URL. Either way there is one path, and it reaches no service.
+  const bridge = desktopBridge();
+  let started: boolean;
+  if (bridge === null) {
+    started = bootLocal();
   } else {
-    // A desktop build is the standalone profile, but it is not the same boot: the
-    // document is a file the shell opened, not a workspace the URL names.
-    const bridge = desktopBridge();
-    let started: boolean;
-    if (bridge === null) {
-      started = bootLocal();
-    } else {
-      // A window left open by a previous build keeps the preload it loaded, so
-      // the method this build needs may not exist. Say so rather than offering a
-      // window whose controls do nothing.
-      const missing = bridgeMissing(bridge);
-      if (missing.length > 0) {
-        render(<StaleShell missing={missing} />);
-        return;
-      }
-      started = await bootDesktop(bridge);
+    // A window left open by a previous build keeps the preload it loaded, so the
+    // method this build needs may not exist. Say so rather than offering a window
+    // whose controls do nothing.
+    const missing = bridgeMissing(bridge);
+    if (missing.length > 0) {
+      render(<StaleShell missing={missing} />);
+      return;
     }
-    if (!started) return;
+    started = await bootDesktop(bridge);
   }
+  if (!started) return;
 
   const { default: App } = await import("./App");
   // The document store is loaded by now, so persistence can be requested after
   // the first real change instead of on a page that may never be edited.
   const { useCanvasStore } = await import("./store/useCanvasStore");
   persistAfterFirstEdit(useCanvasStore.getState().workspace.doc);
-
-  if (crashReportingWanted()) {
-    void startCrashReporting({
-      workspaceId: getSession().workspaceId,
-      route: safeRoute(window.location.href),
-      credential: await currentRelayCredential(),
-      mode: import.meta.env.MODE,
-      version: import.meta.env.VITE_SUITE_VERSION ?? "dev",
-    });
-  }
 
   render(
     <ReactFlowProvider>

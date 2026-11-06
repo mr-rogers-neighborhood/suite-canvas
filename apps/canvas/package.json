@@ -16,8 +16,6 @@
   },
   "dependencies": {
     "@excalidraw/excalidraw": "0.18.1",
-    "@loro-dev/flock": "^4.5.2",
-    "@sentry/react": "^11.8.0",
     "@suite/graph": "workspace:*",
     "@suite/import-obsidian": "workspace:*",
     "@suite/sync": "git+https://github.com/mr-rogers-neighborhood/suite-sync.git#v0.3.4&path:/packages/protocol",
@@ -27,13 +25,9 @@
     "@tiptap/starter-kit": "^3.32.0",
     "@tiptap/suggestion": "^3.32.0",
     "@xyflow/react": "^12.12.0",
-    "better-auth": "^1.7.12",
     "fuzzysort": "^4.0.2",
-    "loro-adaptors": "^0.6.1",
     "loro-crdt": "^1.16.4",
     "loro-prosemirror": "0.4.4",
-    "loro-protocol": "^0.3.0",
-    "loro-websocket": "0.6.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zustand": "^5.0.15"

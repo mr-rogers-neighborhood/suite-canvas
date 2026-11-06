@@ -91,25 +91,6 @@ describe("the handbook bubble", () => {
     expect(screen.getByTestId("handbook-list")).toBeInTheDocument();
   });
 
-  it("should send feedback from the same panel, naming the article", async () => {
-    render(
-      <>
-        <TitleBar />
-        <HandbookBubble />
-      </>,
-    );
-    fireEvent.click(screen.getByTestId("handbook-pill"));
-    fireEvent.click(
-      (await screen.findAllByTestId("handbook-row")).find(
-        (row) => row.getAttribute("data-article-id") === "chrome/title-bar",
-      ) as HTMLElement,
-    );
-    fireEvent.click(screen.getByTestId("handbook-feedback"));
-
-    expect(screen.getByTestId("feedback-text")).toBeInTheDocument();
-    expect(screen.getByTestId("feedback-context")).toHaveTextContent("The title bar");
-  });
-
   it("should drag without opening when the press travelled", () => {
     render(
       <>

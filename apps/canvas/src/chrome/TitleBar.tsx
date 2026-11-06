@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import type { AccountPhase } from "../auth/useAccountStore";
 import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
-import { type SyncClaim, type SyncRefusal, syncPresentation } from "../feedback/syncState";
+import { syncPresentation } from "../feedback/syncState";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import type { ConnectionStatus } from "../store/useCanvasStore";
 import { ThemeToggle } from "../styles/ThemeToggle";
-import { SyncPanel } from "./SyncPanel";
 
 export type TitleBarRole = "editor" | "viewer";
+
+/** Who is behind this browser. There is no account, so `unknown` is the only answer left. */
+export type AccountPhase = "unknown" | "signed-out" | "signed-in";
 
 export interface TitleBarProps {
   status: ConnectionStatus;
@@ -23,29 +24,8 @@ export interface TitleBarProps {
    * paint cannot offer "Sign in" to someone who already is.
    */
   phase?: AccountPhase;
-  /** What the account says about this workspace's membership in it. */
-  claim?: SyncClaim;
-  /** Why the relay refused, when it said. */
-  reason?: SyncRefusal | null;
   /** The relay's name for this workspace, shown inside the storage details. */
   workspaceId?: string;
-  /** Opens the sign-in dialog from the status panel's local reading. */
-  onSignIn?: (() => void) | undefined;
-  /**
-   * Opens the plan tab from the status panel's capped reading.
-   *
-   * This was passed into this component by the shell and never declared here, and a JSX
-   * spread is not excess-checked, so it was silently dropped: the panel's "See plans"
-   * button rendered and did nothing. Declaring it is the whole fix.
-   */
-  onSeePlans?: (() => void) | undefined;
-  /** Asks the control plane about this workspace again, for the reader who just paid. */
-  onReclaim?: (() => void) | undefined;
-  /**
-   * What this device can say about its own copy, shown under the sync indicator.
-   * Absent when the host has no storage surface to offer.
-   */
-  storage?: React.ReactNode;
   /** The workspace's own label; a share passes its scope label instead. */
   workspaceName?: string;
   canRenameWorkspace?: boolean;
@@ -87,13 +67,7 @@ export function TitleBar({
   role,
   peerCount = 0,
   phase = "unknown",
-  claim = "unknown",
-  reason = null,
   workspaceId,
-  onSignIn,
-  onSeePlans,
-  onReclaim,
-  storage,
   workspaceName,
   canRenameWorkspace = false,
   onRenameWorkspace,
@@ -109,25 +83,12 @@ export function TitleBar({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(workspaceName ?? "");
   const [error, setError] = useState<string | null>(null);
-  const [statusOpen, setStatusOpen] = useState(false);
   const [nameMenuOpen, setNameMenuOpen] = useState(false);
   /** Where a right click on the name opened its menu, if it did. */
   const [nameMenuAt, setNameMenuAt] = useState<{ x: number; y: number } | null>(null);
   const statusRef = useRef<HTMLDivElement | null>(null);
   const nameRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (!statusOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (!statusRef.current?.contains(event.target as Node)) setStatusOpen(false);
-    };
-    // Capture, so a press on the board closes the panel even though React Flow
-    // claims the press for the canvas.
-    window.addEventListener("pointerdown", onPointerDown, true);
-    return () => window.removeEventListener("pointerdown", onPointerDown, true);
-  }, [statusOpen]);
-
-  useEscapeLayer(() => setStatusOpen(false), statusOpen);
   useEscapeLayer(() => setNameMenuOpen(false), nameMenuOpen && !renaming);
   useEscapeLayer(() => setNameMenuAt(null), nameMenuAt !== null);
 
@@ -141,7 +102,7 @@ export function TitleBar({
   }, [nameMenuOpen]);
 
   // The button and the panel read one decision, so they cannot disagree.
-  const presentation = syncPresentation({ phase, status, peerCount, role, claim, reason });
+  const presentation = syncPresentation({ phase, status, peerCount, role });
 
   return (
     <header
@@ -398,31 +359,13 @@ export function TitleBar({
             data-handbook-region="sync-status"
             data-status={status}
             data-role={role}
-            aria-expanded={statusOpen}
-            aria-haspopup="dialog"
-            title="Sync, people and storage"
+            title="Sync and people"
             className="inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[11px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-            onClick={() => setStatusOpen((value) => !value)}
           >
             <span className={`h-1.5 w-1.5 rounded-full ${presentation.dot}`} />
             {presentation.label}
             {peerCount > 0 ? <span className="tabular-nums">· {peerCount + 1} here</span> : null}
           </button>
-          {statusOpen ? (
-            <SyncPanel
-              status={status}
-              phase={phase}
-              claim={claim}
-              reason={reason}
-              peerCount={peerCount}
-              {...(role === undefined ? {} : { role })}
-              {...(workspaceId === undefined ? {} : { workspaceId })}
-              {...(storage === undefined ? {} : { storage })}
-              {...(onSignIn === undefined ? {} : { onSignIn })}
-              {...(onSeePlans === undefined ? {} : { onSeePlans })}
-              {...(onReclaim === undefined ? {} : { onReclaim })}
-            />
-          ) : null}
         </div>
         {actions}
         <ThemeToggle />

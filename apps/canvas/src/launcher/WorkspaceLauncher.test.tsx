@@ -1,7 +1,5 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useAccountStore } from "../auth/useAccountStore";
-import { readAccountWorkspaces } from "../session/accountWorkspaces";
 import { configureSession, type SessionConfig } from "../session/session";
 import {
   readWorkspaceNames,
@@ -16,13 +14,6 @@ import {
 import { takeChosenTemplate } from "./starterTemplates";
 import { importVaultIntoWorkspace } from "./vaultImport";
 import { WorkspaceLauncher } from "./WorkspaceLauncher";
-
-// The account answer decides what a row says about sync, so it is the one thing a
-// test replaces; the rest of the module (the labels) stays real.
-vi.mock("../session/accountWorkspaces", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../session/accountWorkspaces")>();
-  return { ...actual, readAccountWorkspaces: vi.fn(async () => null) };
-});
 
 vi.mock("../session/workspaceName", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../session/workspaceName")>();
@@ -57,7 +48,6 @@ vi.mock("../session/workspaceTransfer", async (importOriginal) => {
   };
 });
 
-const readAccount = vi.mocked(readAccountWorkspaces);
 const exportWorkspace = vi.mocked(downloadWorkspaceById);
 const navigate = vi.mocked(navigateTo);
 const renameCached = vi.mocked(renameCachedWorkspace);
@@ -65,33 +55,14 @@ const renameCached = vi.mocked(renameCachedWorkspace);
 const WORKSPACE = "ws-recent";
 const TITLE = "Research";
 
-function ownerSession(): SessionConfig {
+function localSession(): SessionConfig {
   return {
     workspaceId: null,
     roomId: null,
     share: null,
     role: "editor",
     readOnly: false,
-    credential: "account",
-  };
-}
-
-function shareSession(role: "editor" | "viewer"): SessionConfig {
-  return {
-    workspaceId: WORKSPACE,
-    roomId: WORKSPACE,
-    share: {
-      token: "share-token",
-      scope: "workspace",
-      role,
-      workspaceId: WORKSPACE,
-      boardId: null,
-      cardId: null,
-      roomId: WORKSPACE,
-    },
-    role,
-    readOnly: role === "viewer",
-    credential: "share",
+    credential: "none",
   };
 }
 
@@ -126,11 +97,7 @@ async function chooseFile(testId: string, text: string, name: string): Promise<v
 
 beforeEach(() => {
   window.localStorage.clear();
-  configureSession(ownerSession());
-  // Each test states what the account holds; a leftover answer from the one before is
-  // how a launcher test starts passing for the wrong reason.
-  readAccount.mockReset();
-  readAccount.mockResolvedValue(null);
+  configureSession(localSession());
   exportWorkspace.mockClear();
   navigate.mockClear();
   renameCached.mockClear();
@@ -199,28 +166,13 @@ describe("WorkspaceLauncher export", () => {
 });
 
 describe("WorkspaceLauncher identity", () => {
-  it("offers sign-in and sign-up from the launcher itself", async () => {
-    render(<WorkspaceLauncher />);
-
-    // The surface loads on demand, so it arrives a tick after the launcher.
-    const signUp = await screen.findByTestId("create-account-entry");
-    expect(screen.getByTestId("sign-in-entry-standalone")).toBeInTheDocument();
-
-    fireEvent.click(signUp);
-    const dialog = await screen.findByTestId("sign-in-dialog");
-    expect(dialog).toHaveAttribute("data-mode", "sign-up");
-  });
-
-  it("offers the same pair beside a list of local workspaces, with no account yet", async () => {
+  it("says where the list lives, and offers no account door", async () => {
     seedRecent();
     render(<WorkspaceLauncher />);
 
-    const prompt = await screen.findByTestId("launcher-account-prompt");
-    expect(prompt).toHaveTextContent("Saved in this browser only.");
-
-    fireEvent.click(screen.getByTestId("launcher-account-prompt-create"));
-    const dialog = await screen.findByTestId("sign-in-dialog");
-    expect(dialog).toHaveAttribute("data-mode", "sign-up");
+    expect(await screen.findByTestId("launcher-local-note")).toBeInTheDocument();
+    expect(screen.queryByTestId("create-account-entry")).toBeNull();
+    expect(screen.queryByTestId("launcher-account-prompt-create")).toBeNull();
   });
 
   it("puts the source one press away, in a new tab, from the header and the notice", () => {
@@ -251,8 +203,8 @@ describe("WorkspaceLauncher import", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it("creates a local workspace for a share session too, with no dialog", () => {
-    configureSession(shareSession("editor"));
+  it("creates a local workspace with no dialog", () => {
+    configureSession(localSession());
     render(<WorkspaceLauncher />);
 
     fireEvent.click(screen.getByTestId("launcher-new"));
@@ -524,105 +476,5 @@ describe("WorkspaceLauncher recents", () => {
 
     finish?.();
     await waitFor(() => expect(screen.queryByTestId("launcher-progress")).toBeNull());
-  });
-
-  it("says which workspaces the account already holds", async () => {
-    seedRecent();
-    readAccount.mockResolvedValueOnce({
-      workspaces: [
-        { id: WORKSPACE, organizationId: "org-1", name: TITLE, createdAt: 1, archivedAt: null },
-      ],
-      organizations: [{ id: "org-1", name: "Personal", role: "owner" }],
-    });
-    render(<WorkspaceLauncher />);
-
-    const badge = await screen.findByTestId(`launcher-sync-${WORKSPACE}`);
-    expect(badge).toHaveTextContent("Synced");
-    expect(badge.dataset.sync).toBe("synced");
-    expect(screen.queryByTestId("launcher-bring-prompt")).toBeNull();
-  });
-
-  it("re-reads the account when the tab comes back, so a purchase elsewhere shows", async () => {
-    // Checkout lands in the tab that opened it, and the launcher is mounted here. One read
-    // at mount left the notice and every row describing the account as it was before.
-    seedRecent();
-    readAccount.mockResolvedValueOnce({ workspaces: [], organizations: [] });
-    render(<WorkspaceLauncher />);
-
-    expect(await screen.findByTestId("launcher-bring-prompt")).toBeInTheDocument();
-
-    readAccount.mockResolvedValueOnce({
-      workspaces: [
-        { id: WORKSPACE, organizationId: "org-1", name: TITLE, createdAt: 1, archivedAt: null },
-      ],
-      organizations: [{ id: "org-1", name: "Personal", role: "owner" }],
-    });
-    act(() => {
-      document.dispatchEvent(new Event("visibilitychange"));
-    });
-
-    await waitFor(() =>
-      expect(screen.queryByTestId("launcher-bring-prompt")).not.toBeInTheDocument(),
-    );
-    expect(await screen.findByTestId(`launcher-sync-${WORKSPACE}`)).toHaveTextContent("Synced");
-  });
-
-  it("re-reads the account when the account panel closes", async () => {
-    seedRecent();
-    readAccount.mockResolvedValue({ workspaces: [], organizations: [] });
-    useAccountStore.setState({ panelOpen: true, panelTab: "plan" });
-    render(<WorkspaceLauncher />);
-    await waitFor(() => expect(screen.getByTestId("launcher-bring-prompt")).toBeInTheDocument());
-
-    readAccount.mockResolvedValue({
-      workspaces: [
-        { id: WORKSPACE, organizationId: "org-1", name: TITLE, createdAt: 1, archivedAt: null },
-      ],
-      organizations: [{ id: "org-1", name: "Personal", role: "owner" }],
-    });
-    act(() => useAccountStore.getState().closePanel());
-
-    await waitFor(() =>
-      expect(screen.queryByTestId("launcher-bring-prompt")).not.toBeInTheDocument(),
-    );
-  });
-
-  it("says nothing about sync when there is no account", async () => {
-    seedRecent();
-    render(<WorkspaceLauncher />);
-
-    await waitFor(() => expect(readAccount).toHaveBeenCalled());
-    expect(screen.queryByTestId(`launcher-sync-${WORKSPACE}`)).toBeNull();
-  });
-
-  it("offers to bring local work along when the account holds nothing", async () => {
-    seedRecent();
-    readAccount.mockResolvedValueOnce({ workspaces: [], organizations: [] });
-    render(<WorkspaceLauncher />);
-
-    const prompt = await screen.findByTestId("launcher-bring-prompt");
-    expect(prompt).toHaveTextContent("saved on this device only");
-    // The sentence used to promise that opening one was enough. Since the plan became
-    // the thing that puts a workspace in an account, it would be an invitation to a
-    // refusal: `plan-required`, and the workspace stays local.
-    expect(prompt).toHaveTextContent("A plan is what puts them in your account");
-    expect(prompt).not.toHaveTextContent("Open one while signed in");
-    expect(screen.getByTestId(`launcher-sync-${WORKSPACE}`)).toHaveTextContent("On this device");
-
-    fireEvent.click(screen.getByTestId("launcher-bring-dismiss"));
-    expect(screen.queryByTestId("launcher-bring-prompt")).toBeNull();
-  });
-
-  it("opens the plan tab from the local-only notice, because a plan is the obstacle", async () => {
-    seedRecent();
-    readAccount.mockResolvedValueOnce({ workspaces: [], organizations: [] });
-    useAccountStore.setState({ panelOpen: false, panelTab: "account" });
-    render(<WorkspaceLauncher />);
-
-    fireEvent.click(await screen.findByTestId("launcher-bring-plans"));
-
-    const account = useAccountStore.getState();
-    expect(account.panelOpen).toBe(true);
-    expect(account.panelTab).toBe("plan");
   });
 });

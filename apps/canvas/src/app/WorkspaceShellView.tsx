@@ -1,8 +1,6 @@
 import type { PaletteSwatch, WorkspaceDocument, WorkspaceMediaItem } from "@suite/graph";
 import type { CSSProperties, Dispatch, RefObject, SetStateAction } from "react";
 import { lazy, Suspense, useMemo, useState } from "react";
-import { SignInEntry } from "../auth/SignInEntry";
-import type { AccountPhase } from "../auth/useAccountStore";
 import { BoardOutlineHost } from "../canvas/BoardOutline";
 import { CanvasBoard } from "../canvas/CanvasBoard";
 import { PinnedCards } from "../canvas/PinnedCards";
@@ -47,8 +45,6 @@ import {
 } from "../session/workspaceName";
 import { pinnedWorkspaceOrder, useWorkspacePins } from "../session/workspacePins";
 import { readRecentWorkspaces, workspaceUrl } from "../session/workspaceTransfer";
-import { SharePublishButton } from "../sharing/SharePublishButton";
-import { StoragePanel } from "../sharing/StoragePanel";
 import { LoadingPlaceholder } from "../shell/LoadingPlaceholder";
 import type { useCanvasStore } from "../store/useCanvasStore";
 import { type LibraryTab, useUiStore } from "../store/useUiStore";
@@ -57,8 +53,6 @@ import { ViewsLayer } from "../views/ViewsLayer";
 import { AppearanceHost } from "./AppearanceHost";
 import { BlueprintInstallHost } from "./BlueprintInstallHost";
 import { HistoryPanelHost } from "./HistoryPanelHost";
-import { NoticeStrip } from "./NoticeStrip";
-import { WornRoleStrip } from "./WornRoleStrip";
 import { documentLabel } from "./workspacePaint";
 
 type UiState = ReturnType<typeof useUiStore.getState>;
@@ -69,25 +63,10 @@ type CanvasState = ReturnType<typeof useCanvasStore.getState>;
  * relay clients. Loading them on demand keeps `/api` out of the standalone
  * build's app chunk entirely, rather than relying on a runtime guard.
  */
-const ShareAction = lazy(async () => {
-  const module = await import("../chrome/ShareAction");
-  return { default: module.ShareAction };
-});
 
 const WorkspaceActions = lazy(async () => {
   const module = await import("../chrome/WorkspaceActions");
   return { default: module.WorkspaceActions };
-});
-
-/**
- * The account surfaces pull in the Better Auth client. Loaded on demand for the
- * same reason as the share dialogs: a standalone build has no server and must
- * not ship a single byte of `/api/auth`, so the gate is a literal the bundler
- * folds.
- */
-const SignInSurface = lazy(async () => {
-  const module = await import("../auth/SignInDialogHost");
-  return { default: module.SignInDialogHost };
 });
 
 export interface WorkspaceShellViewProps {
@@ -113,7 +92,6 @@ export interface WorkspaceShellViewProps {
   workspaceName: string;
   setWorkspaceName: Dispatch<SetStateAction<string>>;
   /** Who is behind this browser, as the account store knows it. */
-  phase: AccountPhase;
   /** What the account says about this workspace, when it has been asked. */
   claim?: SyncClaim;
   /** Why the relay refused, when it said. */
@@ -123,7 +101,6 @@ export interface WorkspaceShellViewProps {
   /** Asks the control plane about this workspace again, after a payment or a fix. */
   onReclaim?: (() => void) | undefined;
   inRoom: boolean;
-  openSignIn: () => void;
   readOnly: boolean;
   activeBoardId: string | null;
   activeBoardName: string | null;
@@ -228,13 +205,6 @@ export function WorkspaceShellView({
   workspace,
   workspaceName,
   setWorkspaceName,
-  phase,
-  claim,
-  reason,
-  onSeePlans,
-  onReclaim,
-  inRoom,
-  openSignIn,
   readOnly,
   activeBoardId,
   activeBoardName,
@@ -373,8 +343,6 @@ export function WorkspaceShellView({
         data-ready={ready && synced}
         data-leaving={leaving ? "true" : undefined}
       >
-        <NoticeStrip />
-        <WornRoleStrip />
         <TitleBar
           onNavigateHome={requestLeave}
           onOpenSearch={() => setPaletteOpen(true)}
@@ -383,23 +351,7 @@ export function WorkspaceShellView({
           status={standalone && !syncEnabled ? "disconnected" : status}
           {...(share ? { role: share.role } : {})}
           peerCount={standalone && !syncEnabled ? 0 : peerCount}
-          phase={phase}
-          {...(claim === undefined ? {} : { claim })}
-          reason={reason ?? null}
           workspaceId={workspaceId}
-          onSignIn={openSignIn}
-          {...(onSeePlans === undefined ? {} : { onSeePlans })}
-          {...(onReclaim === undefined ? {} : { onReclaim })}
-          // Everything about *this* device's copy lives under the same control that
-          // says who else is here (ADR-0064 amendment): one status, one press.
-          storage={
-            <StoragePanel
-              workspaceId={workspaceId}
-              signedIn={phase === "signed-in"}
-              synced={inRoom}
-              onSignIn={openSignIn}
-            />
-          }
           workspaceName={share ? documentLabel(share, workspaceId) : workspaceName}
           workspacePinned={workspacePins.isPinned(workspaceId)}
           onToggleWorkspacePin={workspacePins.togglePin}
@@ -417,43 +369,15 @@ export function WorkspaceShellView({
             }
           }}
           actions={
-            // Share sessions only exist on a relay. The literal is inlined by Vite,
-            // so a standalone build drops this branch — and the publish button and
-            // `/api/shares` client behind it — instead of shipping dead relay UI.
-            // A constant or `isStandalone()` call would be opaque to the bundler.
-            share && import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
-              <SharePublishButton />
-            ) : (
-              <>
-                <Suspense
-                  fallback={
-                    <LoadingPlaceholder variant="inline" label="Loading workspace actions" />
-                  }
-                >
-                  <ShareAction
-                    workspaceId={workspaceId}
-                    boardId={activeBoardId}
-                    title={activeBoardName ?? "Workspace"}
-                  />
-                  <WorkspaceActions
-                    workspaceId={workspaceId}
-                    title={activeBoardName ?? "Workspace"}
-                    onLeave={requestLeave}
-                  />
-                </Suspense>
-                {standalone && !syncEnabled ? (
-                  <span
-                    data-testid="local-only"
-                    title="This build keeps every workspace in this browser: no sync, no sharing."
-                    className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)]"
-                  >
-                    Local only
-                  </span>
-                ) : null}
-                {/* A standalone build has no server, so it has no accounts to offer. */}
-                {standalone ? null : <SignInEntry />}
-              </>
-            )
+            <Suspense
+              fallback={<LoadingPlaceholder variant="inline" label="Loading workspace actions" />}
+            >
+              <WorkspaceActions
+                workspaceId={workspaceId}
+                title={activeBoardName ?? "Workspace"}
+                onLeave={requestLeave}
+              />
+            </Suspense>
           }
         >
           {/*
@@ -814,13 +738,6 @@ export function WorkspaceShellView({
             canManageTrash={canManageTrash}
           />
         ) : null}
-
-        {/* The account surfaces: sign-in, and the admission panel while an account waits. */}
-        {standalone ? null : (
-          <Suspense fallback={<LoadingPlaceholder label="Loading sign-in" />}>
-            <SignInSurface />
-          </Suspense>
-        )}
 
         {/* Pins sit above the canvas, so they survive a board switch and ignore the
             camera. Their geometry is the shell's; the board keeps its own. */}

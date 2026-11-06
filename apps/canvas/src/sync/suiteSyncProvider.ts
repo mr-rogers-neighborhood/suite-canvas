@@ -1,6 +1,6 @@
 import { SuiteSyncClient, type SuiteSyncStatus, type WebSocketConstructor } from "@suite/sync/loro";
 import type { LoroDoc } from "loro-crdt";
-import type { LoroConnectionStatus } from "../collab/loroProvider";
+import type { ConnectionStatus } from "../store/useCanvasStore";
 
 export interface SuiteSyncProviderOptions {
   readonly url: string;
@@ -9,14 +9,14 @@ export interface SuiteSyncProviderOptions {
   readonly deviceId: string;
   readonly epoch: number;
   readonly doc: LoroDoc;
-  readonly onStatus?: (status: LoroConnectionStatus) => void;
+  readonly onStatus?: (status: ConnectionStatus) => void;
   readonly onSynced?: () => void;
   /** Injectable for tests; the app uses the platform WebSocket. */
   readonly webSocket?: WebSocketConstructor;
 }
 
 /**
- * The dev `suite-sync` transport, behind the same small shape as `LoroProvider`.
+ * The dev `suite-sync` transport, behind the same small shape the store expects.
  *
  * It has no presence channel yet: the first phase is document sync. The store
  * passes the same `LoroDoc` it persists, so a remote update is saved by the
@@ -42,7 +42,7 @@ export class SuiteSyncProvider {
     void this.client.connect();
   }
 
-  get status(): LoroConnectionStatus {
+  get status(): ConnectionStatus {
     return mapStatus(this.client.status);
   }
 
@@ -63,6 +63,6 @@ export class SuiteSyncProvider {
   }
 }
 
-function mapStatus(status: SuiteSyncStatus): LoroConnectionStatus {
+function mapStatus(status: SuiteSyncStatus): ConnectionStatus {
   return status;
 }

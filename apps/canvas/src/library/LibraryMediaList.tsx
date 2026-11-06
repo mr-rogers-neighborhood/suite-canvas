@@ -1,8 +1,19 @@
 import type { WorkspaceMediaItem } from "@suite/graph";
 import { type PointerEvent as ReactPointerEvent, useMemo, useState } from "react";
-import { humanBytes } from "../auth/entitlement";
 import { attachmentUrl } from "../editor/attachmentNode";
 import { useLibraryHold } from "./useLibraryHold";
+
+/** A size a person can read: one decimal below ten, none above. */
+function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value < 10 && unit > 0 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
 
 export interface LibraryMediaListProps {
   items?: WorkspaceMediaItem[];
@@ -158,7 +169,7 @@ export function LibraryMediaList({
                         {item.name || "Untitled media"}
                       </div>
                       <div className="flex items-center gap-1 text-[10px] text-[var(--ink-muted)]">
-                        {item.bytes ? <span>{humanBytes(item.bytes)}</span> : null}
+                        {item.bytes ? <span>{formatBytes(item.bytes)}</span> : null}
                         {item.width && item.height ? (
                           <span>
                             {item.width}×{item.height}

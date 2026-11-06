@@ -12,6 +12,7 @@
     "build": "turbo run build",
     "build-storybook": "pnpm --filter @suite/canvas build-storybook",
     "check": "biome check . && turbo run typecheck && vitest run --changed && pnpm docs:symbols && pnpm shape",
+    "check:full": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:stories && pnpm build && pnpm docs:check && pnpm docs:symbols && pnpm shape && pnpm security:secrets",
     "clean": "rm -rf apps/*/dist apps/*/storybook-static packages/*/dist .turbo apps/*/.turbo packages/*/.turbo",
     "coverage": "vitest run --coverage",
     "coverage:graph": "vitest run --coverage --project=graph --coverage.include='packages/graph/src/**'",

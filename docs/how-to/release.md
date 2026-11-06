@@ -60,16 +60,37 @@ gh release create v0.1.0 \
 `latest/download` then serves that yml, both to the app's own updater and to the
 hub when a person presses Check for updates. One URL, so the two cannot disagree.
 
-## Before the first public release
+## Signing the feed
 
-**Signing is not wired yet, and an updater that trusts an unsigned manifest is
-worse than one that never updates.** Two things are missing, in order:
+An update feed is one URL, and anything that can answer it can offer a version. The
+artifact's sha512 protects a download, not the manifest that named it, so the
+manifest is signed:
 
-1. A publisher key, generated once, with the private half in CI and the public half
-   pinned in the app. The manifest is signed, and the app refuses one that does not
-   verify.
-2. A CI job that builds on a tag and signs, so a release is produced by the same
-   process every time rather than by hand on one machine.
+```sh
+node ../suite-dev/scripts/sign-release.mjs apps/desktop/release/latest-linux.yml
+```
 
-Until both exist, a build here is for testing self-update locally, not for handing
-to a person.
+That writes `latest-linux.yml.sig` beside it, base64, and prints the key's
+fingerprint. Upload both. An app refuses a manifest that does not verify against the
+key pinned in `@suite/desktop`, and the hub applies the same check before it shows a
+version.
+
+The private key is at `~/.config/suite/update-key.pem` on the publisher's machine,
+or wherever `SUITE_UPDATE_KEY` points. **It is not in this repository and must not
+be.** Two consequences worth stating plainly:
+
+- Back it up somewhere you control. Anyone holding it can push an update to every
+  install; losing it means no further updates for installs that have the current
+  public key pinned.
+- A new key is a new trust root. Rotating it means every installed app needs a
+  release signed by the *old* key first, or it will refuse the next one.
+
+The public half is `SUITE_UPDATE_PUBLIC_KEY` in `@suite/desktop`, with
+`updateKeyFingerprint()` to check that what you signed with is what the apps pin.
+
+## What is still missing
+
+CI. A release is currently built and signed by hand on one machine, which is how two
+releases end up produced two different ways. The next step is a workflow that builds
+on a tag, signs with the key from a repository secret, and uploads, so the artefact
+and the manifest come from the same process every time.

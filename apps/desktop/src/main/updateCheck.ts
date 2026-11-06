@@ -1,23 +1,28 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   SUITE_UPDATE_STATE_FILE,
   type SuiteReleaseChannel,
   type SuiteUpdateState,
+  updateAvailable,
 } from "@suite/contracts";
+import { checkSignedFeed, type FeedFetch, feedUrlFromAppUpdateYml } from "@suite/desktop";
 
 /**
  * The app's own update check, and the report it leaves behind.
  *
- * The app owns its bytes and its feed: it is the only process that may replace
- * this binary. The hub reads the report this writes rather than asking a feed of
- * its own, so the two can never disagree about what is newest, and a person who
- * opens the hub on a machine whose apps have not run in weeks still gets a
- * timestamped answer.
+ * The app owns its bytes and its feed: it is the only process that may replace this
+ * binary. The hub reads the report this writes rather than asking a feed of its own,
+ * so the two cannot disagree about what is newest.
  *
- * `electron-updater` is imported on demand, and only in a packaged build with an
- * update config beside it: a checkout has no feed, and a dev run must not try to
- * replace itself.
+ * **The manifest is verified before anything else happens.** An update feed is one
+ * URL, and anything that can answer it can offer a version; the artifact's sha512
+ * protects a download, not the manifest that named it. A feed that answers without a
+ * signature from the publisher is refused, and the app never asks its updater to act
+ * on it.
+ *
+ * `electron-updater` is imported on demand, and only in a packaged build: a checkout
+ * has no feed, and a dev run must not try to replace itself.
  */
 export interface UpdateCheckOptions {
   /** The app's machine-local state directory; the report is written here. */
@@ -26,8 +31,13 @@ export interface UpdateCheckOptions {
   readonly channel: SuiteReleaseChannel;
   /** False in a dev run, which has no `app-update.yml` to read. */
   readonly packaged: boolean;
-  /** Overridable for a test, which must not spawn an updater. */
+  /** Where `app-update.yml` lives. Defaults to the packaged resources directory. */
+  readonly resourcesPath?: string;
+  /** A feed to read instead of the recorded one. Tests use this. */
+  readonly feed?: string;
   readonly updater?: UpdaterLike;
+  readonly fetch?: FeedFetch;
+  readonly platform?: string;
   readonly now?: () => Date;
 }
 
@@ -39,68 +49,71 @@ export interface UpdaterLike {
 }
 
 export interface UpdateCheckResult {
-  readonly state: SuiteUpdateState;
+  readonly state: SuiteUpdateState | null;
   readonly error: string | null;
+  /** True only when the manifest that produced this answer was signed by the publisher. */
+  readonly verified: boolean;
 }
 
 /** Ask the feed once, write the report, and say what happened. */
 export async function checkForUpdates(options: UpdateCheckOptions): Promise<UpdateCheckResult> {
   const now = options.now ?? (() => new Date());
-  const checkedAt = now().toISOString();
+  const platform = options.platform ?? process.platform;
+  const feed = options.feed ?? (await recordedFeed(options));
 
-  if (!options.packaged && options.updater === undefined) {
+  if (feed === null) {
+    return { state: null, error: "this build has no update feed", verified: false };
+  }
+
+  const check = await checkSignedFeed(feed, platform, options.fetch ?? ((url) => fetch(url)), now);
+  if (!check.verified || check.version === null) {
+    // No report: a card that says "checked" would be claiming an answer nobody gave.
     return {
-      state: {
-        format: "suite.update-state",
-        version: options.version,
-        available: null,
-        checkedAt: null,
-        channel: options.channel,
-      },
-      error: "this build has no update feed",
+      state: null,
+      error: check.reason ?? "the feed could not be verified",
+      verified: false,
     };
   }
 
+  const state: SuiteUpdateState = {
+    format: "suite.update-state",
+    version: options.version,
+    available: updateAvailable({
+      format: "suite.update-state",
+      version: options.version,
+      available: check.version,
+      checkedAt: check.checkedAt,
+      channel: options.channel,
+    })
+      ? check.version
+      : null,
+    checkedAt: check.checkedAt,
+    channel: options.channel,
+  };
+
+  // The version came from the verified manifest, so the download has something
+  // trustworthy to compare against. The updater still verifies the artifact's hash.
   const updater = options.updater ?? (await loadUpdater());
-  if (updater === null) {
-    return {
-      state: {
-        format: "suite.update-state",
-        version: options.version,
-        available: null,
-        checkedAt: null,
-        channel: options.channel,
-      },
-      error: "electron-updater is not available",
-    };
+  if (updater !== null && state.available !== null) {
+    updater.autoDownload = false;
+    await updater.checkForUpdates().catch((error: unknown) => {
+      console.warn("[update] the updater could not check", error);
+    });
   }
 
-  // Never download unasked: an app that starts pulling a binary at launch is an
-  // app that spends someone's bandwidth on a decision they did not make.
-  updater.autoDownload = false;
+  await writeReport(options.dataDir, state);
+  return { state, error: null, verified: true };
+}
 
+/** The feed electron-builder recorded beside a packaged app. */
+async function recordedFeed(options: UpdateCheckOptions): Promise<string | null> {
+  if (!options.packaged) return null;
+  const resources = options.resourcesPath ?? process.resourcesPath;
   try {
-    const result = await updater.checkForUpdates();
-    const offered = result?.updateInfo.version ?? null;
-    const state: SuiteUpdateState = {
-      format: "suite.update-state",
-      version: options.version,
-      available: offered === null ? null : offered,
-      checkedAt,
-      channel: options.channel,
-    };
-    await writeReport(options.dataDir, state);
-    return { state, error: null };
-  } catch (error) {
-    const state: SuiteUpdateState = {
-      format: "suite.update-state",
-      version: options.version,
-      available: null,
-      checkedAt,
-      channel: options.channel,
-    };
-    await writeReport(options.dataDir, state);
-    return { state, error: error instanceof Error ? error.message : "the check failed" };
+    const yml = await readFile(join(resources, "app-update.yml"), "utf8");
+    return feedUrlFromAppUpdateYml(yml);
+  } catch {
+    return null;
   }
 }
 

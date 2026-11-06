@@ -9,6 +9,10 @@
 # macOS and Windows are configured but cannot be produced here: both need a
 # signing identity this repository does not have, and an unsigned build is not
 # something to hand a user.
+# The name travels into the feed's `url`, so it stays a name a URL can carry: no
+# spaces, no capitals to disagree about, and the same stem as the executable.
+artifactName: suite-canvas-${version}-${arch}.${ext}
+
 appId: run.suite.canvas
 productName: Suite Canvas
 copyright: Copyright © Suite

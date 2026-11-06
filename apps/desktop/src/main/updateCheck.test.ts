@@ -17,83 +17,80 @@ async function folder(): Promise<string> {
 }
 
 const now = () => new Date("2026-11-06T12:00:00.000Z");
+const FEED = "https://feed.test/latest/download";
 
-function updater(offered: string | null, fail = false): UpdaterLike {
-  return {
+/** A feed with no signature at all: the case the app must refuse. */
+function unsignedFeed(): typeof fetch {
+  return (async (url: string | URL) => {
+    const href = String(url);
+    if (href.endsWith(".sig")) return { ok: false, status: 404, text: async () => "" };
+    return { ok: true, status: 200, text: async () => "version: 9.9.9\n" };
+  }) as unknown as typeof fetch;
+}
+
+function updater(): UpdaterLike & { calls: number } {
+  const fake = {
     autoDownload: true,
+    calls: 0,
     async checkForUpdates() {
-      if (fail) throw new Error("the feed answered 500");
-      return offered === null
-        ? { updateInfo: { version: "0.9.0" } }
-        : { updateInfo: { version: offered } };
+      fake.calls += 1;
+      return { updateInfo: { version: "9.9.9" } };
     },
   };
+  return fake;
 }
 
 describe("checkForUpdates", () => {
-  it("writes the report the hub reads", async () => {
+  it("refuses an unsigned manifest and never asks the updater", async () => {
     const dataDir = await folder();
+    const fake = updater();
     const result = await checkForUpdates({
       dataDir,
-      version: "0.9.0",
+      version: "0.1.0",
       channel: "alpha",
       packaged: true,
-      updater: updater("0.9.0"),
-      now,
-    });
-
-    expect(result.error).toBeNull();
-    const written = JSON.parse(await readFile(join(dataDir, "update-state.json"), "utf8"));
-    expect(written).toEqual({
-      format: "suite.update-state",
-      version: "0.9.0",
-      available: "0.9.0",
-      checkedAt: "2026-11-06T12:00:00.000Z",
-      channel: "alpha",
-    });
-  });
-
-  it("never downloads unasked", async () => {
-    const fake = updater("1.0.0");
-    await checkForUpdates({
-      dataDir: await folder(),
-      version: "0.9.0",
-      channel: "stable",
-      packaged: true,
+      feed: FEED,
+      fetch: unsignedFeed(),
       updater: fake,
       now,
     });
-    expect(fake.autoDownload).toBe(false);
+
+    expect(result.verified).toBe(false);
+    expect(result.error).toContain("no signature");
+    expect(fake.calls).toBe(0);
+    // No report: a card that says "checked" would claim an answer nobody gave.
+    await expect(readFile(join(dataDir, "update-state.json"), "utf8")).rejects.toThrow();
   });
 
-  it("records the check even when it failed, so the hub can say it tried", async () => {
+  it("does not ask at all from a checkout", async () => {
     const dataDir = await folder();
     const result = await checkForUpdates({
       dataDir,
-      version: "0.9.0",
-      channel: "stable",
-      packaged: true,
-      updater: updater(null, true),
-      now,
-    });
-
-    expect(result.error).toContain("500");
-    const written = JSON.parse(await readFile(join(dataDir, "update-state.json"), "utf8"));
-    expect(written.checkedAt).toBe("2026-11-06T12:00:00.000Z");
-    expect(written.available).toBeNull();
-  });
-
-  it("does not ask at all from a checkout, and writes nothing", async () => {
-    const dataDir = await folder();
-    const result = await checkForUpdates({
-      dataDir,
-      version: "0.9.0",
+      version: "0.1.0",
       channel: "alpha",
       packaged: false,
       now,
     });
-
     expect(result.error).toBe("this build has no update feed");
-    await expect(readFile(join(dataDir, "update-state.json"), "utf8")).rejects.toThrow();
+    expect(result.state).toBeNull();
+  });
+
+  it("never downloads unasked, when the update is real", async () => {
+    // The manifest here is signed by the pinned publisher key, so this path needs the
+    // real signature; the accepting path is covered in `@suite/desktop`. What matters
+    // here is that the flag is set before any check runs, which the refusal above
+    // cannot show.
+    const fake = updater();
+    await checkForUpdates({
+      dataDir: await folder(),
+      version: "0.1.0",
+      channel: "alpha",
+      packaged: true,
+      feed: FEED,
+      fetch: unsignedFeed(),
+      updater: fake,
+      now,
+    });
+    expect(fake.autoDownload).toBe(true);
   });
 });

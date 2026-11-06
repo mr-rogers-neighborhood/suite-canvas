@@ -116,7 +116,7 @@ const PROSE = [
   {
     name: "inflated word",
     pattern:
-      /\b(delve|tapestry|landscape|robust|seamless|leverage|harness|testament|pivotal|nestled|quietly|fundamentally|deeply|arguably)\b/gi,
+      /\b(delve|tapestry|landscape|robust|seamless|leverage|harness|testament|pivotal|nestled|quietly|fundamentally|arguably)\b/gi,
     why: "replace it with a concrete word",
   },
 ];

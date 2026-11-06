@@ -6,13 +6,13 @@ Facts to look up: the data model, the commands, the quotas, the security boundar
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
+| [Architecture](architecture.md) | Canvas is two processes and two packages. The renderer is a web app; the shell is Electron and owns the file. Nothing in either reaches a network. | 2026-11-06 |
+| [Coding conventions](conventions.md) | The rules as rules. The model they serve is architecture.md. The procedure that applies them is ../how-to/add-a-feature.md, and the gate is ../how-to/… | 2026-11-06 |
+| [Data model](data-model.md) | This page does not cover how the canvas draws these records or how a share link is authenticated; architecture.md and security-model.md own those. It… | 2026-11-06 |
 | [Desktop](desktop.md) | The Canvas desktop application. It is the same renderer the web build serves, wrapped in a main process that owns a file the user chose. It does not c… | 2026-11-06 |
+| [Interface](ui.md) | How the shell, the library, the panels, the styling surfaces and the command palette are assembled, and the focus, keyboard and theme rules they share… | 2026-11-06 |
+| [Security model](security-model.md) | Canvas runs on one machine, reads one file at a time, and talks to nothing. The threat model is therefore small, and what matters is the file and the… | 2026-11-06 |
 | [Start](start.md) | Suite Start is the hub window: what is installed, which documents exist, whether sync is configured, and where the hub keeps its own state. It ships f… | 2026-11-05 |
-| [Architecture](architecture.md) | Canvas is two processes and two packages. The renderer is a web app; the shell is Electron and owns the file. Nothing in either reaches a network. | 2026-11-04 |
-| [Data model](data-model.md) | This page does not cover how the canvas draws these records or how a share link is authenticated; architecture.md and security-model.md own those. It… | 2026-11-04 |
 | [Glossary](glossary.md) | One definition per term, in the sense this repository uses it. The model behind them is architecture.md, and the code identifiers are listed beside ea… | 2026-11-04 |
-| [Security model](security-model.md) | Canvas runs on one machine, reads one file at a time, and talks to nothing. The threat model is therefore small, and what matters is the file and the… | 2026-11-04 |
 | [Canvas](canvas.md) | apps/canvas/src/canvas turns the workspace document into a board you can point at: placements become nodes, edges become routes, and every gesture end… | 2026-11-04 |
-| [Interface](ui.md) | How the shell, the library, the panels, the styling surfaces and the command palette are assembled, and the focus, keyboard and theme rules they share… | 2026-11-04 |
 | [Editing](editing.md) | How card text, fields, templates and reference chips are stored and edited; the document model underneath is in architecture.md. | 2026-10-31 |
-| [Coding conventions](conventions.md) | The rules as rules. The model they serve is architecture.md. The procedure that applies them is ../how-to/add-a-feature.md, and the gate is ../how-to/… | 2026-10-28 |

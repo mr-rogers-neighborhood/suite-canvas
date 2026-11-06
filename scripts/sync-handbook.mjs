@@ -26,7 +26,7 @@
  *   node scripts/sync-handbook.mjs            # rewrite both outputs
  *   node scripts/sync-handbook.mjs --check    # exit 1 when the module is stale
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { marked } from "marked";

@@ -6,5 +6,5 @@ Learn by doing. Each page is one guided path to a first success, with nothing to
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Run Canvas on this machine](run-locally.md) | You need Node 22 or newer and pnpm 12.13.0. Nothing else: no database, no container, no account. | 2026-10-26 |
+| [Run Canvas on this machine](run-locally.md) | You need Node 22 or newer and pnpm 12.13.0. Nothing else: no database, no container, no account. | 2026-11-06 |
 | [Your first workspace](first-workspace.md) | This tutorial creates a small workspace, adds cards, links two of them, and checks that the work survives a reload. Start the app first with Run Suite… | 2026-10-26 |

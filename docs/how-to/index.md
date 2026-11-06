@@ -6,13 +6,13 @@ One task at a time: the steps for a job you already know you need to do.
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
+| [Add a feature](add-a-feature.md) | The data flow fixes the order: the document package owns the shape, the workspace document owns the write, the snapshot store owns the read, and the c… | 2026-11-06 |
+| [Change the canvas](change-the-canvas.md) | Adding to the canvas means answering three questions before writing code: which layer owns the input, what the document records, and what peers see wh… | 2026-11-06 |
+| [Change the data model](change-the-data-model.md) | A record change travels one path: schema, reader, writer, facade, then the tests that prove two clients still converge. Skipping the reader step is ho… | 2026-11-06 |
+| [Contribute a change](contribute.md) | One change, from branch to merge. The coding standards are in reference/conventions.md, the repo map in AGENTS.md, and the local gate in test-and-veri… | 2026-11-06 |
+| [Release](release.md) | A release is a tag, a package and a note. Canvas is one app in a suite of four, and each ships its own version, because they release on their own sche… | 2026-11-06 |
+| [Test and verify](test-and-verify.md) | Four tiers, each answering a question the one above it cannot. Everything runs from the repository root. | 2026-11-06 |
 | [Run the desktop app](run-the-desktop-app.md) | The Canvas desktop application is one renderer in a shell that owns a file. This page is the loop for working on it. It assumes a checkout and pnpm in… | 2026-11-05 |
-| [Test and verify](test-and-verify.md) | Four tiers, each answering a question the one above it cannot. Everything runs from the repository root. | 2026-11-05 |
-| [Release](release.md) | A release is a tag, a package and a note. Canvas is one app in a suite of four, and each ships its own version, because they release on their own sche… | 2026-11-04 |
-| [Change the data model](change-the-data-model.md) | A record change travels one path: schema, reader, writer, facade, then the tests that prove two clients still converge. Skipping the reader step is ho… | 2026-10-31 |
-| [Contribute a change](contribute.md) | One change, from branch to merge. The coding standards are in reference/conventions.md, the repo map in AGENTS.md, and the local gate in test-and-veri… | 2026-10-30 |
 | [Publish a copy of the source](publish.md) | The repository is public, so this page is not a step anybody has to take today. It is the runbook for the other direction: you have a fork, a private… | 2026-10-30 |
-| [Add a feature](add-a-feature.md) | The data flow fixes the order: the document package owns the shape, the workspace document owns the write, the snapshot store owns the read, and the c… | 2026-10-28 |
-| [Change the canvas](change-the-canvas.md) | Adding to the canvas means answering three questions before writing code: which layer owns the input, what the document records, and what peers see wh… | 2026-10-28 |
 | [Import an Obsidian vault](import-an-obsidian-vault.md) | Importing a vault folder reads every note, tag, link and canvas into one workspace. The import runs once, as a single change, so undo takes it back wh… | 2026-10-28 |
 | [Change the editor](change-the-editor.md) | Add a node, a mark, a field renderer, a slash command or a mention action to the card editor, with the files each one touches and the tests that fail… | 2026-10-26 |

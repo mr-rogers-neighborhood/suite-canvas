@@ -16,9 +16,11 @@ useDefault = true
 
 # Paths a working copy has and git does not. A local `.env` holds the real
 # development credentials by design, and it is gitignored, so it can never
-# become history; `dist/`, `storybook-static/` and `e2e/.artifacts/` are build
-# and test output. Scanning them reports the same third-party noise on every
-# run and teaches the reader to ignore the tool.
+# become history; `dist/`, `storybook-static/`, `release/` and `e2e/.artifacts/`
+# are build and test output. Scanning them reports the same third-party noise on
+# every run and teaches the reader to ignore the tool: a packaged bundle holds a
+# vendor library's own Firebase config and JWT-shaped strings, which are not
+# this repository's secrets.
 [[allowlists]]
 description = "Gitignored local files and build output"
 paths = [
@@ -29,6 +31,7 @@ paths = [
   '''(^|/)coverage/''',
   '''(^|/)dist/''',
   '''(^|/)node_modules/''',
+  '''(^|/)release/''',
   '''(^|/)reports/''',
   '''(^|/)storybook-static/''',
 ]

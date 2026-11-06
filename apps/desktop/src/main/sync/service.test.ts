@@ -6,6 +6,7 @@ import {
   createDeviceIdentity,
   createWorkspaceGroup,
   encodeBase64,
+  encodeKeyPackageBytes,
   joinWorkspaceGroup,
   type RelayWebSocket,
   seal,
@@ -199,5 +200,103 @@ describe("the service", () => {
 
     expect(statuses.at(-1)).toMatchObject({ state: "asleep" });
     void service;
+  });
+});
+
+describe("inviting someone in", () => {
+  it("hands back a link a person can paste, and tells the host", async () => {
+    const dataDir = await folder();
+    const group = await createWorkspaceGroup(
+      workspaceId,
+      await createDeviceIdentity("this-laptop"),
+    );
+    await saveGroup(dataDir, workspaceId, group);
+
+    const fake = fakeHost();
+    const service = await createSyncService({ dataDir, workspaceId, webSocket: () => fake.socket });
+    const connected = service.connect("ws://127.0.0.1:8787/sync");
+    fake.open();
+    await connected;
+
+    const link = await service.createInvite("editor");
+    expect(link.startsWith("suite://join?")).toBe(true);
+    expect(fake.sent.some((message) => message.type === "invite")).toBe(true);
+  });
+
+  it("refuses to write an invitation while it is not connected", async () => {
+    const service = await createSyncService({ dataDir: await folder(), workspaceId });
+    await expect(service.createInvite("editor")).rejects.toThrow();
+  });
+
+  it("asks to join, and says it is waiting", async () => {
+    const dataDir = await folder();
+    const fake = fakeHost();
+    const service = await createSyncService({
+      dataDir,
+      workspaceId,
+      deviceName: "the desktop",
+      webSocket: () => fake.socket,
+    });
+
+    const joining = service.join(
+      `suite://join?h=ws%3A%2F%2F127.0.0.1%3A8787%2Fsync&w=${workspaceId}&i=${"b".repeat(64)}`,
+    );
+    fake.open();
+    await joining;
+
+    expect(service.status()).toEqual({ state: "waiting" });
+    const keyPackage = fake.sent.find((message) => message.type === "keypackage");
+    expect(keyPackage).toMatchObject({ deviceId: expect.any(String), name: "the desktop" });
+  });
+
+  it("says why a link is no good instead of failing quietly", async () => {
+    const service = await createSyncService({ dataDir: await folder(), workspaceId });
+    await service.join("not a link");
+    expect(service.status()).toMatchObject({ state: "refused" });
+  });
+
+  it("lets a device in when it asks, and gives it a role", async () => {
+    const dataDir = await folder();
+    const ownerIdentity = await createDeviceIdentity("this-laptop");
+    await saveGroup(dataDir, workspaceId, await createWorkspaceGroup(workspaceId, ownerIdentity));
+
+    const fake = fakeHost();
+    const service = await createSyncService({ dataDir, workspaceId, webSocket: () => fake.socket });
+    const connected = service.connect("ws://127.0.0.1:8787/sync");
+    fake.open();
+    await connected;
+    await service.createInvite("editor");
+    fake.sent.length = 0;
+
+    let asked = 0;
+    service.onJoinedByAnother(() => {
+      asked += 1;
+    });
+
+    // A device that wants in, and the key package it is allowed to send.
+    const asking = await createDeviceIdentity("the desktop");
+    fake.host({
+      type: "frame",
+      index: 0,
+      frame: {
+        kind: "keypackage",
+        workspaceId,
+        deviceId: "c".repeat(64),
+        epoch: 0,
+        payload: encodeBase64(encodeKeyPackageBytes(asking.keyPackage)),
+        signature: "signed",
+        receivedAt: "2026-11-06T12:00:00.000Z",
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const kinds = fake.sent.map(
+      (message) => (message.frame as { kind?: string } | undefined)?.kind,
+    );
+    expect(kinds).toContain("commit");
+    expect(kinds).toContain("welcome");
+    expect(fake.sent.some((message) => message.type === "role")).toBe(true);
+    // And the app was asked for a snapshot, because a new device cannot read the past.
+    expect(asked).toBe(1);
   });
 });

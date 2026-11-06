@@ -36,8 +36,11 @@ interface SyncBridge {
   syncDisable(): Promise<unknown>;
   syncStatus(): Promise<unknown>;
   syncPublish(update: number[]): Promise<unknown>;
+  syncInvite(role: "editor" | "viewer"): Promise<string | null>;
+  syncJoin(link: string): Promise<unknown>;
   onSyncIncoming(listener: (update: number[]) => void): void;
   onSyncChanged(listener: (info: { status: { state: string } }) => void): void;
+  onSyncSnapshotWanted(listener: () => void): void;
 }
 
 function syncBridge(): SyncBridge | null {
@@ -103,6 +106,10 @@ interface CanvasState {
   enableSync: (url: string) => Promise<void>;
   /** Stop syncing. The local document is untouched. */
   disableSync: () => Promise<void>;
+  /** Hand back a link to give someone. Null when sync is not on. */
+  inviteSomeone: (role: "editor" | "viewer") => Promise<string | null>;
+  /** Join from a link somebody shared. */
+  joinWorkspace: (link: string) => Promise<void>;
   /**
    * Persist locally and wait until the room has the latest local version.
    * Publishes call this so the server never reads a draft the transport has
@@ -134,6 +141,12 @@ export const useCanvasStore = create<CanvasState>((set) => {
     // Local commits only: an import would otherwise echo straight back to the host.
     doc.subscribeLocalUpdates((update) => {
       void sync.syncPublish(Array.from(update));
+    });
+
+    // Somebody was just let in. They cannot read anything sealed before they joined, so the
+    // only way they see this workspace is a copy of it handed over now.
+    sync.onSyncSnapshotWanted(() => {
+      void sync.syncPublish(Array.from(doc.export({ mode: "snapshot" })));
     });
   }
 
@@ -174,6 +187,10 @@ export const useCanvasStore = create<CanvasState>((set) => {
     enableSync: async (url) => {
       set({ status: "connecting" });
       await sync?.syncEnable(url);
+    },
+    inviteSomeone: async (role) => (await sync?.syncInvite(role)) ?? null,
+    joinWorkspace: async (link) => {
+      await sync?.syncJoin(link);
     },
     disableSync: async () => {
       await sync?.syncDisable();

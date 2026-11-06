@@ -1,16 +1,27 @@
 import {
+  addDevice,
+  createDeviceIdentity,
   createRelayClient,
   decodeBase64,
+  decodeKeyPackageBytes,
   encodeBase64,
+  encodeKeyPackageBytes,
   exportKey,
   type Frame,
+  formatInvite,
+  type InviteRecord,
+  inviteRecordPayload,
+  joinWorkspaceGroup,
   open,
+  parseInvite,
   type RelayClient,
   type RelayClientHandlers,
   type RelayWebSocketFactory,
+  roleRecordPayload,
   seal,
   signFrame,
 } from "@suite/sync";
+import type { SyncState } from "../../shared/ipc.js";
 import { loadGroup, saveGroup } from "./groupStore.js";
 import { type DeviceIdentity, loadOrCreateIdentity } from "./identity.js";
 
@@ -25,18 +36,20 @@ import { type DeviceIdentity, loadOrCreateIdentity } from "./identity.js";
  * the whole thing can be tested without a window.
  */
 
-export type SyncStatus =
-  | { readonly state: "off" }
-  | { readonly state: "connecting" }
-  /** Connected and caught up. `count` is how many frames the host had for us. */
-  | { readonly state: "syncing"; readonly count: number }
-  | { readonly state: "asleep"; readonly reason: string }
-  | { readonly state: "refused"; readonly reason: string };
+/**
+ * What this service is doing.
+ *
+ * The same shape the renderer receives, defined once in `shared/ipc.ts`: two unions that
+ * describe one thing drift the first time either gains a state.
+ */
+export type SyncStatus = SyncState;
 
 export interface SyncServiceOptions {
   readonly dataDir: string;
   readonly workspaceId: string;
   readonly webSocket?: RelayWebSocketFactory;
+  /** What this device is called on the other person's screen. */
+  readonly deviceName?: string;
 }
 
 export interface SyncService {
@@ -48,6 +61,17 @@ export interface SyncService {
   identity(): Promise<Pick<DeviceIdentity, "deviceId" | "publicKey">>;
   /** Seal a document update from the renderer and send it. */
   publish(update: Uint8Array): Promise<void>;
+  /** Write an invitation and hand back the link to give someone. */
+  createInvite(role: "editor" | "viewer"): Promise<string>;
+  /** Ask to join from a link somebody shared. Resolves once this device is in. */
+  join(link: string): Promise<SyncStatus>;
+  /**
+   * Somebody was let in, so the app should hand over what the workspace already contains.
+   *
+   * A device that joins cannot read anything sealed before it joined, so without this it
+   * joins an empty board and starts a second one.
+   */
+  onJoinedByAnother(handler: () => void): void;
   /** Hand out document updates from other devices. */
   onUpdate(handler: (update: Uint8Array) => void): void;
   onStatus(handler: (status: SyncStatus) => void): void;
@@ -60,6 +84,13 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
   let status: SyncStatus = { state: "off" };
   let updateHandler: ((update: Uint8Array) => void) | null = null;
   let statusHandler: ((status: SyncStatus) => void) | null = null;
+  let joinedHandler: (() => void) | null = null;
+  /** The address written into a link, remembered from the last connection. */
+  let hostUrl: string | null = null;
+  /** The role each invitation grants, so letting somebody in knows what to write. */
+  const inviteRoles = new Map<string, "editor" | "viewer">();
+  /** A join in flight: the identity whose key package is waiting for a welcome. */
+  let pending: { identity: Awaited<ReturnType<typeof createDeviceIdentity>> } | null = null;
   /** How many frames this device has taken from the host, for a catch-up request. */
   let received = 0;
 
@@ -84,15 +115,100 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
     onClosed: () => publishStatus({ state: "asleep", reason: "the host is not answering" }),
   };
 
+  /**
+   * Somebody asked to join, so let them in.
+   *
+   * The invitation already decided who and in what role, and the host has spent it by the
+   * time this frame arrives. Asking the owner to confirm the same decision twice is how a
+   * prompt becomes something people click past.
+   */
+  async function admitDevice(frame: Frame): Promise<void> {
+    if (group === null || relay === null) return;
+
+    const payload = decodeBase64(frame.payload);
+    if (payload === null) return;
+
+    const added = await addDevice(group, decodeKeyPackageBytes(payload));
+    group = added.group;
+    await saveGroup(options.dataDir, options.workspaceId, group);
+
+    relay.send(
+      signFrame(identity.sign, {
+        kind: "commit",
+        workspaceId: options.workspaceId,
+        deviceId: identity.deviceId,
+        epoch: added.group.epoch,
+        payload: encodeBase64(added.commit),
+      }),
+    );
+    relay.send(
+      signFrame(identity.sign, {
+        kind: "welcome",
+        workspaceId: options.workspaceId,
+        deviceId: identity.deviceId,
+        epoch: added.group.epoch,
+        payload: encodeBase64(added.welcome),
+      }),
+    );
+
+    // The role the invitation granted. Without it the device is in the group but may not
+    // write, which reads as a broken workspace rather than a missing step.
+    const role = firstInviteRole();
+    const unsigned = {
+      workspaceId: options.workspaceId,
+      deviceId: frame.deviceId,
+      role,
+      seq: 0,
+      signerId: identity.deviceId,
+    };
+    relay.setRole({ ...unsigned, signature: identity.sign(roleRecordPayload(unsigned)) });
+
+    // Now the document itself: the app hands over a snapshot, which is what a device that
+    // cannot read anything from before it joined actually needs.
+    joinedHandler?.();
+  }
+
+  /** The role of the oldest invitation this device wrote, and forget it. */
+  function firstInviteRole(): "editor" | "viewer" {
+    for (const [inviteId, role] of inviteRoles) {
+      inviteRoles.delete(inviteId);
+      return role;
+    }
+    return "editor";
+  }
+
+  /** This device was let in, so take the welcome and become part of the group. */
+  async function acceptWelcome(frame: Frame): Promise<void> {
+    if (pending === null) return;
+    const payload = decodeBase64(frame.payload);
+    if (payload === null) return;
+
+    try {
+      group = await joinWorkspaceGroup(payload, pending.identity);
+      pending = null;
+      await saveGroup(options.dataDir, options.workspaceId, group);
+      publishStatus({ state: "syncing", count: received });
+    } catch {
+      publishStatus({ state: "refused", reason: "That invitation could not be used." });
+    }
+  }
+
   async function applyFrame(frame: Frame): Promise<void> {
     // A frame for an epoch this device has left is not late, it is irrelevant; MLS would
     // quietly decrypt it as an old application message rather than refuse it.
     if (group === null || frame.epoch < group.epoch) return;
 
-    if (frame.kind !== "application") {
-      // Handshake frames land in M5b, where an invite produces one.
+    if (frame.kind === "keypackage") {
+      await admitDevice(frame);
       return;
     }
+
+    if (frame.kind === "welcome") {
+      await acceptWelcome(frame);
+      return;
+    }
+
+    if (frame.kind !== "application") return;
 
     const payload = decodeBase64(frame.payload);
     if (payload === null) return;
@@ -109,30 +225,34 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
     }
   }
 
+  async function connectTo(url: string): Promise<SyncStatus> {
+    if (relay !== null) return status;
+    publishStatus({ state: "connecting" });
+    hostUrl = url;
+    try {
+      relay = await createRelayClient(
+        {
+          url,
+          workspaceId: options.workspaceId,
+          deviceId: identity.deviceId,
+          publicKey: identity.publicKey,
+          name: options.deviceName ?? "a Suite app",
+          sign: identity.sign,
+          ...(options.webSocket === undefined ? {} : { webSocket: options.webSocket }),
+        },
+        handlers,
+      );
+    } catch (error) {
+      publishStatus({
+        state: "asleep",
+        reason: error instanceof Error ? error.message : "the host is not answering",
+      });
+    }
+    return status;
+  }
+
   return {
-    async connect(url) {
-      if (relay !== null) return status;
-      publishStatus({ state: "connecting" });
-      try {
-        relay = await createRelayClient(
-          {
-            url,
-            workspaceId: options.workspaceId,
-            deviceId: identity.deviceId,
-            publicKey: identity.publicKey,
-            sign: identity.sign,
-            ...(options.webSocket === undefined ? {} : { webSocket: options.webSocket }),
-          },
-          handlers,
-        );
-      } catch (error) {
-        publishStatus({
-          state: "asleep",
-          reason: error instanceof Error ? error.message : "the host is not answering",
-        });
-      }
-      return status;
-    },
+    connect: connectTo,
 
     async disconnect() {
       relay?.close();
@@ -143,6 +263,76 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
     status: () => status,
 
     identity: async () => ({ deviceId: identity.deviceId, publicKey: identity.publicKey }),
+
+    /**
+     * Write an invitation and hand back the link to give someone.
+     *
+     * The role is decided here, by the person inviting, and travels inside the signed record
+     * — so letting somebody in later does not ask the same question twice.
+     */
+    async createInvite(role) {
+      if (relay === null || hostUrl === null) throw new Error("Sync is not connected.");
+      const inviteId = randomInviteId();
+      const unsigned = {
+        workspaceId: options.workspaceId,
+        inviteId,
+        role,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        signerId: identity.deviceId,
+      };
+      const record: InviteRecord = {
+        ...unsigned,
+        signature: identity.sign(inviteRecordPayload(unsigned)),
+      };
+      inviteRoles.set(inviteId, role);
+      relay.sendInvite(record);
+      return formatInvite({ host: hostUrl, workspaceId: options.workspaceId, inviteId });
+    },
+
+    /**
+     * Ask to join from a link somebody shared.
+     *
+     * The identity behind the request has to be held until the welcome comes back — it is the
+     * only thing that can open it — so it lives in `pending` rather than being made and
+     * dropped.
+     */
+    async join(link) {
+      const parsed = parseInvite(link);
+      if (!parsed.ok) {
+        publishStatus({ state: "refused", reason: parsed.reason });
+        return status;
+      }
+      if (parsed.value.workspaceId !== options.workspaceId) {
+        publishStatus({ state: "refused", reason: "That invitation is for another workspace." });
+        return status;
+      }
+
+      await connectTo(parsed.value.host);
+      if (relay === null) return status;
+
+      pending = { identity: await createDeviceIdentity(options.deviceName ?? "a Suite app") };
+      const name = options.deviceName ?? "a Suite app";
+      const header = {
+        kind: "keypackage" as const,
+        workspaceId: options.workspaceId,
+        deviceId: identity.deviceId,
+        epoch: 0,
+        payload: encodeBase64(encodeKeyPackageBytes(pending.identity.keyPackage)),
+      };
+      relay.sendKeyPackage({
+        inviteId: parsed.value.inviteId,
+        deviceId: identity.deviceId,
+        publicKey: identity.publicKey,
+        name,
+        frame: signFrame(identity.sign, header),
+      });
+      publishStatus({ state: "waiting" });
+      return status;
+    },
+
+    onJoinedByAnother(handler) {
+      joinedHandler = handler;
+    },
 
     async publish(update) {
       if (relay === null || group === null) return;
@@ -180,4 +370,13 @@ export async function workspaceKey(
   if (group === null) return null;
   void service;
   return exportKey(group, "suite/workspace-key", workspaceId);
+}
+
+/** An invite id is 32 random bytes, written the way every other id in the protocol is. */
+function randomInviteId(): string {
+  const bytes = new Uint8Array(32);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Math.floor(Math.random() * 256);
+  }
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

@@ -56,6 +56,10 @@ export function registerSyncIpc(options: SyncIpcOptions): SyncIpc {
       options.webContents()?.send(IPC.syncIncoming, Array.from(update));
     });
     service.onStatus(announce);
+    // Somebody was let in: the page owns the document, so it has to hand over a copy.
+    service.onJoinedByAnother(() => {
+      options.webContents()?.send(IPC.syncSnapshotWanted);
+    });
     return service;
   }
 
@@ -75,6 +79,24 @@ export function registerSyncIpc(options: SyncIpcOptions): SyncIpc {
   options.onIpc(IPC.syncDisable, async () => {
     await service?.disconnect();
     return info({ state: "off" });
+  });
+
+  options.onIpc(IPC.syncInvite, async (_event, role: unknown) => {
+    const current = await ensureService();
+    if (current === null) return null;
+    const chosen = role === "viewer" ? "viewer" : "editor";
+    try {
+      return await current.createInvite(chosen);
+    } catch {
+      return null;
+    }
+  });
+
+  options.onIpc(IPC.syncJoin, async (_event, link: unknown) => {
+    if (typeof link !== "string") return info({ state: "off" });
+    const current = await ensureService();
+    if (current === null) return info({ state: "off" });
+    return info(await current.join(link));
   });
 
   options.onIpc(IPC.syncPublish, async (_event, update: unknown) => {

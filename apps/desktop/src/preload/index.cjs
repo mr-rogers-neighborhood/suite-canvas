@@ -29,6 +29,9 @@ const CHANNELS = {
   syncPublish: "suite:sync:publish",
   syncIncoming: "suite:sync:incoming",
   syncChanged: "suite:sync:changed",
+  syncInvite: "suite:sync:invite",
+  syncJoin: "suite:sync:join",
+  syncSnapshotWanted: "suite:sync:snapshot-wanted",
 };
 
 contextBridge.exposeInMainWorld("suiteDesktop", {
@@ -58,5 +61,10 @@ contextBridge.exposeInMainWorld("suiteDesktop", {
   },
   onSyncChanged: (listener) => {
     ipcRenderer.on(CHANNELS.syncChanged, (_event, info) => listener(info));
+  },
+  syncInvite: (role) => ipcRenderer.invoke(CHANNELS.syncInvite, role),
+  syncJoin: (link) => ipcRenderer.invoke(CHANNELS.syncJoin, link),
+  onSyncSnapshotWanted: (listener) => {
+    ipcRenderer.on(CHANNELS.syncSnapshotWanted, () => listener());
   },
 });

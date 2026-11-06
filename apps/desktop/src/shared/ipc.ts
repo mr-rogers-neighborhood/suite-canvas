@@ -34,6 +34,17 @@ export const IPC = {
   syncIncoming: "suite:sync:incoming",
   /** Pushed when the status changes, so the status line redraws. */
   syncChanged: "suite:sync:changed",
+  /** Write an invitation and return the link to give someone. */
+  syncInvite: "suite:sync:invite",
+  /** Join from a link somebody shared. */
+  syncJoin: "suite:sync:join",
+  /**
+   * Pushed when somebody has been let in, so the page hands over a snapshot.
+   *
+   * A device that joins cannot read anything sealed before it joined, so the only way it can
+   * see the workspace is if somebody gives it a copy at the epoch it joined in.
+   */
+  syncSnapshotWanted: "suite:sync:snapshot-wanted",
   /** Files this machine opened, newest first. */
   recentFiles: "suite:document:recents",
   /** Drop one entry from that list. */
@@ -49,7 +60,9 @@ export type SyncState =
   | { readonly state: "connecting" }
   | { readonly state: "syncing"; readonly count: number }
   | { readonly state: "asleep"; readonly reason: string }
-  | { readonly state: "refused"; readonly reason: string };
+  | { readonly state: "refused"; readonly reason: string }
+  /** An invitation has been used and this device is waiting to be let in. */
+  | { readonly state: "waiting" };
 
 /** Everything the renderer needs to draw a status line, and nothing else. */
 export interface SyncInfo {

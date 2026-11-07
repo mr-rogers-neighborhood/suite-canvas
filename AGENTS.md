@@ -11,34 +11,34 @@ Read [docs/README.md](docs/README.md) for the four documentation sections, and
 - pnpm workspaces and Turborepo.
 - Canvas: React 19, Vite, TypeScript, Tailwind CSS v4, Zustand for UI state, React Flow
   (`@xyflow/react`), Tiptap 3 for every card.
-- Document: Loro CRDT, IndexedDB snapshot and update log, `loro-websocket` for sync.
+- Document: Loro CRDT with an IndexedDB snapshot and update log; sync over the suite's own protocol,
+  carried by a host one device runs.
 - Graph: `@suite/graph` with Zod schemas over a typed `WorkspaceDocument`.
-- Docs and marketing: Astro in `apps/docs` (Fumadocs) and `apps/site`. The app is a Vite SPA
-  served at `app.suite.run`; neither Astro project hosts it.
+- The app is a Vite SPA loaded by the Electron shell over its own protocol. There is no hosted
+  build.
 - Quality: Biome, Vitest and React Testing Library, Playwright, Storybook, commitlint.
 
 ## Repo map
 
 | Path | Purpose |
 | --- | --- |
-| `apps/canvas` | The canvas app: launcher, boards, cards, editor, library, panels, collab provider, Zustand store |
-| `apps/collab-server` | Loro WebSocket relay, six SQLite stores, projection worker, attachments |
-| `apps/control-plane` | Control plane: Postgres, accounts, operator admin, billing and feedback modules |
-| `apps/docs` | The documentation site |
+| `apps/canvas` | The canvas itself: launcher, boards, cards, editor, library, panels, collab provider, Zustand store |
+| `apps/desktop` | The Electron shell — the window, the `suite.app.json` a hub discovers, and the updater |
 | `packages/graph` | `@suite/graph`: schema, types, typed Loro layer, workspace file and portable export |
-| `services/auth` | Accounts, organizations, invitations, licensing. Built and tested, not mounted |
-| `services/billing` | Licence and Stripe webhook verification, run with `node --test` |
 | `e2e` | Playwright specs, tagged `@smoke` for the smoke tier |
 | `docs` | Developer documentation: tutorials, how-to, reference and explanation |
-| `handbook` | The user handbook: one Markdown article per interface element and system, shown in the app and on the docs site |
-| `deploy` | Caddyfile, headers, backup and restore scripts, drill records |
-| `scripts` | `docs-check`, `generate-limits`, `scratchpad`, `db-verify` |
+| `handbook` | The user handbook: one Markdown article per interface element and system, shown in the app |
+| `scripts` | `docs-check`, `docs-symbols`, `check-shape` and the release helpers |
+
+The relay, control plane, hosted site and the account/billing services are **gone**, not moved: sync
+now runs through a host that a device in the workspace runs itself (see `suite-sync`), and the apps are
+distributed as signed AppImages that Suite Start installs and updates.
 
 ## Commands
 
 ```sh
 pnpm install          # also installs the git hooks
-pnpm dev              # canvas on :5173, relay on :1234
+pnpm dev              # the canvas in a browser, on :5173
 pnpm check            # the edit loop: biome, tsc, changed Vitest files, billing tests, docs symbols, shape
 pnpm lint             # biome check
 pnpm typecheck        # tsc across the workspace
@@ -51,7 +51,6 @@ pnpm build            # graph dist, then the canvas bundle
 pnpm storybook        # component workshop on :6006
 pnpm e2e:smoke        # the @smoke Playwright specs
 pnpm e2e:canvas       # boot, boards, cards, links, selection, input, library, appearance
-pnpm e2e:collab       # collab, sharing, account
 pnpm e2e:views        # views
 pnpm e2e              # every Playwright spec
 pnpm e2e:doctor       # report processes holding the e2e ports

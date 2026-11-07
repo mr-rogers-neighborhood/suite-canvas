@@ -55,10 +55,39 @@ export interface UpdateCheckResult {
   readonly verified: boolean;
 }
 
+/**
+ * The hub that started this app, when one did.
+ *
+ * Start installs, verifies and replaces an app it placed, so an app it launched leaves
+ * its own updating alone: two processes entitled to write the same file is the race the
+ * hub exists to prevent. A copy run from a folder carries no such variable and keeps its
+ * own updater, which is the promise the release notes make.
+ */
+const MANAGED_BY_ENV = "SUITE_MANAGED_BY";
+
+function startManagesUpdates(): boolean {
+  return process.env[MANAGED_BY_ENV] === "start";
+}
+
 /** Ask the feed once, write the report, and say what happened. */
 export async function checkForUpdates(options: UpdateCheckOptions): Promise<UpdateCheckResult> {
   const now = options.now ?? (() => new Date());
   const platform = options.platform ?? process.platform;
+
+  if (startManagesUpdates()) {
+    // A report is still written, so the hub reads "not checked" rather than an answer
+    // from weeks ago. `suite.update-state` is strict, so "not checked" is said the only
+    // way it can be: no time, no version offered. Why is in the app's own log.
+    const skipped: SuiteUpdateState = {
+      format: "suite.update-state",
+      version: options.version,
+      available: null,
+      checkedAt: null,
+      channel: options.channel,
+    };
+    await writeReport(options.dataDir, skipped);
+    return { state: skipped, error: null, verified: false };
+  }
   const feed = options.feed ?? (await recordedFeed(options));
 
   if (feed === null) {

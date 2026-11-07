@@ -94,3 +94,60 @@ describe("checkForUpdates", () => {
     expect(fake.autoDownload).toBe(true);
   });
 });
+
+describe("a launch the hub performed", () => {
+  const saved = process.env.SUITE_MANAGED_BY;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.SUITE_MANAGED_BY;
+    else process.env.SUITE_MANAGED_BY = saved;
+  });
+
+  it("leaves updating to the hub, and asks no feed", async () => {
+    // Two processes writing one binary is the race the hub exists to prevent.
+    process.env.SUITE_MANAGED_BY = "start";
+    const dataDir = await folder();
+    let asked = false;
+    const updater: UpdaterLike = {
+      autoDownload: true,
+      checkForUpdates: async () => {
+        asked = true;
+        return null;
+      },
+    };
+
+    const result = await checkForUpdates({
+      dataDir,
+      version: "0.1.0",
+      channel: "alpha",
+      packaged: true,
+      feed: FEED,
+      updater,
+      now,
+      fetch: (async () => {
+        asked = true;
+        return { ok: false, status: 404, text: async () => "" };
+      }) as unknown as typeof fetch,
+    });
+
+    expect(asked).toBe(false);
+    expect(result.error).toBeNull();
+    expect(result.verified).toBe(false);
+  });
+
+  it('still writes a report, so the hub reads "not checked" rather than a stale answer', async () => {
+    process.env.SUITE_MANAGED_BY = "start";
+    const dataDir = await folder();
+
+    await checkForUpdates({
+      dataDir,
+      version: "0.1.0",
+      channel: "alpha",
+      packaged: true,
+      feed: FEED,
+      now,
+    });
+
+    const written = JSON.parse(await readFile(join(dataDir, "update-state.json"), "utf8"));
+    expect(written).toMatchObject({ version: "0.1.0", available: null, checkedAt: null });
+  });
+});

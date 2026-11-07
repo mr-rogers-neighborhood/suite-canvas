@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isTrustedSender } from "@suite/desktop";
@@ -498,6 +499,9 @@ if (!gotLock) {
       dataDir: paths.data,
       currentWorkspaceId: () => store?.documentInfo.workspaceId ?? null,
       webContents: () => mainWindow?.webContents ?? null,
+      // What the other person's screen calls this device. "Canvas on harbour-laptop" is a
+      // thing somebody can weigh when deciding whether to let it in; a fingerprint is not.
+      deviceName: `Canvas on ${hostname()}`,
       onIpc,
     });
 

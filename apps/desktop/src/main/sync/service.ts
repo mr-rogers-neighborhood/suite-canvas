@@ -2,6 +2,7 @@ import {
   addDevice,
   createDeviceIdentity,
   createRelayClient,
+  createWorkspaceGroup,
   decodeBase64,
   decodeKeyPackageBytes,
   encodeBase64,
@@ -12,18 +13,21 @@ import {
   type InviteRecord,
   inviteRecordPayload,
   joinWorkspaceGroup,
+  type MemberRole,
   open,
   parseInvite,
   type RelayClient,
   type RelayClientHandlers,
+  type RelayMember,
   type RelayWebSocketFactory,
   roleRecordPayload,
   seal,
   signFrame,
 } from "@suite/sync";
 import type { SyncState } from "../../shared/ipc.js";
-import { loadGroup, saveGroup } from "./groupStore.js";
+import { isOwned, loadGroup, markOwned, saveGroup } from "./groupStore.js";
 import { type DeviceIdentity, loadOrCreateIdentity } from "./identity.js";
+import { clearPending, loadPending, type PendingJoin, savePending } from "./pendingStore.js";
 
 /**
  * One workspace's sync, owned by the main process.
@@ -66,6 +70,14 @@ export interface SyncService {
   /** Ask to join from a link somebody shared. Resolves once this device is in. */
   join(link: string): Promise<SyncStatus>;
   /**
+   * Pick up a join that was still waiting when the app closed.
+   *
+   * Does nothing when there is nothing to wait for, so a launch can call it unconditionally.
+   */
+  resume(): Promise<SyncStatus>;
+  /** Who is in this workspace and what each of them may do, as the host last said. */
+  members(): readonly RelayMember[];
+  /**
    * Somebody was let in, so the app should hand over what the workspace already contains.
    *
    * A device that joins cannot read anything sealed before it joined, so without this it
@@ -79,6 +91,8 @@ export interface SyncService {
 
 export async function createSyncService(options: SyncServiceOptions): Promise<SyncService> {
   const identity = await loadOrCreateIdentity(options.dataDir);
+  /** What the other person's screen calls this device. */
+  const deviceName = options.deviceName ?? "a Suite app";
   let group = await loadGroup(options.dataDir, options.workspaceId);
   let relay: RelayClient | null = null;
   let status: SyncStatus = { state: "off" };
@@ -87,10 +101,18 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
   let joinedHandler: (() => void) | null = null;
   /** The address written into a link, remembered from the last connection. */
   let hostUrl: string | null = null;
-  /** The role each invitation grants, so letting somebody in knows what to write. */
-  const inviteRoles = new Map<string, "editor" | "viewer">();
+  /** Who the host says is here, refreshed on every join and on every change to a role. */
+  let members: readonly RelayMember[] = [];
+  /**
+   * A device that asked to be let in, and the role its invitation promised.
+   *
+   * The host announces this before it relays the key package, so letting the device in knows
+   * what record to write without asking the person a question their invitation already
+   * answered. An entry that is never used expires with the service.
+   */
+  const waitingRoles = new Map<string, MemberRole>();
   /** A join in flight: the identity whose key package is waiting for a welcome. */
-  let pending: { identity: Awaited<ReturnType<typeof createDeviceIdentity>> } | null = null;
+  let pending: PendingJoin | null = await loadPending(options.dataDir, options.workspaceId);
   /** How many frames this device has taken from the host, for a catch-up request. */
   let received = 0;
 
@@ -99,8 +121,34 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
     statusHandler?.(next);
   };
 
+  /** This device started this workspace's group, so it may own it if nobody does. */
+  let startedHere = await isOwned(options.dataDir, options.workspaceId);
+
+  /**
+   * Claim the workspace, but only when there is nobody to claim it from.
+   *
+   * The host allows exactly one bootstrap: a self-signed owner record while it has no owners.
+   * A device that was let into somebody else's workspace must never take that door, which is
+   * why the claim needs both the marker written when this device created the group and a host
+   * that has no owner on record.
+   */
+  function claimOwnership(): void {
+    if (relay === null || !startedHere) return;
+    if (members.some((member) => member.role === "owner")) return;
+    const unsigned = {
+      workspaceId: options.workspaceId,
+      deviceId: identity.deviceId,
+      role: "owner" as const,
+      seq: 0,
+      signerId: identity.deviceId,
+    };
+    relay.setRole({ ...unsigned, signature: identity.sign(roleRecordPayload(unsigned)) });
+  }
+
   const handlers: RelayClientHandlers = {
     onJoined: (info) => {
+      members = info.members;
+      claimOwnership();
       // Ask for what arrived while this device was closed. 0 means everything the host
       // still holds, which is the honest answer for a device that has never synced.
       relay?.since(received);
@@ -109,6 +157,12 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
     onFrame: (_index, frame) => {
       received += 1;
       void applyFrame(frame);
+    },
+    onWaiting: (waiting) => {
+      waitingRoles.set(waiting.deviceId, waiting.role);
+    },
+    onRoster: (roster) => {
+      members = roster.members;
     },
     onRefused: (reason) => publishStatus({ state: "refused", reason }),
     onError: (code, message) => publishStatus({ state: "asleep", reason: `${code}: ${message}` }),
@@ -122,7 +176,7 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
    * time this frame arrives. Asking the owner to confirm the same decision twice is how a
    * prompt becomes something people click past.
    */
-  async function admitDevice(frame: Frame): Promise<void> {
+  async function admitDevice(frame: Frame, role: MemberRole): Promise<void> {
     if (group === null || relay === null) return;
 
     const payload = decodeBase64(frame.payload);
@@ -153,7 +207,6 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
 
     // The role the invitation granted. Without it the device is in the group but may not
     // write, which reads as a broken workspace rather than a missing step.
-    const role = firstInviteRole();
     const unsigned = {
       workspaceId: options.workspaceId,
       deviceId: frame.deviceId,
@@ -168,15 +221,6 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
     joinedHandler?.();
   }
 
-  /** The role of the oldest invitation this device wrote, and forget it. */
-  function firstInviteRole(): "editor" | "viewer" {
-    for (const [inviteId, role] of inviteRoles) {
-      inviteRoles.delete(inviteId);
-      return role;
-    }
-    return "editor";
-  }
-
   /** This device was let in, so take the welcome and become part of the group. */
   async function acceptWelcome(frame: Frame): Promise<void> {
     if (pending === null) return;
@@ -186,6 +230,7 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
     try {
       group = await joinWorkspaceGroup(payload, pending.identity);
       pending = null;
+      await clearPending(options.dataDir, options.workspaceId);
       await saveGroup(options.dataDir, options.workspaceId, group);
       publishStatus({ state: "syncing", count: received });
     } catch {
@@ -194,17 +239,25 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
   }
 
   async function applyFrame(frame: Frame): Promise<void> {
+    // A welcome is the one frame a device with no group is waiting for, so it is handled
+    // before any of the epoch reasoning below — the joiner has no epoch to compare against.
+    if (frame.kind === "welcome") {
+      await acceptWelcome(frame);
+      return;
+    }
+
     // A frame for an epoch this device has left is not late, it is irrelevant; MLS would
     // quietly decrypt it as an old application message rather than refuse it.
     if (group === null || frame.epoch < group.epoch) return;
 
     if (frame.kind === "keypackage") {
-      await admitDevice(frame);
-      return;
-    }
-
-    if (frame.kind === "welcome") {
-      await acceptWelcome(frame);
+      // Only a device the host has just announced, and only once. A key package replayed from
+      // the log on connect is a device that is already a member, so adding it again would put
+      // a second copy in the tree and a second join on everyone's screen.
+      const role = waitingRoles.get(frame.deviceId);
+      if (role === undefined) return;
+      waitingRoles.delete(frame.deviceId);
+      await admitDevice(frame, role);
       return;
     }
 
@@ -225,6 +278,27 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
     }
   }
 
+  /**
+   * Turn sync on for this workspace.
+   *
+   * Sharing a workspace that has never been shared is where its group is made: one member,
+   * this device, in the first epoch. Joining somebody else's does not come through here —
+   * that group arrives inside the welcome — so this is the only place a group is created, and
+   * creating it is also what makes this device the workspace's owner.
+   */
+  async function share(url: string): Promise<SyncStatus> {
+    if (group === null) {
+      group = await createWorkspaceGroup(
+        options.workspaceId,
+        await createDeviceIdentity(deviceName),
+      );
+      await saveGroup(options.dataDir, options.workspaceId, group);
+      await markOwned(options.dataDir, options.workspaceId);
+      startedHere = true;
+    }
+    return connectTo(url);
+  }
+
   async function connectTo(url: string): Promise<SyncStatus> {
     if (relay !== null) return status;
     publishStatus({ state: "connecting" });
@@ -236,7 +310,7 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
           workspaceId: options.workspaceId,
           deviceId: identity.deviceId,
           publicKey: identity.publicKey,
-          name: options.deviceName ?? "a Suite app",
+          name: deviceName,
           sign: identity.sign,
           ...(options.webSocket === undefined ? {} : { webSocket: options.webSocket }),
         },
@@ -252,7 +326,7 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
   }
 
   return {
-    connect: connectTo,
+    connect: share,
 
     async disconnect() {
       relay?.close();
@@ -263,6 +337,8 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
     status: () => status,
 
     identity: async () => ({ deviceId: identity.deviceId, publicKey: identity.publicKey }),
+
+    members: () => members,
 
     /**
      * Write an invitation and hand back the link to give someone.
@@ -284,17 +360,33 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
         ...unsigned,
         signature: identity.sign(inviteRecordPayload(unsigned)),
       };
-      inviteRoles.set(inviteId, role);
       relay.sendInvite(record);
       return formatInvite({ host: hostUrl, workspaceId: options.workspaceId, inviteId });
+    },
+
+    /**
+     * Pick up a join that was still waiting when the app closed.
+     *
+     * The key package is already on the host and the invitation it spent is already gone, so
+     * there is nothing to send: this reconnects where the device asked and waits for the
+     * welcome that follows. A launch calls it without knowing whether there is anything to
+     * resume.
+     */
+    async resume() {
+      if (pending === null || relay !== null) return status;
+      await connectTo(pending.host);
+      if (relay === null) return status;
+      publishStatus({ state: "waiting" });
+      return status;
     },
 
     /**
      * Ask to join from a link somebody shared.
      *
      * The identity behind the request has to be held until the welcome comes back — it is the
-     * only thing that can open it — so it lives in `pending` rather than being made and
-     * dropped.
+     * only thing that can open it — so it goes on disk the moment it is made. An invitation is
+     * spent when the host stores this key package, so quitting between here and the welcome
+     * would otherwise leave the other person adding a device that never appears.
      */
     async join(link) {
       const parsed = parseInvite(link);
@@ -310,20 +402,21 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
       await connectTo(parsed.value.host);
       if (relay === null) return status;
 
-      pending = { identity: await createDeviceIdentity(options.deviceName ?? "a Suite app") };
-      const name = options.deviceName ?? "a Suite app";
+      const asked = await createDeviceIdentity(deviceName);
+      pending = { identity: asked, host: parsed.value.host };
+      await savePending(options.dataDir, options.workspaceId, asked, parsed.value.host);
       const header = {
         kind: "keypackage" as const,
         workspaceId: options.workspaceId,
         deviceId: identity.deviceId,
         epoch: 0,
-        payload: encodeBase64(encodeKeyPackageBytes(pending.identity.keyPackage)),
+        payload: encodeBase64(encodeKeyPackageBytes(asked.keyPackage)),
       };
       relay.sendKeyPackage({
         inviteId: parsed.value.inviteId,
         deviceId: identity.deviceId,
         publicKey: identity.publicKey,
-        name,
+        name: deviceName,
         frame: signFrame(identity.sign, header),
       });
       publishStatus({ state: "waiting" });

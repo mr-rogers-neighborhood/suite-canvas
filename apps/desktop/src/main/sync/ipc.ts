@@ -14,6 +14,8 @@ export interface SyncIpcOptions {
   readonly dataDir: string;
   readonly currentWorkspaceId: () => string | null;
   readonly webContents: () => WebContents | null;
+  /** What this device is called on the other person's screen. */
+  readonly deviceName: string;
   readonly onIpc: (
     channel: string,
     handler: (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown,
@@ -32,6 +34,7 @@ export function registerSyncIpc(options: SyncIpcOptions): SyncIpc {
     workspaceId,
     deviceId: service === null ? "" : deviceIdCache,
     status,
+    members: service === null ? [] : service.members(),
   });
 
   let deviceIdCache = "";
@@ -47,7 +50,11 @@ export function registerSyncIpc(options: SyncIpcOptions): SyncIpc {
 
     await service?.disconnect();
     workspaceId = current;
-    service = await createSyncService({ dataDir: options.dataDir, workspaceId: current });
+    service = await createSyncService({
+      dataDir: options.dataDir,
+      workspaceId: current,
+      deviceName: options.deviceName,
+    });
     deviceIdCache = (await service.identity()).deviceId;
 
     service.onUpdate((update) => {
@@ -60,6 +67,9 @@ export function registerSyncIpc(options: SyncIpcOptions): SyncIpc {
     service.onJoinedByAnother(() => {
       options.webContents()?.send(IPC.syncSnapshotWanted);
     });
+    // A join that was still waiting when the app closed picks itself up here. Nothing is sent:
+    // the key package is already on the host, and the invitation it spent is already gone.
+    void service.resume();
     return service;
   }
 

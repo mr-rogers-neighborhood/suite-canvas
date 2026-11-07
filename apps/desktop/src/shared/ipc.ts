@@ -64,11 +64,26 @@ export type SyncState =
   /** An invitation has been used and this device is waiting to be let in. */
   | { readonly state: "waiting" };
 
+/** One device the workspace holds, as the host describes it. */
+export interface SyncMember {
+  readonly deviceId: string;
+  readonly name: string;
+  readonly role: "owner" | "editor" | "viewer";
+}
+
 /** Everything the renderer needs to draw a status line, and nothing else. */
 export interface SyncInfo {
   readonly workspaceId: string | null;
   readonly deviceId: string;
   readonly status: SyncState;
+  /**
+   * Who else is in this workspace and what each of them may do.
+   *
+   * Names and roles rather than a fingerprint: every question this raises for a person — hand
+   * the link on, let this one in, remove that one — is a question about which device, and a
+   * hex string cannot answer it.
+   */
+  readonly members: readonly SyncMember[];
 }
 
 export interface OpenDocumentInfo {

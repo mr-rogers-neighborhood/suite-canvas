@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   SUITE_UPDATE_STATE_FILE,
@@ -154,6 +154,10 @@ export function reportPath(dataDir: string): string {
 /** Write the report the hub reads. Failure is logged, never thrown: a report is a courtesy. */
 export async function writeReport(dataDir: string, state: SuiteUpdateState): Promise<void> {
   try {
+    // A first launch has no data directory yet. Writing the report is the point of a
+    // managed launch — it says "not checked" instead of leaving an old answer behind —
+    // so the directory is created rather than the report skipped.
+    await mkdir(dataDir, { recursive: true });
     await writeFile(reportPath(dataDir), `${JSON.stringify(state, null, 2)}\n`);
   } catch (error) {
     console.warn("[update] the report could not be written", error);

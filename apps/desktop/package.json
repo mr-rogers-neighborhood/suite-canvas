@@ -23,11 +23,11 @@
     "@suite/sync": "git+https://github.com/mr-rogers-neighborhood/suite-sync.git#v0.11.3&path:/packages/protocol"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "electron": "^45.2.2",
     "electron-builder": "^26.0.12",
     "typescript": "~5.9.3",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   },
   "author": {
     "name": "Suite contributors",

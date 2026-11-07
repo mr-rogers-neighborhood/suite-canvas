@@ -8,9 +8,9 @@ import { alphaNoticeSeen, rememberAlphaNotice } from "./alphaNotice";
 /**
  * What a reader should know before they start working, on the first visit.
  *
- * Three facts, in the order they matter to a new reader: what is rough, what money buys, and where
- * the work actually lives. The last one is the least obvious and the most expensive to discover
- * late, because a workspace here is a browser's copy until a plan puts it in an account.
+ * One fact, in the plainest words available: what "alpha" means here — that the tests pin down
+ * behaviour, not understanding, and that data should be exported rather than trusted. The notice
+ * used to sell plans as well; there is no account to sell from any more, so it does not.
  *
  * It appears on the launcher, and a dismissal stands for ten minutes (`alphaNotice.ts`): a reload
  * a moment later is not a reason to show it again, and a visit tomorrow is. The dismissal is
@@ -18,13 +18,11 @@ import { alphaNoticeSeen, rememberAlphaNotice } from "./alphaNotice";
  * machine even for the same person.
  */
 export interface AlphaNoticeProps {
-  /** Opens the plan surface. Absent when this build has no account service to sell from. */
-  onSeePlans?: (() => void) | undefined;
   /** For tests and stories, so the notice can render when storage says it was seen. */
   forceOpen?: boolean | undefined;
 }
 
-export function AlphaNotice({ onSeePlans, forceOpen = false }: AlphaNoticeProps) {
+export function AlphaNotice({ forceOpen = false }: AlphaNoticeProps) {
   const [dismissed, setDismissed] = useState(() => !forceOpen && alphaNoticeSeen());
   const panel = useRef<HTMLDivElement | null>(null);
 

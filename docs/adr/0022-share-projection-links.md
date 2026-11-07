@@ -1,6 +1,10 @@
 # ADR-0022: Share links are capabilities over live projection rooms
 
-- **Status:** accepted; portal and drawing projection scopes added in [ADR-0031](./0031-whiteboard-cards-and-loro-binding.md)
+- **Status:** **superseded** by the device-to-device model: sharing is an invite or a file, and sync
+  runs through a host a device in the workspace runs itself. See
+  `suite-sync/docs/decisions/0003-sharing.md` and `0005-blind-server.md`. Portal and drawing
+  projection scopes were added in [ADR-0031](./0031-whiteboard-cards-and-loro-binding.md) while this
+  record was current.
 - **Date:** 2026-10-23
 - **Related:** [ADR-0021](./0021-sharing-seam-deferred.md), [ADR-0031](./0031-whiteboard-cards-and-loro-binding.md), `docs/architecture.md`
 
@@ -104,3 +108,14 @@ workspace. `projectWorkspace` accepts it beside `board` and `card`; see
   conflict dialog; there is no automatic share-wins fallback. A body conflicts per block, and a
   body whose blocks cannot be aligned degrades to one whole-body conflict rather than an inferred
   merge — the merge never rewrites blocks the draft did not change.
+
+---
+
+## Superseded (2026-11-07)
+
+This record described share links as capabilities over **live projection rooms** served by a hosted
+process. That process does not exist: there is no hosted build, no relay operated by the project, and
+no account to hold a projection. Sharing is now one of two things — an invite into a workspace, or a
+file — and the traffic moves through a host one of the devices runs, encrypted so the host cannot read
+it. The reasoning below is kept as the record of what was decided then, not as a description of the
+code today.

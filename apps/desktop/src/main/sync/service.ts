@@ -78,6 +78,13 @@ export interface SyncService {
   /** Who is in this workspace and what each of them may do, as the host last said. */
   members(): readonly RelayMember[];
   /**
+   * The list of who is here changed.
+   *
+   * Separate from the status on purpose: a device joining does not change what sync is doing,
+   * but it does change who a person is looking at when they open the dialog.
+   */
+  onMembers(handler: () => void): void;
+  /**
    * Somebody was let in, so the app should hand over what the workspace already contains.
    *
    * A device that joins cannot read anything sealed before it joined, so without this it
@@ -99,6 +106,7 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
   let updateHandler: ((update: Uint8Array) => void) | null = null;
   let statusHandler: ((status: SyncStatus) => void) | null = null;
   let joinedHandler: (() => void) | null = null;
+  let membersHandler: (() => void) | null = null;
   /** The address written into a link, remembered from the last connection. */
   let hostUrl: string | null = null;
   /** Who the host says is here, refreshed on every join and on every change to a role. */
@@ -163,6 +171,7 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
     },
     onRoster: (roster) => {
       members = roster.members;
+      membersHandler?.();
     },
     onRefused: (reason) => publishStatus({ state: "refused", reason }),
     onError: (code, message) => publishStatus({ state: "asleep", reason: `${code}: ${message}` }),
@@ -425,6 +434,10 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
 
     onJoinedByAnother(handler) {
       joinedHandler = handler;
+    },
+
+    onMembers(handler) {
+      membersHandler = handler;
     },
 
     async publish(update) {

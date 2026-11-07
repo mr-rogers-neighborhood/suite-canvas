@@ -462,6 +462,37 @@ describe("inviting someone in", () => {
     expect(asked).toBe(1);
   });
 
+  it("hears the list of who is here change, not only who was here when it joined", async () => {
+    const dataDir = await folder();
+    await saveGroup(
+      dataDir,
+      workspaceId,
+      await createWorkspaceGroup(workspaceId, await createDeviceIdentity("this-laptop")),
+    );
+
+    const fake = fakeHost();
+    const service = await createSyncService({ dataDir, workspaceId, webSocket: () => fake.socket });
+    let announced = 0;
+    service.onMembers(() => {
+      announced += 1;
+    });
+    const connected = service.connect("ws://127.0.0.1:8787/sync");
+    fake.open();
+    await connected;
+
+    fake.host({
+      type: "roster",
+      members: [
+        { deviceId: "b".repeat(64), name: "this laptop", role: "owner" },
+        { deviceId: "c".repeat(64), name: "the desktop", role: "viewer" },
+      ],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(announced).toBe(1);
+    expect(service.members().map((member) => member.name)).toEqual(["this laptop", "the desktop"]);
+  });
+
   it("ignores a key package nobody announced, rather than adding the same device twice", async () => {
     const dataDir = await folder();
     const ownerIdentity = await createDeviceIdentity("this-laptop");

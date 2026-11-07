@@ -63,6 +63,9 @@ export function registerSyncIpc(options: SyncIpcOptions): SyncIpc {
       options.webContents()?.send(IPC.syncIncoming, Array.from(update));
     });
     service.onStatus(announce);
+    // A device arriving does not change what sync is doing, but it does change who a person
+    // sees when they open the dialog, so the list is pushed the same way the state is.
+    service.onMembers(() => announce(service?.status() ?? { state: "off" }));
     // Somebody was let in: the page owns the document, so it has to hand over a copy.
     service.onJoinedByAnother(() => {
       options.webContents()?.send(IPC.syncSnapshotWanted);

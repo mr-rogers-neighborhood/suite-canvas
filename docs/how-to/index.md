@@ -6,7 +6,7 @@ One task at a time: the steps for a job you already know you need to do.
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Release](release.md) | A release is a tag, a package and a note. Canvas is one app in a suite of four, and each ships its own version, because they release on their own sche… | 2026-11-06 |
+| [Release](release.md) | A release is a tag, a package and a note. Canvas is one app in a suite of four, and each ships its own version, because they release on their own sche… | 2026-11-07 |
 | [Test and verify](test-and-verify.md) | Four tiers, each answering a question the one above it cannot. Everything runs from the repository root. | 2026-11-06 |
 | [Add a feature](add-a-feature.md) | The data flow fixes the order: the document package owns the shape, the workspace document owns the write, the snapshot store owns the read, and the c… | 2026-11-06 |
 | [Change the canvas](change-the-canvas.md) | Adding to the canvas means answering three questions before writing code: which layer owns the input, what the document records, and what peers see wh… | 2026-11-06 |

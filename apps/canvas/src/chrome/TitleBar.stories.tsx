@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { SyncInfo } from "../store/useCanvasStore";
 import { TitleBar } from "./TitleBar";
 
 const meta = {
@@ -11,29 +12,42 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Connected: Story = {
-  args: { status: "connected", peerCount: 2 },
+const thisDevice = { deviceId: "b".repeat(64), name: "this laptop", role: "owner" } as const;
+const otherDevice = { deviceId: "c".repeat(64), name: "the desktop", role: "editor" } as const;
+
+function shared(state: SyncInfo["status"]): SyncInfo {
+  return {
+    workspaceId: "a".repeat(64),
+    deviceId: thisDevice.deviceId,
+    status: state,
+    members: [thisDevice, otherDevice],
+  };
+}
+
+/** Nobody else has a copy, which is the default and the design. */
+export const LocalOnly: Story = {
+  args: { sync: null },
 };
 
-export const Offline: Story = {
-  args: { status: "disconnected", peerCount: 0 },
+export const Syncing: Story = {
+  args: { sync: shared({ state: "syncing", count: 4 }) },
 };
 
-/** Back from offline and pushing the local edits: "Syncing" in the same amber slot. */
-export const Reconnecting: Story = {
-  args: { status: "rejoining", peerCount: 1 },
+/** An invitation was used, and the other person has not let this device in yet. */
+export const Waiting: Story = {
+  args: { sync: { ...shared({ state: "waiting" }), members: [] } },
 };
 
-/** A share link says what the reader can do inside the status panel, not in the chrome. */
+/** The machine sharing the workspace is not answering. Changes still save here. */
+export const HostAsleep: Story = {
+  args: { sync: shared({ state: "asleep", reason: "the host is not answering" }) },
+};
+
+/** A share link says what the reader can do; there are no share links in this build. */
 export const ViewerShare: Story = {
-  args: { status: "connected", role: "viewer", workspaceName: "Board share" },
+  args: {
+    sync: shared({ state: "syncing", count: 2 }),
+    role: "viewer",
+    workspaceName: "Board share",
+  },
 };
-
-export const EditorShare: Story = {
-  args: { status: "connected", role: "editor", workspaceName: "Quiet Harbor" },
-};
-
-/**
- * The one status: what this device can say about its own copy lives under the
- * same control that says who else is here (ADR-0064 amendment).
- */

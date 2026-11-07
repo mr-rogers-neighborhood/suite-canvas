@@ -23,7 +23,7 @@ export async function copyDiagnostics(): Promise<boolean> {
   const text = buildDiagnostics({
     route: safeRoute(window.location.href),
     storage: { persist, estimate, quota },
-    connection: useCanvasStore.getState().status,
+    connection: useCanvasStore.getState().sync?.status.state ?? "off",
     lastError: useDiagnosticsStore.getState().lastError,
   });
   const copied = await copyText(text);

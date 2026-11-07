@@ -20,6 +20,7 @@ Search is not a separate page. It opens the command palette, which searches card
 also runs commands, so "find the thing" and "do the thing" are one query
 ([the command palette](target:ui:command-palette)).
 
-The status pill is the only place the product talks about saving. It is quiet while everything is
-written, and it is the door to the sync panel when it is not
-([sync, people and storage](target:ui:sync-status)).
+The status pill is the only place the product talks about sharing. It is quiet while a workspace
+belongs to this device alone, and it is the door to the sync dialog — and to the state of being
+waited on, which has to survive the dialog closing
+([sync and people](target:ui:sync-status)).

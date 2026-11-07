@@ -30,7 +30,7 @@ export const HANDBOOK_REGIONS: readonly HandbookRegion[] = [
   { id: "title-bar", label: "The title bar", group: "chrome" },
   { id: "workspace-name", label: "The workspace name", group: "chrome" },
   { id: "command-bar", label: "Search and commands", group: "chrome" },
-  { id: "sync-status", label: "Sync, people and storage", group: "chrome" },
+  { id: "sync-status", label: "Sync and people", group: "chrome" },
   { id: "share-action", label: "Share", group: "chrome" },
   { id: "theme-toggle", label: "Appearance", group: "chrome" },
   { id: "board-switcher", label: "Board tabs", group: "chrome" },

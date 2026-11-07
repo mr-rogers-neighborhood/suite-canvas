@@ -24,10 +24,10 @@ import { ViewsBar } from "../chrome/ViewsBar";
 import { CommandPaletteHost } from "../command/CommandPalette";
 import type { PaletteItem } from "../command/paletteRank";
 import { PerfOverlay } from "../dev/PerfOverlay";
+import { SyncDialog } from "../dialogs/SyncDialog";
 import { purgeAttachment } from "../editor/attachmentNode";
 import { MediaPickerHost } from "../editor/MediaPickerHost";
 import { FeedbackHost } from "../feedback/FeedbackHost";
-import type { SyncClaim, SyncRefusal } from "../feedback/syncState";
 import { handbookEnabled } from "../handbook/availability";
 import { HandbookBubble } from "../handbook/HandbookBubble";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
@@ -46,7 +46,7 @@ import {
 import { pinnedWorkspaceOrder, useWorkspacePins } from "../session/workspacePins";
 import { readRecentWorkspaces, workspaceUrl } from "../session/workspaceTransfer";
 import { LoadingPlaceholder } from "../shell/LoadingPlaceholder";
-import type { useCanvasStore } from "../store/useCanvasStore";
+import type { SyncInfo } from "../store/useCanvasStore";
 import { type LibraryTab, useUiStore } from "../store/useUiStore";
 import { viewsEnabled } from "../views/availability";
 import { ViewsLayer } from "../views/ViewsLayer";
@@ -56,7 +56,6 @@ import { HistoryPanelHost } from "./HistoryPanelHost";
 import { documentLabel } from "./workspacePaint";
 
 type UiState = ReturnType<typeof useUiStore.getState>;
-type CanvasState = ReturnType<typeof useCanvasStore.getState>;
 
 /**
  * The workspace actions pull in the share dialog, the recovery dialog and the
@@ -84,22 +83,13 @@ export interface WorkspaceShellViewProps {
   setPaletteOpen: UiState["setPaletteOpen"];
   standalone: boolean;
   syncEnabled: boolean;
-  status: CanvasState["status"];
+  /** What sync is doing, and who is here. Null in a build with no main process. */
+  sync: SyncInfo | null;
   share: ShareSession | null;
-  peerCount: number;
   workspaceId: string;
   workspace: WorkspaceDocument;
   workspaceName: string;
   setWorkspaceName: Dispatch<SetStateAction<string>>;
-  /** Who is behind this browser, as the account store knows it. */
-  /** What the account says about this workspace, when it has been asked. */
-  claim?: SyncClaim;
-  /** Why the relay refused, when it said. */
-  reason?: SyncRefusal | null;
-  /** Opens the plan surface from a workspace the plan does not cover. */
-  onSeePlans?: (() => void) | undefined;
-  /** Asks the control plane about this workspace again, after a payment or a fix. */
-  onReclaim?: (() => void) | undefined;
   inRoom: boolean;
   readOnly: boolean;
   activeBoardId: string | null;
@@ -198,9 +188,8 @@ export function WorkspaceShellView({
   setPaletteOpen,
   standalone,
   syncEnabled,
-  status,
+  sync,
   share,
-  peerCount,
   workspaceId,
   workspace,
   workspaceName,
@@ -294,6 +283,7 @@ export function WorkspaceShellView({
     x: number;
     y: number;
   } | null>(null);
+  const [syncOpen, setSyncOpen] = useState(false);
   // Read from the document rather than the projection. A board created through
   // the portal flow reached the document (the portal rendered it) but never
   // reached `snapshot.boards`, so the switcher offered one board and the other
@@ -346,11 +336,11 @@ export function WorkspaceShellView({
         <TitleBar
           onNavigateHome={requestLeave}
           onOpenSearch={() => setPaletteOpen(true)}
-          // A standalone build never opens a socket, so "Syncing" would be a lie;
-          // the status slot reports the connection it has (none) beside the note.
-          status={standalone && !syncEnabled ? "disconnected" : status}
+          // A build with no main process has no transport at all, so "Syncing" would be a
+          // lie; it reports the state it has, which is local.
+          sync={standalone && !syncEnabled ? null : sync}
+          onOpenSync={() => setSyncOpen(true)}
           {...(share ? { role: share.role } : {})}
-          peerCount={standalone && !syncEnabled ? 0 : peerCount}
           workspaceId={workspaceId}
           workspaceName={share ? documentLabel(share, workspaceId) : workspaceName}
           workspacePinned={workspacePins.isPinned(workspaceId)}
@@ -754,6 +744,10 @@ export function WorkspaceShellView({
         {workspaceSurface && canManageSchema ? (
           <BlueprintInstallHost workspace={workspace} />
         ) : null}
+
+        {/* Sharing lives behind the pill in the title bar. Its state does not: waiting to be
+            let in has to keep saying so after the dialog closes. */}
+        <SyncDialog open={syncOpen} onClose={() => setSyncOpen(false)} />
 
         {/* Toasts, the live regions and the failure routing, once for the shell. */}
         <FeedbackHost />

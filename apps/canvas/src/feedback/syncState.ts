@@ -1,211 +1,135 @@
-import type { ConnectionStatus } from "../store/useCanvasStore";
 import type { SaveState } from "./saveState";
 
 /**
- * What the one status control says, decided without a renderer so every state can
- * be read as a test case.
+ * What the one status control says, decided without a renderer so every state can be read as
+ * a test case.
  *
- * Two mistakes this file exists to avoid. First, a browser with no account is not
- * a browser that was refused: nothing was asked of the relay on its behalf, so it
- * reads as saved-and-local, which is the state this product is designed for.
- * Second, a refusal is not one thing. The relay declines for five different
- * reasons and the answer to each is different — sign in, pay, or accept that the
- * workspace belongs to somebody else — so the situation carries the reason rather
- * than collapsing them into one alarming sentence.
+ * The vocabulary is deliberately small, because a person has only four questions about a
+ * shared workspace: is my work safe, is anyone else in it, is the other machine answering,
+ * and have I been let in yet. Everything the protocol can say collapses into one of those, and
+ * the protocol's own words — frame, epoch, key package, relay, host — never appear. They are
+ * how it works, not what anyone is being asked to do.
  */
+export type SyncState =
+  | { readonly state: "off" }
+  | { readonly state: "connecting" }
+  | { readonly state: "syncing"; readonly count: number }
+  | { readonly state: "asleep"; readonly reason: string }
+  | { readonly state: "refused"; readonly reason: string }
+  /** An invitation has been used, and this device is waiting to be let in. */
+  | { readonly state: "waiting" };
+
 export type SyncSituation =
-  /** No account, or none this page knows about yet. The work is here and that is fine. */
+  /** Nobody else has a copy. The default, and the one this product is designed for. */
   | "local"
-  /** An account, but this workspace is not in it because the plan does not cover it. */
-  | "capped"
-  | "synced"
+  | "connecting"
   | "syncing"
-  | "offline"
-  /** A session that ended, which signing in again fixes. */
-  | "expired"
-  /** Anything else the relay refused, named by its reason. */
-  | "problem";
+  /** The machine this workspace is shared from is not answering. */
+  | "asleep"
+  /** An invitation is in use, and the other person has not let this device in yet. */
+  | "waiting"
+  /** The host said no, or could not be reached for a reason that is not sleep. */
+  | "refused";
 
 export type SyncTone = "ok" | "busy" | "muted" | "warn";
 
-/** What the control offers, when it offers anything at all. */
-export type SyncAction = "retry" | "signIn" | "seePlans" | null;
-
-/**
- * Why a workspace is not syncing, as far as anyone can tell.
- *
- * `plan` and `limit` are the two a person can act on by paying or by deleting
- * something; `elsewhere` is the one where paying would not help.
- */
-export type SyncRefusal = "session" | "plan" | "limit" | "elsewhere" | "unknown";
-
-/** What the account says about this workspace's membership in it. */
-export type SyncClaim = "unknown" | "local" | "claimed" | "capped" | "elsewhere";
-
-export interface SyncFacts {
-  phase: "unknown" | "signed-out" | "signed-in";
-  status: ConnectionStatus;
-  /** Whether this page arrived through a share link, which is its own credential. */
-  role?: "editor" | "viewer" | undefined;
-  peerCount: number;
-  claim?: SyncClaim;
-  reason?: SyncRefusal | null;
-  /**
-   * The synced-workspace ceiling the session token carries, when it says.
-   *
-   * A ceiling refusal and a no-plan refusal read the same without it, and they need
-   * different answers: one is "buy a plan", the other is "this plan is already full".
-   */
-  ceiling?: number | null;
-}
-
 export interface SyncPresentation {
   situation: SyncSituation;
-  /** The one word beside the dot. */
+  /** The two words beside the dot, at most. */
   label: string;
   dot: string;
   /** One sentence for the panel. Never more than one. */
   sentence: string;
   tone: SyncTone;
-  action: SyncAction;
-  /**
-   * Whether asking again could change the answer.
-   *
-   * It cannot when the plan is full: a person who has paid is not the obstacle, and an
-   * "I have paid — retry" button beside that sentence invites a press that cannot work.
-   */
-  retryable: boolean;
 }
 
-export const LOCAL_SENTENCE = "Saved on this device. Sign in to use it on your other devices.";
-
-export const CAPPED_SENTENCE =
-  "Saved here. Your plan does not cover this workspace, so it is not syncing.";
-
-/** The plan is paid and full, which no amount of retrying changes. */
-export function limitSentence(ceiling: number | null | undefined): string {
-  if (typeof ceiling !== "number" || ceiling <= 0 || ceiling >= 2_147_483_647) {
-    return "Saved here. Cloud storage or member allowance reached for this account, so this workspace stays on this device.";
-  }
-  return `Saved here. This plan covers ${ceiling} synced workspace${
-    ceiling === 1 ? "" : "s"
-  } and ${ceiling === 1 ? "it is" : "they are all"} in use, so this one stays on this device.`;
+/** What the control is told. `people` counts this device, so one means "just me". */
+export interface SyncFacts {
+  readonly state: SyncState | null;
+  readonly people: number;
 }
-
-export const OFFLINE_SENTENCE = "Offline. Changes save here and sync when you are back.";
-
-export const EXPIRED_SENTENCE = "Your session ended. Sign in to keep syncing this workspace.";
 
 const DOT: Record<SyncSituation, string> = {
   local: "bg-gray-400 dark:bg-gray-500",
-  capped: "bg-gray-400 dark:bg-gray-500",
-  synced: "bg-emerald-500",
-  syncing: "bg-amber-400",
-  offline: "bg-gray-400 dark:bg-gray-500",
-  expired: "bg-amber-400",
-  problem: "bg-amber-400",
+  connecting: "bg-amber-400",
+  syncing: "bg-emerald-500",
+  asleep: "bg-amber-400",
+  waiting: "bg-amber-400",
+  refused: "bg-amber-400",
 };
 
 const LABEL: Record<SyncSituation, string> = {
-  local: "Saved",
-  capped: "Local",
-  synced: "Synced",
+  local: "Local only",
+  connecting: "Connecting",
   syncing: "Syncing",
-  offline: "Offline",
-  expired: "Sign in",
-  problem: "Needs attention",
+  asleep: "Host asleep",
+  waiting: "Waiting",
+  refused: "Not syncing",
 };
 
-const ACTION: Record<SyncSituation, SyncAction> = {
-  local: "signIn",
-  capped: "seePlans",
-  synced: null,
-  syncing: null,
-  offline: "retry",
-  expired: "signIn",
-  problem: null,
-};
-
-/** The one sentence for a refusal, given what the relay said. */
-export function refusalSentence(reason: SyncRefusal | null | undefined): string {
+/**
+ * Why sync stopped, in words that name the next thing a person would do.
+ *
+ * The host refuses with one of a small set of codes. Those are for us; someone reading this
+ * needs to know whether to ask for another invitation, wait, or do nothing because their work
+ * is already saved here.
+ */
+export function refusalSentence(reason: string | null | undefined): string {
   switch (reason) {
-    case "plan":
-      return "Sync is not active for this account, so this workspace stays on this device.";
-    case "limit":
-      return "Your plan does not cover another synced workspace, so this one stays on this device.";
-    case "elsewhere":
-      return "This workspace belongs to another account. It syncs there, not here.";
-    case "session":
-      return EXPIRED_SENTENCE;
-    case "unknown":
-    case null:
-    case undefined:
-      return "This workspace cannot sync right now. Your work is saved here and nothing is lost.";
+    case "invite-expired":
+    case "expired":
+    case "invite-spent":
+    case "unknown-invite":
+      return "That invitation cannot be used. Ask for a new one.";
+    case "not-authorized":
+    case "not-owner":
+      return "This device is not allowed to change this workspace.";
+    case "stale-epoch":
+    case "wrong-seq":
+      return "This device is behind the others. It will catch up when it reconnects.";
+    case "wrong-workspace":
+      return "That invitation is for a different workspace.";
+    default:
+      return "Sync stopped. This workspace is still saved here.";
   }
 }
 
 function situationOf(facts: SyncFacts): SyncSituation {
-  // A share link is a credential of its own: there is no account to be signed in
-  // or out of, and a refusal is the link's, not a session's.
-  if (facts.role !== undefined) {
-    if (facts.status === "connected") return "synced";
-    if (facts.status === "connecting" || facts.status === "rejoining") return "syncing";
-    if (facts.status === "disconnected") return "offline";
-    return "problem";
-  }
-  if (facts.phase !== "signed-in") return "local";
-  // A live room outranks the claim, and it has to come first.
-  //
-  // The claim answers "does the account hold this workspace", and the room answers "is
-  // this page syncing right now". They disagree in the one case that matters: a member
-  // invited into somebody else's organization is in the room with two peers while their
-  // own account holds no plan, so the claim comes back `plan-required` and the panel used
-  // to read that as Local beside "2 here, including you". Two connected peers is proof,
-  // and a badge that argues with its own sentence is worse than either answer.
-  switch (facts.status) {
-    case "connected":
-      return "synced";
-    case "connecting":
-    case "rejoining":
+  switch (facts.state?.state) {
+    case "syncing":
       return "syncing";
-  }
-  if (facts.claim === "capped") return "capped";
-  if (facts.claim === "elsewhere") return "problem";
-  switch (facts.status) {
-    case "disconnected":
-      return "offline";
-    case "unauthorized":
-      if (facts.reason === "session") return "expired";
-      // The relay's door now answers the same question the claim route does, and it
-      // answers it with the plan. A refused room is not a fault to report: the workspace
-      // is safe on this device and one button fixes it, which is what `capped` means.
-      if (facts.reason === "plan" || facts.reason === "limit") return "capped";
-      return "problem";
+    case "connecting":
+      return "connecting";
+    case "waiting":
+      return "waiting";
+    case "asleep":
+      return "asleep";
+    case "refused":
+      return "refused";
+    default:
+      return "local";
   }
 }
 
 function sentenceOf(facts: SyncFacts, situation: SyncSituation): string {
   switch (situation) {
     case "local":
-      return LOCAL_SENTENCE;
-    case "capped":
-      // The relay distinguishes these two and the client kept only one word for both,
-      // which is how a full plan came to look like an unpaid one.
-      return facts.reason === "limit" ? limitSentence(facts.ceiling) : CAPPED_SENTENCE;
-    case "offline":
-      return OFFLINE_SENTENCE;
-    case "expired":
-      return EXPIRED_SENTENCE;
-    case "syncing":
-      return "Catching up.";
-    case "problem":
-      return refusalSentence(facts.reason);
-    case "synced":
-      if (facts.role === "viewer") return "You are viewing this workspace.";
-      if (facts.role === "editor") return "You are editing this workspace.";
-      return facts.peerCount === 0
-        ? "Synced to your account."
-        : `${facts.peerCount + 1} here, including you.`;
+      return "This workspace is on this device. Nobody else has a copy.";
+    case "connecting":
+      return "Reaching the machine this workspace is shared from.";
+    case "waiting":
+      return "The invitation is used. The other person has to let this device in.";
+    case "asleep":
+      return "The machine sharing this workspace is not answering. Changes save here.";
+    case "refused":
+      return refusalSentence(facts.state?.state === "refused" ? facts.state.reason : null);
+    case "syncing": {
+      const others = Math.max(0, facts.people - 1);
+      if (others === 0) return "Saved here, and to the machine it is shared with.";
+      return others === 1
+        ? "Saved here, and on one other device."
+        : `Saved here, and on ${others} other devices.`;
+    }
   }
 }
 
@@ -217,19 +141,13 @@ export function syncPresentation(facts: SyncFacts): SyncPresentation {
     dot: DOT[situation],
     sentence: sentenceOf(facts, situation),
     tone:
-      situation === "synced"
+      situation === "syncing"
         ? "ok"
-        : situation === "syncing"
-          ? "busy"
-          : situation === "local" || situation === "capped" || situation === "offline"
+        : situation === "local" || situation === "connecting"
+          ? situation === "local"
             ? "muted"
-            : "warn",
-    // A page that has not been told who it is yet offers nothing, so the first
-    // paint cannot show a "Sign in" button to someone who already is.
-    action: facts.phase === "unknown" && situation === "local" ? null : ACTION[situation],
-    // Only the unpaid refusal is worth re-asking. A full plan answers the same way
-    // however many times it is asked, and the person has already paid.
-    retryable: situation === "capped" && facts.reason !== "limit",
+            : "busy"
+          : "warn",
   };
 }
 

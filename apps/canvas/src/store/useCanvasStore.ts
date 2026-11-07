@@ -4,21 +4,30 @@ import { CursorEphemeralStore } from "loro-prosemirror";
 import { create } from "zustand";
 import { TAB_ID } from "../collab/tabId";
 import { markBoot, measureBoot } from "../dev/bootTiming";
+import type { SyncState } from "../feedback/syncState";
 import { hostKind } from "../host/bridge";
 import { getSession } from "../session/session";
 import { createWorkspacePersistence } from "../storage/workspacePersistence";
 
+/** One device this workspace holds, as the host describes it. */
+export interface SyncMember {
+  readonly deviceId: string;
+  readonly name: string;
+  readonly role: "owner" | "editor" | "viewer";
+}
+
 /**
- * What the indicator can say. The words are the ones the title bar already uses;
- * a status of `unauthorized` can no longer happen, and stays because surfaces
- * branch on it.
+ * What sync is doing, and who is here.
+ *
+ * The renderer never learns a key, a frame or an epoch: this is the whole of what the main
+ * process says about a shared workspace, and everything the interface draws comes from it.
  */
-export type ConnectionStatus =
-  | "connected"
-  | "connecting"
-  | "rejoining"
-  | "disconnected"
-  | "unauthorized";
+export interface SyncInfo {
+  readonly workspaceId: string | null;
+  readonly deviceId: string;
+  readonly status: SyncState;
+  readonly members: readonly SyncMember[];
+}
 
 function searchParam(key: string): string | null {
   if (typeof window === "undefined") return null;
@@ -34,12 +43,12 @@ function searchParam(key: string): string | null {
 interface SyncBridge {
   syncEnable(url: string): Promise<unknown>;
   syncDisable(): Promise<unknown>;
-  syncStatus(): Promise<unknown>;
+  syncStatus(): Promise<SyncInfo | null>;
   syncPublish(update: number[]): Promise<unknown>;
   syncInvite(role: "editor" | "viewer"): Promise<string | null>;
   syncJoin(link: string): Promise<unknown>;
   onSyncIncoming(listener: (update: number[]) => void): void;
-  onSyncChanged(listener: (info: { status: { state: string } }) => void): void;
+  onSyncChanged(listener: (info: SyncInfo) => void): void;
   onSyncSnapshotWanted(listener: () => void): void;
 }
 
@@ -94,15 +103,18 @@ interface CanvasState {
    * renderer will hand it a document update rather than open a socket itself.
    */
   provider: null;
-  status: ConnectionStatus;
+  /** What sync is doing and who is here. Null in a build with no main process. */
+  sync: SyncInfo | null;
   /** True once local storage has hydrated. */
   ready: boolean;
   /** True once there is nothing left to wait for before the board can paint. */
   synced: boolean;
-  /** True when a transport is configured. Always false until there is one. */
+  /** True when a transport exists in this build, which is the desktop shell. */
   syncEnabled: boolean;
   connect: () => void;
-  /** Opt in: point this workspace at a host. */
+  /** Ask main what sync is doing, for the first paint and after a change. */
+  refreshSync: () => Promise<void>;
+  /** Opt in: share this workspace from the machine at `url`. */
   enableSync: (url: string) => Promise<void>;
   /** Stop syncing. The local document is untouched. */
   disableSync: () => Promise<void>;
@@ -148,6 +160,11 @@ export const useCanvasStore = create<CanvasState>((set) => {
     sync.onSyncSnapshotWanted(() => {
       void sync.syncPublish(Array.from(doc.export({ mode: "snapshot" })));
     });
+
+    // Main pushes every change of state, so the title bar and the dialog redraw from one
+    // source rather than each asking and drifting.
+    sync.onSyncChanged((info) => set({ sync: info }));
+    void sync.syncStatus().then((info) => set({ sync: info }));
   }
 
   if (persistence) {
@@ -179,22 +196,30 @@ export const useCanvasStore = create<CanvasState>((set) => {
     presence,
     cursors,
     provider: null,
-    status: "disconnected",
+    sync: null,
     ready: persistence === null,
     synced: true,
-    syncEnabled: false,
+    syncEnabled: sync !== null,
     connect: () => {},
+    refreshSync: async () => {
+      const info = await sync?.syncStatus();
+      set({ sync: info ?? null });
+    },
     enableSync: async (url) => {
-      set({ status: "connecting" });
       await sync?.syncEnable(url);
+      const info = await sync?.syncStatus();
+      if (info != null) set({ sync: info });
     },
     inviteSomeone: async (role) => (await sync?.syncInvite(role)) ?? null,
     joinWorkspace: async (link) => {
       await sync?.syncJoin(link);
+      const info = await sync?.syncStatus();
+      if (info != null) set({ sync: info });
     },
     disableSync: async () => {
       await sync?.syncDisable();
-      set({ status: "disconnected" });
+      const info = await sync?.syncStatus();
+      if (info != null) set({ sync: info });
     },
     flush: async () => {
       await persistence?.flush();

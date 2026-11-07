@@ -99,7 +99,8 @@ function useConnectionLabel(): string {
     void import("../store/useCanvasStore")
       .then(({ useCanvasStore }) => {
         const state = useCanvasStore.getState();
-        if (!cancelled) setLabel(`${state.status}${state.synced ? " (synced)" : ""}`);
+        if (!cancelled)
+          setLabel(`${state.sync?.status.state ?? "off"}${state.synced ? " (synced)" : ""}`);
       })
       .catch(() => undefined);
     return () => {

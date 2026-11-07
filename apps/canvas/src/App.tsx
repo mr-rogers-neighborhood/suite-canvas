@@ -77,7 +77,7 @@ function WorkspaceShell({
   const connect = useCanvasStore((state) => state.connect);
   const provider = useCanvasStore((state) => state.provider);
   const presence = useCanvasStore((state) => state.presence);
-  const status = useCanvasStore((state) => state.status);
+  const sync = useCanvasStore((state) => state.sync);
   const syncEnabled = useCanvasStore((state) => state.syncEnabled);
   const ready = useCanvasStore((state) => state.ready);
   const synced = useCanvasStore((state) => state.synced);
@@ -219,8 +219,7 @@ function WorkspaceShell({
   // no sharing, all decided once at build time.
   const standalone = isStandalone();
 
-  // The sync indicator reads the connection and nothing else: there is no account
-  // to ask about a claim, and no plan panel to open.
+  // Leaving warns when somebody else is here, and presence is the only thing that knows.
   const { leaving, inRoom, requestLeave } = useLeaveTransition({ standalone, peerCount });
 
   useWorkspaceBoot({
@@ -670,9 +669,8 @@ function WorkspaceShell({
         setPaletteOpen={setPaletteOpen}
         standalone={standalone}
         syncEnabled={syncEnabled}
-        status={status}
         share={share}
-        peerCount={peerCount}
+        sync={sync}
         workspaceId={workspaceId}
         workspace={workspace}
         workspaceName={workspaceName}

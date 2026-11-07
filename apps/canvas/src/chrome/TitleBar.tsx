@@ -2,28 +2,25 @@ import { useEffect, useRef, useState } from "react";
 import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { syncPresentation } from "../feedback/syncState";
 import { useEscapeLayer } from "../shell/escapeLayers";
-import type { ConnectionStatus } from "../store/useCanvasStore";
+import type { SyncInfo } from "../store/useCanvasStore";
 import { ThemeToggle } from "../styles/ThemeToggle";
 
 export type TitleBarRole = "editor" | "viewer";
 
-/** Who is behind this browser. There is no account, so `unknown` is the only answer left. */
-export type AccountPhase = "unknown" | "signed-out" | "signed-in";
-
 export interface TitleBarProps {
-  status: ConnectionStatus;
+  /**
+   * What sync is doing and who is here, as the main process last said.
+   *
+   * The state belongs in the chrome rather than in the dialog, because being in a workspace
+   * is continuous: a device waiting to be let in has to keep saying so after the dialog is
+   * closed, or the flow looks silently dead.
+   */
+  sync: SyncInfo | null;
   /**
    * Present on a share link. It is not a sync state, so it reads inside the status
    * panel rather than in the chrome, which answers "is anyone else here".
    */
   role?: TitleBarRole;
-  peerCount?: number;
-  /**
-   * Who is behind this browser. A signed-out browser is local, not refused, and
-   * the status control says so; `unknown` renders no action at all, so the first
-   * paint cannot offer "Sign in" to someone who already is.
-   */
-  phase?: AccountPhase;
   /** The relay's name for this workspace, shown inside the storage details. */
   workspaceId?: string;
   /** The workspace's own label; a share passes its scope label instead. */
@@ -48,6 +45,8 @@ export interface TitleBarProps {
    */
   workspacePinned?: boolean;
   onToggleWorkspacePin?: ((workspaceId: string) => void) | undefined;
+  /** Opens the sync dialog. The pill is the door, so the two cannot disagree. */
+  onOpenSync?: (() => void) | undefined;
   /** Board switcher and saved views, rendered after the workspace name. */
   children?: React.ReactNode;
   /** Workspace-level actions (share, export), rendered before the theme. */
@@ -63,10 +62,8 @@ export interface TitleBarProps {
 }
 
 export function TitleBar({
-  status,
+  sync,
   role,
-  peerCount = 0,
-  phase = "unknown",
   workspaceId,
   workspaceName,
   canRenameWorkspace = false,
@@ -78,6 +75,7 @@ export function TitleBar({
   children,
   actions,
   onNavigateHome,
+  onOpenSync,
   onOpenSearch,
 }: TitleBarProps) {
   const [renaming, setRenaming] = useState(false);
@@ -101,8 +99,9 @@ export function TitleBar({
     return () => window.removeEventListener("pointerdown", onPointerDown, true);
   }, [nameMenuOpen]);
 
-  // The button and the panel read one decision, so they cannot disagree.
-  const presentation = syncPresentation({ phase, status, peerCount, role });
+  // The button and the dialog read one decision, so they cannot disagree.
+  const people = sync?.members.length ?? 0;
+  const presentation = syncPresentation({ state: sync?.status ?? null, people });
 
   return (
     <header
@@ -357,14 +356,17 @@ export function TitleBar({
             type="button"
             data-testid="sync-status"
             data-handbook-region="sync-status"
-            data-status={status}
+            data-status={presentation.situation}
             data-role={role}
             title="Sync and people"
+            onClick={onOpenSync}
             className="inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[11px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
           >
             <span className={`h-1.5 w-1.5 rounded-full ${presentation.dot}`} />
             {presentation.label}
-            {peerCount > 0 ? <span className="tabular-nums">· {peerCount + 1} here</span> : null}
+            {presentation.situation === "syncing" && people > 1 ? (
+              <span className="tabular-nums">· {people}</span>
+            ) : null}
           </button>
         </div>
         {actions}

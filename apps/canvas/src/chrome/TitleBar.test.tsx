@@ -1,39 +1,65 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import type { SyncInfo, SyncMember } from "../store/useCanvasStore";
 import { TitleBar } from "./TitleBar";
 
 const bar = (props: Parameters<typeof TitleBar>[0]) => render(<TitleBar {...props} />);
 
+/** A device in a workspace, as the host would describe it. */
+function synced(options: {
+  state?: SyncInfo["status"];
+  members?: readonly SyncMember[];
+}): SyncInfo {
+  return {
+    workspaceId: "a".repeat(64),
+    deviceId: "b".repeat(64),
+    status: options.state ?? { state: "syncing", count: 3 },
+    members: options.members ?? [
+      { deviceId: "b".repeat(64), name: "this laptop", role: "owner" },
+      { deviceId: "c".repeat(64), name: "the desktop", role: "editor" },
+    ],
+  };
+}
+
 describe("TitleBar", () => {
-  it("says Saved whatever the transport is doing", () => {
-    // The words used to be Synced, Syncing and Offline, because a socket decided
-    // them. There is no socket: the document is on this machine, which is the one
-    // thing worth saying, and it says it for every status a stale call can pass.
-    for (const status of ["connected", "connecting", "rejoining", "disconnected"] as const) {
+  it("says Local only when nobody else has a copy", () => {
+    // The default, and the one this product is designed for: a workspace with no hub and no
+    // account is not a workspace that failed to connect.
+    bar({ sync: null });
+    expect(screen.getByTestId("sync-status")).toHaveTextContent("Local only");
+  });
+
+  it("names the state a person would use, and never the protocol's words", () => {
+    const cases = [
+      [{ state: "connecting" }, "Connecting"],
+      [{ state: "waiting" }, "Waiting"],
+      [{ state: "asleep", reason: "the host is not answering" }, "Host asleep"],
+      [{ state: "refused", reason: "not-authorized" }, "Not syncing"],
+    ] as const;
+    for (const [state, label] of cases) {
       cleanup();
-      bar({ status });
-      expect(screen.getByTestId("sync-status")).toHaveTextContent("Saved");
+      bar({ sync: synced({ state, members: [] }) });
+      expect(screen.getByTestId("sync-status")).toHaveTextContent(label);
     }
   });
 
-  it("counts the people here, including this window", () => {
-    bar({ status: "connected", peerCount: 2 });
-    expect(screen.getByTestId("sync-status")).toHaveTextContent("3 here");
+  it("counts the devices here, including this one", () => {
+    bar({ sync: synced({}) });
+    expect(screen.getByTestId("sync-status")).toHaveTextContent("Syncing· 2");
   });
 
-  it("opens no panel, because there is nothing behind it", () => {
-    // The popover explained a relay: a room, a plan, a session that ended. All
-    // three belonged to the service, so the indicator is the whole control now.
-    bar({ status: "connected" });
+  it("opens the sync dialog from the pill", () => {
+    const onOpenSync = vi.fn();
+    bar({ sync: synced({}), onOpenSync });
     fireEvent.click(screen.getByTestId("sync-status"));
-    expect(screen.queryByTestId("sync-room")).toBeNull();
+    expect(onOpenSync).toHaveBeenCalledOnce();
   });
 });
 
 describe("TitleBar command bar", () => {
   it("should open the palette from the search trigger", () => {
     const onOpenSearch = vi.fn();
-    bar({ status: "connected", onOpenSearch });
+    bar({ sync: synced({}), onOpenSearch });
 
     fireEvent.click(screen.getByTestId("command-bar"));
 
@@ -41,12 +67,12 @@ describe("TitleBar command bar", () => {
   });
 
   it("should render no trigger when the shell does not offer one", () => {
-    bar({ status: "connected" });
+    bar({ sync: synced({}) });
     expect(screen.queryByTestId("command-bar")).toBeNull();
   });
 
   it("should advertise the shortcut it opens", () => {
-    bar({ status: "connected", onOpenSearch: vi.fn() });
+    bar({ sync: synced({}), onOpenSearch: vi.fn() });
     expect(screen.getByTestId("command-bar")).toHaveAttribute(
       "aria-keyshortcuts",
       "Meta+K Control+K",
@@ -57,7 +83,7 @@ describe("TitleBar command bar", () => {
 describe("TitleBar home gesture", () => {
   it("should route a plain brand click through the exit animation", () => {
     const onNavigateHome = vi.fn();
-    bar({ status: "connected", onNavigateHome });
+    bar({ sync: synced({}), onNavigateHome });
 
     fireEvent.click(screen.getByRole("link", { name: "Back to workspace launcher" }));
     expect(onNavigateHome).toHaveBeenCalledTimes(1);
@@ -65,7 +91,7 @@ describe("TitleBar home gesture", () => {
 
   it("should leave modified clicks to the browser", () => {
     const onNavigateHome = vi.fn();
-    bar({ status: "connected", onNavigateHome });
+    bar({ sync: synced({}), onNavigateHome });
 
     fireEvent.click(screen.getByRole("link", { name: "Back to workspace launcher" }), {
       ctrlKey: true,
@@ -79,7 +105,7 @@ describe("TitleBar workspace menu", () => {
 
   it("should open from the workspace name rather than renaming on the spot", () => {
     bar({
-      status: "connected",
+      sync: synced({}),
       workspaceName: "Untitled workspace",
       canRenameWorkspace: true,
       onRenameWorkspace: rename,
@@ -92,7 +118,7 @@ describe("TitleBar workspace menu", () => {
 
   it("should reach rename through the menu", () => {
     bar({
-      status: "connected",
+      sync: synced({}),
       workspaceName: "Untitled workspace",
       canRenameWorkspace: true,
       onRenameWorkspace: rename,
@@ -106,7 +132,7 @@ describe("TitleBar workspace menu", () => {
   it("should list the other workspaces and open one", () => {
     const onOpenWorkspace = vi.fn();
     bar({
-      status: "connected",
+      sync: synced({}),
       workspaceName: "Untitled workspace",
       otherWorkspaces: [{ id: "ws-2", title: "Reading" }],
       onOpenWorkspace,
@@ -119,7 +145,7 @@ describe("TitleBar workspace menu", () => {
 
   it("should still offer a way back to the launcher", () => {
     const onNavigateHome = vi.fn();
-    bar({ status: "connected", workspaceName: "Untitled workspace", onNavigateHome });
+    bar({ sync: synced({}), workspaceName: "Untitled workspace", onNavigateHome });
 
     fireEvent.click(screen.getByTestId("workspace-name"));
     fireEvent.click(screen.getByTestId("workspace-switcher-home"));

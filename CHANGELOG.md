@@ -1,5 +1,16 @@
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-07
+
+### Changed
+
+- **An update now arrives from Suite Start.** An app the hub launched leaves its own update check alone, because
+  Start is the process that downloads, verifies and replaces it — two programs writing one binary is not a race worth
+  having. A copy run from a folder keeps its own updater, as the release notes always said.
+- The alpha notice says what alpha means here: tests pin down behaviour, not understanding. Export rather than trust,
+  and expect bugs. It also names the condition for leaving alpha, so the claim can be checked rather than assumed.
+- The notice no longer sells plans. There is no account to sell from.
+
 ## [0.1.0-alpha.3] - 2026-11-04
 
 ### Added

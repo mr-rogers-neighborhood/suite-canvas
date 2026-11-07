@@ -56,48 +56,19 @@ export function AlphaNotice({ onSeePlans, forceOpen = false }: AlphaNoticeProps)
         className="relative w-[min(460px,calc(100vw-2rem))] rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] p-5 text-[12px] leading-5 shadow-2xl ring-1 ring-black/5 dark:ring-white/5"
       >
         <h2 className="text-[15px] font-semibold tracking-tight text-[var(--ink)]">
-          Suite is alpha software
+          Suite Is Alpha Software
         </h2>
-
-        <p className="mt-2 text-[var(--ink)]">
-          A subscription is early access to higher document storage limits, file uploads (storage),
-          and the ability to add additional members to your organization (5 for the "Personal" plan,
-          15 for the "Organization" plan). The canvas, the cards, share links, import and export
-          work without one, on this device, and paying is optional.
-        </p>
-
         <p className="mt-2 text-[var(--ink-muted)]">
-          It is open source under the MIT licence, so you can also{" "}
-          <a
-            data-testid="alpha-notice-repository"
-            className="underline underline-offset-2 hover:text-[var(--ink)]"
-            href={repositoryUrl()}
-            target="_blank"
-            rel="noreferrer"
-          >
-            read the code or run it yourself
-          </a>
-          . That is free and needs no account.
+          Automated and manual testing, along with targeted reviews, verify its behavior, not the
+          maintainers' complete understanding of it. It is impractical to simultaneously build
+          projects this quickly and immediately audit every line of code. Treat the software
+          accordingly: do not store data you cannot afford to lose, export regularly, and expect
+          bugs. It exits alpha when the cognitive debt (the gap between what the tests pin down and
+          what a human can reason about) is paid down, not when the feature list is complete.
         </p>
-
         <p className="mt-2 text-[var(--ink-muted)]">
-          <strong className="font-medium text-[var(--ink)]">
-            Your work is saved in this browser
-          </strong>{" "}
-          until you sync it, so clearing site data removes it. Export is always available and never
-          asks for a plan.
+          Obsidian import is experimental and may not work for all vaults.
         </p>
-
-        <p className="mt-2 text-[var(--ink-muted)]">
-          Cards are handled by Stripe on its own page. Plans are monthly and cancel from the portal,
-          and a discount code, if you have one, is entered there too.
-        </p>
-
-        <p className="mt-2 text-[var(--ink-muted)]">
-          Obsidian import is experimental and may not work for all vaults. The import is done in the
-          browser, and no data is sent to the server.
-        </p>
-
         <p className="mt-2 text-[var(--ink-muted)]">
           When something breaks, the feedback bubble in the corner sends it straight to me. That is
           the most useful thing you can do with alpha software!
@@ -113,19 +84,6 @@ export function AlphaNotice({ onSeePlans, forceOpen = false }: AlphaNoticeProps)
           >
             View on GitHub
           </a>
-          {onSeePlans === undefined ? null : (
-            <button
-              type="button"
-              data-testid="alpha-notice-plans"
-              onClick={() => {
-                close();
-                onSeePlans();
-              }}
-              className="rounded-lg border border-[var(--hairline)] px-3 py-1.5 text-[11px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
-            >
-              See plans
-            </button>
-          )}
           <button
             type="button"
             data-testid="alpha-notice-dismiss"

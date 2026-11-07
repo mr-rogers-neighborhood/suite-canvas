@@ -1,5 +1,5 @@
 import { createHash, createPrivateKey, generateKeyPairSync, sign } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /**
@@ -27,6 +27,41 @@ interface StoredIdentity {
   readonly version: 1;
   readonly publicKey: string;
   readonly privateKey: string;
+}
+
+/** The key pair as it sits on disk: what a recovery file has to carry to be a recovery. */
+export interface StoredIdentityFile {
+  readonly version: 1;
+  readonly publicKey: string;
+  readonly privateKey: string;
+}
+
+/** This install's key pair, for a recovery file. Null when it has never made one. */
+export async function readStoredIdentity(dataDir: string): Promise<StoredIdentityFile | null> {
+  return read(join(dataDir, "sync", IDENTITY_FILE));
+}
+
+/**
+ * Install a key pair from a recovery file.
+ *
+ * Refuses to overwrite an identity that belongs to a different device: that file is somebody
+ * else's install, and adopting it would make two machines answer to one id.
+ */
+export async function writeStoredIdentity(
+  dataDir: string,
+  stored: StoredIdentityFile,
+  replace = false,
+): Promise<DeviceIdentity> {
+  const existing = await read(join(dataDir, "sync", IDENTITY_FILE));
+  if (!replace && existing !== null && existing.publicKey !== stored.publicKey) {
+    throw new Error("This device already has its own identity.");
+  }
+  const path = join(dataDir, "sync", IDENTITY_FILE);
+  await mkdir(join(dataDir, "sync"), { recursive: true });
+  const temporary = `${path}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 });
+  await rename(temporary, path);
+  return fromStored(stored);
 }
 
 export async function loadOrCreateIdentity(dataDir: string): Promise<DeviceIdentity> {

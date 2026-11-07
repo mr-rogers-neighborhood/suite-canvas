@@ -32,6 +32,13 @@ const CHANNELS = {
   syncInvite: "suite:sync:invite",
   syncJoin: "suite:sync:join",
   syncSnapshotWanted: "suite:sync:snapshot-wanted",
+  syncPresence: "suite:sync:presence",
+  syncPresenceIncoming: "suite:sync:presence-incoming",
+  syncRemove: "suite:sync:remove",
+  syncExportKit: "suite:sync:export-kit",
+  syncImportKit: "suite:sync:import-kit",
+  syncDeclineKit: "suite:sync:decline-kit",
+  syncHub: "suite:sync:hub",
 };
 
 contextBridge.exposeInMainWorld("suiteDesktop", {
@@ -67,4 +74,13 @@ contextBridge.exposeInMainWorld("suiteDesktop", {
   onSyncSnapshotWanted: (listener) => {
     ipcRenderer.on(CHANNELS.syncSnapshotWanted, () => listener());
   },
+  syncPresence: (update) => ipcRenderer.invoke(CHANNELS.syncPresence, update),
+  onSyncPresence: (listener) => {
+    ipcRenderer.on(CHANNELS.syncPresenceIncoming, (_event, update) => listener(update));
+  },
+  syncRemove: (deviceId) => ipcRenderer.invoke(CHANNELS.syncRemove, deviceId),
+  syncExportKit: (passphrase) => ipcRenderer.invoke(CHANNELS.syncExportKit, passphrase),
+  syncImportKit: (request) => ipcRenderer.invoke(CHANNELS.syncImportKit, request),
+  syncDeclineKit: () => ipcRenderer.invoke(CHANNELS.syncDeclineKit),
+  syncHub: () => ipcRenderer.invoke(CHANNELS.syncHub),
 });

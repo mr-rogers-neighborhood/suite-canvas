@@ -45,6 +45,20 @@ export const IPC = {
    * see the workspace is if somebody gives it a copy at the epoch it joined in.
    */
   syncSnapshotWanted: "suite:sync:snapshot-wanted",
+  /** Presence from the page, on its way to the other devices. Never stored. */
+  syncPresence: "suite:sync:presence",
+  /** Pushed the other way: somebody else's presence, already opened. */
+  syncPresenceIncoming: "suite:sync:presence-incoming",
+  /** Take a device out of this workspace. */
+  syncRemove: "suite:sync:remove",
+  /** Write a way back in, and answer with where it went. */
+  syncExportKit: "suite:sync:export-kit",
+  /** Install a way back in from a file somebody kept. */
+  syncImportKit: "suite:sync:import-kit",
+  /** Say no to a way back in, and stop being asked. */
+  syncDeclineKit: "suite:sync:decline-kit",
+  /** Where the hub on this machine says it listens. */
+  syncHub: "suite:sync:hub",
   /** Files this machine opened, newest first. */
   recentFiles: "suite:document:recents",
   /** Drop one entry from that list. */
@@ -62,7 +76,13 @@ export type SyncState =
   | { readonly state: "asleep"; readonly reason: string }
   | { readonly state: "refused"; readonly reason: string }
   /** An invitation has been used and this device is waiting to be let in. */
-  | { readonly state: "waiting" };
+  | { readonly state: "waiting" }
+  /**
+   * An owner took this device out of the workspace.
+   *
+   * Not a failure to retry: the decision was somebody's, and the local copy stays where it is.
+   */
+  | { readonly state: "removed" };
 
 /** One device the workspace holds, as the host describes it. */
 export interface SyncMember {
@@ -84,7 +104,41 @@ export interface SyncInfo {
    * hex string cannot answer it.
    */
   readonly members: readonly SyncMember[];
+  /**
+   * What went wrong, when something did, in the words of whatever refused.
+   *
+   * Carried beside the state rather than folded into it: "syncing" is still true when a
+   * removal was refused, and replacing the state with an error would make the pill lie.
+   */
+  readonly problem?: string;
+  /**
+   * What this device has already said about its way back in.
+   *
+   * Null means nobody has asked yet, which is what makes the offer appear once and then stop:
+   * a declined kit is a decision, not an outstanding chore.
+   */
+  readonly kit: "made" | "declined" | null;
 }
+
+/** What the hub on this machine reports about itself, for a share field's starting point. */
+export interface HubInfo {
+  readonly running: boolean;
+  readonly address: string | null;
+  readonly scope: "loopback" | "network";
+}
+
+/**
+ * What came of asking to open a recovery file.
+ *
+ * `passphrase` is its own answer because it is the common one: the file is fine and the person
+ * simply has to say the word. The path comes back so the second attempt does not ask for the
+ * file again.
+ */
+export type KitImportResult =
+  | { readonly ok: true; readonly status: SyncInfo }
+  | { readonly ok: false; readonly reason: "cancelled" }
+  | { readonly ok: false; readonly reason: "passphrase"; readonly path: string }
+  | { readonly ok: false; readonly reason: "message"; readonly message: string };
 
 export interface OpenDocumentInfo {
   /** The workspace id the renderer keys its store by; carried in the page URL. */

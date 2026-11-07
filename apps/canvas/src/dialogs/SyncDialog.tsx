@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { syncPresentation } from "../feedback/syncState";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { KitStep, LocalFace, SyncedFace, UnlockStep } from "./SyncFaces";
 import { useFocusTrap } from "./useFocusTrap";
 
 /**
@@ -16,11 +17,17 @@ import { useFocusTrap } from "./useFocusTrap";
 export interface SyncDialogProps {
   open: boolean;
   onClose: () => void;
-  /** Where the hub is, as a starting point. Prefilled with the local one. */
+  /** Where the hub is, when nothing better is known. The hub's own report wins. */
   defaultHost?: string;
 }
 
 const LOCAL_HOST = "ws://127.0.0.1:8787/sync";
+
+/** Which question the dialog is asking. One at a time, and each ends somewhere. */
+type Step =
+  | { readonly name: "main" }
+  | { readonly name: "kit" }
+  | { readonly name: "unlock"; path: string };
 
 export function SyncDialog({ open, onClose, defaultHost = LOCAL_HOST }: SyncDialogProps) {
   const panel = useRef<HTMLDivElement | null>(null);
@@ -29,22 +36,35 @@ export function SyncDialog({ open, onClose, defaultHost = LOCAL_HOST }: SyncDial
   const disableSync = useCanvasStore((state) => state.disableSync);
   const inviteSomeone = useCanvasStore((state) => state.inviteSomeone);
   const joinWorkspace = useCanvasStore((state) => state.joinWorkspace);
+  const removeDevice = useCanvasStore((state) => state.removeDevice);
+  const hub = useCanvasStore((state) => state.hub);
+  const refreshHub = useCanvasStore((state) => state.refreshHub);
+  const exportKit = useCanvasStore((state) => state.exportKit);
+  const importKit = useCanvasStore((state) => state.importKit);
+  const declineKit = useCanvasStore((state) => state.declineKit);
 
   const [host, setHost] = useState(defaultHost);
   const [link, setLink] = useState<string | null>(null);
   const [pasted, setPasted] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [step, setStep] = useState<Step>({ name: "main" });
+  const [removing, setRemoving] = useState<string | null>(null);
 
   useEscapeLayer(onClose, open);
   useFocusTrap(panel, open);
 
-  // A reopened dialog shows the invitation it made, because the person who closed it did not
-  // necessarily hand it to anyone yet.
   useEffect(() => {
     if (!open) return;
     setProblem(null);
-  }, [open]);
+    setStep({ name: "main" });
+    // The hub reports where it listens, so sharing does not begin with copying an address out
+    // of another window. A hub that is not running leaves the default in place and editable.
+    void refreshHub().then(() => {
+      const address = useCanvasStore.getState().hub?.address;
+      if (address != null) setHost(address);
+    });
+  }, [open, refreshHub]);
 
   if (!open) return null;
 
@@ -52,6 +72,10 @@ export function SyncDialog({ open, onClose, defaultHost = LOCAL_HOST }: SyncDial
   const presentation = syncPresentation({ state, people: sync?.members.length ?? 0 });
   const shared = state !== null && state.state !== "off";
   const waiting = state?.state === "waiting";
+  const removed = state?.state === "removed";
+  // Offered once, right after a workspace becomes shared, and never again once answered: a
+  // decline is a decision, not an outstanding chore.
+  const offerKit = shared && !waiting && !removed && (sync?.kit ?? null) === null;
 
   const run = async (work: () => Promise<void>) => {
     setBusy(true);
@@ -64,6 +88,30 @@ export function SyncDialog({ open, onClose, defaultHost = LOCAL_HOST }: SyncDial
       setBusy(false);
     }
   };
+
+  const openKit = () =>
+    run(async () => {
+      const result = await importKit({});
+      if (result.ok) return;
+      if (result.reason === "passphrase") {
+        setStep({ name: "unlock", path: result.path });
+        return;
+      }
+      if (result.reason === "message") setProblem(result.message);
+    });
+
+  const face =
+    step.name === "kit"
+      ? "kit"
+      : step.name === "unlock"
+        ? "unlock"
+        : removed
+          ? "removed"
+          : waiting
+            ? "waiting"
+            : shared
+              ? "synced"
+              : "local";
 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -80,24 +128,74 @@ export function SyncDialog({ open, onClose, defaultHost = LOCAL_HOST }: SyncDial
         aria-label="Sync"
         tabIndex={-1}
         data-testid="sync-dialog"
-        data-face={waiting ? "waiting" : shared ? "synced" : "local"}
-        className="relative w-[min(420px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl outline-none"
+        data-face={face}
+        className="relative w-[min(440px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl outline-none"
       >
-        <h2 className="text-sm font-semibold">Sync</h2>
+        <h2 className="text-sm font-semibold">
+          {step.name === "kit"
+            ? "A way back in"
+            : step.name === "unlock"
+              ? "Open a recovery file"
+              : "Sync"}
+        </h2>
         <p className="mt-1.5 text-xs leading-relaxed text-[var(--ink-muted)]">
-          {presentation.sentence}
+          {step.name === "kit"
+            ? "The machine sharing this workspace cannot read it, so it cannot restore it. This file can: it is this device, kept somewhere you trust."
+            : step.name === "unlock"
+              ? "That file is sealed with a passphrase. Type it to open it."
+              : presentation.sentence}
         </p>
 
-        {waiting ? null : shared ? (
+        {step.name === "kit" ? (
+          <KitStep
+            busy={busy}
+            onSave={(passphrase) =>
+              run(async () => {
+                const path = await exportKit(passphrase);
+                if (path === null) return;
+                setStep({ name: "main" });
+              })
+            }
+            onDecline={() =>
+              run(async () => {
+                await declineKit();
+                setStep({ name: "main" });
+              })
+            }
+          />
+        ) : step.name === "unlock" ? (
+          <UnlockStep
+            busy={busy}
+            onOpen={(passphrase) =>
+              run(async () => {
+                const result = await importKit({ path: step.path, passphrase });
+                if (result.ok) {
+                  setStep({ name: "main" });
+                  return;
+                }
+                if (result.reason === "message") setProblem(result.message);
+              })
+            }
+          />
+        ) : waiting || removed ? null : shared ? (
           <SyncedFace
             members={sync?.members ?? []}
             deviceId={sync?.deviceId ?? ""}
             link={link}
             busy={busy}
+            offerKit={offerKit}
+            removing={removing}
+            onSaveKit={() => setStep({ name: "kit" })}
             onInvite={async () => {
               const made = await inviteSomeone("editor");
               setLink(made);
               if (made === null) setProblem("The invitation could not be written.");
+            }}
+            onRemove={async (deviceId) => {
+              setRemoving(deviceId);
+              const said = await removeDevice(deviceId);
+              setRemoving(null);
+              if (said !== null) setProblem(said);
             }}
             onStop={async () => {
               setLink(null);
@@ -108,12 +206,14 @@ export function SyncDialog({ open, onClose, defaultHost = LOCAL_HOST }: SyncDial
         ) : (
           <LocalFace
             host={host}
+            hubRunning={hub?.running ?? false}
             pasted={pasted}
             busy={busy}
             onHost={setHost}
             onPasted={setPasted}
             onShare={() => run(() => enableSync(host))}
             onJoin={() => run(() => joinWorkspace(pasted))}
+            onRestore={openKit}
           />
         )}
 
@@ -135,145 +235,5 @@ export function SyncDialog({ open, onClose, defaultHost = LOCAL_HOST }: SyncDial
       </div>
     </div>,
     document.body,
-  );
-}
-
-interface LocalFaceProps {
-  host: string;
-  pasted: string;
-  busy: boolean;
-  onHost: (value: string) => void;
-  onPasted: (value: string) => void;
-  onShare: () => Promise<void>;
-  onJoin: () => Promise<void>;
-}
-
-/** Not shared with anyone yet: the two errands, each a sentence and one control. */
-function LocalFace({ host, pasted, busy, onHost, onPasted, onShare, onJoin }: LocalFaceProps) {
-  return (
-    <div className="mt-4 space-y-4">
-      <section>
-        <h3 className="text-xs font-semibold">Share this workspace</h3>
-        <label className="mt-1 block text-[11px] text-[var(--ink-muted)]" htmlFor="sync-host">
-          Where this machine is reachable. Start shows this machine&rsquo;s address.
-        </label>
-        <div className="mt-1.5 flex gap-2">
-          <input
-            id="sync-host"
-            value={host}
-            onChange={(event) => onHost(event.target.value)}
-            spellCheck={false}
-            className="min-w-0 flex-1 rounded-md border border-[var(--hairline)] bg-transparent px-2 py-1 text-xs"
-          />
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void onShare()}
-            className="rounded-md px-3 py-1.5 text-xs font-medium hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/10"
-          >
-            Share
-          </button>
-        </div>
-      </section>
-
-      <section>
-        <h3 className="text-xs font-semibold">Join one somebody shared</h3>
-        <label className="mt-1 block text-[11px] text-[var(--ink-muted)]" htmlFor="sync-link">
-          Paste the invitation they sent.
-        </label>
-        <div className="mt-1.5 flex gap-2">
-          <input
-            id="sync-link"
-            value={pasted}
-            onChange={(event) => onPasted(event.target.value)}
-            spellCheck={false}
-            placeholder="suite://join?…"
-            className="min-w-0 flex-1 rounded-md border border-[var(--hairline)] bg-transparent px-2 py-1 text-xs"
-          />
-          <button
-            type="button"
-            disabled={busy || pasted.trim().length === 0}
-            onClick={() => void onJoin()}
-            className="rounded-md px-3 py-1.5 text-xs font-medium hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/10"
-          >
-            Join
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-interface SyncedFaceProps {
-  members: readonly { deviceId: string; name: string; role: string }[];
-  deviceId: string;
-  link: string | null;
-  busy: boolean;
-  onInvite: () => Promise<void>;
-  onStop: () => Promise<void>;
-  run: (work: () => Promise<void>) => Promise<void>;
-}
-
-const ROLE_WORDS: Record<string, string> = {
-  owner: "in charge",
-  editor: "can edit",
-  viewer: "can read",
-};
-
-/** Shared: the invitation to give away, and who is already here. */
-function SyncedFace({ members, deviceId, link, busy, onInvite, onStop, run }: SyncedFaceProps) {
-  return (
-    <div className="mt-4 space-y-4">
-      <section>
-        <h3 className="text-xs font-semibold">Invite someone</h3>
-        <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
-          Send them this. They paste it into their own Canvas, and you let them in.
-        </p>
-        <div className="mt-1.5 flex gap-2">
-          <output
-            data-testid="sync-link"
-            className="min-w-0 flex-1 select-all truncate rounded-md border border-[var(--hairline)] px-2 py-1 text-xs"
-          >
-            {link ?? "No invitation yet"}
-          </output>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void run(onInvite)}
-            className="rounded-md px-3 py-1.5 text-xs font-medium hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/10"
-          >
-            {link === null ? "Make one" : "Make another"}
-          </button>
-        </div>
-      </section>
-
-      <section>
-        <h3 className="text-xs font-semibold">Devices here</h3>
-        <ul data-testid="sync-members" className="mt-1 space-y-1">
-          {members.length === 0 ? (
-            <li className="text-[11px] text-[var(--ink-muted)]">Just this device so far.</li>
-          ) : null}
-          {members.map((member) => (
-            <li key={member.deviceId} className="flex items-baseline justify-between gap-2 text-xs">
-              <span className="truncate">
-                {member.name}
-                {member.deviceId === deviceId ? " (this device)" : ""}
-              </span>
-              <span className="shrink-0 text-[11px] text-[var(--ink-muted)]">
-                {ROLE_WORDS[member.role] ?? member.role}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <button
-        type="button"
-        onClick={() => void run(onStop)}
-        className="text-[11px] text-[var(--ink-muted)] underline-offset-2 hover:underline"
-      >
-        Stop sharing on this device
-      </button>
-    </div>
   );
 }

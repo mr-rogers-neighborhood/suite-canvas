@@ -33,6 +33,7 @@ function bootIn(url: string, workspace: WorkspaceDocument): ReturnType<typeof re
       setActiveBoardId: () => {},
       connect: () => {},
       provider: null,
+      sync: null,
       presence: null,
       bindPresence: () => {},
       setBoard: () => {},

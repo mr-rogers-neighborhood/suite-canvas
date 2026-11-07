@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -502,6 +503,31 @@ if (!gotLock) {
       // What the other person's screen calls this device. "Canvas on harbour-laptop" is a
       // thing somebody can weigh when deciding whether to let it in; a fingerprint is not.
       deviceName: `Canvas on ${hostname()}`,
+      kitFiles: {
+        pickSavePath: async (suggestedName) => {
+          const window = mainWindow;
+          if (window === null) return null;
+          const result = await dialog.showSaveDialog(window, {
+            title: "Save a way back in",
+            defaultPath: join(app.getPath("documents"), suggestedName),
+            filters: [{ name: "Recovery file", extensions: ["json"] }],
+          });
+          return result.canceled || result.filePath === undefined ? null : result.filePath;
+        },
+        pickOpenPath: async () => {
+          const window = mainWindow;
+          if (window === null) return null;
+          const result = await dialog.showOpenDialog(window, {
+            title: "Open a recovery file",
+            properties: ["openFile"],
+            filters: [{ name: "Recovery file", extensions: ["json"] }],
+          });
+          const [chosen] = result.filePaths;
+          return result.canceled || chosen === undefined ? null : chosen;
+        },
+        writeBytes: (path, bytes) => writeFile(path, bytes, { mode: 0o600 }),
+        readBytes: async (path) => new Uint8Array(await readFile(path)),
+      },
       onIpc,
     });
 

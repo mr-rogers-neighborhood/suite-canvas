@@ -17,6 +17,7 @@ import type { BoardPresence } from "../chrome/BoardSwitcher";
 import { BoardSwitcher } from "../chrome/BoardSwitcher";
 import { Dock } from "../chrome/Dock";
 import { InteractionModeToggle } from "../chrome/InteractionModeToggle";
+import { PeerCluster } from "../chrome/PeerCluster";
 import { StartPage } from "../chrome/StartPage";
 import { TitleBar } from "../chrome/TitleBar";
 import { UndoRedo } from "../chrome/UndoRedo";
@@ -340,6 +341,7 @@ export function WorkspaceShellView({
           // lie; it reports the state it has, which is local.
           sync={standalone && !syncEnabled ? null : sync}
           onOpenSync={() => setSyncOpen(true)}
+          peers={<PeerCluster boardId={activeBoardId} />}
           {...(share ? { role: share.role } : {})}
           workspaceId={workspaceId}
           workspaceName={share ? documentLabel(share, workspaceId) : workspaceName}

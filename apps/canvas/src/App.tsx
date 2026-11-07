@@ -238,6 +238,7 @@ function WorkspaceShell({
     setActiveBoardId,
     connect,
     provider,
+    sync,
     presence,
     bindPresence,
     setBoard,

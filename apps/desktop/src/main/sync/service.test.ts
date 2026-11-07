@@ -288,6 +288,163 @@ describe("sharing a workspace for the first time", () => {
   });
 });
 
+describe("presence and leaving", () => {
+  /** Two devices in one group, each with its own service, and a socket the test relays by hand. */
+  async function twoDevices() {
+    const a = await folder();
+    const b = await folder();
+    const aIdentity = await loadOrCreateIdentity(a);
+    const bIdentity = await loadOrCreateIdentity(b);
+    const owner = await createDeviceIdentity(aIdentity.deviceId);
+    const joiner = await createDeviceIdentity(bIdentity.deviceId);
+    const started = await createWorkspaceGroup(workspaceId, owner);
+    const added = await addDevice(started, joiner.keyPackage);
+    await saveGroup(a, workspaceId, added.group);
+    await saveGroup(b, workspaceId, await joinWorkspaceGroup(added.welcome, joiner));
+
+    const hostA = fakeHost();
+    const hostB = fakeHost();
+    const serviceA = await createSyncService({
+      dataDir: a,
+      workspaceId,
+      webSocket: () => hostA.socket,
+    });
+    const serviceB = await createSyncService({
+      dataDir: b,
+      workspaceId,
+      webSocket: () => hostB.socket,
+    });
+    const connectingA = serviceA.connect("ws://127.0.0.1:8787/sync");
+    const connectingB = serviceB.connect("ws://127.0.0.1:8787/sync");
+    hostA.open();
+    hostB.open();
+    await Promise.all([connectingA, connectingB]);
+    return {
+      serviceA,
+      serviceB,
+      hostA,
+      hostB,
+      owner: aIdentity,
+      joiner: bIdentity,
+      dataDirA: a,
+      dataDirB: b,
+    };
+  }
+
+  it("sends presence the other device can open, and receives what it sends", async () => {
+    const { serviceA, serviceB, hostA, hostB, owner } = await twoDevices();
+    const seen: Uint8Array[] = [];
+    serviceB.onPresence((update) => seen.push(update));
+
+    const cursor = new TextEncoder().encode('{"cursor":{"x":10,"y":20}}');
+    await serviceA.presence(cursor);
+
+    const sent = hostA.sent.find((message) => message.type === "ephemeral") as
+      | { workspaceId: string; deviceId: string; payload: string; signature: string }
+      | undefined;
+    expect(sent).toBeDefined();
+
+    // What the hub would forward, forwarded.
+    hostB.host({ type: "ephemeral", ...sent });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(seen).toHaveLength(1);
+    expect(new TextDecoder().decode(seen[0])).toBe('{"cursor":{"x":10,"y":20}}');
+    expect(sent?.deviceId).toBe(owner.deviceId);
+  });
+
+  it("drops presence it cannot open rather than reporting it", async () => {
+    const { serviceB, hostB } = await twoDevices();
+    const seen: Uint8Array[] = [];
+    serviceB.onPresence((update) => seen.push(update));
+
+    // Something sealed for another workspace, or another epoch: a cursor nobody can read is
+    // not a failure, it is what a device outside the group sees.
+    hostB.host({
+      type: "ephemeral",
+      workspaceId,
+      deviceId: "d".repeat(64),
+      payload: Buffer.alloc(40, 1).toString("base64"),
+      signature: "signed",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(seen).toHaveLength(0);
+  });
+
+  it("takes a device out, and moves to a new epoch so what follows is unreadable to it", async () => {
+    const { serviceA, hostA, joiner, dataDirA, dataDirB } = await twoDevices();
+    hostA.host({
+      type: "joined",
+      protocolVersion: 3,
+      workspaceId,
+      newestEpoch: 1,
+      frames: 0,
+      members: [
+        { deviceId: (await serviceA.identity()).deviceId, name: "this laptop", role: "owner" },
+        { deviceId: joiner.deviceId, name: "the desktop", role: "editor" },
+      ],
+    });
+
+    await serviceA.removeDevice(joiner.deviceId);
+    const kinds = hostA.sent
+      .filter((message) => message.type === "frame")
+      .map((message) => (message.frame as { kind?: string }).kind);
+    expect(kinds).toContain("commit");
+    expect(hostA.sent.some((message) => message.type === "removal")).toBe(true);
+    // The epoch moved, which is the half of "removed" the host cannot do for anybody: the
+    // owner is somewhere the removed device's keys cannot follow.
+    const ownerGroup = await loadGroup(dataDirA, workspaceId);
+    const removedGroup = await loadGroup(dataDirB, workspaceId);
+    expect(ownerGroup?.epoch ?? 0).toBeGreaterThan(removedGroup?.epoch ?? 0);
+  });
+
+  it("says which happened when an owner takes this device out", async () => {
+    const { serviceA, hostA } = await twoDevices();
+    hostA.host({ type: "removed" });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(serviceA.status()).toEqual({ state: "removed" });
+  });
+});
+
+describe("a way back in", () => {
+  it("writes a kit this device can be rebuilt from, and says so for the hub", async () => {
+    const dataDir = await folder();
+    const service = await createSyncService({
+      dataDir,
+      workspaceId,
+      webSocket: () => fakeHost().socket,
+    });
+    // A workspace that has never been shared has nothing to save.
+    await expect(service.exportKit(null)).rejects.toThrow(/not shared yet/);
+  });
+
+  it("refuses to restore a file for another workspace", async () => {
+    const mine = await folder();
+    const elsewhere = await folder();
+    const otherWorkspace = "f".repeat(64);
+    // A group for somebody else's workspace, saved where a service for it will find it.
+    await saveGroup(
+      elsewhere,
+      otherWorkspace,
+      await createWorkspaceGroup(otherWorkspace, await createDeviceIdentity("theirs")),
+    );
+    const theirs = await createSyncService({
+      dataDir: elsewhere,
+      workspaceId: otherWorkspace,
+      webSocket: () => fakeHost().socket,
+    });
+    const kit = await theirs.exportKit(null);
+
+    const service = await createSyncService({
+      dataDir: mine,
+      workspaceId,
+      webSocket: () => fakeHost().socket,
+    });
+    await expect(service.importKit(kit, null)).rejects.toThrow(/another workspace/);
+  });
+});
+
 describe("inviting someone in", () => {
   it("hands back a link a person can paste, and tells the host", async () => {
     const dataDir = await folder();

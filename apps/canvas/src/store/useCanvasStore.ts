@@ -27,6 +27,10 @@ export interface SyncInfo {
   readonly deviceId: string;
   readonly status: SyncState;
   readonly members: readonly SyncMember[];
+  /** What this device has said about its way back in; null until anybody asked. */
+  readonly kit?: "made" | "declined" | null;
+  /** What went wrong when something did, in the words of whatever refused. */
+  readonly problem?: string;
 }
 
 function searchParam(key: string): string | null {
@@ -40,6 +44,20 @@ function searchParam(key: string): string | null {
  * The renderer never holds a key or a socket: it exports a document update and receives
  * one back. Both directions are plain arrays because this crosses a context boundary.
  */
+/** What the hub on this machine says about itself. */
+export interface HubInfo {
+  readonly running: boolean;
+  readonly address: string | null;
+  readonly scope: "loopback" | "network";
+}
+
+/** What came of asking to open a recovery file. */
+export type KitImportResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: "cancelled" }
+  | { readonly ok: false; readonly reason: "passphrase"; readonly path: string }
+  | { readonly ok: false; readonly reason: "message"; readonly message: string };
+
 interface SyncBridge {
   syncEnable(url: string): Promise<unknown>;
   syncDisable(): Promise<unknown>;
@@ -50,6 +68,16 @@ interface SyncBridge {
   onSyncIncoming(listener: (update: number[]) => void): void;
   onSyncChanged(listener: (info: SyncInfo) => void): void;
   onSyncSnapshotWanted(listener: () => void): void;
+  syncPresence(update: number[]): Promise<unknown>;
+  onSyncPresence(listener: (update: number[]) => void): void;
+  syncRemove(deviceId: string): Promise<{ problem?: string } & Record<string, unknown>>;
+  syncExportKit(passphrase: string | null): Promise<string | null>;
+  syncImportKit(request: {
+    path?: string;
+    passphrase?: string;
+  }): Promise<KitImportResult & { status?: unknown }>;
+  syncDeclineKit(): Promise<unknown>;
+  syncHub(): Promise<HubInfo | null>;
 }
 
 function syncBridge(): SyncBridge | null {
@@ -76,7 +104,13 @@ const ROOM_ID = SESSION.roomId;
 
 const doc = new LoroDoc();
 const workspace = new WorkspaceDocument(doc);
-const presence = new EphemeralStore(30_000);
+/**
+ * Cursors, selections and who is where.
+ *
+ * The timeout is what makes a crash and a departure look the same: a peer is forgotten after
+ * three missed beats, and the beat is one every five seconds.
+ */
+const presence = new EphemeralStore(15_000);
 const cursors = new CursorEphemeralStore(TAB_ID, 30_000);
 
 // Keyed by room, not workspace: a viewer of a board projection must not load
@@ -120,6 +154,17 @@ interface CanvasState {
   disableSync: () => Promise<void>;
   /** Hand back a link to give someone. Null when sync is not on. */
   inviteSomeone: (role: "editor" | "viewer") => Promise<string | null>;
+  /** Take a device out. Answers with what went wrong, or null. */
+  removeDevice: (deviceId: string) => Promise<string | null>;
+  /** Where the hub on this machine listens, so sharing does not begin with a paste. */
+  hub: HubInfo | null;
+  refreshHub: () => Promise<void>;
+  /** Write a way back in. Answers with where it went, or null when it was not written. */
+  exportKit: (passphrase: string | null) => Promise<string | null>;
+  /** Install a way back in from a file somebody kept. */
+  importKit: (request: { path?: string; passphrase?: string }) => Promise<KitImportResult>;
+  /** Say no, and stop being asked for this workspace. */
+  declineKit: () => Promise<void>;
   /** Join from a link somebody shared. */
   joinWorkspace: (link: string) => Promise<void>;
   /**
@@ -165,6 +210,20 @@ export const useCanvasStore = create<CanvasState>((set) => {
     // source rather than each asking and drifting.
     sync.onSyncChanged((info) => set({ sync: info }));
     void sync.syncStatus().then((info) => set({ sync: info }));
+
+    // Presence is the one thing both directions carry in bulk: cursors move constantly and
+    // nobody should keep them. Local updates go out; what comes back is applied to the same
+    // store, which drops a peer on its own when the beats stop.
+    presence.subscribeLocalUpdates((update) => {
+      void sync.syncPresence(Array.from(update));
+    });
+    sync.onSyncPresence((update) => {
+      try {
+        presence.apply(Uint8Array.from(update));
+      } catch (error) {
+        console.warn("[sync] presence from the host did not apply", error);
+      }
+    });
   }
 
   if (persistence) {
@@ -211,6 +270,24 @@ export const useCanvasStore = create<CanvasState>((set) => {
       if (info != null) set({ sync: info });
     },
     inviteSomeone: async (role) => (await sync?.syncInvite(role)) ?? null,
+    removeDevice: async (deviceId) => {
+      const result = await sync?.syncRemove(deviceId);
+      return result?.problem ?? null;
+    },
+    hub: null,
+    refreshHub: async () => {
+      const hub = await sync?.syncHub();
+      set({ hub: hub ?? null });
+    },
+    exportKit: async (passphrase) => (await sync?.syncExportKit(passphrase)) ?? null,
+    importKit: async (request) => {
+      const result = await sync?.syncImportKit(request);
+      if (result === undefined) return { ok: false, reason: "message", message: "No app shell." };
+      return result;
+    },
+    declineKit: async () => {
+      await sync?.syncDeclineKit();
+    },
     joinWorkspace: async (link) => {
       await sync?.syncJoin(link);
       const info = await sync?.syncStatus();

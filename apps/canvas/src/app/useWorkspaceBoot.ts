@@ -14,6 +14,7 @@ import { readLastBoard, rememberLastBoard } from "../session/lastBoard";
 import type { ShareSession } from "../session/session";
 import { DEFAULT_WORKSPACE_NAME, readWorkspaceNames } from "../session/workspaceName";
 import { rememberWorkspace } from "../session/workspaceTransfer";
+import type { SyncInfo } from "../store/useCanvasStore";
 import { resolveBoardId, useCanvasStore } from "../store/useCanvasStore";
 
 /**
@@ -39,6 +40,8 @@ export function useWorkspaceBoot(args: {
   setActiveBoardId: (id: string | null) => void;
   connect: () => void;
   provider: unknown;
+  /** What sync is doing and who is here, so presence knows whether anyone is listening. */
+  sync: SyncInfo | null;
   presence: unknown;
   bindPresence: (presence: never, tabId: string) => void;
   setBoard: (boardId: string | null) => void;
@@ -63,6 +66,7 @@ export function useWorkspaceBoot(args: {
     setActiveBoardId,
     connect,
     provider,
+    sync,
     presence,
     bindPresence,
     setBoard,
@@ -87,8 +91,10 @@ export function useWorkspaceBoot(args: {
       if (!useCanvasStore.getState().synced) useCanvasStore.setState({ synced: true });
       return;
     }
-    if (provider) bindPresence(presence as never, TAB_ID);
-  }, [bindPresence, presence, provider, standalone]);
+    // Presence binds when this workspace is actually shared. A page with a document and no
+    // hub has nobody to be present to, and a cursor that never arrives is not worth sending.
+    if (provider || sync?.status.state === "syncing") bindPresence(presence as never, TAB_ID);
+  }, [bindPresence, presence, provider, standalone, sync]);
 
   // Seeding is once per workspace, so deleting every card stays deleted. It also
   // waits for the first server sync: seeding an empty local doc would resurrect

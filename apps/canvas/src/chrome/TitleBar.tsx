@@ -47,6 +47,8 @@ export interface TitleBarProps {
   onToggleWorkspacePin?: ((workspaceId: string) => void) | undefined;
   /** Opens the sync dialog. The pill is the door, so the two cannot disagree. */
   onOpenSync?: (() => void) | undefined;
+  /** Who else is in the workspace, drawn beside the pill. */
+  peers?: React.ReactNode;
   /** Board switcher and saved views, rendered after the workspace name. */
   children?: React.ReactNode;
   /** Workspace-level actions (share, export), rendered before the theme. */
@@ -76,6 +78,7 @@ export function TitleBar({
   actions,
   onNavigateHome,
   onOpenSync,
+  peers,
   onOpenSearch,
 }: TitleBarProps) {
   const [renaming, setRenaming] = useState(false);
@@ -351,6 +354,7 @@ export function TitleBar({
       ) : null}
 
       <div className="ml-auto flex shrink-0 items-center gap-3">
+        {peers}
         <div className="relative" ref={statusRef}>
           <button
             type="button"

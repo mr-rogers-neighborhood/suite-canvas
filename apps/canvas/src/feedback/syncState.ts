@@ -17,7 +17,9 @@ export type SyncState =
   | { readonly state: "asleep"; readonly reason: string }
   | { readonly state: "refused"; readonly reason: string }
   /** An invitation has been used, and this device is waiting to be let in. */
-  | { readonly state: "waiting" };
+  | { readonly state: "waiting" }
+  /** Somebody who owns this workspace took this device out of it. */
+  | { readonly state: "removed" };
 
 export type SyncSituation =
   /** Nobody else has a copy. The default, and the one this product is designed for. */
@@ -29,7 +31,9 @@ export type SyncSituation =
   /** An invitation is in use, and the other person has not let this device in yet. */
   | "waiting"
   /** The host said no, or could not be reached for a reason that is not sleep. */
-  | "refused";
+  | "refused"
+  /** An owner took this device out. Not a fault, and not something to retry. */
+  | "removed";
 
 export type SyncTone = "ok" | "busy" | "muted" | "warn";
 
@@ -56,6 +60,7 @@ const DOT: Record<SyncSituation, string> = {
   asleep: "bg-amber-400",
   waiting: "bg-amber-400",
   refused: "bg-amber-400",
+  removed: "bg-gray-400 dark:bg-gray-500",
 };
 
 const LABEL: Record<SyncSituation, string> = {
@@ -65,6 +70,7 @@ const LABEL: Record<SyncSituation, string> = {
   asleep: "Host asleep",
   waiting: "Waiting",
   refused: "Not syncing",
+  removed: "Removed",
 };
 
 /**
@@ -106,6 +112,8 @@ function situationOf(facts: SyncFacts): SyncSituation {
       return "asleep";
     case "refused":
       return "refused";
+    case "removed":
+      return "removed";
     default:
       return "local";
   }
@@ -123,6 +131,8 @@ function sentenceOf(facts: SyncFacts, situation: SyncSituation): string {
       return "The machine sharing this workspace is not answering. Changes save here.";
     case "refused":
       return refusalSentence(facts.state?.state === "refused" ? facts.state.reason : null);
+    case "removed":
+      return "You were removed from this workspace. Your copy is still here.";
     case "syncing": {
       const others = Math.max(0, facts.people - 1);
       if (others === 0) return "Saved here, and to the machine it is shared with.";

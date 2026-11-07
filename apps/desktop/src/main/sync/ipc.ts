@@ -128,11 +128,9 @@ export function registerSyncIpc(options: SyncIpcOptions): SyncIpc {
     const current = await ensureService();
     if (current === null) return null;
     const chosen = role === "viewer" ? "viewer" : "editor";
-    try {
-      return await current.createInvite(chosen);
-    } catch {
-      return null;
-    }
+    // A refusal is answered, not swallowed: "no invitation yet" with no reason is the kind of
+    // quiet failure a person cannot act on.
+    return current.createInvite(chosen);
   });
 
   options.onIpc(IPC.syncJoin, async (_event, link: unknown) => {

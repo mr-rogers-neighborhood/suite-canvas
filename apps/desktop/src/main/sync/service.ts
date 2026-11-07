@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import {
   addDevice,
+  applyCommit,
   createDeviceIdentity,
   createRelayClient,
   createWorkspaceGroup,
@@ -150,6 +151,8 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
   /** Who the host says is here, refreshed on every join and on every change to a role. */
   let members: readonly RelayMember[] = [];
   let presenceHandler: ((update: Uint8Array) => void) | null = null;
+  /** Set when an owner took this device out, so the socket closing is not read as a fault. */
+  let removedByOwner = false;
   /** The presence key for the epoch we are in, derived once per epoch rather than per cursor. */
   let presenceKeyCache: { readonly epoch: number; readonly key: Uint8Array } | null = null;
   /**
@@ -164,6 +167,8 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
   let pending: PendingJoin | null = await loadPending(options.dataDir, options.workspaceId);
   /** How many frames this device has taken from the host, for a catch-up request. */
   let received = 0;
+  /** The queue that keeps frame handling in order, one at a time. */
+  let frames: Promise<void> = Promise.resolve();
 
   const publishStatus = (next: SyncStatus): void => {
     status = next;
@@ -239,14 +244,15 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
     onJoined: (info) => {
       members = info.members;
       claimOwnership();
-      // Ask for what arrived while this device was closed. 0 means everything the host
-      // still holds, which is the honest answer for a device that has never synced.
-      relay?.since(received);
       publishStatus({ state: "syncing", count: info.frames });
     },
     onFrame: (_index, frame) => {
       received += 1;
-      void applyFrame(frame);
+      // One at a time, in the order the host sent them. Applying a frame is not a pure read:
+      // opening a welcome creates the group, and opening an application message ratchets the
+      // secret tree. Run two at once and a snapshot that followed a welcome is evaluated before
+      // the group exists — the joiner then sits in a workspace it cannot read.
+      frames = frames.then(() => applyFrame(frame)).catch(() => undefined);
     },
     onWaiting: (waiting) => {
       waitingRoles.set(waiting.deviceId, waiting.role);
@@ -261,6 +267,7 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
       });
     },
     onRemoved: () => {
+      removedByOwner = true;
       pending = null;
       void clearPending(options.dataDir, options.workspaceId);
       relay?.close();
@@ -269,7 +276,12 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
     },
     onRefused: (reason) => publishStatus({ state: "refused", reason }),
     onError: (code, message) => publishStatus({ state: "asleep", reason: `${code}: ${message}` }),
-    onClosed: () => publishStatus({ state: "asleep", reason: "the host is not answering" }),
+    onClosed: () => {
+      // A socket that closes because somebody removed this device is not a host that went to
+      // sleep, and saying so would offer a retry that can never work.
+      if (removedByOwner) return;
+      publishStatus({ state: "asleep", reason: "the host is not answering" });
+    },
   };
 
   /**
@@ -325,6 +337,30 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
   }
 
   /** This device was let in, so take the welcome and become part of the group. */
+  /**
+   * Somebody else changed who is in the group, so move to the epoch they made.
+   *
+   * Without this a member is left at the epoch it joined in: it would read nothing that came
+   * after an Add or a Remove and would never say so, because a frame it cannot open is not an
+   * error. That is the difference between "removed" working for the person who removed and
+   * working for everybody else.
+   */
+  async function applyCommitFromPeer(frame: Frame): Promise<void> {
+    const current = group;
+    if (current === null) return;
+    const payload = decodeBase64(frame.payload);
+    if (payload === null) return;
+    try {
+      const applied = await applyCommit(current, payload);
+      group = applied.group;
+      presenceKeyCache = null;
+      await saveGroup(options.dataDir, options.workspaceId, group);
+    } catch {
+      // A commit this device cannot apply is one it is already past, or one for a group it is
+      // no longer in. Neither is worth telling a person about.
+    }
+  }
+
   async function acceptWelcome(frame: Frame): Promise<void> {
     if (pending === null) return;
     const payload = decodeBase64(frame.payload);
@@ -353,6 +389,11 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
     // quietly decrypt it as an old application message rather than refuse it.
     if (group === null || frame.epoch < group.epoch) return;
 
+    if (frame.kind === "commit") {
+      await applyCommitFromPeer(frame);
+      return;
+    }
+
     if (frame.kind === "keypackage") {
       // Only a device the host has just announced, and only once. A key package replayed from
       // the log on connect is a device that is already a member, so adding it again would put
@@ -376,8 +417,8 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
       const plaintext: Uint8Array | null = opened.plaintext;
       if (plaintext !== null) updateHandler?.(plaintext);
     } catch {
-      // A frame this device cannot read is not an error worth surfacing: it is what a
-      // device that joined later sees of the past, by design.
+      // A frame this device cannot read is not an error worth surfacing: it is what a device
+      // that joined later sees of the past, by design.
     }
   }
 
@@ -419,6 +460,11 @@ export async function createSyncService(options: SyncServiceOptions): Promise<Sy
         },
         handlers,
       );
+      // Ask for what arrived while this device was closed, once the client exists. 0 means
+      // everything the host still holds, which is the honest answer for a device that has
+      // never synced. Doing it from `onJoined` looked equivalent and was not: the host can
+      // answer before the client is assigned, and the catch-up was dropped on the floor.
+      relay.since(received);
     } catch (error) {
       publishStatus({
         state: "asleep",

@@ -85,14 +85,15 @@ export function useWorkspaceBoot(args: {
   }, [connect, standalone]);
 
   useEffect(() => {
-    if (standalone) {
-      // Nothing will sync in this build, so the relay's 5 s grace period would
-      // only delay the first seed of a local workspace.
-      if (!useCanvasStore.getState().synced) useCanvasStore.setState({ synced: true });
-      return;
+    // A build with no transport has nothing to wait for, so the first paint is not held up by
+    // a sync that will never happen. It is not a reason to skip presence either: the desktop
+    // app is built from the standalone bundle, so `standalone` is true there and the hub is
+    // as real as it gets.
+    if (standalone && !useCanvasStore.getState().synced) {
+      useCanvasStore.setState({ synced: true });
     }
-    // Presence binds when this workspace is actually shared. A page with a document and no
-    // hub has nobody to be present to, and a cursor that never arrives is not worth sending.
+    // Presence binds when this workspace is actually shared. A page with a document and no hub
+    // has nobody to be present to, and a cursor nobody receives is not worth sending.
     if (provider || sync?.status.state === "syncing") bindPresence(presence as never, TAB_ID);
   }, [bindPresence, presence, provider, standalone, sync]);
 

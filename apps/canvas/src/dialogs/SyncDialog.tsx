@@ -189,7 +189,7 @@ export function SyncDialog({ open, onClose, defaultHost = LOCAL_HOST }: SyncDial
             onInvite={async () => {
               const made = await inviteSomeone("editor");
               setLink(made);
-              if (made === null) setProblem("The invitation could not be written.");
+              if (made === null) setProblem("Sync is not connected, so no invitation was written.");
             }}
             onRemove={async (deviceId) => {
               setRemoving(deviceId);

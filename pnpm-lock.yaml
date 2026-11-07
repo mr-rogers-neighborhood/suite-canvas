@@ -354,8 +354,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/graph
       '@suite/sync':
-        specifier: git+https://github.com/mr-rogers-neighborhood/suite-sync.git#v0.11.0&path:/packages/protocol
-        version: https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/5d676822f890bbd27dd622bbc15e61b3a492e1b5#path:/packages/protocol
+        specifier: git+https://github.com/mr-rogers-neighborhood/suite-sync.git#v0.11.3&path:/packages/protocol
+        version: https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/e7a9edcf8a88aa804471465dfeebb4aff317d2f6#path:/packages/protocol
       electron-updater:
         specifier: ^6.6.2
         version: 6.8.11(supports-color@7.2.0)
@@ -2446,9 +2446,9 @@ packages:
     resolution: {gitHosted: true, integrity: sha512-swwrwngeyVaAA1nTvBnBgZbch3qFDCRi7uFAT2ADVqgzjNRwT3njc+k5lqVwbzJ/ZIOqXAFc6WrI/dAwwvJWpQ==, path: /packages/files, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/39fc575d4086327ac2a860ef854d4c713b3956b2}
     version: 0.6.1
 
-  '@suite/sync@https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/5d676822f890bbd27dd622bbc15e61b3a492e1b5#path:/packages/protocol':
-    resolution: {gitHosted: true, integrity: sha512-txIg8eFnKD+RQoKvANya4/uaKWNU78VZM21KGRXmyE6Hr4zyJA0lk4Jr0WInNxrORIG/gTMLr2BW/N/e1kP31w==, path: /packages/protocol, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/5d676822f890bbd27dd622bbc15e61b3a492e1b5}
-    version: 0.11.0
+  '@suite/sync@https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/e7a9edcf8a88aa804471465dfeebb4aff317d2f6#path:/packages/protocol':
+    resolution: {gitHosted: true, integrity: sha512-2zPd2mkhJIJUK+w2d5fSmH/o9jTV64AB7oTqmvTAleOiacV7Mr4I0bJGq5Tn2L1eg43JVNpEsTEf05rFfb3LcA==, path: /packages/protocol, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/e7a9edcf8a88aa804471465dfeebb4aff317d2f6}
+    version: 0.11.3
 
   '@szmarczak/http-timer@4.0.6':
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
@@ -7717,7 +7717,7 @@ snapshots:
     dependencies:
       zod: 4.6.7
 
-  '@suite/sync@https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/5d676822f890bbd27dd622bbc15e61b3a492e1b5#path:/packages/protocol':
+  '@suite/sync@https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/e7a9edcf8a88aa804471465dfeebb4aff317d2f6#path:/packages/protocol':
     dependencies:
       '@noble/ciphers': 2.4.0
       '@noble/hashes': 2.4.0

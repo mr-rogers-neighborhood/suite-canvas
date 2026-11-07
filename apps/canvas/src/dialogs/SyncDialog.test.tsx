@@ -172,6 +172,8 @@ describe("the sync dialog", () => {
     open({ status: { state: "syncing", count: 4 }, members: [thisDevice] });
 
     fireEvent.click(screen.getByRole("button", { name: "Make one" }));
-    expect(await screen.findByTestId("sync-problem")).toHaveTextContent("could not be written");
+    expect(await screen.findByTestId("sync-problem")).toHaveTextContent(
+      "no invitation was written",
+    );
   });
 });

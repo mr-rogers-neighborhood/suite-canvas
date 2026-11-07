@@ -14,13 +14,13 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@suite/contracts": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.6.1&path:/packages/contracts",
+    "@suite/contracts": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.7.0&path:/packages/contracts",
     "@suite/desktop": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.6.1&path:/packages/desktop",
     "@suite/files": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.6.1&path:/packages/files",
     "@suite/graph": "workspace:*",
     "electron-updater": "^6.6.2",
     "zod": "^4.6.7",
-    "@suite/sync": "git+https://github.com/mr-rogers-neighborhood/suite-sync.git#v0.10.0&path:/packages/protocol"
+    "@suite/sync": "git+https://github.com/mr-rogers-neighborhood/suite-sync.git#v0.11.0&path:/packages/protocol"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

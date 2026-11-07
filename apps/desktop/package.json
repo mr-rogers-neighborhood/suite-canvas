@@ -20,7 +20,7 @@
     "@suite/graph": "workspace:*",
     "electron-updater": "^6.6.2",
     "zod": "^4.6.7",
-    "@suite/sync": "git+https://github.com/mr-rogers-neighborhood/suite-sync.git#v0.9.2&path:/packages/protocol"
+    "@suite/sync": "git+https://github.com/mr-rogers-neighborhood/suite-sync.git#v0.10.0&path:/packages/protocol"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

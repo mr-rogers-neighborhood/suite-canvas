@@ -78,7 +78,7 @@ export function LibraryMediaList({
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search media by name or card…"
           data-testid="library-media-search"
-          className="w-full rounded-lg border border-[var(--hairline)] bg-[var(--surface)] px-2.5 py-1 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)]"
+          className="w-full rounded-lg border border-[var(--hairline)] bg-[var(--surface)] px-2.5 py-1 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
         />
         <div
           className="flex items-center gap-1 overflow-x-auto text-[11px]"
@@ -93,7 +93,7 @@ export function LibraryMediaList({
               className={`rounded-md px-2 py-0.5 font-medium capitalize transition-colors ${
                 filter === kind
                   ? "bg-[var(--ink)] text-[var(--surface)]"
-                  : "bg-[var(--surface-muted)] text-[var(--ink-muted)] hover:text-[var(--ink)]"
+                  : "bg-[var(--surface-sunk)] text-[var(--ink-muted)] hover:text-[var(--ink)]"
               }`}
             >
               {kind === "all" ? `All (${items.length})` : kind}
@@ -125,7 +125,7 @@ export function LibraryMediaList({
                   className="group relative flex cursor-grab flex-col overflow-hidden rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1.5 transition-shadow hover:shadow-sm"
                 >
                   {/* Thumbnail */}
-                  <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded bg-[var(--surface-muted)]">
+                  <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded bg-[var(--surface-sunk)]">
                     {item.kind === "image" && thumbSrc ? (
                       <img
                         src={thumbSrc}
@@ -194,7 +194,7 @@ export function LibraryMediaList({
                           data-testid={`place-media-${item.id}`}
                           title="Make a card for this media, so you can put it on a board"
                           onClick={() => onPlaceAsCard(item)}
-                          className="rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--brand)] hover:bg-[var(--brand)]/10"
+                          className="rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/10"
                         >
                           Place as card
                         </button>

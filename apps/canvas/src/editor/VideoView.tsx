@@ -40,7 +40,7 @@ export function VideoView({ node, selected }: NodeViewProps) {
     <NodeViewWrapper
       className={`relative my-2 w-full max-w-full overflow-hidden rounded-lg border transition-all ${
         selected
-          ? "border-[var(--brand)] ring-2 ring-[var(--brand)]/20"
+          ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/20"
           : "border-[var(--hairline)]"
       }`}
     >
@@ -51,7 +51,7 @@ export function VideoView({ node, selected }: NodeViewProps) {
           Your browser does not support the video tag.
         </video>
       ) : (
-        <div className="flex h-36 w-full items-center justify-center bg-[var(--surface-muted)] text-[12px] text-[var(--ink-muted)]">
+        <div className="flex h-36 w-full items-center justify-center bg-[var(--surface-sunk)] text-[12px] text-[var(--ink-muted)]">
           Loading video…
         </div>
       )}

@@ -213,7 +213,7 @@ function SwatchLabel({ item }: { item: ContextMenuItem }) {
           className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors ${
             item.checked
               ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--surface)]"
-              : "border-[var(--hairline-strong)] bg-transparent"
+              : "border-[var(--border-strong)] bg-transparent"
           }`}
         >
           {item.checked ? (

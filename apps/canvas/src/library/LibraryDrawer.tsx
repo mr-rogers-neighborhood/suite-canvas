@@ -764,7 +764,7 @@ export function LibraryDrawer({
                     className="flex items-center justify-between rounded border border-[var(--hairline)] p-1.5 text-[11px]"
                   >
                     <div className="flex items-center gap-1.5 truncate">
-                      <span className="rounded bg-[var(--surface-muted)] px-1 font-mono text-[9px] uppercase text-[var(--ink-muted)]">
+                      <span className="rounded bg-[var(--surface-sunk)] px-1 font-mono text-[9px] uppercase text-[var(--ink-muted)]">
                         {item.kind}
                       </span>
                       <span className="truncate font-medium text-[var(--ink)]">
@@ -777,7 +777,7 @@ export function LibraryDrawer({
                           type="button"
                           onClick={() => onRestoreMedia(item.id)}
                           data-testid={`restore-media-${item.id}`}
-                          className="text-[10px] text-[var(--brand)] hover:underline"
+                          className="text-[10px] text-[var(--accent)] hover:underline"
                         >
                           Restore
                         </button>

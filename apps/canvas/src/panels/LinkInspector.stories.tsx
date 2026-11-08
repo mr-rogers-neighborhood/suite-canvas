@@ -60,7 +60,7 @@ const meta = {
   title: "Panels/LinkInspector",
   decorators: [
     (Story: () => ReactElement) => (
-      <div style={{ width: 320, height: 620, display: "flex", background: "var(--surface-muted)" }}>
+      <div style={{ width: 320, height: 620, display: "flex", background: "var(--surface-sunk)" }}>
         <Story />
       </div>
     ),

@@ -1393,7 +1393,7 @@ body {
   display: block;
   height: 100%;
   border-radius: 2px;
-  background: var(--brand);
+  background: var(--accent);
 }
 
 /*
@@ -3341,12 +3341,6 @@ html[data-inspector-linking] .card-inspector {
   --value-hue: var(--value-explore-hue);
   --value-fill: var(--value-explore-fill);
   --value-ink: var(--value-explore-ink);
-}
-
-[data-preview="run"] {
-  --value-hue: var(--value-run-hue);
-  --value-fill: var(--value-run-fill);
-  --value-ink: var(--value-run-ink);
 }
 
 [data-preview="record"] {

@@ -137,7 +137,7 @@ export function EmbedView({ node, selected, updateAttributes }: NodeViewProps) {
     return (
       <NodeViewWrapper
         className={`embed-node my-2 rounded-lg border border-dashed px-3 py-2 text-[11px] text-[var(--ink-muted)] ${
-          selected ? "border-[var(--brand)]" : "border-[var(--hairline)]"
+          selected ? "border-[var(--accent)]" : "border-[var(--hairline)]"
         }`}
         data-embed-state={resolution.reason}
         contentEditable={false}
@@ -154,7 +154,7 @@ export function EmbedView({ node, selected, updateAttributes }: NodeViewProps) {
   return (
     <NodeViewWrapper
       className={`embed-node relative my-2 overflow-hidden rounded-lg border bg-[var(--surface)] ${
-        selected ? "border-[var(--brand)]" : "border-[var(--hairline)]"
+        selected ? "border-[var(--accent)]" : "border-[var(--hairline)]"
       }`}
       data-embed-state="card"
       data-embed-card={resolution.cardId}

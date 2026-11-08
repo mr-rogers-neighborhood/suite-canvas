@@ -1,5 +1,6 @@
 import { STARTER_TEMPLATES, type WorkspaceTemplate } from "@suite/graph";
 import type { VaultFile } from "@suite/import-obsidian";
+import { Launch } from "@suite/ui";
 import { LoroDoc } from "loro-crdt";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { CanvasMark } from "../chrome/CanvasMark";
@@ -492,149 +493,127 @@ export function WorkspaceLauncher() {
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => event.preventDefault()}
     >
-      <div className="mx-auto w-[min(760px,100%)] overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] shadow-[0_30px_80px_-40px_rgba(0,0,0,0.55)]">
-        <header className="border-b border-[var(--hairline)] px-8 pt-8 pb-7">
-          <div className="flex items-end justify-between gap-6">
-            <div>
-              <h1 className="text-[34px] font-semibold tracking-tight">Suite</h1>
-              {/* Two sentences and a rule between them. A `div` rather than a `p`: an `<hr>`
-                  is flow content and cannot live inside a paragraph, so a `p` would close
-                  before it and the second line would lose the muted 13px styling. */}
-              <div className="mt-1 max-w-[420px] text-[13px] leading-5 text-[var(--ink-muted)]">
-                <p>A canvas for connected thinking.</p>
-                <hr className="my-2 border-[var(--hairline)]" />
-                <p>Open a canvas file, pick up a recent one, or choose a starter template.</p>
-              </div>
-            </div>
-            <span aria-hidden="true" className="hidden sm:block">
-              <CanvasMark size="lg" />
-            </span>
-          </div>
-          <div className="mt-6 flex flex-wrap items-center gap-2">
+      <Launch
+        mark={<CanvasMark size="lg" />}
+        title="Suite Canvas"
+        tagline="A canvas for connected thinking."
+        hint="Start a new canvas, pick up a recent one, or bring in what you already have."
+        actions={
+          <>
             <button
               type="button"
               data-testid="launcher-new"
-              className="rounded-lg bg-[var(--ink)] px-4 py-2 text-[13px] font-medium text-[var(--surface)] transition-opacity hover:opacity-90"
+              className="rounded-lg bg-[var(--accent)] px-4 py-2 text-[13px] font-medium text-[var(--on-accent)] transition-opacity hover:opacity-90"
               onClick={startNew}
               disabled={busy}
             >
               New canvas
             </button>
-            <button
-              type="button"
-              data-testid="launcher-import"
-              className="rounded-lg border border-[var(--hairline)] px-4 py-2 text-[13px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-              onClick={() => {
-                // On the desktop the shell owns the file, so its dialog opens it in
-                // place. The browser's input would import a copy as a new
-                // IndexedDB workspace, which is the wrong thing for a file-first
-                // build.
-                const bridge = desktopBridge();
-                if (bridge === null) {
-                  fileInput.current?.click();
-                  return;
-                }
-                void bridge.openFileDialog();
-              }}
-              disabled={busy}
-            >
-              Open canvas file…
-            </button>
-            <button
-              type="button"
-              data-testid="launcher-vault"
-              className="rounded-lg border border-[var(--hairline)] px-4 py-2 text-[13px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-              onClick={() => vaultInput.current?.click()}
-              disabled={busy}
-            >
-              Import a vault…
-            </button>
             <RepositoryButton />
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".canvas,.suite,.json,application/json"
-              className="hidden"
-              data-testid="launcher-file"
-              onChange={(event) => {
-                void importFile(event.target.files?.[0]);
-                event.target.value = "";
-              }}
-            />
-            <VaultImportDialog
-              vaultInputRef={(element) => {
-                vaultInput.current = element;
-                if (element) element.webkitdirectory = true;
-              }}
-              onImportHome={importVaultHome}
-              zipInputRef={zipInput}
-              vaultTarget={vaultTarget}
-              onClearTarget={() => setVaultTarget(null)}
-              onImportFolder={importVaultFolder}
-              onImportZip={importVaultZip}
-            />
-            {/* Identity lives here as well as in the title bar: this is the first
-                screen someone sees, and an account is what keeps a workspace
-                across devices. The literal keeps every byte of `/api/auth` out of
-                a standalone build. */}
-          </div>
-          {/* Notebook is the default rather than Blank: a new workspace should open
+          </>
+        }
+        importOptions={[
+          {
+            label: "Canvas file",
+            detail: "A .canvas file from anywhere",
+            onSelect: () => {
+              const bridge = desktopBridge();
+              if (bridge === null) {
+                fileInput.current?.click();
+                return;
+              }
+              void bridge.openFileDialog();
+            },
+          },
+          {
+            label: "Obsidian vault",
+            detail: "Its notes and canvases",
+            onSelect: () => vaultInput.current?.click(),
+          },
+        ]}
+      >
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".canvas,.suite,.json,application/json"
+          className="hidden"
+          data-testid="launcher-file"
+          onChange={(event) => {
+            void importFile(event.target.files?.[0]);
+            event.target.value = "";
+          }}
+        />
+        <VaultImportDialog
+          vaultInputRef={(element) => {
+            vaultInput.current = element;
+            if (element) element.webkitdirectory = true;
+          }}
+          onImportHome={importVaultHome}
+          zipInputRef={zipInput}
+          vaultTarget={vaultTarget}
+          onClearTarget={() => setVaultTarget(null)}
+          onImportFolder={importVaultFolder}
+          onImportZip={importVaultZip}
+        />
+        {/* Identity lives here as well as in the title bar: this is the first
+                  screen someone sees, and an account is what keeps a workspace
+                  across devices. The literal keeps every byte of `/api/auth` out of
+                  a standalone build. */}
+        {/* Notebook is the default rather than Blank: a new workspace should open
               with somewhere to write, and an empty document is still one choice
               away. It sits on its own line because it belongs to "New canvas",
               not beside it, and the description follows the choice rather than
               stretching the select until the name is cut off. */}
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-[var(--ink-muted)]">
-            <label className="flex items-center gap-2">
-              <span>New from</span>
-              <select
-                data-testid="launcher-template"
-                aria-label="Workspace template"
-                value={template}
-                onChange={(event) => setTemplate(event.target.value)}
-                disabled={busy}
-                className="max-w-[220px] rounded-lg border border-[var(--hairline)] bg-[var(--surface)] px-2 py-1 text-[12px] text-[var(--ink)]"
-              >
-                <option value="">Blank</option>
-                {templates.map((starter) => (
-                  <option key={starter.id} value={starter.id}>
-                    {starter.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <span data-testid="launcher-template-detail" className="text-[11px]">
-              {templates.find((starter) => starter.id === template)?.description ??
-                "An empty board."}
-            </span>
-          </div>
-          {error ? (
-            <p
-              role="alert"
-              data-testid="launcher-error"
-              className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-600 dark:text-red-300"
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-[var(--ink-muted)]">
+          <label className="flex items-center gap-2">
+            <span>New from</span>
+            <select
+              data-testid="launcher-template"
+              aria-label="Workspace template"
+              value={template}
+              onChange={(event) => setTemplate(event.target.value)}
+              disabled={busy}
+              className="max-w-[220px] rounded-lg border border-[var(--hairline)] bg-[var(--surface)] px-2 py-1 text-[12px] text-[var(--ink)]"
             >
-              {error}
-            </p>
-          ) : null}
-          {progress ? (
-            <p
-              role="status"
-              aria-live="polite"
-              data-testid="launcher-progress"
-              className="mt-3 rounded-lg border border-[var(--hairline)] bg-[var(--segmented-bg)] px-3 py-2 text-[12px] text-[var(--ink)]"
-            >
-              {progress}
-            </p>
-          ) : null}
-          {notice ? (
-            <p
-              data-testid="launcher-notice"
-              className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-200"
-            >
-              {notice}
-            </p>
-          ) : null}
-        </header>
+              <option value="">Blank</option>
+              {templates.map((starter) => (
+                <option key={starter.id} value={starter.id}>
+                  {starter.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span data-testid="launcher-template-detail" className="text-[11px]">
+            {templates.find((starter) => starter.id === template)?.description ?? "An empty board."}
+          </span>
+        </div>
+        {error ? (
+          <p
+            role="alert"
+            data-testid="launcher-error"
+            className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-600 dark:text-red-300"
+          >
+            {error}
+          </p>
+        ) : null}
+        {progress ? (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="launcher-progress"
+            className="mt-3 rounded-lg border border-[var(--hairline)] bg-[var(--segmented-bg)] px-3 py-2 text-[12px] text-[var(--ink)]"
+          >
+            {progress}
+          </p>
+        ) : null}
+        {notice ? (
+          <p
+            data-testid="launcher-notice"
+            className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-200"
+          >
+            {notice}
+          </p>
+        ) : null}
 
         {isDesktop ? (
           <section className="px-8 py-6" aria-labelledby="recent-title">
@@ -771,7 +750,7 @@ export function WorkspaceLauncher() {
         </section>
 
         <RepositoryFooter />
-      </div>
+      </Launch>
       {deleteTarget ? (
         <Suspense fallback={null}>
           <DeleteWorkspaceDialog

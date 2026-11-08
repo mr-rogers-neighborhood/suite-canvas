@@ -242,11 +242,11 @@ importers:
         specifier: workspace:*
         version: link:../../packages/import-obsidian
       '@suite/theme':
-        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.13.0&path:/packages/theme
-        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/d8ef94053d151b9c147fbfe87391b0a664dd0675#path:/packages/theme
+        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.14.0&path:/packages/theme
+        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/theme
       '@suite/ui':
-        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.13.0&path:/packages/ui
-        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/d8ef94053d151b9c147fbfe87391b0a664dd0675#path:/packages/ui(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.14.0&path:/packages/ui
+        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/ui(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@tiptap/extensions':
         specifier: ^3.32.0
         version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
@@ -348,14 +348,14 @@ importers:
   apps/desktop:
     dependencies:
       '@suite/contracts':
-        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.7.0&path:/packages/contracts
-        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/d97ef67326ef7464683255b8b36fd512f422fcc1#path:/packages/contracts
+        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.14.0&path:/packages/contracts
+        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/contracts
       '@suite/desktop':
-        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.6.1&path:/packages/desktop
-        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/39fc575d4086327ac2a860ef854d4c713b3956b2#path:/packages/desktop
+        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.14.0&path:/packages/desktop
+        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/desktop
       '@suite/files':
-        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.6.1&path:/packages/files
-        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/39fc575d4086327ac2a860ef854d4c713b3956b2#path:/packages/files
+        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.14.0&path:/packages/files
+        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/files
       '@suite/graph':
         specifier: workspace:*
         version: link:../../packages/graph
@@ -2432,29 +2432,29 @@ packages:
       '@stryker-mutator/core': 10.0.0
       vitest: '>=2.0.0'
 
-  '@suite/contracts@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/d97ef67326ef7464683255b8b36fd512f422fcc1#path:/packages/contracts':
-    resolution: {gitHosted: true, integrity: sha512-zZePcQzzYUC/d/mvKkB3/u8cVYu8ykcZyjjZbUq6azmYZ3XA1AlJaDKQcj8GAeztspQFMK3j07ppmb7vB9OTww==, path: /packages/contracts, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/d97ef67326ef7464683255b8b36fd512f422fcc1}
+  '@suite/contracts@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/contracts':
+    resolution: {gitHosted: true, integrity: sha512-+MibUcqd9uVHxQlk8PKPDhuVS8gw2fXqh1ezYRwblDUmTzd/EJ8v/7VWX6iuAifMYfeVnDLim/DxpNPHHL3xrQ==, path: /packages/contracts, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e}
     version: 0.7.0
 
-  '@suite/desktop@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/39fc575d4086327ac2a860ef854d4c713b3956b2#path:/packages/desktop':
-    resolution: {gitHosted: true, integrity: sha512-swwrwngeyVaAA1nTvBnBgZbch3qFDCRi7uFAT2ADVqgzjNRwT3njc+k5lqVwbzJ/ZIOqXAFc6WrI/dAwwvJWpQ==, path: /packages/desktop, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/39fc575d4086327ac2a860ef854d4c713b3956b2}
-    version: 0.6.1
+  '@suite/desktop@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/desktop':
+    resolution: {gitHosted: true, integrity: sha512-+MibUcqd9uVHxQlk8PKPDhuVS8gw2fXqh1ezYRwblDUmTzd/EJ8v/7VWX6iuAifMYfeVnDLim/DxpNPHHL3xrQ==, path: /packages/desktop, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e}
+    version: 0.7.0
 
-  '@suite/files@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/39fc575d4086327ac2a860ef854d4c713b3956b2#path:/packages/files':
-    resolution: {gitHosted: true, integrity: sha512-swwrwngeyVaAA1nTvBnBgZbch3qFDCRi7uFAT2ADVqgzjNRwT3njc+k5lqVwbzJ/ZIOqXAFc6WrI/dAwwvJWpQ==, path: /packages/files, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/39fc575d4086327ac2a860ef854d4c713b3956b2}
+  '@suite/files@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/files':
+    resolution: {gitHosted: true, integrity: sha512-+MibUcqd9uVHxQlk8PKPDhuVS8gw2fXqh1ezYRwblDUmTzd/EJ8v/7VWX6iuAifMYfeVnDLim/DxpNPHHL3xrQ==, path: /packages/files, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e}
     version: 0.6.1
 
   '@suite/sync@https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/e7a9edcf8a88aa804471465dfeebb4aff317d2f6#path:/packages/protocol':
     resolution: {gitHosted: true, integrity: sha512-2zPd2mkhJIJUK+w2d5fSmH/o9jTV64AB7oTqmvTAleOiacV7Mr4I0bJGq5Tn2L1eg43JVNpEsTEf05rFfb3LcA==, path: /packages/protocol, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/e7a9edcf8a88aa804471465dfeebb4aff317d2f6}
     version: 0.11.3
 
-  '@suite/theme@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/d8ef94053d151b9c147fbfe87391b0a664dd0675#path:/packages/theme':
-    resolution: {gitHosted: true, integrity: sha512-sUJWiIcoBGyTbgubgedsjREx76UR7m3JylH+tR9DHOBeD5M20lbzKsZFLlFaxiXHkSWkEMaPec3RwcMwiJQ3Fg==, path: /packages/theme, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/d8ef94053d151b9c147fbfe87391b0a664dd0675}
-    version: 0.1.0
+  '@suite/theme@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/theme':
+    resolution: {gitHosted: true, integrity: sha512-+MibUcqd9uVHxQlk8PKPDhuVS8gw2fXqh1ezYRwblDUmTzd/EJ8v/7VWX6iuAifMYfeVnDLim/DxpNPHHL3xrQ==, path: /packages/theme, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e}
+    version: 0.14.0
 
-  '@suite/ui@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/d8ef94053d151b9c147fbfe87391b0a664dd0675#path:/packages/ui':
-    resolution: {gitHosted: true, integrity: sha512-sUJWiIcoBGyTbgubgedsjREx76UR7m3JylH+tR9DHOBeD5M20lbzKsZFLlFaxiXHkSWkEMaPec3RwcMwiJQ3Fg==, path: /packages/ui, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/d8ef94053d151b9c147fbfe87391b0a664dd0675}
-    version: 0.1.0
+  '@suite/ui@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/ui':
+    resolution: {gitHosted: true, integrity: sha512-+MibUcqd9uVHxQlk8PKPDhuVS8gw2fXqh1ezYRwblDUmTzd/EJ8v/7VWX6iuAifMYfeVnDLim/DxpNPHHL3xrQ==, path: /packages/ui, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e}
+    version: 0.14.0
     peerDependencies:
       react: '>=19'
       react-dom: '>=19'
@@ -7708,13 +7708,13 @@ snapshots:
       tslib: 2.8.1
       vitest: 5.0.5(@types/node@26.6.5)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(@vitest/ui@5.0.5)(jsdom@30.1.3(@noble/hashes@1.8.0))(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
-  '@suite/contracts@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/d97ef67326ef7464683255b8b36fd512f422fcc1#path:/packages/contracts':
+  '@suite/contracts@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/contracts':
     dependencies:
       zod: 4.6.7
 
-  '@suite/desktop@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/39fc575d4086327ac2a860ef854d4c713b3956b2#path:/packages/desktop': {}
+  '@suite/desktop@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/desktop': {}
 
-  '@suite/files@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/39fc575d4086327ac2a860ef854d4c713b3956b2#path:/packages/files':
+  '@suite/files@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/files':
     dependencies:
       zod: 4.6.7
 
@@ -7732,9 +7732,9 @@ snapshots:
       - '@noble/curves'
       - '@noble/post-quantum'
 
-  '@suite/theme@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/d8ef94053d151b9c147fbfe87391b0a664dd0675#path:/packages/theme': {}
+  '@suite/theme@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/theme': {}
 
-  '@suite/ui@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/d8ef94053d151b9c147fbfe87391b0a664dd0675#path:/packages/ui(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@suite/ui@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/cb6c5e262cd6d0f43024284edd3dff278988372e#path:/packages/ui(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)

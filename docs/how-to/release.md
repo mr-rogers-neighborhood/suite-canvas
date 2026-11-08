@@ -20,15 +20,15 @@ The version in `package.json`, the tag and the changelog describe the same commi
 with the package is the failure this rule exists to prevent, because an updater resolves a version, not
 an intention.
 
-The version in `package.json` is what the next tag must say. Today it is `0.1.2`, so the next release
-is tagged `v0.1.2` if nothing changed the number, or a new one if it did.
+The version in `package.json` is what the next tag must say. Today it is `0.1.3`, so the next release
+is tagged `v0.1.3` if nothing changed the number, or a new one if it did.
 
 `apps/desktop/package.json` and `apps/desktop/suite.app.json` carry the **app's** version and must
 agree with it: the tag, the manifest and the package describe one commit.
 
 ```sh
-git tag -a v0.1.2 -m "v0.1.2"
-git push origin main v0.1.2
+git tag -a v0.1.3 -m "v0.1.3"
+git push origin main v0.1.3
 ```
 
 ## The package

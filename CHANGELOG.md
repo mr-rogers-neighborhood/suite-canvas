@@ -9,8 +9,8 @@ No changes yet.
 ### Changed
 
 - The first screen says what this is in two lines, with a rule between them: a canvas for
-  connected thinking, then how to begin. The buttons match that word — **New canvas** and
-  **Open canvas file…** — and a new canvas offers starter templates rather than an empty
+  connected thinking, then how to begin. The buttons match that word: **New canvas** and
+  **Open canvas file…**. A new canvas opens on the starter templates rather than on an empty
   document alone.
 
 ## [0.1.2] - 2026-11-07

@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-07
+
+### Added
+
+- **A face.** The canvas carries its own mark, and the packaged window hands it to the desktop, so a taskbar
+  entry, a menu entry and the card in Suite Start all show the same glyph.
+
 ## [0.1.1] - 2026-11-07
 
 ### Changed

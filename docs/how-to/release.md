@@ -20,15 +20,15 @@ The version in `package.json`, the tag and the changelog describe the same commi
 with the package is the failure this rule exists to prevent, because an updater resolves a version, not
 an intention.
 
-The version in `package.json` is what the next tag must say. Today it is `0.1.1`, so the next release
-is tagged `v0.1.1` if nothing changed the number, or a new one if it did.
+The version in `package.json` is what the next tag must say. Today it is `0.1.2`, so the next release
+is tagged `v0.1.2` if nothing changed the number, or a new one if it did.
 
 `apps/desktop/package.json` and `apps/desktop/suite.app.json` carry the **app's** version and must
 agree with it: the tag, the manifest and the package describe one commit.
 
 ```sh
-git tag -a v0.1.1 -m "v0.1.1"
-git push origin main v0.1.1
+git tag -a v0.1.2 -m "v0.1.2"
+git push origin main v0.1.2
 ```
 
 ## The package
@@ -54,8 +54,8 @@ stable redirect to the newest release's assets. So publishing is uploading the
 artifact and the yml to a GitHub Release whose tag is the version:
 
 ```sh
-gh release create v0.1.1 \
-  apps/desktop/release/suite-canvas-0.1.1-x86_64.AppImage \
+gh release create v0.1.2 \
+  apps/desktop/release/suite-canvas-0.1.2-x86_64.AppImage \
   apps/desktop/release/latest-linux.yml \
   --title "Suite Canvas 0.1.0" --notes-file notes.md
 ```

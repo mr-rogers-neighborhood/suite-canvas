@@ -9,7 +9,7 @@ No changes yet.
 ### Fixed
 
 - **New canvas works.** It navigated to `?workspace=<id>`, but on the desktop the file is
-  the document and the session comes from whatever the shell has open — so the address bar
+  the document and the session comes from whatever the shell has open, so the address bar
   changed, the launcher reloaded, and nothing happened. The launcher now asks the shell to
   make a document, which is what "new" means when a file is the identity.
 - **The first canvas on a fresh machine no longer fails.** Creating a document wrote into a

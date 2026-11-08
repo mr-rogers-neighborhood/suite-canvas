@@ -49,7 +49,29 @@ function repoPath(path) {
   return relative(root, path).split(sep).join("/");
 }
 
+/**
+ * Whether this tree can answer "when was this page last committed".
+ *
+ * A source archive, a container export and a `git archive` all lack `.git`, and the index is a
+ * table of *commit* dates. Falling back to the file's mtime there is worse than useless: an
+ * export unpacks every file at the same second, so every date in the table becomes that second,
+ * the rows re-sort alphabetically, and running the generator in that tree rewrites the real dates
+ * to today's. That is how a documentation index quietly becomes wrong.
+ *
+ * So the date comes from git or from the index already on disk. Never from mtime.
+ */
+const gitAvailable = (() => {
+  try {
+    execFileSync("git", ["rev-parse", "--git-dir"], { cwd: root, stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+/** The commit date of a page, or null when this tree cannot tell. */
 function lastModified(path) {
+  if (!gitAvailable) return null;
   try {
     const out = execFileSync("git", ["log", "-1", "--format=%cI", "--", repoPath(path)], {
       cwd: root,
@@ -58,9 +80,40 @@ function lastModified(path) {
     }).trim();
     if (out) return out;
   } catch {
-    // An untracked page has no commit; its mtime is the only honest date.
+    // An untracked page has no commit yet.
   }
-  return statSync(path).mtime.toISOString();
+  return null;
+}
+
+/**
+ * The dates the committed index already records, by relative path.
+ *
+ * Used when git is unavailable so an export is compared on its content rather than failing on
+ * dates it has no way to verify.
+ */
+function committedDates() {
+  const dates = new Map();
+  for (const section of SECTIONS) {
+    let text;
+    try {
+      text = readFileSync(join(root, "docs", section.dir, "index.md"), "utf8");
+    } catch {
+      continue;
+    }
+    for (const line of text.split("\n")) {
+      const match = /^\|\s*\[.*?\]\((.*?)\)\s*\|.*?\|\s*(\d{4}-\d{2}-\d{2})\s*\|$/u.exec(line);
+      if (match) dates.set(match[1], match[2]);
+    }
+  }
+  return dates;
+}
+
+const knownDates = gitAvailable ? null : committedDates();
+
+/** A page's date for the table, or the one the committed index already had. */
+function dateFor(page) {
+  if (page.date !== null) return page.date;
+  return knownDates?.get(page.rel) ?? "";
 }
 
 function titleAndSummary(path) {
@@ -142,13 +195,21 @@ function pagesIn(section) {
     }
   };
   walk(base);
-  return pages.sort((a, b) => b.date.localeCompare(a.date) || a.title.localeCompare(b.title));
+  // Newest first. With no dates to compare, title is the only stable order, and the committed
+  // index is compared on content rather than reshuffled.
+  return pages.sort((a, b) => {
+    if (a.date !== null && b.date !== null) {
+      const byDate = b.date.localeCompare(a.date);
+      if (byDate !== 0) return byDate;
+    }
+    return a.title.localeCompare(b.title);
+  });
 }
 
 function table(pages) {
   const rows = pages.map(
     (page) =>
-      `| [${page.title}](${page.rel}) | ${page.summary || "—"} | ${page.date.slice(0, 10)} |`,
+      `| [${page.title}](${page.rel}) | ${page.summary || "—"} | ${dateFor(page).slice(0, 10)} |`,
   );
   return ["| Article | What it covers | Updated |", "| --- | --- | --- |", ...rows].join("\n");
 }
@@ -183,6 +244,12 @@ for (const section of SECTIONS) {
   stale += 1;
   if (check) {
     console.error(`${repoPath(target)} is out of date`);
+  } else if (!gitAvailable) {
+    console.error(
+      `${repoPath(target)} cannot be written here: an index is a table of commit dates and this ` +
+        "tree has no .git, so every date would be today's. Run it in a checkout.",
+    );
+    process.exit(1);
   } else {
     writeFileSync(target, next);
     console.log(`wrote ${repoPath(target)}`);

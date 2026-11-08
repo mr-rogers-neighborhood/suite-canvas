@@ -23,8 +23,8 @@
     "e2e:desktop": "playwright test --config=playwright.desktop.config.ts"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.1",
-    "@types/node": "^26.6.5",
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^26.6.6",
     "@suite/graph": "workspace:*"
   }
 }

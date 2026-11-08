@@ -4,6 +4,7 @@ import { syncPresentation } from "../feedback/syncState";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import type { SyncInfo } from "../store/useCanvasStore";
 import { ThemeToggle } from "../styles/ThemeToggle";
+import { CanvasMark } from "./CanvasMark";
 
 export type TitleBarRole = "editor" | "viewer";
 
@@ -131,8 +132,7 @@ export function TitleBar({
           onNavigateHome();
         }}
       >
-        <img src="/suite-logo-black.svg" alt="" className="h-6 w-auto dark:hidden" />
-        <img src="/suite-logo-white.svg" alt="" className="hidden h-6 w-auto dark:block" />
+        <CanvasMark size="sm" />
       </a>
 
       {workspaceName ? (

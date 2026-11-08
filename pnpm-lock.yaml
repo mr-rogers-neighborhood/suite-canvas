@@ -248,8 +248,11 @@ importers:
         specifier: workspace:*
         version: link:../../packages/import-obsidian
       '@suite/theme':
-        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.8.0&path:/packages/theme
-        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/9d1bfd28a64d4707f5feb9ff8bc24c0584b28e7b#path:/packages/theme
+        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.10.0&path:/packages/theme
+        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/665bfcd6b88c1f2bef3fab3f941ec13f7ac584fa#path:/packages/theme
+      '@suite/ui':
+        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.10.0&path:/packages/ui
+        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/665bfcd6b88c1f2bef3fab3f941ec13f7ac584fa#path:/packages/ui(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@tiptap/extensions':
         specifier: ^3.32.0
         version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
@@ -2459,9 +2462,16 @@ packages:
     resolution: {gitHosted: true, integrity: sha512-2zPd2mkhJIJUK+w2d5fSmH/o9jTV64AB7oTqmvTAleOiacV7Mr4I0bJGq5Tn2L1eg43JVNpEsTEf05rFfb3LcA==, path: /packages/protocol, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/e7a9edcf8a88aa804471465dfeebb4aff317d2f6}
     version: 0.11.3
 
-  '@suite/theme@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/9d1bfd28a64d4707f5feb9ff8bc24c0584b28e7b#path:/packages/theme':
-    resolution: {gitHosted: true, integrity: sha512-0TqNWWeqnVLtwXnn85xayR3mXwCezFs5aOpz/29J6d+ct9ftRAs0FosLCaFy8KMRFpd6I5YdHiSHeyKfHeaBOA==, path: /packages/theme, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/9d1bfd28a64d4707f5feb9ff8bc24c0584b28e7b}
+  '@suite/theme@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/665bfcd6b88c1f2bef3fab3f941ec13f7ac584fa#path:/packages/theme':
+    resolution: {gitHosted: true, integrity: sha512-/WOjV/acn6mzNSonsoTB/5Qc97GAjFOdrpg7f9JftQiHqnRI5/gVEq14Wo3evxVf8xNLPghuvtNyAUDZaziKBQ==, path: /packages/theme, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/665bfcd6b88c1f2bef3fab3f941ec13f7ac584fa}
     version: 0.1.0
+
+  '@suite/ui@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/665bfcd6b88c1f2bef3fab3f941ec13f7ac584fa#path:/packages/ui':
+    resolution: {gitHosted: true, integrity: sha512-/WOjV/acn6mzNSonsoTB/5Qc97GAjFOdrpg7f9JftQiHqnRI5/gVEq14Wo3evxVf8xNLPghuvtNyAUDZaziKBQ==, path: /packages/ui, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/665bfcd6b88c1f2bef3fab3f941ec13f7ac584fa}
+    version: 0.1.0
+    peerDependencies:
+      react: '>=19'
+      react-dom: '>=19'
 
   '@szmarczak/http-timer@4.0.6':
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
@@ -7744,7 +7754,12 @@ snapshots:
       - '@noble/curves'
       - '@noble/post-quantum'
 
-  '@suite/theme@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/9d1bfd28a64d4707f5feb9ff8bc24c0584b28e7b#path:/packages/theme': {}
+  '@suite/theme@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/665bfcd6b88c1f2bef3fab3f941ec13f7ac584fa#path:/packages/theme': {}
+
+  '@suite/ui@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/665bfcd6b88c1f2bef3fab3f941ec13f7ac584fa#path:/packages/ui(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
 
   '@szmarczak/http-timer@4.0.6':
     dependencies:

@@ -26,6 +26,7 @@ import "./styles/cursor.css";
 // of importing them; the panel finds them through the registry (ADR-0057).
 import "./field/annotationKind";
 import "./field/compositeKinds";
+import { CanvasMark } from "./chrome/CanvasMark";
 
 // Apply the stored theme before first paint to avoid a flash of the wrong mode.
 initTheme();
@@ -69,8 +70,7 @@ function LocalOnlyNotice() {
       className="app-canvas flex h-screen w-screen flex-col items-center justify-center gap-4 px-6 text-center"
       data-testid="local-only-notice"
     >
-      <img src="/suite-logo-black.svg" alt="Suite" className="h-10 w-10 dark:hidden" />
-      <img src="/suite-logo-white.svg" alt="Suite" className="hidden h-10 w-10 dark:block" />
+      <CanvasMark size="lg" />
       <div className="max-w-[360px]">
         <h1 className="text-[15px] font-semibold text-[var(--ink)]">This build is local-only.</h1>
         <p className="mt-1 text-[12px] leading-5 text-[var(--ink-muted)]">

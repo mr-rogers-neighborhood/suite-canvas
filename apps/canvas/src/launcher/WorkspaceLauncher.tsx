@@ -2,6 +2,7 @@ import { STARTER_TEMPLATES, type WorkspaceTemplate } from "@suite/graph";
 import type { VaultFile } from "@suite/import-obsidian";
 import { LoroDoc } from "loro-crdt";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { CanvasMark } from "../chrome/CanvasMark";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
 import { ToastLayer } from "../feedback/ToastLayer";
 import { toast } from "../feedback/toast";
@@ -506,8 +507,7 @@ export function WorkspaceLauncher() {
               </div>
             </div>
             <span aria-hidden="true" className="hidden sm:block">
-              <img src="/suite-logo-black.svg" alt="" className="h-14 w-14 dark:hidden" />
-              <img src="/suite-logo-white.svg" alt="" className="hidden h-14 w-14 dark:block" />
+              <CanvasMark size="lg" />
             </span>
           </div>
           <div className="mt-6 flex flex-wrap items-center gap-2">

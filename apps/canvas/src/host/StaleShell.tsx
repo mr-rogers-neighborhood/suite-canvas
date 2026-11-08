@@ -1,3 +1,5 @@
+import { CanvasMark } from "../chrome/CanvasMark";
+
 export interface StaleShellProps {
   /** The methods this build needs and the shell beside it does not publish. */
   readonly missing?: readonly string[];
@@ -18,8 +20,7 @@ export function StaleShell({ missing = [] }: StaleShellProps) {
       data-testid="stale-shell"
       data-missing={missing.join(" ")}
     >
-      <img src="/suite-logo-black.svg" alt="Suite" className="h-10 w-10 dark:hidden" />
-      <img src="/suite-logo-white.svg" alt="Suite" className="hidden h-10 w-10 dark:block" />
+      <CanvasMark size="lg" />
       <div className="max-w-[360px]">
         <h1 className="text-[15px] font-semibold text-[var(--ink)]">
           This window's shell is out of date.

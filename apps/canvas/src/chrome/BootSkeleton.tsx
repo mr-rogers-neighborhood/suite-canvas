@@ -1,4 +1,5 @@
 import "../styles/boot-skeleton.css";
+import { CanvasMark } from "./CanvasMark";
 
 /**
  * The local document is read from IndexedDB before anything is editable. Keep
@@ -22,8 +23,7 @@ export function BootSkeleton({ exiting = false }: BootSkeletonProps) {
       aria-label="Opening your workspace"
     >
       <div className="boot-skeleton__panel">
-        <img src="/suite-logo-black.svg" alt="" className="boot-skeleton__logo dark:hidden" />
-        <img src="/suite-logo-white.svg" alt="" className="boot-skeleton__logo hidden dark:block" />
+        <CanvasMark size="lg" />
         <span className="boot-skeleton__wordmark" aria-hidden="true">
           Suite
         </span>

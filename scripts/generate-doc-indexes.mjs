@@ -85,37 +85,6 @@ function lastModified(path) {
   return null;
 }
 
-/**
- * The dates the committed index already records, by relative path.
- *
- * Used when git is unavailable so an export is compared on its content rather than failing on
- * dates it has no way to verify.
- */
-function committedDates() {
-  const dates = new Map();
-  for (const section of SECTIONS) {
-    let text;
-    try {
-      text = readFileSync(join(root, "docs", section.dir, "index.md"), "utf8");
-    } catch {
-      continue;
-    }
-    for (const line of text.split("\n")) {
-      const match = /^\|\s*\[.*?\]\((.*?)\)\s*\|.*?\|\s*(\d{4}-\d{2}-\d{2})\s*\|$/u.exec(line);
-      if (match) dates.set(match[1], match[2]);
-    }
-  }
-  return dates;
-}
-
-const knownDates = gitAvailable ? null : committedDates();
-
-/** A page's date for the table, or the one the committed index already had. */
-function dateFor(page) {
-  if (page.date !== null) return page.date;
-  return knownDates?.get(page.rel) ?? "";
-}
-
 function titleAndSummary(path) {
   const raw = readFileSync(path, "utf8").replace(/<!--[\s\S]*?-->/g, "");
   const lines = raw.split("\n");
@@ -187,7 +156,7 @@ function pagesIn(section) {
         summary,
         // Resolved before sorting: the committed index is ordered newest first, and a title
         // order would rewrite every row's position even when nothing about a page changed.
-        date: lastModified(path) ?? knownDates?.get(rel) ?? "",
+        date: lastModified(path) ?? "",
         group:
           section.dir === "explanation" && relative(base, path).startsWith("decisions")
             ? "Decisions"
@@ -206,7 +175,7 @@ function pagesIn(section) {
 function table(pages) {
   const rows = pages.map(
     (page) =>
-      `| [${page.title}](${page.rel}) | ${page.summary || "—"} | ${dateFor(page).slice(0, 10)} |`,
+      `| [${page.title}](${page.rel}) | ${page.summary || "—"} | ${page.date.slice(0, 10)} |`,
   );
   return ["| Article | What it covers | Updated |", "| --- | --- | --- |", ...rows].join("\n");
 }
@@ -226,6 +195,21 @@ function render(section) {
   return `${parts.join("\n").trimEnd()}\n`;
 }
 
+if (!gitAvailable) {
+  // A row's date is a commit date and the rows are ordered by its *time* within that day, which
+  // the index does not store. Without history the table is neither verifiable nor regenerable, so
+  // this says so rather than comparing against a guess.
+  if (check) {
+    console.log("doc indexes: skipped, this tree has no git history to date them from");
+    process.exit(0);
+  }
+  console.error(
+    "doc indexes cannot be written here: a row's date and order come from commit timestamps and " +
+      "this tree has no .git. Run it in a checkout.",
+  );
+  process.exit(1);
+}
+
 let stale = 0;
 for (const section of SECTIONS) {
   const target = join(root, "docs", section.dir, "index.md");
@@ -241,12 +225,6 @@ for (const section of SECTIONS) {
   stale += 1;
   if (check) {
     console.error(`${repoPath(target)} is out of date`);
-  } else if (!gitAvailable) {
-    console.error(
-      `${repoPath(target)} cannot be written here: an index is a table of commit dates and this ` +
-        "tree has no .git, so every date would be today's. Run it in a checkout.",
-    );
-    process.exit(1);
   } else {
     writeFileSync(target, next);
     console.log(`wrote ${repoPath(target)}`);

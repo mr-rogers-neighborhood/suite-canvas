@@ -179,12 +179,15 @@ function pagesIn(section) {
       }
       if (!entry.name.endsWith(".md")) continue;
       const { title, summary } = titleAndSummary(path);
+      const rel = relative(base, path).split(sep).join("/");
       pages.push({
         path,
-        rel: relative(base, path).split(sep).join("/"),
+        rel,
         title,
         summary,
-        date: lastModified(path),
+        // Resolved before sorting: the committed index is ordered newest first, and a title
+        // order would rewrite every row's position even when nothing about a page changed.
+        date: lastModified(path) ?? knownDates?.get(rel) ?? "",
         group:
           section.dir === "explanation" && relative(base, path).startsWith("decisions")
             ? "Decisions"
@@ -197,13 +200,7 @@ function pagesIn(section) {
   walk(base);
   // Newest first. With no dates to compare, title is the only stable order, and the committed
   // index is compared on content rather than reshuffled.
-  return pages.sort((a, b) => {
-    if (a.date !== null && b.date !== null) {
-      const byDate = b.date.localeCompare(a.date);
-      if (byDate !== 0) return byDate;
-    }
-    return a.title.localeCompare(b.title);
-  });
+  return pages.sort((a, b) => b.date.localeCompare(a.date) || a.title.localeCompare(b.title));
 }
 
 function table(pages) {

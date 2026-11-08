@@ -44,9 +44,9 @@ These are real and tracked. Each has a row in the criterion map naming its succe
 
 | Area | What is missing | Level |
 |---|---|---|
-| Dragging | Canvas vault drop and card drag have no keyboard or single-pointer equivalent (SC 2.5.7). | AA |
 | Shortcuts | Canvas single-key shortcuts are not remappable or disableable (SC 2.1.4). | A |
 | Board navigation | The Canvas board has no complete keyboard model for moving between cards. | AA |
+| Dragging | Most drag actions have a menu or arrow-key equivalent. Three do not: resizing a section to an arbitrary size, re-pointing a section link, and bending a connector. | AA |
 | Status messages | The markup is correct. Whether a screen reader hears a confirmation has not been listened to yet. | AA |
 
 ## What does not apply

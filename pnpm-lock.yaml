@@ -180,9 +180,15 @@ importers:
       '@suite/contracts':
         specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.2.0&path:/packages/contracts
         version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/1907197274e3dcf50c733bc4008e8f754f7eedb1#path:/packages/contracts
+      '@suite/desktop':
+        specifier: link:../suite-start/packages/desktop
+        version: link:../suite-start/packages/desktop
       '@suite/files':
         specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.2.0&path:/packages/files
         version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/1907197274e3dcf50c733bc4008e8f754f7eedb1#path:/packages/files
+      '@suite/sync':
+        specifier: link:../suite-sync/packages/protocol
+        version: link:../suite-sync/packages/protocol
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.5.15
@@ -241,6 +247,9 @@ importers:
       '@suite/import-obsidian':
         specifier: workspace:*
         version: link:../../packages/import-obsidian
+      '@suite/theme':
+        specifier: git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.8.0&path:/packages/theme
+        version: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/9d1bfd28a64d4707f5feb9ff8bc24c0584b28e7b#path:/packages/theme
       '@tiptap/extensions':
         specifier: ^3.32.0
         version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
@@ -2449,6 +2458,10 @@ packages:
   '@suite/sync@https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/e7a9edcf8a88aa804471465dfeebb4aff317d2f6#path:/packages/protocol':
     resolution: {gitHosted: true, integrity: sha512-2zPd2mkhJIJUK+w2d5fSmH/o9jTV64AB7oTqmvTAleOiacV7Mr4I0bJGq5Tn2L1eg43JVNpEsTEf05rFfb3LcA==, path: /packages/protocol, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-sync/tar.gz/e7a9edcf8a88aa804471465dfeebb4aff317d2f6}
     version: 0.11.3
+
+  '@suite/theme@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/9d1bfd28a64d4707f5feb9ff8bc24c0584b28e7b#path:/packages/theme':
+    resolution: {gitHosted: true, integrity: sha512-0TqNWWeqnVLtwXnn85xayR3mXwCezFs5aOpz/29J6d+ct9ftRAs0FosLCaFy8KMRFpd6I5YdHiSHeyKfHeaBOA==, path: /packages/theme, tarball: https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/9d1bfd28a64d4707f5feb9ff8bc24c0584b28e7b}
+    version: 0.1.0
 
   '@szmarczak/http-timer@4.0.6':
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
@@ -7730,6 +7743,8 @@ snapshots:
       - '@hpke/ml-kem'
       - '@noble/curves'
       - '@noble/post-quantum'
+
+  '@suite/theme@https://codeload.github.com/mr-rogers-neighborhood/suite-start/tar.gz/9d1bfd28a64d4707f5feb9ff8bc24c0584b28e7b#path:/packages/theme': {}
 
   '@szmarczak/http-timer@4.0.6':
     dependencies:

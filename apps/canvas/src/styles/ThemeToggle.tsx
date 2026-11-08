@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { useEscapeLayer } from "../shell/escapeLayers";
-import type { ThemeMode } from "../theme/theme";
+import { type ThemeMode, themeOptions } from "../theme/theme";
 import { useThemeStore } from "../theme/useThemeStore";
 import { SettingsHost } from "./SettingsDialog";
 import { openSettings } from "./settingsEvents";
@@ -42,6 +42,8 @@ function ThemeIcon({ mode }: { mode: ThemeMode }) {
 export function ThemeToggle() {
   const mode = useThemeStore((state) => state.mode);
   const setMode = useThemeStore((state) => state.setMode);
+  const preset = useThemeStore((state) => state.preset);
+  const setPreset = useThemeStore((state) => state.setPreset);
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement | null>(null);
   const active = OPTIONS.find((option) => option.mode === mode) ?? OPTIONS[2];
@@ -84,6 +86,34 @@ export function ThemeToggle() {
           className="theme-menu"
           onKeyDown={menuKeyDown}
         >
+          {/* Presets first, then brightness. Two questions, in the order they are asked: a
+              palette family, and how bright to draw it — because "Solarized at night" is
+              Solarized with dark values, not a sixth entry in one list. */}
+          {themeOptions().map((theme) => (
+            <button
+              key={theme.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={preset === theme.id}
+              data-testid={`theme-preset-${theme.id}`}
+              data-checked={preset === theme.id ? "true" : "false"}
+              className="theme-menu__item"
+              title={theme.description ?? theme.name}
+              onClick={() => {
+                setPreset(theme.id);
+                setOpen(false);
+              }}
+            >
+              <span aria-hidden="true" className="theme-swatch" data-preset={theme.id} />
+              <span>{theme.name}</span>
+              {preset === theme.id ? (
+                <span aria-hidden="true" className="ml-auto opacity-60">
+                  {"\u2713"}
+                </span>
+              ) : null}
+            </button>
+          ))}
+          <hr className="theme-menu__separator" />
           {OPTIONS.map((option) => (
             <button
               key={option.mode}

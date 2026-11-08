@@ -98,6 +98,8 @@ and what it deliberately does not.
 
 ## Documentation
 
+Where accessibility stands, and what is checked by hand: [ACCESSIBILITY.md](ACCESSIBILITY.md).
+
 | | |
 | --- | --- |
 | [Tutorials](docs/tutorials/index.md)<br>Learn by doing. | [How-to](docs/how-to/index.md)<br>One job at a time: add a feature, change the model, test. |

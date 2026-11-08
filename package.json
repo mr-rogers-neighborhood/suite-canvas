@@ -80,6 +80,8 @@
   "license": "MIT",
   "dependencies": {
     "@suite/contracts": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.2.0&path:/packages/contracts",
-    "@suite/files": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.2.0&path:/packages/files"
+    "@suite/desktop": "link:../suite-start/packages/desktop",
+    "@suite/files": "git+https://github.com/mr-rogers-neighborhood/suite-start.git#v0.2.0&path:/packages/files",
+    "@suite/sync": "link:../suite-sync/packages/protocol"
   }
 }

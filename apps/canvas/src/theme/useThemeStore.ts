@@ -5,13 +5,17 @@ import {
   readStoredTheme,
   resolveTheme,
   THEME_STORAGE_KEY,
+  type ThemeChoice,
   type ThemeMode,
 } from "./theme";
 
 interface ThemeState {
+  /** The preset id. */
+  preset: string;
   mode: ThemeMode;
   theme: ResolvedTheme;
   setMode: (mode: ThemeMode) => void;
+  setPreset: (preset: string) => void;
 }
 
 function prefersDark(): boolean {
@@ -19,27 +23,37 @@ function prefersDark(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-function apply(mode: ThemeMode): ResolvedTheme {
-  const theme = resolveTheme(mode, prefersDark());
+function paint(choice: ThemeChoice): ResolvedTheme {
+  const theme = resolveTheme(choice.mode, prefersDark());
   if (typeof document !== "undefined") {
-    applyTheme(theme, document.documentElement);
+    applyTheme(choice, theme, document.documentElement);
   }
   return theme;
 }
 
-const initialMode = readStoredTheme(
-  typeof window !== "undefined" ? window.localStorage : undefined,
-);
+function store(choice: ThemeChoice): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(choice));
+  }
+}
 
-export const useThemeStore = create<ThemeState>((set) => ({
-  mode: initialMode,
-  theme: resolveTheme(initialMode, prefersDark()),
+const initial = readStoredTheme(typeof window !== "undefined" ? window.localStorage : undefined);
+
+export const useThemeStore = create<ThemeState>((set, get) => ({
+  preset: initial.preset,
+  mode: initial.mode,
+  theme: resolveTheme(initial.mode, prefersDark()),
 
   setMode: (mode) => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(THEME_STORAGE_KEY, mode);
-    }
-    set({ mode, theme: apply(mode) });
+    const choice = { preset: get().preset, mode };
+    store(choice);
+    set({ mode, theme: paint(choice) });
+  },
+
+  setPreset: (preset) => {
+    const choice = { preset, mode: get().mode };
+    store(choice);
+    set({ preset, theme: paint(choice) });
   },
 }));
 
@@ -48,7 +62,8 @@ export const useThemeStore = create<ThemeState>((set) => ({
  * OS setting. Returns a cleanup function.
  */
 export function initTheme(): () => void {
-  apply(useThemeStore.getState().mode);
+  const { preset, mode } = useThemeStore.getState();
+  paint({ preset, mode });
 
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return () => {};
@@ -56,8 +71,9 @@ export function initTheme(): () => void {
 
   const media = window.matchMedia("(prefers-color-scheme: dark)");
   const handleChange = () => {
-    if (useThemeStore.getState().mode !== "system") return;
-    const theme = apply("system");
+    const state = useThemeStore.getState();
+    if (state.mode !== "system") return;
+    const theme = paint({ preset: state.preset, mode: "system" });
     useThemeStore.setState({ theme });
   };
 

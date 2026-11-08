@@ -13,7 +13,11 @@
   --ink-muted: #68686d;
   /* Off-lens cards recede but keep their text legible enough to scan. */
   --lens-dim-opacity: 0.34;
-  --canvas-bg: #f5f5f7;
+  /* Shared roles (@suite/theme). These are the source; a theme overwrites them at runtime
+     and Canvas's own names below follow, so there is one value per colour rather than two
+     that can drift. */
+  --canvas: #f5f5f7;
+  --canvas-bg: var(--canvas);
   /* The column the canvas widget stack occupies (purpose, gesture, zoom). Any
      surface anchored to the bottom-left corner starts to its right; keep in step
      with `CAPTION_GUTTER` in TourOverlayHost.tsx. */
@@ -22,12 +26,18 @@
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 12px 32px -18px rgba(0, 0, 0, 0.25);
   --sheen: radial-gradient(120% 90% at 50% -20%, rgba(255, 255, 255, 0.9), transparent 55%);
   --segmented-bg: rgba(0, 0, 0, 0.05);
-  --section-slate: #64748b;
-  --section-blue: #3b82f6;
-  --section-green: #10b981;
-  --section-amber: #f59e0b;
-  --section-rose: #f43f5e;
-  --section-violet: #8b5cf6;
+  --hue-slate: #64748b;
+  --hue-blue: #3b82f6;
+  --hue-green: #10b981;
+  --hue-amber: #f59e0b;
+  --hue-rose: #f43f5e;
+  --hue-violet: #8b5cf6;
+  --section-slate: var(--hue-slate);
+  --section-blue: var(--hue-blue);
+  --section-green: var(--hue-green);
+  --section-amber: var(--hue-amber);
+  --section-rose: var(--hue-rose);
+  --section-violet: var(--hue-violet);
   /* Roles the paint system names (ADR-0051). They were referenced with literal
      fallbacks before, which is the shell owning a palette ADR-0046 forbids. */
   --surface-strong: #ffffff;
@@ -120,17 +130,24 @@
   /* 5.29:1 on a hovered surface (dark:hover:bg-white/10 over --surface). */
   --ink-muted: #a8a8ad;
   --lens-dim-opacity: 0.3;
-  --canvas-bg: #151517;
+  --canvas: #151517;
+  --canvas-bg: var(--canvas);
   --rf-dot: #333338;
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 18px 44px -22px rgba(0, 0, 0, 0.9);
   --sheen: radial-gradient(120% 90% at 50% -20%, rgba(130, 130, 150, 0.18), transparent 55%);
   --segmented-bg: rgba(255, 255, 255, 0.08);
-  --section-slate: #94a3b8;
-  --section-blue: #60a5fa;
-  --section-green: #34d399;
-  --section-amber: #fbbf24;
-  --section-rose: #fb7185;
-  --section-violet: #a78bfa;
+  --hue-slate: #94a3b8;
+  --hue-blue: #60a5fa;
+  --hue-green: #34d399;
+  --hue-amber: #fbbf24;
+  --hue-rose: #fb7185;
+  --hue-violet: #a78bfa;
+  --section-slate: var(--hue-slate);
+  --section-blue: var(--hue-blue);
+  --section-green: var(--hue-green);
+  --section-amber: var(--hue-amber);
+  --section-rose: var(--hue-rose);
+  --section-violet: var(--hue-violet);
   /* Dark roles: each value re-checked against its surface, not inverted. */
   --surface-strong: #2c2c31;
   --accent: #4aa3ff;
@@ -280,6 +297,38 @@ body {
 
 .theme-menu__item:hover {
   background: var(--segmented-bg);
+}
+
+/*
+ * A preset's own colours, drawn from the preset rather than from the theme on screen.
+ *
+ * Two halves, so the swatch says what the preset *is* at both brightnesses instead of
+ * showing whichever one happens to be applied. `data-preset` selects the values, which is
+ * the only place in the app that names a preset in CSS — the alternative is inline styles
+ * on every row, and a stylesheet cannot be inspected for those.
+ */
+.theme-swatch {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 5px;
+  border: 1px solid var(--hairline);
+  background: linear-gradient(135deg, var(--swatch-light) 50%, var(--swatch-dark) 50%);
+}
+
+.theme-swatch[data-preset="suite"] {
+  --swatch-light: #ffffff;
+  --swatch-dark: #1d1d22;
+}
+
+.theme-swatch[data-preset="solarized"] {
+  --swatch-light: #fdf6e3;
+  --swatch-dark: #002b36;
+}
+
+.theme-swatch[data-preset="logseq"] {
+  --swatch-light: #fbfaf8;
+  --swatch-dark: #222220;
 }
 
 .theme-icon {

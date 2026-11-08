@@ -4,6 +4,20 @@
 
 No changes yet.
 
+## [0.1.8] - 2026-11-08
+
+### Changed
+
+- The start screen is the shared one: the same centred card as Planner and Budget, drawn by
+  `Launch` instead of Canvas's own copy of it. The heading says Suite Canvas, not Suite, which is
+  the hub's name.
+- "Open canvas file" and "Import a vault" are one **Import** with two entries, a `.canvas` file or
+  an Obsidian vault.
+- The app mark is no longer hidden from screen readers, and the primary action uses the accent roles
+  so a preset that sets an accent cannot invert it.
+- Space and type now come from `@suite/theme` tokens, so a host can raise control heights for touch
+  without patching a stylesheet.
+
 ## [0.1.7] - 2026-11-07
 
 ### Changed

@@ -4,6 +4,26 @@
 
 No changes yet.
 
+## [0.1.4] - 2026-11-07
+
+### Added
+
+- **Three colour themes, each in light and dark.** Suite (unchanged), Solarized in its two
+  official variants, and Warm — charcoal and amber, in the spirit of Logseq. The theme menu
+  lists the presets above the brightness options, with a swatch showing each preset at both
+  brightnesses.
+
+### Changed
+
+- **Section greens are a shade deeper.** The old green was 2.54:1 against white, below the
+  floor for a stroke that carries meaning. This is the shared contrast gate finding something
+  the app had shipped.
+
+### Fixed
+
+- A theme choice is remembered as a preset and a mode. A choice saved by an older build is
+  kept rather than reset.
+
 ## [0.1.3] - 2026-11-07
 
 ### Changed

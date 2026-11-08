@@ -2,7 +2,7 @@
   "format": "suite.app",
   "id": "canvas",
   "name": "Suite Canvas",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "contractVersion": "1.0.0",
   "deepLinkPrefix": "suite://canvas/",
   "fileExtensions": ["canvas"],

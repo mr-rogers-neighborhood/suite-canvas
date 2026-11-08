@@ -21,14 +21,14 @@ with the package is the failure this rule exists to prevent, because an updater 
 an intention.
 
 The version in `package.json` is what the next tag must say. Today it is `0.1.3`, so the next release
-is tagged `v0.1.3` if nothing changed the number, or a new one if it did.
+is tagged `v0.1.4` if nothing changed the number, or a new one if it did.
 
 `apps/desktop/package.json` and `apps/desktop/suite.app.json` carry the **app's** version and must
 agree with it: the tag, the manifest and the package describe one commit.
 
 ```sh
-git tag -a v0.1.3 -m "v0.1.3"
-git push origin main v0.1.3
+git tag -a v0.1.4 -m "v0.1.4"
+git push origin main v0.1.4
 ```
 
 ## The package

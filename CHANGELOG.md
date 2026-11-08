@@ -4,6 +4,15 @@
 
 No changes yet.
 
+## [0.1.7] - 2026-11-07
+
+### Changed
+
+- The interface wears the Canvas glyph now, on the suite's accent tile, instead of the base
+  Suite logo. One drawing serves light and dark and every preset, because it inherits the
+  theme's ink rather than being a black file and a white file swapped by a class.
+- Four unused logo files are gone, and the tab icon is the app's own.
+
 ## [0.1.6] - 2026-11-07
 
 ### Fixed

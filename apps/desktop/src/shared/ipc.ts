@@ -18,6 +18,8 @@ export const IPC = {
   documentInfo: "suite:document:info",
   /** The shell's own version and platform, for diagnostics. */
   appInfo: "suite:app:info",
+  /** Create a new document from a seed and open the window on it. */
+  createDocument: "suite:document:create",
   /** Show the open dialog and open whatever is chosen. */
   openFileDialog: "suite:document:pick",
   /** Open a path the shell reported earlier, after re-validating it. */

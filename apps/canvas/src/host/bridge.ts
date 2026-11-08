@@ -37,6 +37,24 @@ export interface BridgeDocumentInfo {
   readonly recoveredFrom: string | null;
 }
 
+/**
+ * What creating a document did.
+ *
+ * A reason, because a button that does nothing is the one outcome a person cannot act on.
+ */
+export type BridgeCreateResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: string };
+
+/** Everything the first write of a new document needs. No path: main decides where. */
+export interface BridgeCreateRequest {
+  readonly workspaceId: string;
+  /** The workspace's own name, used to name the file. */
+  readonly title: string;
+  readonly snapshot: Uint8Array;
+  readonly manifest: BridgeSaveRequest["manifest"];
+}
+
 export interface BridgeSaveRequest {
   readonly workspaceId: string;
   /** The workspace's own name, used to name the file on its first save. */
@@ -80,6 +98,16 @@ export interface DesktopBridge {
   flushDocument(): Promise<{ ok: true } | BridgeFailure>;
   documentInfo(): Promise<BridgeDocumentInfo | null>;
   appInfo(): Promise<{ host: "desktop"; version: string; platform: string }>;
+  /**
+   * Create a new document and open the window on it.
+   *
+   * On the desktop the *file* is the document, and a workspace id in the address bar
+   * means nothing: the session comes from whatever the shell has open. So "New canvas"
+   * cannot be a navigation — it has to ask the shell to make a file, which is what this
+   * is for. The seed carries everything the first write needs, so main never has to
+   * invent a document it cannot describe.
+   */
+  createDocument(seed: BridgeCreateRequest): Promise<BridgeCreateResult>;
   /** Show the open dialog and open the choice. The renderer passes no path. */
   openFileDialog(): Promise<void>;
   /** Open a path this shell reported earlier, re-validated in main. */
@@ -112,6 +140,7 @@ export const REQUIRED_BRIDGE_METHODS = [
   "flushDocument",
   "documentInfo",
   "appInfo",
+  "createDocument",
   "openFileDialog",
   "openDocument",
   "recentFiles",

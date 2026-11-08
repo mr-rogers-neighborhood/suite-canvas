@@ -40,6 +40,7 @@ function bridge(): Recording {
       flushDocument: async () => ({ ok: true }),
       documentInfo: async () => null,
       appInfo: async () => ({ host: "desktop", version: "0.1.0", platform: "linux" }),
+      createDocument: async () => ({ ok: true }),
       openFileDialog: async () => {},
       openDocument: async () => {},
       recentFiles: async () => [],

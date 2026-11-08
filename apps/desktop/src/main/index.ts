@@ -421,6 +421,34 @@ function registerIpc(): void {
     await openInRenderer(created.info);
   });
 
+  /**
+   * Make a new document and open the window on it.
+   *
+   * This is what "New canvas" means on the desktop, and it is not a navigation: the
+   * session comes from the file the shell has open, so a workspace id in the address bar
+   * would open the launcher again. The renderer sends the seed, main decides the path —
+   * the same rule as every other channel here, and the reason the seed carries no path.
+   */
+  onIpc(IPC.createDocument, async (_event, seed: unknown) => {
+    // One document per window, so a second request is answered rather than ignored.
+    if (store) return { ok: true } as const;
+    const request = seed as Parameters<DocumentStore["save"]>[0] | undefined;
+    if (typeof request?.workspaceId !== "string") {
+      return { ok: false, reason: "that request named no workspace" } as const;
+    }
+    const created = await DocumentStore.create(
+      await freeDocumentPath(paths.library, request.title, request.workspaceId),
+      request,
+      { appId: APP_ID, paths },
+    );
+    // A refusal is returned rather than swallowed: the person pressed a button, and the
+    // one outcome they cannot act on is a launcher that simply stays where it was.
+    if (!created.ok) return { ok: false, reason: created.message } as const;
+    await adopt(created);
+    await openInRenderer(created.info);
+    return { ok: true } as const;
+  });
+
   onIpc(IPC.flushDocument, async () => {
     if (!store) return { ok: true };
     await store.flush();

@@ -1,5 +1,6 @@
 import { STARTER_TEMPLATES, type WorkspaceTemplate } from "@suite/graph";
 import type { VaultFile } from "@suite/import-obsidian";
+import { LoroDoc } from "loro-crdt";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
 import { ToastLayer } from "../feedback/ToastLayer";
@@ -175,7 +176,19 @@ export function WorkspaceLauncher() {
   // launchers that drift.
   const isDesktop = hostKind() === "desktop";
 
-  const startNew = () => {
+  /**
+   * Begin a new canvas.
+   *
+   * Two hosts, two meanings, and the difference is not cosmetic. A browser owns the
+   * storage, so a new workspace is a URL and a reload. A desktop shell owns the *file*,
+   * and the session comes from whatever it has open — so navigating would reload the
+   * launcher and change nothing, which is exactly what it used to do. On the desktop the
+   * shell is asked to make a document instead.
+   *
+   * The remembered template is keyed by workspace id and read on boot, so both paths get
+   * the starter applied by the same code.
+   */
+  const startNew = async () => {
     const workspaceId = newWorkspaceId();
     const chosen = starterTemplateById(templates, template);
     // `?template=` carries an id, and an id only resolves a starter this bundle was
@@ -188,6 +201,32 @@ export function WorkspaceLauncher() {
     const title = chosen?.name ?? DEFAULT_WORKSPACE_NAME;
     rememberWorkspace({ id: workspaceId, title });
     if (chosen !== undefined) rememberWorkspaceName(workspaceId, title);
+
+    const bridge = desktopBridge();
+    if (bridge !== null) {
+      setProgress("Creating\u2026");
+      try {
+        const made = await bridge.createDocument({
+          workspaceId,
+          title,
+          // An empty document, as this app writes one. Main places it and opens the
+          // window on it; the remembered template is applied by the boot path.
+          snapshot: new LoroDoc().export({ mode: "snapshot" }),
+          manifest: { boards: 0, cards: 0, types: 0, tags: 0 },
+        });
+        // A shell that says why is the difference between "nothing happened" and a
+        // sentence a person can act on.
+        if (!made.ok) {
+          setError(`Could not create that canvas: ${made.reason}`);
+          setProgress(null);
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Could not create that canvas.");
+        setProgress(null);
+      }
+      return;
+    }
+
     const url = new URL(workspaceUrl(workspaceId, null));
     url.searchParams.set("fresh", "1");
     navigateTo(url.toString());

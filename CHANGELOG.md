@@ -4,6 +4,18 @@
 
 No changes yet.
 
+## [0.1.5] - 2026-11-07
+
+### Fixed
+
+- **New canvas works.** It navigated to `?workspace=<id>`, but on the desktop the file is
+  the document and the session comes from whatever the shell has open — so the address bar
+  changed, the launcher reloaded, and nothing happened. The launcher now asks the shell to
+  make a document, which is what "new" means when a file is the identity.
+- **The first canvas on a fresh machine no longer fails.** Creating a document wrote into a
+  library directory that did not exist yet, because the atomic write replaces a file and does
+  not create a folder. The failure was silent; it is now returned to the launcher and shown.
+
 ## [0.1.4] - 2026-11-07
 
 ### Added

@@ -211,6 +211,39 @@ describe("WorkspaceLauncher import", () => {
 
     expect(navigate).toHaveBeenCalledTimes(1);
   });
+
+  it("asks the shell to make a document instead of navigating, on the desktop", async () => {
+    // The bug this guards: on the desktop the session comes from the file the shell has
+    // open, so navigating to `?workspace=` reloaded the launcher and changed nothing.
+    const createDocument = vi.fn(async (_seed: unknown) => ({ ok: true }) as const);
+    // The preload's global, which the renderer's own types do not declare.
+    (globalThis as { suiteDesktop?: unknown }).suiteDesktop = {
+      host: "desktop",
+      version: "0.1.4",
+      platform: "linux",
+      createDocument,
+      loadDocument: async () => null,
+      saveDocument: async () => {},
+      flushDocument: async () => ({ ok: true }),
+      documentInfo: async () => null,
+      appInfo: async () => ({ host: "desktop", version: "0.1.4", platform: "linux" }),
+      openFileDialog: async () => {},
+      openDocument: async () => {},
+      recentFiles: async () => [],
+      forgetRecent: async () => {},
+    };
+    configureSession(localSession());
+    render(<WorkspaceLauncher />);
+
+    fireEvent.click(screen.getByTestId("launcher-new"));
+
+    await waitFor(() => expect(createDocument).toHaveBeenCalledTimes(1));
+    expect(navigate).not.toHaveBeenCalled();
+    const seed = createDocument.mock.calls[0]?.[0] as { workspaceId: string; title: string };
+    expect(seed.workspaceId.length).toBeGreaterThan(0);
+    expect(seed.title.length).toBeGreaterThan(0);
+    delete (globalThis as { suiteDesktop?: unknown }).suiteDesktop;
+  });
 });
 
 describe("WorkspaceLauncher workspace names", () => {

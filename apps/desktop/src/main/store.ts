@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { mkdir, readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { MAX_ENVELOPE_BYTES, readEnvelopeJson } from "@suite/files";
 import {
@@ -285,6 +285,10 @@ export class DocumentStore {
       attachments: toAttachmentInputs(request.attachments),
     });
     try {
+      // The library may not exist yet — a first document on a fresh install is exactly the
+      // case this is for. `writeFileAtomic` replaces a file and does not create a directory,
+      // so without this the very first canvas anyone makes fails with "could not be created".
+      await mkdir(dirname(path), { recursive: true });
       await writeFileAtomic(path, new TextEncoder().encode(JSON.stringify(envelope, null, 2)));
     } catch {
       await lockOutcome.lock.release();

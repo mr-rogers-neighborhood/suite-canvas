@@ -1,44 +1,70 @@
 # Accessibility
 
-Suite is alpha software, and this page says where accessibility stands rather than promising
-where it will be. The goal is WCAG 2.2 AA, verified by hand as well as by machine.
+Suite is alpha software. This page says where accessibility stands, and what has actually been
+checked, rather than what is intended.
 
-## What is automated today
+The target is **WCAG 2.2 level AA**. That is 55 of the 86 success criteria in the standard. The full
+breakdown is in
+[`docs/accessibility/wcag-22-map.md`](https://github.com/mr-rogers-neighborhood/suite-dev/blob/main/docs/accessibility/wcag-22-map.md).
 
-- **Colour contrast.** Every theme preset is measured against WCAG 2.x ratios in the build
-  gate: 4.5:1 for body text on every surface it can sit on, 3:1 for focus rings and for
-  component boundaries, and a perceivable hairline. A preset that fails cannot be committed.
-- **Theme values are measurable.** A preset may not hide behind a `color-mix()` or a gradient;
-  a colour that cannot be measured cannot be checked.
+## What is verified by machine
 
-## What is manual
+Two checks run on every change, and a failure stops the work.
 
-These are checked by a person, and are not covered by the gate yet:
+- **Colour contrast in every theme.** Each preset in `@suite/theme` is measured: 4.5:1 for body text
+  on every surface it can sit on, 4.5:1 for faint text, and 3:1 for focus rings and component
+  boundaries. A preset that fails cannot be merged. A colour that cannot be measured, such as a
+  gradient or a `color-mix()`, is not allowed in a preset, because an unmeasurable colour cannot be
+  checked.
+- **axe on every start screen.** All four apps are audited against the WCAG 2.2 A and AA rule sets in
+  a real window, and any violation fails the build.
 
-- Keyboard reachability of every control, and a visible focus indicator on each.
-- Screen reader output for the launcher, the canvas, and the dialogs.
-- Zoom to 200% without loss of content, and reflow at 320 CSS pixels.
-- Motion: whether every animation honours `prefers-reduced-motion`.
-- Targets: 24×24 CSS pixels minimum for pointer targets.
+The second check found a real problem the moment it was written: faint text was 3.42:1 against white
+at 11px. It is fixed.
+
+## What is verified by hand
+
+**None of it yet.** This section will list the passes below once they have been done and written
+down. Until then, do not read the machine checks above as coverage of the interface.
+
+The protocol is written and ready to run:
+[`docs/accessibility/manual-testing.md`](https://github.com/mr-rogers-neighborhood/suite-dev/blob/main/docs/accessibility/manual-testing.md).
+It covers six passes per screen:
+
+1. Keyboard only, including that focus is never hidden behind a sticky region.
+2. A screen reader, with what it actually said written down.
+3. Zoom to 200% and 400%, and reflow at 320 CSS pixels.
+4. Reduced motion.
+5. Contrast measured in the running app, not only in the palette.
+6. Greyscale, to catch anything told apart by colour alone.
 
 ## Known gaps
 
-Listed because a statement that admits nothing is not a statement:
+These are real and tracked. Each has a row in the criterion map naming its success criterion.
 
-- **Decorative hairlines are below 3:1 by design.** A divider between list rows is exempt
-  under SC 1.4.11, and a line strong enough to reach 3:1 stops being a hairline. Anything
-  that is a *component boundary* uses a different role that is held to 3:1.
-- **Canvas's infinite board is not fully keyboard navigable.** Cards can be reached and
-  moved, but spatial navigation has no complete keyboard model yet.
-- **Drag-and-drop has no keyboard equivalent** in the canvas or the planner.
-- **No formal audit has been run.** Everything above is the maintainers' own testing.
+| Area | What is missing | Level |
+|---|---|---|
+| Dragging | Canvas vault drop and card drag have no keyboard or single-pointer equivalent (SC 2.5.7). | AA |
+| Shortcuts | Canvas single-key shortcuts are not remappable or disableable (SC 2.1.4). | A |
+| Board navigation | The Canvas board has no complete keyboard model for moving between cards. | AA |
+| Status messages | The markup is correct. Whether a screen reader hears a confirmation has not been listened to yet. | AA |
 
-## Reporting a problem
+## What does not apply
 
-Open an issue with what you were doing, what you expected, and what happened. A description
-of the barrier is more useful than a suggested fix.
+Listed because a statement that admits nothing is not a statement.
 
-## Why this is not a date
+- **No accounts.** There is nothing to sign in to, so the accessible-authentication criteria
+  (SC 3.3.8 and 3.3.9) do not apply. Sync pairs devices with a code.
+- **No audio and no video.** The time-based media criteria (SC 1.2.1 to 1.2.9) do not apply.
+- **No time limits.** Nothing expires while you are working (SC 2.2.1).
+- **No flashing content.** Nothing animates at a rate that could trigger a seizure (SC 2.3.1).
+- **Parsing is obsolete.** SC 4.1.1 was removed in WCAG 2.2.
 
-The interfaces are still changing, and a checklist against a moving target is a checklist that
-is wrong by the time it is read. What is written here is checked again when a surface changes.
+## Telling us about a barrier
+
+Open an issue describing what you were doing, what you expected, and what happened. A description
+of the barrier is more useful than a suggested fix, and both are welcome.
+
+## What this runs on
+
+Electron with Chromium, React 19, on Linux, with Orca as the screen reader used for testing.

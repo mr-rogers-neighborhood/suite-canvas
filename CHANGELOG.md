@@ -4,6 +4,14 @@
 
 No changes yet.
 
+## [0.1.6] - 2026-11-07
+
+### Fixed
+
+- Four colours that were used but never defined, and so rendered as nothing: the reader's accent,
+  video and embed boundaries, the media library's thumbnails, and the unchecked box in the
+  context menu. They resolve to the theme's own roles now.
+
 ## [0.1.5] - 2026-11-07
 
 ### Fixed

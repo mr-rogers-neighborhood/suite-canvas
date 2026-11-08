@@ -95,8 +95,8 @@ the command output: all verification gates are local, so a local command transcr
 ## Dependencies
 
 Add one with a stated reason, to the package that uses it, and prefer a primitive the repo already
-depends on. A major bump is a decision and lands on its own. `.github/dependabot.yml` groups minor and
-patch updates weekly for `npm`.
+depends on. A major bump is a decision and lands on its own. Dependency updates are read and applied by
+hand, because there is no CI service to open a pull request and nothing could gate one if it did.
 
 ## Security and conduct
 

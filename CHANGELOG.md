@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.1.3] - 2026-11-07
+
+### Changed
+
+- The first screen says what this is in two lines, with a rule between them: a canvas for
+  connected thinking, then how to begin. The buttons match that word — **New canvas** and
+  **Open canvas file…** — and a new canvas offers starter templates rather than an empty
+  document alone.
+
 ## [0.1.2] - 2026-11-07
 
 ### Added

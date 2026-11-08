@@ -457,11 +457,14 @@ export function WorkspaceLauncher() {
           <div className="flex items-end justify-between gap-6">
             <div>
               <h1 className="text-[34px] font-semibold tracking-tight">Suite</h1>
-              <p className="mt-1 max-w-[420px] text-[13px] leading-5 text-[var(--ink-muted)]">
-                A local-first canvas for connected thinking.
-                <br />
-                Open a workspace file, pick up a recent one, or start something new.
-              </p>
+              {/* Two sentences and a rule between them. A `div` rather than a `p`: an `<hr>`
+                  is flow content and cannot live inside a paragraph, so a `p` would close
+                  before it and the second line would lose the muted 13px styling. */}
+              <div className="mt-1 max-w-[420px] text-[13px] leading-5 text-[var(--ink-muted)]">
+                <p>A canvas for connected thinking.</p>
+                <hr className="my-2 border-[var(--hairline)]" />
+                <p>Open a canvas file, pick up a recent one, or choose a starter template.</p>
+              </div>
             </div>
             <span aria-hidden="true" className="hidden sm:block">
               <img src="/suite-logo-black.svg" alt="" className="h-14 w-14 dark:hidden" />
@@ -476,7 +479,7 @@ export function WorkspaceLauncher() {
               onClick={startNew}
               disabled={busy}
             >
-              New workspace
+              New canvas
             </button>
             <button
               type="button"
@@ -496,7 +499,7 @@ export function WorkspaceLauncher() {
               }}
               disabled={busy}
             >
-              Open workspace file…
+              Open canvas file…
             </button>
             <button
               type="button"
@@ -538,7 +541,7 @@ export function WorkspaceLauncher() {
           </div>
           {/* Notebook is the default rather than Blank: a new workspace should open
               with somewhere to write, and an empty document is still one choice
-              away. It sits on its own line because it belongs to "New workspace",
+              away. It sits on its own line because it belongs to "New canvas",
               not beside it, and the description follows the choice rather than
               stretching the select until the name is cut off. */}
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-[var(--ink-muted)]">

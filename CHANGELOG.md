@@ -9,7 +9,7 @@ No changes yet.
 ### Added
 
 - **Three colour themes, each in light and dark.** Suite (unchanged), Solarized in its two
-  official variants, and Warm — charcoal and amber, in the spirit of Logseq. The theme menu
+  official variants, and Warm: charcoal and amber, in the spirit of Logseq. The theme menu
   lists the presets above the brightness options, with a swatch showing each preset at both
   brightnesses.
 

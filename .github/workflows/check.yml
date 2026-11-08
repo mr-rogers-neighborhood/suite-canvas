@@ -1,0 +1,44 @@
+name: check
+
+# The same `check:full` that runs on a developer machine, so there is one definition of green
+# rather than two that drift.
+#
+# Not run here, and why:
+#   - End to end tests. They need the four apps staged as real binaries and a virtual display,
+#     which `suite-dev` does locally with `scripts/e2e.mjs`. They run before a release, not on
+#     every push.
+#   - The accessibility audit needs those same staged binaries.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The shared @suite packages are pinned by git tag, so a lockfile install is the only
+      # install that proves those pins still resolve.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Gate
+        run: pnpm check:full

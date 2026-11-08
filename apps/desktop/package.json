@@ -1,5 +1,6 @@
 {
   "name": "@suite/desktop",
+  "desktopName": "suite-canvas.desktop",
   "version": "0.1.1",
   "private": true,
   "type": "module",

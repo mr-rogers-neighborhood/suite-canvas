@@ -305,7 +305,22 @@ async function showLauncher(): Promise<void> {
   await window.loadURL(url.toString());
 }
 
+/**
+ * The window's own icon.
+ *
+ * A desktop entry draws its icon from the hicolor theme; a running window's taskbar icon is
+ * `_NET_WM_ICON`, which Chromium fills only when `BrowserWindow` is given one. Without it the
+ * panel shows Electron's logo beside this app's own entry.
+ */
+function windowIcon(): string | null {
+  const packaged = join(process.resourcesPath, "icon.png");
+  if (app.isPackaged && existsSync(packaged)) return packaged;
+  const source = join(app.getAppPath(), "build", "icon.png");
+  return existsSync(source) ? source : null;
+}
+
 function createWindow(): BrowserWindow {
+  const icon = windowIcon();
   const window = new BrowserWindow({
     width: 1280,
     height: 840,
@@ -313,6 +328,7 @@ function createWindow(): BrowserWindow {
     minHeight: 480,
     show: false,
     backgroundColor: "#ffffff",
+    ...(icon === null ? {} : { icon }),
     webPreferences: {
       preload: join(app.getAppPath(), "dist", "preload", "index.cjs"),
       sandbox: true,

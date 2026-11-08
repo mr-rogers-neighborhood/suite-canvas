@@ -1,24 +1,24 @@
 ---
 title: Share
-description: "Publishing a board as a link, and what a reader of that link can do."
+description: "Bringing someone into this workspace: an invite, or a file."
 order: 60
 targets:
   - kind: ui
     id: share-action
 ---
 
-**Share** publishes a board as a link. It is not a workspace invite: the link carries one board and
-what is on it, and it is read-only.
+**Share** is how a second person gets into this workspace. There are two ways, and both are yours to
+choose: **invite** them into the copy you are running, or send them **the file**.
 
-The dialog that opens is the whole story of a share: the scope label a reader sees, the draft and
-its conflicts, and the switch that revokes every link. A draft is previewed before it is published,
-because publishing is what other people can see; a conflict is reported where the publish button is
-rather than as a toast that cannot be acted on.
+An invite is a code, made from the sync panel beside the pill that says whether you are connected. It
+carries a role — a viewer reads, an editor writes — and it expires, because a code that works forever
+is a door left open. The person who accepts it joins the workspace you are running; when you close
+this machine, the workspace is wherever the file was last written.
 
-Revoking every link asks twice, inline, inside the dialog. That is the one confirmation in the app
-that replaces the control instead of opening a second panel, so the thing about to be lost stays on
-screen while you decide.
+A file is simpler and needs nobody connected: export it, send it, and the person who opens it has their
+own copy. It does not stay in step with yours — from that moment they are two workspaces with a common
+history.
 
-A workspace that is not in an account cannot publish, and the refusal names the plan rather than
-the button. A share link is read-only for whoever opens it: they see the board, not the rest of the
-workspace, and not the library.
+There is no published link, no account, and nothing for a reader to sign in to. If a share link was
+expected here, that feature is gone rather than hidden: the suite shares by invite or by file, and the
+traffic between the two machines is encrypted so that the host carrying it cannot read it.

@@ -27,6 +27,10 @@ files:
 extraResources:
   - from: ../canvas/dist
     to: renderer
+  # The window's own icon: a desktop entry reads the theme, but `_NET_WM_ICON` — what a
+  # panel draws in the taskbar — comes from `BrowserWindow({ icon })` and nothing else.
+  - from: build/icon.png
+    to: icon.png
 # Start discovers an app by the manifest beside its executable, so this lands
 # next to the binary rather than in resources.
 extraFiles:
@@ -34,6 +38,11 @@ extraFiles:
     to: suite.app.json
 
 asar: true
+
+# The window's own icon travels beside the asar: a desktop entry reads the hicolor theme,
+# but a running window's taskbar icon is `_NET_WM_ICON`, which Chromium fills only when
+# `BrowserWindow` is handed an image.
+
 
 # Fuses are the switches an attacker cannot turn back on after packaging:
 # without them, a modified binary can be told to run any Node script.
@@ -48,6 +57,7 @@ electronFuses:
   grantFileProtocolExtraPrivileges: false
 
 linux:
+  syncDesktopName: true
   target:
     - deb
     - AppImage
